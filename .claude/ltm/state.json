@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "session_count": 1,
+  "current_session": {
+    "session_tokens": 84809,
+    "tool_successes": 15,
+    "tool_failures": 0
+  },
+  "compaction_count": 0,
+  "config": {
+    "max_memories": 100,
+    "memories_to_load": 10,
+    "eviction_batch_size": 10,
+    "token_counting": {
+      "enabled": true,
+      "normalize_cap": 100000
+    }
+  }
+}

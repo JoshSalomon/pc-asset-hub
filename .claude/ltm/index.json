@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "memories": {
+    "mem_416f76ae": {
+      "topic": "AI Asset Hub - Tech Stack Decisions",
+      "tags": [
+        "architecture",
+        "tech-stack",
+        "asset-hub"
+      ],
+      "phase": 0,
+      "difficulty": 0.7,
+      "created_at": "2026-02-12T17:36:23.527040+00:00"
+    },
+    "mem_ee0bef4e": {
+      "topic": "AI Asset Hub - Layered Architecture and Project Structure",
+      "tags": [
+        "architecture",
+        "project-structure",
+        "asset-hub"
+      ],
+      "phase": 0,
+      "difficulty": 0.7,
+      "created_at": "2026-02-12T17:36:23.838858+00:00"
+    },
+    "mem_053f25a9": {
+      "topic": "AI Asset Hub - Database Schema Design",
+      "tags": [
+        "architecture",
+        "database",
+        "schema",
+        "asset-hub"
+      ],
+      "phase": 0,
+      "difficulty": 0.8,
+      "created_at": "2026-02-12T17:36:24.215804+00:00"
+    },
+    "mem_a23c3165": {
+      "topic": "AI Asset Hub - API Design and URL Structure",
+      "tags": [
+        "architecture",
+        "api",
+        "asset-hub"
+      ],
+      "phase": 0,
+      "difficulty": 0.6,
+      "created_at": "2026-02-12T17:36:24.604288+00:00"
+    },
+    "mem_5546f408": {
+      "topic": "AI Asset Hub - Roles and Lifecycle Permissions",
+      "tags": [
+        "architecture",
+        "rbac",
+        "lifecycle",
+        "asset-hub"
+      ],
+      "phase": 0,
+      "difficulty": 0.6,
+      "created_at": "2026-02-12T17:36:24.921505+00:00"
+    },
+    "mem_323f5b98": {
+      "topic": "AI Asset Hub - Planning Methodology",
+      "tags": [
+        "methodology",
+        "planning",
+        "process"
+      ],
+      "phase": 0,
+      "difficulty": 0.5,
+      "created_at": "2026-02-12T17:36:25.286235+00:00"
+    }
+  }
+}

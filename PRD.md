@@ -1,0 +1,933 @@
+# AI Asset Hub — Product Requirements Document
+
+## 1. Overview
+
+The AI Asset Hub is a metadata-driven management system for AI assets deployed on OpenShift clusters. It is a component of Project Catalyst.
+
+The system manages assets such as models, MCP servers and tools, guardrails and evaluators, and prompts — but the list of asset types is not hardcoded. Entity types, their attributes, and the associations between them are defined dynamically through a configuration layer (the "meta repository"). This makes the system extensible to any future asset type without code changes.
+
+## 2. Core Concepts
+
+### 2.1 Meta Repository (Schema Layer)
+
+The system does not have a fixed list of entity types. Instead, a configuration layer defines:
+
+- **Entity types** (e.g., "Model", "MCP Server", "Tool", "Prompt")
+- **Attributes** per entity type (beyond the common attributes)
+- **Associations** between entity types (containment, directional reference, bidirectional reference)
+
+This configuration is itself versioned and subject to lifecycle management.
+
+### 2.2 Entity Instances (Data Layer)
+
+Instances of the configured entity types, with values for their defined attributes. These are the actual AI assets being managed (e.g., a specific model called "llama-3-70b").
+
+### 2.3 Associations
+
+Three types of associations can be defined between entity types:
+
+#### Containment (part-of)
+- B is part of A (equivalently, A contains B).
+- B lives in the namespace and lifecycle of A.
+- B can be created and deleted independently while A exists, but deleting A cascades to delete B.
+- Containment can be multi-level (C contained in B contained in A).
+- Containment **must not** form cycles (it is a DAG).
+- Contained entities are namespaced by their parent — name uniqueness is scoped to the containing entity.
+
+#### Directional Reference
+- C refers to D. The forward direction (C → D) must be fast and immediate to resolve. The reverse direction (D → C, "referred by") can be slower and does not require a direct API path.
+
+#### Bidirectional Reference
+- E refers to F and F refers to E. Both directions must be fast to resolve.
+
+### 2.4 Attributes
+
+All entities share a set of **common attributes**:
+
+| Attribute   | Description |
+|-------------|-------------|
+| ID          | System-calculated unique identifier |
+| Name        | Unique within scope (global for top-level entities, within parent for contained entities) |
+| Description | Free-text description |
+| Version     | Auto-incremented on mutation |
+
+Each entity type defines additional **custom attributes** via the meta configuration. Each custom attribute has:
+
+| Property    | Description |
+|-------------|-------------|
+| ID          | System-assigned identifier |
+| Name        | Attribute name |
+| Description | Attribute description |
+| Type        | Value type: string, number, or enum (closed list of allowed values) |
+
+## 3. Versioning Model
+
+### 3.1 Entity Definition Versioning
+
+Every mutation to an entity type definition (in the meta repository) automatically increments its version. Previous versions are retained. Entity definitions are uniquely identified by `(name, version)`.
+
+### 3.2 Entity Instance Versioning
+
+Mutations to entity instances automatically increment the instance version. This provides an audit trail and reduces the risk of breaking backward compatibility.
+
+### 3.3 Catalog Versioning
+
+A **catalog version** is a snapshot that pins specific entity definition versions together — a bill of materials. For example:
+
+- Catalog V1: Entity A (V1), Entity B (V1), Entity C (V1)
+- Catalog V2: Entity A (V1), Entity B (V1), Entity C (V2), Entity D (V1)
+
+Deployments reference a fixed catalog version. Once deployed, changes to the underlying definitions do not affect existing deployments.
+
+### 3.4 Lifecycle
+
+Each catalog version progresses through lifecycle stages:
+
+1. **Development** — Active editing. Meta configuration is stored in the database only. No CRs are generated.
+2. **Testing** — Catalog version is promoted. CRDs/CRs are generated and applied to the cluster for validation.
+3. **Production** — Catalog version is deployed. CRDs/CRs are applied. The version is frozen.
+
+## 4. Persistence and Storage
+
+### 4.1 Database as Source of Truth
+
+The database is the primary store for all data:
+
+- Meta configuration (entity type definitions, association rules, attribute schemas) — all versions
+- Entity instances and their attribute values
+- Association links
+- Catalog version definitions and their entity version pins
+- Version history
+
+**Production**: PostgreSQL
+**Development**: SQLite or MySQL (lower footprint)
+
+Version management is automatic and handled by the system — no manual version management.
+
+### 4.2 CRDs as Deployment Artifacts
+
+Kubernetes Custom Resources are **not** the source of truth. They are generated artifacts:
+
+- CRs are generated only when a catalog version is promoted to **testing** or **production**.
+- The operator watches these CRs and reconciles the runtime accordingly.
+- During development, all work happens via the UI/API against the database. No CRs are created.
+
+This separation supports:
+- Iterative development workflows (save-in-progress via UI without cluster side effects)
+- Concurrent editing by multiple authors
+- Transactional consistency and conflict handling via the database
+
+## 5. API Design
+
+### 5.1 Two API Sets
+
+#### Meta API
+Manages the schema layer — entity type definitions, association definitions, attribute schemas, and catalog versions. Used by administrators to configure what the system manages.
+
+#### Operational API
+Manages entity instances — CRUD operations and queries. Used by operators and consumers to work with actual AI assets.
+
+### 5.2 API Versioning
+
+The operational API must be scoped to a catalog version, either through:
+- API versioning (e.g., `/api/v1/...`, `/api/v2/...`), or
+- A mandatory version parameter on all operational API calls
+
+This ensures that a consumer always interacts with a consistent, fixed view of the asset catalog.
+
+### 5.3 Query Capabilities
+
+#### Filtering and Sorting
+All entity listing endpoints support attribute-based filtering and sorting (mandatory).
+
+#### Containment Traversal
+Contained entities are accessible via REST sub-resource URLs that reflect the hierarchy:
+```
+GET /mcp-servers/{id}/tools          — list tools contained in an MCP server
+GET /mcp-servers/{id}/tools/{name}   — get a specific tool by name
+```
+
+#### Forward Reference Traversal
+Referenced entities are accessible via a generic reference endpoint:
+```
+GET /mcp-servers/{id}/references             — all references from this entity
+GET /mcp-servers/{id}/references/{type}      — references of a specific type
+```
+
+#### Reverse Reference Queries
+"Referred by" lookups do not require a direct sub-resource API. They can be served through a query endpoint or filter mechanism, and are permitted to have higher latency than forward traversals.
+
+### 5.4 Meta Operations
+
+#### Copy Entity Definition
+Users can create a new entity type based on an existing one. The source can be any version of any existing entity type. The copy becomes a new entity type at V1 with its own independent lifecycle. For example, copying the Guardrail entity definition (V2) to create a new Evaluator entity definition (V1).
+
+#### Copy Attributes
+Users can add an attribute to an entity type by copying it from another entity type, without redefining it from scratch. This avoids redundant manual entry when multiple entity types share similar attributes.
+
+#### Enum Management
+Closed-list (enum) value sets are managed as first-class objects — defined once and reusable across multiple entity types as attribute types. This provides a centralized way to create, view, update, and reuse enums rather than defining them inline per attribute.
+
+## 6. User Interface
+
+The hub includes a UI for both meta operations (schema management) and operational use (entity management).
+
+General requirements:
+- The UI communicates with the backend **exclusively** through the APIs. No direct database or cluster access.
+- The UI must support the iterative development workflow — authors can build and modify meta configuration over multiple sessions, with in-progress persistence in the database.
+- The UI respects the user's role. Controls for actions the user is not authorized to perform are hidden or disabled, not shown and then rejected.
+
+### 6.1 Meta Operations UI
+
+The meta operations UI is the primary workspace for Admins to define and manage the schema layer. It is a configuration-building tool, not a simple form — Admins will spend extended time here constructing entity types, attributes, associations, and catalog versions.
+
+#### 6.1.1 Entity Type Management
+
+**Entity type list view**
+- Displays all defined entity types with their current (latest) version, description, and the number of attributes and associations.
+- Supports filtering by name and sorting by name or version.
+- Each entity type links to its detail/edit view.
+- Provides actions: create new, copy from existing.
+
+**Entity type detail/edit view**
+- Shows the full definition of an entity type: name, description, version, all custom attributes, and all associations.
+- Admin can edit name and description. Changes auto-save to the database.
+- Shows a read-only list of common attributes (ID, Name, Description, Version) for reference.
+- Provides a version history panel showing all previous versions of this entity type, with the ability to view (read-only) any past version.
+- When viewing a past version, the Admin can use it as the source for a copy operation.
+
+**Create entity type**
+- A form to define a new entity type: name (required), description (optional).
+- After creation, the Admin is taken to the detail/edit view to add attributes and associations.
+
+**Copy entity type**
+- Admin selects a source entity type and version.
+- Admin provides a new name for the copy.
+- The system creates the new entity type at V1 with all attributes copied.
+- Associations are not copied. The UI communicates this clearly (e.g., a notice or confirmation dialog explaining that associations must be defined separately).
+
+#### 6.1.2 Attribute Management
+
+**Attribute list within entity type**
+- The entity type detail view shows all custom attributes in an ordered list.
+- Each attribute displays: name, description, type (string/number/enum name), and whether it is required.
+- Attributes can be reordered (drag-and-drop or move up/down controls).
+
+**Add attribute**
+- Inline form or dialog to add a new attribute: name (required), description (optional), type (required — dropdown of string, number, or existing enums).
+- For enum types, the dropdown lists all centrally-defined enums by name. The Admin can also create a new enum inline (see 6.1.4).
+- Validation: attribute name must be unique within the entity type.
+
+**Edit attribute**
+- Admin can modify an attribute's name, description, or type.
+- If the entity type is referenced by a catalog version in production, editing is blocked for non-Super Admin users. The UI disables the controls and shows a message explaining why.
+
+**Remove attribute**
+- Admin can remove an attribute from the entity type.
+- Confirmation dialog warns that removing an attribute will affect future instances and increments the entity type version.
+
+**Copy attribute from another entity type**
+- A picker/dialog that allows the Admin to browse other entity types and select one or more attributes to copy.
+- The picker shows the source entity type, version, and attribute details.
+- If an attribute with the same name already exists on the target, it is shown as disabled/grayed out with a conflict indicator.
+- Copied attributes are independent — the UI does not imply any ongoing link to the source.
+
+#### 6.1.3 Association Management
+
+**Association list within entity type**
+- The entity type detail view shows all associations involving this entity type.
+- Each association displays: the related entity type, association type (containment/directional reference/bidirectional reference), and direction (e.g., "contains Tool" or "refers to Model").
+- Containment associations are visually distinguished from references (e.g., different icons or grouping).
+
+**Add association**
+- Dialog or form to define a new association:
+  - Select the target entity type (dropdown of all defined entity types).
+  - Select the association type (containment, directional reference, bidirectional reference).
+  - For containment: select which side is the parent (this entity contains the target, or the target contains this entity).
+  - For directional reference: select the direction (this entity refers to target, or target refers to this entity).
+- Validation:
+  - Containment associations are validated for cycles in real-time. If adding the association would create a cycle, the UI shows an error before submission.
+  - An entity type cannot have a containment association with itself.
+
+**Remove association**
+- Admin can remove an association. Confirmation dialog explains the implications (e.g., "contained entities of this type will no longer be scoped under this parent").
+
+**Visual association map (optional but recommended)**
+- A diagram or graph view showing all entity types and their associations.
+- Entity types are nodes; associations are edges with labels indicating type and direction.
+- Useful for understanding the overall schema at a glance, especially as the number of entity types grows.
+
+#### 6.1.4 Enum Management
+
+**Enum list view**
+- Displays all defined enums with their name, number of values, and a list of entity types/attributes that reference them.
+- Supports filtering by name.
+- Provides actions: create new, edit, delete.
+
+**Create/edit enum**
+- Form to define or modify an enum: name (required), ordered list of allowed values.
+- Values can be added, removed, and reordered.
+- When editing, the UI shows which attributes currently reference this enum.
+- If removing a value that may be in use by existing entity instances, the UI warns the Admin.
+
+**Delete enum**
+- Blocked if any attribute in any entity type version references the enum.
+- The UI shows which attributes reference it and prevents deletion until all references are removed.
+
+**Inline enum creation**
+- When adding an attribute and selecting enum as the type, the Admin can create a new enum inline without navigating away from the entity type view.
+- The newly created enum is immediately available for selection.
+
+#### 6.1.5 Catalog Version Management
+
+**Catalog version list view**
+- Displays all catalog versions with: version identifier, lifecycle stage (Development/Testing/Production), creation date, and the number of pinned entity definitions.
+- Lifecycle stage is visually indicated (e.g., color-coded badges: blue for Development, yellow for Testing, green for Production).
+- Supports filtering by lifecycle stage.
+
+**Create catalog version**
+- Admin selects which entity definition versions to include.
+- The UI presents a selection interface showing all entity types and their available versions, with the latest version pre-selected as a default.
+- A summary/review step shows the complete bill of materials before confirmation.
+- The catalog version is created in the Development stage.
+
+**Catalog version detail view**
+- Shows the complete bill of materials: each entity type name and its pinned version.
+- For each pinned entity definition, a link to view that specific version's detail (read-only).
+- Shows the current lifecycle stage and the history of stage transitions (who promoted, when).
+- Shows available actions based on the current stage and user role:
+  - Development: "Promote to Testing" (RW and above)
+  - Testing: "Demote to Development" (RW and above), "Promote to Production" (Admin and above)
+  - Production: "Demote" (Super Admin only)
+
+**Lifecycle promotion**
+- Promotion triggers a confirmation dialog explaining what will happen (e.g., "CRs will be generated and applied to the cluster").
+- If promotion fails (e.g., CR generation error), the UI displays the error and the catalog version remains in its current stage.
+- Demotion from Production requires Super Admin and shows a warning about impact on consumers currently using this version.
+
+#### 6.1.6 Version History and Comparison
+
+**Entity type version history**
+- Accessible from the entity type detail view.
+- Lists all versions with: version number, date created, and a summary of what changed (attributes added/removed/modified, associations changed).
+- Admin can view any past version in read-only mode.
+
+**Version comparison**
+- Admin can select two versions of the same entity type and see a side-by-side diff of attributes and associations.
+- Added attributes/associations are highlighted in green, removed in red, modified in yellow.
+- Useful for understanding what changed between versions before assembling a catalog version.
+
+#### 6.1.7 Validation and Feedback
+
+- All forms validate input inline (e.g., name uniqueness, required fields, cycle detection) before submission.
+- Save operations provide clear success/failure feedback.
+- Destructive operations (delete, remove attribute, demote from production) always require explicit confirmation.
+- The UI clearly indicates when an entity type or catalog version is in a protected state (production) and which operations are restricted.
+- Error messages from the API are displayed in human-readable form, not raw API responses.
+
+## 7. Access Control and Roles
+
+The system leverages OpenShift's native RBAC — no duplication of OCP access control functionality.
+
+### Roles
+
+| Role         | Permissions |
+|--------------|-------------|
+| **RO**       | Read-only access to entities and configuration. No lifecycle changes. |
+| **RW**       | Create, update, and delete entity instances. Create catalog versions in development. Promote dev→test. Demote test→dev. |
+| **Admin**    | Modify meta configuration while the catalog version is not in production. All RW lifecycle permissions plus promote test→production. |
+| **Super Admin** | Modify meta configuration even when the catalog version is in production. All Admin lifecycle permissions plus demote from production (to test or dev). |
+
+The role model is designed to be extensible for future additional roles.
+
+## 8. Deployment
+
+### 8.1 OpenShift Operator
+
+The system is deployed via an operator built with **operator-sdk**. The operator:
+
+- Installs and manages all system components on OpenShift
+- Watches CRDs/CRs generated during catalog version promotion (test/prod)
+- Reconciles the runtime state based on the deployed catalog version
+- Leverages existing OpenShift and Kubernetes capabilities (RBAC, networking, storage) — no duplication of OCP functionality
+
+### 8.2 Constraints
+
+- The system must run on OpenShift.
+- It must use existing Kubernetes/OpenShift capabilities wherever possible.
+- No duplication of functionality already provided by OCP (e.g., RBAC, secrets management, networking).
+
+## 9. User Stories
+
+### Meta Repository Management
+
+**US-1: Define a new entity type**
+As an Admin, I want to define a new entity type (e.g., "Guardrail") with a name, description, and a set of custom attributes, so that the system can manage instances of that type.
+
+**Why**: The system's core value proposition is flexibility — the ability to manage any kind of AI asset without code changes. Without dynamic entity type definition, every new asset type would require a code release.
+
+Acceptance Criteria:
+- Admin can create a new entity type via the Meta API or UI by specifying a name, description, and zero or more custom attributes.
+- The entity type name must be unique within the catalog.
+- Each custom attribute must have a name, description, and type (string, number, or enum).
+- The new entity type is created at version 1.
+- After creation, entity instances of the new type can be created via the Operational API.
+- RO and RW users cannot create entity types; the API returns a 403.
+
+---
+
+**US-2: Define associations between entity types**
+As an Admin, I want to define associations (containment, directional reference, or bidirectional reference) between entity types, so that relationships between assets are formally modeled and navigable.
+
+**Why**: AI assets have inherent relationships (tools belong to MCP servers, models reference guardrails). Without formal association modeling, consumers would have to maintain these relationships manually and inconsistently.
+
+Acceptance Criteria:
+- Admin can define a containment, directional reference, or bidirectional reference between two entity types.
+- Containment associations are validated to not create cycles (the system rejects associations that would form a circular containment path).
+- For containment: the contained entity type becomes namespaced under the containing type.
+- For directional references: the system records the direction (source → target).
+- The entity type definition version is incremented when an association is added.
+- Associations are reflected in the API URL structure (containment as sub-resources, references via `/references` endpoints).
+
+---
+
+**US-3: Copy an entity definition to create a new type**
+As an Admin, I want to create a new entity type by copying an existing entity definition (at any version), so that I can reuse an existing structure as a starting point instead of defining it from scratch.
+
+**Why**: Many AI asset types share similar structures (e.g., guardrails and evaluators). Copying avoids tedious re-entry and reduces configuration errors when creating structurally similar entity types.
+
+Acceptance Criteria:
+- Admin can select a source entity type and version to copy from.
+- Admin provides a new name for the target entity type.
+- The new entity type is created at V1 with all attributes copied from the source.
+- Associations are **not** copied (they reference specific entity types and may not apply).
+- The new entity type has an independent lifecycle — changes to the source do not affect the copy.
+- The source entity type and version remain unchanged.
+
+---
+
+**US-4: Copy attributes between entity types**
+As an Admin, I want to add an attribute to an entity type by copying it from another entity type, so that I don't have to re-enter attribute definitions that are shared across types.
+
+**Why**: Common attributes (e.g., "runtime_environment", "max_tokens") appear across multiple entity types. Re-entering them manually is error-prone and leads to inconsistencies in naming and type definitions.
+
+Acceptance Criteria:
+- Admin can select one or more attributes from a source entity type and copy them to a target entity type.
+- Copied attributes are independent — subsequent changes to the source attribute do not propagate to the copy.
+- If an attribute with the same name already exists on the target, the operation is rejected with a conflict error.
+- The target entity type version is incremented.
+
+---
+
+**US-5: Manage enums centrally**
+As an Admin, I want to define enum value sets as reusable objects and assign them as attribute types across multiple entity types, so that closed lists are consistent and maintained in one place.
+
+**Why**: Without centralized enum management, the same set of values (e.g., supported languages, deployment targets) would be duplicated across entity types. Updates would require finding and changing every copy, risking inconsistency.
+
+Acceptance Criteria:
+- Admin can create a named enum with an ordered list of allowed values.
+- Admin can update an enum's values (add, remove, reorder).
+- Enums can be assigned as the type of any custom attribute on any entity type.
+- Multiple attributes across different entity types can reference the same enum.
+- When an enum is updated, all attributes referencing it reflect the updated values.
+- An enum cannot be deleted if it is referenced by any attribute in any entity type version.
+
+---
+
+**US-6: Modify an entity definition**
+As an Admin, I want to modify an entity type definition (add/change/remove attributes or associations), and have the system automatically create a new version of that definition, so that previous versions remain intact.
+
+**Why**: Automatic versioning on mutation is the foundation of backward compatibility. Without it, changes to an entity type could silently break deployments that depend on the previous structure.
+
+Acceptance Criteria:
+- When an Admin modifies any aspect of an entity type (attributes, associations), the system creates a new version automatically.
+- The previous version remains accessible and unchanged.
+- The new version number is the previous version incremented by 1.
+- Existing catalog versions that reference the old entity type version continue to reference it — they are not affected by the new version.
+- The modification is rejected if the Admin role lacks permission (e.g., catalog version is in production and user is not Super Admin).
+
+---
+
+**US-7: Iterative meta configuration in the UI**
+As an Admin, I want to build and modify meta configuration over multiple sessions in the UI, with my work-in-progress saved to the database, so that I can work iteratively without needing to complete everything in one sitting.
+
+**Why**: Building a complete meta configuration (multiple entity types, associations, attributes) is a non-trivial task. Requiring it to be completed in a single session would be impractical and error-prone. No CRs should be generated until the configuration is explicitly promoted.
+
+Acceptance Criteria:
+- All meta configuration changes are persisted to the database immediately on save.
+- No CRDs or CRs are generated during the Development lifecycle stage.
+- The Admin can close the UI, reopen it, and resume editing where they left off.
+- Multiple Admins can work on different entity types concurrently.
+- The UI shows the current state of all entity type definitions, their versions, and associations.
+
+---
+
+### Catalog Versioning and Lifecycle
+
+**US-8: Create a catalog version**
+As an RW user, I want to create a catalog version that pins specific entity definition versions together, so that I have an immutable snapshot of the schema for deployment.
+
+**Why**: Without a pinning mechanism, deployments would be subject to schema drift as entity definitions evolve. Catalog versions provide the stability guarantee that deployed systems need.
+
+Acceptance Criteria:
+- RW (and above) users can create a new catalog version by selecting specific entity definition versions to include.
+- The catalog version records the exact `(entity type name, version)` tuples it contains.
+- Once created, the catalog version's entity version pins cannot be changed (immutable snapshot).
+- The catalog version is created in the Development lifecycle stage.
+- The catalog version has a unique identifier.
+- RO users cannot create catalog versions; the API returns a 403.
+
+---
+
+**US-9: Promote a catalog version to testing**
+As an RW user, I want to promote a catalog version from Development to Testing, so that CRs are generated and applied to the cluster for validation.
+
+**Why**: Testing in a real cluster environment is the only way to validate that the meta configuration works correctly with the operator and runtime. Generating CRs at this stage catches deployment issues before production.
+
+Acceptance Criteria:
+- RW (and above) users can promote a catalog version from Development to Testing.
+- On promotion, the system generates CRDs/CRs from the pinned entity definitions and applies them to the cluster.
+- The catalog version status is updated to Testing.
+- If CR generation or application fails, the promotion is rolled back with an error message.
+- RW (and above) users can demote a catalog version back from Testing to Development if testing reveals issues.
+- RO users cannot promote or demote; the API returns a 403.
+
+---
+
+**US-10: Promote a catalog version to production**
+As an Admin, I want to promote a catalog version from Testing to Production, so that the schema is deployed and frozen for operational use.
+
+**Why**: Production promotion is the point at which the schema becomes the active contract for API consumers. Freezing it prevents accidental changes that could break running systems. This requires Admin authority because it affects all consumers of the operational API.
+
+Acceptance Criteria:
+- Admin (and above) users can promote a catalog version from Testing to Production.
+- On promotion, CRs are applied to the production environment.
+- The catalog version is frozen — no modifications are allowed by Admin or lower role users.
+- The Operational API begins serving data scoped to this catalog version.
+- Only Super Admin users can modify or demote the catalog version after this point.
+- RW and RO users cannot promote to production; the API returns a 403.
+
+---
+
+**US-11: Modify a production catalog version**
+As a Super Admin, I want to modify meta configuration even when the catalog version is in production, so that critical changes can be made when necessary.
+
+**Why**: In rare but critical situations (security patches, regulatory requirements, critical bugs), the ability to modify a production schema is a safety valve. Restricting this to Super Admin ensures it is an intentional, authorized action.
+
+Acceptance Criteria:
+- Super Admin can modify entity definitions within a production catalog version.
+- The system logs all modifications to production catalog versions for audit purposes.
+- Admin, RW, and RO users receive a 403 when attempting to modify a production catalog version.
+- Modified CRs are regenerated and reapplied to the cluster.
+
+---
+
+**US-12: Remove a catalog version from production**
+As a Super Admin, I want to take a catalog version out of production, so that it can be replaced or retired.
+
+**Why**: Catalog versions may need to be retired when replaced by a newer version, or rolled back if a critical issue is discovered post-deployment. Only Super Admin can perform this action because it directly impacts active consumers.
+
+Acceptance Criteria:
+- Super Admin can demote a catalog version from Production to Testing or Development.
+- The associated CRs are removed from the cluster.
+- The Operational API stops serving data scoped to the demoted catalog version (or returns an appropriate error to consumers still referencing it).
+- The catalog version data is retained in the database for audit and potential re-promotion.
+- Admin, RW, and RO users cannot demote from production; the API returns a 403.
+
+---
+
+### Entity Instance Management
+
+**US-13: Create an entity instance**
+As an RW user, I want to create a new instance of a configured entity type with values for its attributes, so that I can register a new AI asset in the hub.
+
+**Why**: This is the primary write operation of the system — registering actual AI assets. Without it, the hub would have schema but no data.
+
+Acceptance Criteria:
+- RW user can create an entity instance by specifying the entity type, a name, description, and values for custom attributes.
+- The name must be unique within scope (global for top-level entities, within the parent for contained entities).
+- Attribute values are validated against the attribute type (string, number, enum value from allowed list).
+- The instance is created at version 1 with a system-calculated ID.
+- RO users cannot create instances; the API returns a 403.
+
+---
+
+**US-14: Update an entity instance**
+As an RW user, I want to update an entity instance's attribute values and have the system automatically increment its version, so that changes are tracked.
+
+**Why**: Auto-versioning on update ensures that every change to an AI asset is traceable. This is critical for environments where knowing the exact state of a model or guardrail at any point in time matters for compliance and debugging.
+
+Acceptance Criteria:
+- RW user can update one or more attribute values on an entity instance.
+- The system increments the instance version automatically on each successful update.
+- The previous version state is retained in the database.
+- Attribute value changes are validated against the attribute type definition.
+- The updated instance returns the new version number in the response.
+
+---
+
+**US-15: Delete an entity instance**
+As an RW user, I want to delete an entity instance, and if it is a containing entity, have all contained entities cascade-deleted, so that orphaned data is not left behind.
+
+**Why**: Cascade deletion enforces the containment contract — contained entities cannot exist without their parent. Without it, deleting a parent would leave orphaned children with broken namespace references.
+
+Acceptance Criteria:
+- RW user can delete an entity instance by ID.
+- If the entity contains other entities (via containment association), all contained entities are deleted recursively.
+- Multi-level containment cascades correctly (deleting A deletes B, which deletes C).
+- References to the deleted entity from other entities are handled (at minimum, the system does not leave dangling references without notification).
+- The delete operation is atomic — either the entire cascade succeeds or nothing is deleted.
+
+---
+
+**US-16: Create a contained entity**
+As an RW user, I want to create an entity instance within a containing entity (e.g., a Tool within an MCP Server), so that the containment hierarchy is maintained.
+
+**Why**: Contained entities are namespaced and lifecycle-bound to their parent. Creating them through the parent ensures the containment relationship is established correctly and name uniqueness is enforced within the right scope.
+
+Acceptance Criteria:
+- RW user can create a contained entity by specifying the parent entity and the contained entity type.
+- The contained entity's name must be unique within the parent's namespace (not globally).
+- The contained entity is accessible via the parent's sub-resource URL (e.g., `GET /mcp-servers/{id}/tools/{name}`).
+- The contained entity cannot exist without a parent — creation without specifying a valid parent is rejected.
+- If the parent entity does not exist, the creation is rejected with a 404.
+
+---
+
+### Queries and Navigation
+
+**US-17: List and filter entities**
+As an RO user, I want to list entity instances with attribute-based filtering and sorting, so that I can find specific assets.
+
+**Why**: As the number of managed assets grows, unfiltered listings become unusable. Filtering and sorting are essential for operational workflows — finding models by status, listing guardrails by type, etc.
+
+Acceptance Criteria:
+- RO user can list entity instances of a given type.
+- Results can be filtered by any attribute value (common or custom).
+- Results can be sorted by any attribute (ascending or descending).
+- Multiple filters can be combined (AND logic).
+- The response includes pagination support.
+- Filtering by non-existent attributes returns an error, not an empty result.
+
+---
+
+**US-18: Navigate containment hierarchy**
+As an RO user, I want to access contained entities via the parent entity's URL (e.g., `GET /mcp-servers/{id}/tools`), so that I can browse assets within their natural hierarchy.
+
+**Why**: Containment is a core relationship model. Exposing it through the URL structure makes the API intuitive and self-documenting — the URL itself communicates the relationship between assets.
+
+Acceptance Criteria:
+- Contained entities are accessible via `GET /{parent-type}/{parent-id}/{contained-type}`.
+- Individual contained entities are accessible via `GET /{parent-type}/{parent-id}/{contained-type}/{name}`.
+- Multi-level containment is supported (e.g., `GET /a/{id}/b/{id}/c`).
+- Filtering and sorting (from US-17) apply to contained entity listings.
+- Accessing a contained entity via a non-existent parent returns 404.
+
+---
+
+**US-19: Follow forward references**
+As an RO user, I want to retrieve all entities referenced by a given entity (e.g., `GET /mcp-servers/{id}/references`), so that I can understand what an asset depends on.
+
+**Why**: Understanding dependencies is critical for impact analysis, deployment planning, and debugging. Forward references answer "what does this asset depend on?"
+
+Acceptance Criteria:
+- Forward references are accessible via `GET /{entity-type}/{id}/references`.
+- Results can be filtered by reference type via `GET /{entity-type}/{id}/references/{type}`.
+- The response includes the referenced entity's type, ID, and name at minimum.
+- The lookup is fast — performance comparable to direct entity retrieval.
+- Both directional and bidirectional references are included.
+
+---
+
+**US-20: Look up reverse references**
+As an RO user, I want to find which entities refer to a given entity, so that I can understand the impact of changing or removing it — accepting that this query may be slower than forward lookups.
+
+**Why**: Reverse reference lookups answer "what would break if I change or remove this asset?" This is essential for safe change management, even if it doesn't need to be as fast as forward lookups.
+
+Acceptance Criteria:
+- An API mechanism exists to query reverse references for a given entity.
+- The response includes the referring entity's type, ID, and name.
+- The query does not need to be a direct sub-resource URL — a query endpoint or filter is acceptable.
+- Higher latency than forward reference lookups is acceptable.
+- Both directional (referredBy) and bidirectional references are included.
+
+---
+
+**US-21: Interact with a specific catalog version**
+As an API consumer, I want all operational API calls scoped to a specific catalog version, so that I get a consistent view of the asset catalog regardless of ongoing changes.
+
+**Why**: Without catalog version scoping, API consumers would be exposed to schema changes mid-flight. This is the core guarantee that makes the versioning model useful — consumers pin to a version and get deterministic behavior.
+
+Acceptance Criteria:
+- Every operational API call requires a catalog version identifier (either via URL path or mandatory parameter).
+- The API serves entity types and instances consistent with the pinned catalog version.
+- Requests with an invalid or non-existent catalog version return a clear error.
+- Changes to entity definitions in other catalog versions do not affect responses for the pinned version.
+- If a catalog version has been removed from production, the API returns an appropriate error (not stale data).
+
+---
+
+### Access Control
+
+**US-22: Read-only access**
+As an RO user, I want to browse entities and configuration without being able to modify anything, so that I can consume asset information safely.
+
+**Why**: Many consumers of the asset hub (dashboards, monitoring systems, downstream services) only need read access. Enforcing read-only access prevents accidental modifications from non-privileged users.
+
+Acceptance Criteria:
+- RO users can perform all GET operations on both Meta and Operational APIs.
+- RO users receive a 403 on any POST, PUT, PATCH, or DELETE operation.
+- RO access is enforced at the API layer via OpenShift RBAC, not application-level checks.
+
+---
+
+**US-23: Role-based access enforcement**
+As a platform administrator, I want access control enforced via OpenShift's native RBAC, so that there is no duplication of OCP identity and access management.
+
+**Why**: OpenShift already provides a mature, audited RBAC system. Duplicating it would create security gaps (two systems to maintain), inconsistency (different permissions in OCP vs. the hub), and operational overhead.
+
+Acceptance Criteria:
+- All four roles (RO, RW, Admin, Super Admin) map to OpenShift RBAC roles/bindings.
+- Authentication is handled by OpenShift (no separate user database or login system).
+- Authorization decisions use the OCP RBAC API (SubjectAccessReview or equivalent).
+- Adding or removing users from roles is done via standard OpenShift tooling (oc, console).
+- No custom user management UI or API exists in the hub.
+
+---
+
+### Deployment
+
+**US-24: Install via operator**
+As a cluster administrator, I want to deploy the AI Asset Hub by installing an operator via operator-sdk, so that the system is managed as a standard OpenShift workload.
+
+**Why**: Operator-based deployment is the standard pattern for managing applications on OpenShift. It provides lifecycle management (install, upgrade, uninstall), health monitoring, and integration with the OLM (Operator Lifecycle Manager).
+
+Acceptance Criteria:
+- The operator is installable via OLM or direct operator-sdk deployment.
+- The operator deploys all required components (backend, database, UI).
+- The operator manages component lifecycle (restart on failure, rolling upgrades).
+- Uninstalling the operator cleanly removes all hub components.
+- The operator exposes a CR for hub-level configuration (e.g., database connection, resource limits).
+
+---
+
+**US-25: Operator reconciliation on promotion**
+As a cluster administrator, I want the operator to watch for CRs generated during catalog version promotion and reconcile the runtime state accordingly, so that the cluster reflects the deployed catalog version.
+
+**Why**: The operator is the bridge between the database (source of truth) and the cluster runtime. Without reconciliation, promoted catalog versions would exist in the database but have no effect on the running system.
+
+Acceptance Criteria:
+- The operator watches for CRs generated during catalog version promotion to Testing or Production.
+- When new CRs are detected, the operator reconciles the runtime state to match.
+- If a CR is removed (catalog version demoted), the operator cleans up the corresponding runtime resources.
+- Reconciliation errors are reported via the CR's status conditions and operator logs.
+- The operator does not modify the database — it only reads CRs and manages cluster-side resources.
+
+### Meta Operations UI
+
+**US-26: Entity type list view**
+As an Admin, I want to see all defined entity types in a list with their latest version, description, and counts of attributes and associations, so that I can quickly find and navigate to the entity type I need to work on.
+
+**Why**: The list view is the Admin's primary entry point into the meta configuration. Without a clear overview, Admins would have to remember entity type names or search blindly, especially as the number of types grows.
+
+Acceptance Criteria:
+- The list displays all entity types with: name, latest version number, description, attribute count, and association count.
+- The list supports filtering by name (text search) and sorting by name or version.
+- Each row links to the entity type detail/edit view.
+- The list provides action buttons to create a new entity type or copy an existing one.
+- RO users see the same list but without create/copy actions.
+
+---
+
+**US-27: Entity type detail and editing**
+As an Admin, I want a detail view for each entity type where I can see and edit its full definition (attributes, associations, description), so that I have a single workspace for managing an entity type.
+
+**Why**: Entity type configuration involves multiple related elements (attributes, associations, metadata). A unified detail view prevents context-switching between separate pages and reduces the risk of inconsistent edits.
+
+Acceptance Criteria:
+- The detail view shows: entity type name, description, current version, all custom attributes (with type and description), and all associations (with type and direction).
+- Common attributes (ID, Name, Description, Version) are shown in a read-only section for reference.
+- Admin can edit the name and description inline. Changes are saved to the database on explicit save.
+- The view provides entry points for adding/editing/removing attributes and associations (see US-28, US-31).
+- If the entity type is part of a production catalog version and the user is not Super Admin, all edit controls are disabled with a message explaining the restriction.
+- RO and RW users see the detail view in read-only mode with no edit controls.
+
+---
+
+**US-28: Add and edit attributes in the UI**
+As an Admin, I want to add, edit, and remove attributes on an entity type through the UI, so that I can define the data structure for each asset type.
+
+**Why**: Attributes define what data each asset type carries. The UI must make attribute management efficient because Admins will frequently add and adjust attributes as requirements evolve during the development lifecycle stage.
+
+Acceptance Criteria:
+- Admin can add a new attribute via an inline form or dialog, specifying: name (required), description (optional), and type (string, number, or enum — selected from a dropdown of existing enums).
+- Attribute names are validated for uniqueness within the entity type before submission. Duplicate names show an inline error.
+- Admin can edit an existing attribute's name, description, or type.
+- Admin can remove an attribute. A confirmation dialog warns that this will increment the entity type version.
+- Attributes can be reordered (drag-and-drop or move up/down controls).
+- When selecting enum as the type, the Admin can create a new enum inline without leaving the page (links to US-33).
+
+---
+
+**US-29: Copy attributes from another entity type in the UI**
+As an Admin, I want to browse other entity types and copy selected attributes to the current entity type, so that I can reuse existing attribute definitions without re-entering them.
+
+**Why**: Many entity types share similar attributes. A copy picker is faster and less error-prone than manually recreating attributes, especially when the attribute has an enum type that must be referenced correctly.
+
+Acceptance Criteria:
+- A picker/dialog allows the Admin to browse all entity types and their attributes.
+- The picker shows each attribute's name, description, and type for informed selection.
+- Admin can select one or more attributes to copy.
+- Attributes that conflict with existing attributes on the target (same name) are shown as disabled with a conflict indicator.
+- On confirmation, selected attributes are added to the current entity type.
+- The target entity type version is incremented.
+
+---
+
+**US-30: Copy an entity type in the UI**
+As an Admin, I want to create a new entity type by selecting an existing entity type and version as a template, so that I can quickly set up a structurally similar type.
+
+**Why**: Defining entity types from scratch is tedious when a similar type already exists. Copying provides a faster starting point while ensuring the new type is independent.
+
+Acceptance Criteria:
+- The Admin can initiate a copy from the entity type list view or from within an entity type's detail view.
+- A dialog prompts the Admin to select the source version (defaulting to the latest) and enter a new name.
+- The system creates the new entity type at V1 with all attributes copied.
+- The dialog clearly states that associations are not copied and must be configured separately.
+- After creation, the Admin is navigated to the new entity type's detail view.
+
+---
+
+**US-31: Manage associations in the UI**
+As an Admin, I want to add and remove associations between entity types through the UI, with real-time validation for containment cycles, so that I can model relationships without risking invalid configurations.
+
+**Why**: Associations define how entity types relate to each other. Cycle detection must happen before submission — discovering a cycle only after saving would be disruptive, especially in a complex schema with many entity types.
+
+Acceptance Criteria:
+- The entity type detail view lists all associations involving this entity type, grouped or labeled by type (containment vs. reference).
+- Admin can add a new association via a dialog: select target entity type, select association type (containment, directional reference, bidirectional reference), and select direction where applicable.
+- For containment: if the new association would create a cycle, the UI shows an error immediately (before the Admin can submit).
+- Admin can remove an association. A confirmation dialog explains the implications.
+- Adding or removing an association increments the entity type version.
+
+---
+
+**US-32: Visual association map**
+As an Admin, I want to see a diagram showing all entity types and their associations as a graph, so that I can understand the overall schema structure at a glance.
+
+**Why**: As the number of entity types and associations grows, the relationships become difficult to understand from individual detail views alone. A visual map provides the "big picture" that textual lists cannot.
+
+Acceptance Criteria:
+- A graph/diagram view shows entity types as nodes and associations as labeled edges.
+- Containment associations are visually distinct from reference associations (e.g., different line styles or colors).
+- Edge labels indicate the association type and direction.
+- The diagram updates automatically when entity types or associations are added or removed.
+- The diagram is interactive — clicking a node navigates to that entity type's detail view.
+- The diagram handles 10+ entity types without becoming unreadable (supports zoom/pan or layout adjustments).
+
+---
+
+**US-33: Enum management in the UI**
+As an Admin, I want a dedicated view to create, edit, and delete enums, and I want to see which attributes reference each enum, so that I can manage closed value lists centrally.
+
+**Why**: Enums are shared across entity types. Without a central management view, Admins would not know where an enum is used, risking unintended side effects when modifying or deleting values.
+
+Acceptance Criteria:
+- An enum list view displays all enums with: name, number of values, and a list of referencing entity types and attributes.
+- Admin can create a new enum with a name and an ordered list of values.
+- Admin can edit an enum: add, remove, or reorder values.
+- When removing a value, the UI warns if existing entity instances may use that value.
+- Admin can delete an enum only if no attributes reference it. If references exist, the UI lists them and blocks deletion.
+- Enum creation is also available inline from the attribute type dropdown (without navigating away from the entity type view).
+
+---
+
+**US-34: Catalog version creation in the UI**
+As an Admin, I want to create a catalog version by selecting specific entity definition versions from a list, so that I can assemble a bill of materials for deployment.
+
+**Why**: The catalog version is what gets deployed. The selection interface must make it easy to choose the right versions and review the complete snapshot before committing, to avoid deploying unintended entity definition versions.
+
+Acceptance Criteria:
+- A creation interface shows all entity types with their available versions.
+- The latest version of each entity type is pre-selected as the default.
+- Admin can change the selected version for any entity type via a version dropdown.
+- A summary/review step shows the complete bill of materials (all entity type + version pairs) before confirmation.
+- On confirmation, the catalog version is created in the Development lifecycle stage.
+- The Admin is navigated to the new catalog version's detail view.
+
+---
+
+**US-35: Catalog version detail and lifecycle management in the UI**
+As an Admin, I want to see a catalog version's full bill of materials and promote or demote it through lifecycle stages, so that I can manage the deployment pipeline from the UI.
+
+**Why**: Lifecycle promotion is a critical operation with real cluster-side effects (CR generation and application). The UI must provide clear context and confirmation to prevent accidental promotions and help Admins understand the current state.
+
+Acceptance Criteria:
+- The detail view shows: catalog version identifier, current lifecycle stage (visually indicated with color-coded badge), creation date, and the full bill of materials (entity type name + pinned version, each linking to that version's read-only detail view).
+- The view shows a history of lifecycle transitions (who promoted/demoted, when).
+- Available actions are displayed based on current stage and user role:
+  - Development: "Promote to Testing" (RW and above).
+  - Testing: "Demote to Development" (RW and above), "Promote to Production" (Admin and above).
+  - Production: "Demote" (Super Admin only).
+- Promotion triggers a confirmation dialog explaining the side effects (e.g., "CRs will be generated and applied to the cluster").
+- If promotion fails, the error is displayed and the catalog version remains in its current stage.
+- Demotion from Production shows a warning about impact on active API consumers.
+
+---
+
+**US-36: Entity type version history in the UI**
+As an Admin, I want to see the version history of an entity type and compare any two versions side-by-side, so that I can understand what changed and make informed decisions when assembling catalog versions.
+
+**Why**: When selecting which entity definition version to pin in a catalog version, the Admin needs to understand the differences between versions. Without a comparison tool, the Admin would have to manually inspect each version and track changes mentally.
+
+Acceptance Criteria:
+- The entity type detail view includes a version history panel listing all versions with: version number, date created, and a summary of changes (attributes added/removed/modified, associations changed).
+- Admin can click any version to view its full definition in read-only mode.
+- Admin can select two versions for side-by-side comparison.
+- The comparison view highlights: added items (green), removed items (red), and modified items (yellow).
+- From the history view, the Admin can initiate a copy operation using any past version as the source.
+
+---
+
+**US-37: UI validation and error feedback**
+As an Admin, I want the UI to validate my inputs inline before submission and show clear feedback on success or failure, so that I catch errors early and understand the outcome of every action.
+
+**Why**: Meta configuration errors (invalid names, cycle-creating associations, type conflicts) are easier and cheaper to fix when caught at input time rather than after an API round-trip or, worse, during deployment. Clear feedback builds confidence in the tool.
+
+Acceptance Criteria:
+- Required fields show validation errors inline when left empty or when the form is submitted.
+- Name uniqueness is validated before submission (inline check against existing names).
+- Containment cycle detection happens in real-time when adding associations — the UI prevents submission of cycle-creating associations.
+- Successful save operations show a brief, non-blocking success indicator (e.g., toast notification).
+- Failed API calls display human-readable error messages, not raw API responses or status codes.
+- Destructive operations (delete entity type, remove attribute, demote from production) always require a confirmation dialog with a description of the consequences.
+
+---
+
+**US-38: Role-aware UI controls**
+As a user of the meta operations UI, I want the interface to show or hide controls based on my role, so that I only see actions I am authorized to perform.
+
+**Why**: Showing controls that the user cannot use (and returning 403s when clicked) is a poor user experience. Role-aware controls reduce confusion, prevent wasted clicks, and make the UI feel intentional rather than restrictive.
+
+Acceptance Criteria:
+- RO users see all meta configuration in read-only mode. No create, edit, delete, or promote buttons are visible.
+- RW users see the same as RO for meta operations (RW only applies to entity instances, not meta configuration).
+- Admin users see all edit controls except those restricted to Super Admin (e.g., modifying production catalog versions, demoting from production).
+- Super Admin users see all controls.
+- When a control is hidden due to role restrictions, no placeholder or "locked" indicator is shown — the control simply does not exist in the UI.
+- When a control is disabled due to state restrictions (e.g., entity type in production, not a role issue), the control is visible but grayed out with a tooltip explaining why.
+
+## 10. Open Design Decisions
+
+The following items are acknowledged but not yet fully specified:
+
+| Item | Notes |
+|------|-------|
+| ID calculation strategy | How entity IDs are generated (UUID, hash, deterministic from name+version, etc.) |
+| Exact CRD schema | Structure of the generated CRs for test/prod deployment |
+| Catalog version creation workflow | How an author assembles a catalog version from entity definition versions — manual selection vs. automatic "snapshot current state" |
+| Concurrent editing model | Optimistic locking, pessimistic locking, or merge-based conflict resolution |
+| Ad-hoc query language | Whether complex cross-entity queries (beyond filter+sort) will be needed in the future |
+| Predefined queries | Which standard queries are provided out of the box |
+| Entity instance versioning depth | Whether full version history is retained or only N recent versions |
+| Technology choices | Backend language/framework, UI framework, API style (REST vs. GraphQL) |
