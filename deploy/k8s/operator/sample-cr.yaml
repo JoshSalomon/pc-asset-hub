@@ -1,0 +1,14 @@
+apiVersion: assethub.project-catalyst.io/v1alpha1
+kind: AssetHub
+metadata:
+  name: sample-assethub
+  namespace: assethub
+spec:
+  replicas: 1
+  dbConnection: "host=postgres user=assethub password=assethub dbname=assethub port=5432 sslmode=disable"
+  uiReplicas: 1
+  environment: development
+  apiNodePort: 30080
+  uiNodePort: 30000
+  logLevel: info
+  clusterRole: development

@@ -19,13 +19,17 @@ The system consists of four major components:
 │  ┌───────────┐     ┌──────────────┐     ┌──────────────┐ │
 │  │    UI     │───▶│  API Server  │───▶│  PostgreSQL  │ │
 │  │ (React +  │     │  (Go/Echo)   │     │  (or SQLite) │ │
-│  │PatternFly)│     │              │     │              │ │
-│  └───────────┘     └──────┬───────┘     └──────────────┘ │
+│  │PatternFly)│     │      │       │     │              │ │
+│  └───────────┘     └──────┼───────┘     └──────────────┘ │
 │                           │                              │
-│                           │ on promotion                 │
+│                           │ on promote/demote            │
+│                           ▼                              │
+│                   CatalogVersion CRs                     │
+│                           │                              │
+│                           │ watches                      │
 │                           ▼                              │
 │                   ┌──────────────┐                       │
-│                   │   Operator   │──▶ CRDs/CRs          │
+│                   │   Operator   │──▶owner refs, status │
 │                   │(operator-sdk)│                       │
 │                   └──────────────┘                       │
 │                                                          │
@@ -33,9 +37,9 @@ The system consists of four major components:
 ```
 
 - **UI**: React + PatternFly frontend. Communicates exclusively through the API server. Never accesses the database or cluster directly.
-- **API Server**: Go backend exposing two API sets (Meta API and Operational API). Enforces RBAC via OpenShift SubjectAccessReview.
+- **API Server**: Go backend exposing two API sets (Meta API and Operational API). Creates/updates/deletes `CatalogVersion` CRs on catalog version promotion and demotion. Enforces RBAC via OpenShift SubjectAccessReview.
 - **Database**: PostgreSQL (production) or SQLite (development). Source of truth for all data.
-- **Operator**: Built with operator-sdk. Manages hub installation and reconciles CRDs/CRs generated during catalog version promotion.
+- **Operator**: Built with operator-sdk. Manages hub installation. Watches `CatalogVersion` CRs, sets owner references to the AssetHub CR for garbage collection, and updates status conditions.
 
 ---
 
@@ -111,6 +115,7 @@ pc-asset-hub/
         models/              # GORM model structs (with tags, mapping to/from domain)
         repository/          # GORM repository implementations
         migrations/          # Database migration logic
+      k8s/                   # K8s CRManager implementation (CatalogVersion CR management)
       config/                # Configuration loading
     api/                     # API layer (depends on service layer)
       meta/                  # Meta API handlers
@@ -118,8 +123,9 @@ pc-asset-hub/
       middleware/            # Auth, RBAC, logging, error handling
       dto/                   # Request/response DTOs
     operator/                # Operator logic
+      api/v1alpha1/          # CRD types: AssetHub and CatalogVersion
       controllers/           # Reconciler implementations
-      crdgen/                # CRD/CR generation from catalog versions
+      crdgen/                # CRD/CR generation from entity types (future scope)
   pkg/
     types/                   # Shared type definitions (cross-cutting)
   ui/
@@ -456,9 +462,11 @@ Development  ─────▶  Testing  ─────▶  Production
 - **Production → Testing/Development**: Super Admin only can demote.
 
 Stage descriptions:
-- **Development**: Active editing in the database. No CRs generated. Work-in-progress via UI.
-- **Testing**: CRDs/CRs generated and applied to the cluster for validation.
-- **Production**: CRs applied and frozen. Only Super Admin can modify or demote.
+- **Development**: Active editing in the database. No CRs created in K8s. Work-in-progress via UI.
+- **Testing**: A `CatalogVersion` CR is created in K8s for discovery. Applications find available catalog versions via the K8s API.
+- **Production**: The `CatalogVersion` CR is updated to production stage. Frozen — only Super Admin can modify or demote.
+
+The `clusterRole` configuration on the AssetHub CR controls which lifecycle stages the API server exposes: `production` clusters only serve production catalog versions, `testing` clusters serve testing and production, and `development` clusters (default) serve all stages.
 
 ---
 
@@ -517,16 +525,21 @@ A single `AssetHub` custom resource configures the hub installation:
 
 The operator watches this CR and reconciles the backend Deployment, Service, UI Deployment, and database setup.
 
-### Catalog Version Deployment (Dynamic CRDs)
+### Catalog Version Discovery (CatalogVersion CRs)
 
-When a catalog version is promoted to Testing or Production:
-1. The API server generates CRDs from the entity type definitions in the catalog version.
-2. The CRDs are applied to the cluster as Kubernetes resources.
-3. The operator watches these CRs and reconciles the runtime state.
-4. On demotion, the operator cleans up the CRs from the cluster.
-5. Reconciliation status is reported via CR status conditions.
+When a catalog version is promoted to Testing or Production, a lightweight `CatalogVersion` CR is created for discovery:
 
-The database remains the source of truth. CRDs/CRs are deployment artifacts — projections of the database state into the cluster for a specific catalog version.
+1. The API server `Promote()` updates the DB lifecycle stage.
+2. The API server creates or updates a `CatalogVersion` CR in K8s with version label, description, lifecycle stage, and entity type names.
+3. The operator watches `CatalogVersion` CRs, sets owner references to the AssetHub CR (enabling garbage collection), and updates status conditions.
+4. On demotion to Development, the API server deletes the `CatalogVersion` CR (development-stage versions don't exist in K8s).
+5. On demotion from Production to Testing, the API server updates the CR with the new lifecycle stage.
+
+The database remains the source of truth. `CatalogVersion` CRs are discovery artifacts — lightweight projections enabling applications to find available catalog versions via the K8s API.
+
+### Entity Type CRDs (Future Scope)
+
+Full schema-as-CRD artifacts — where entity type definitions become native K8s CRDs — are a separate feature planned for a future phase. The `crdgen/` package contains the generation logic for this future capability.
 
 ---
 

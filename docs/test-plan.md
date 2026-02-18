@@ -21,6 +21,9 @@ The project uses five testing layers, each building on the one below.
 - Lifecycle state machine transitions (valid and invalid paths)
 - DTO mapping (domain models ↔ API request/response types)
 - Error handling and domain error types
+- CatalogVersion CRD types: DeepCopy correctness for `CatalogVersion` and `CatalogVersionList`, scheme registration
+- SanitizeK8sName: version label → valid K8s resource name conversion
+- Config: `CLUSTER_ROLE` defaults and `AllowedStages` mapping for each clusterRole value
 
 **Mocking strategy**: Repository interfaces (from `internal/domain/repository/`) are mocked using `testify/mock`. Services never touch a real database in unit tests.
 
@@ -95,6 +98,9 @@ The project uses five testing layers, each building on the one below.
 - Catalog version demotion triggers CRD/CR cleanup from the cluster
 - Reconciliation errors are reported via the CR's status conditions and operator logs
 - Deletion of the AssetHub CR cleanly removes all managed resources
+- **Pure reconciler**: `ReconcileAssetHub` produces ConfigMap with `CLUSTER_ROLE` for all three clusterRole values (development/testing/production); `ReconcileCatalogVersionStatus` returns correct status for valid/invalid lifecycle stages
+- **Controller** (fake K8s client): reconcile produces ConfigMap with `CLUSTER_ROLE`; operator sets owner references on existing CatalogVersion CRs; CatalogVersion status updated after reconciliation; no CatalogVersion CRs in namespace → no error
+- **K8s CR Manager** (fake K8s client): `CreateOrUpdate` creates new CRs with correct spec and annotations; updates existing CRs idempotently; `Delete` removes CRs; delete of nonexistent CR is idempotent
 
 **Framework**: Go `testing` + `sigs.k8s.io/controller-runtime/pkg/envtest` (simulated Kubernetes API server — no real cluster required)
 
@@ -112,7 +118,7 @@ Each feature area is tested at the appropriate layers:
 | Enum management | X | X | X | X | |
 | Copy entity type / copy attributes | X | X | X | X | |
 | Catalog version CRUD | X | X | X | X | |
-| Lifecycle promotion/demotion | X | X | X | X | X |
+| Lifecycle promotion/demotion + CR management | X | X | X | X | X |
 | Entity instance CRUD + versioning | X | X | X | X | |
 | Containment traversal + cascade delete | X | X | X | X | |
 | Forward/reverse reference queries | X | X | X | X | |
@@ -121,6 +127,9 @@ Each feature area is tested at the appropriate layers:
 | RBAC enforcement (all 4 roles) | X | | X | X | |
 | Version history + comparison/diff | X | X | X | X | |
 | CRD/CR generation | X | | | | X |
+| CatalogVersion CRD types + DeepCopy | X | | | | |
+| CatalogVersion CR management (K8s) | X | | | | X |
+| ClusterRole / stage filtering | X | | X | | X |
 | Operator reconciliation | | | | | X |
 | Association map visualization | | | | X | |
 
@@ -166,7 +175,21 @@ Containment involves hierarchy management, cascade operations, and namespace sco
 - **API tests**: Verify sub-resource URL patterns (`GET /{parent-type}/{id}/{contained-type}`). Verify name uniqueness is enforced within parent scope, not globally. Verify 404 when accessing a contained entity via a non-existent parent.
 - **Unit tests**: Verify that the cycle detection algorithm correctly rejects containment associations that would create cycles, including multi-level cycles (A→B→C→A) and self-containment.
 
-### 5.4 Catalog Version Scoping
+### 5.4 CatalogVersion CR Management and Cluster Role
+
+CatalogVersion CRs bridge the database and K8s for discovery. Cluster role controls data visibility.
+
+- **Unit tests**: Verify `CatalogVersionCRManager` interface — `CreateOrUpdate` creates/updates CRs with correct spec, annotations, and entity type names; `Delete` is idempotent. Verify `SanitizeK8sName` produces valid K8s names from arbitrary version labels. Verify `AllowedStages` returns correct lifecycle stages for each clusterRole value.
+- **Unit tests (service)**: Verify `Promote` calls `CreateOrUpdate` with correct lifecycle stage; `Demote` to development calls `Delete`; `Demote` to testing calls `CreateOrUpdate` (not `Delete`). Verify crManager=nil gracefully skips CR operations (DB-only mode). Verify `ListCatalogVersions` and `GetCatalogVersion` filter by `allowedStages`.
+- **Operator tests (pure reconciler)**: Verify `ReconcileAssetHub` produces ConfigMap with `CLUSTER_ROLE` for all three clusterRole values. Verify `ReconcileCatalogVersionStatus` returns correct ready/message for valid lifecycle stages.
+- **Operator tests (controller)**: Verify reconcile sets owner references on CatalogVersion CRs, updates status, and handles empty namespace.
+
+**Coverage targets**:
+- 100% on pure reconciler functions, CatalogVersion types (DeepCopy), SanitizeK8sName, K8sCRManager
+- ≥90% on controller (excluding SetupWithManager) and CatalogVersionService promotion/demotion with CR operations
+- Documented exceptions per uncovered line
+
+### 5.5 Catalog Version Scoping
 
 Catalog version scoping is the core isolation mechanism for the operational API:
 

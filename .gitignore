@@ -21,10 +21,19 @@ node_modules/
 dist/
 .env
 .env.local
+__screenshots__/
 
 # Build artifacts
 *.log
+/api-server
+/operator
 
 # Local working notes
 pl.txt
 pr.md
+
+# Claude Code local files
+.claude/settings.json
+.claude/ltm/state.json
+.claude/ltm/stats.json
+.claude/ltm/server.json

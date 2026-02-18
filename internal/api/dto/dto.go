@@ -1,0 +1,173 @@
+package dto
+
+import "time"
+
+// === Entity Type DTOs ===
+
+type CreateEntityTypeRequest struct {
+	Name        string `json:"name" validate:"required"`
+	Description string `json:"description"`
+}
+
+type EntityTypeResponse struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type EntityTypeVersionResponse struct {
+	ID           string    `json:"id"`
+	EntityTypeID string    `json:"entity_type_id"`
+	Version      int       `json:"version"`
+	Description  string    `json:"description"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type UpdateEntityTypeRequest struct {
+	Description string `json:"description"`
+}
+
+type CopyEntityTypeRequest struct {
+	SourceVersion int    `json:"source_version"`
+	NewName       string `json:"new_name" validate:"required"`
+}
+
+// === Attribute DTOs ===
+
+type CreateAttributeRequest struct {
+	Name        string `json:"name" validate:"required"`
+	Description string `json:"description"`
+	Type        string `json:"type" validate:"required"`
+	EnumID      string `json:"enum_id"`
+}
+
+type CopyAttributesRequest struct {
+	SourceEntityTypeID string   `json:"source_entity_type_id" validate:"required"`
+	SourceVersion      int      `json:"source_version" validate:"required"`
+	AttributeNames     []string `json:"attribute_names" validate:"required"`
+}
+
+type ReorderAttributesRequest struct {
+	OrderedIDs []string `json:"ordered_ids" validate:"required"`
+}
+
+type AttributeResponse struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+	EnumID      string `json:"enum_id,omitempty"`
+	Ordinal     int    `json:"ordinal"`
+	Required    bool   `json:"required"`
+}
+
+// === Association DTOs ===
+
+type CreateAssociationRequest struct {
+	SourceEntityTypeID string `json:"source_entity_type_id" validate:"required"`
+	TargetEntityTypeID string `json:"target_entity_type_id" validate:"required"`
+	Type               string `json:"type" validate:"required"`
+	SourceRole         string `json:"source_role"`
+	TargetRole         string `json:"target_role"`
+}
+
+type AssociationResponse struct {
+	ID                  string    `json:"id"`
+	EntityTypeVersionID string    `json:"entity_type_version_id"`
+	TargetEntityTypeID  string    `json:"target_entity_type_id"`
+	Type                string    `json:"type"`
+	SourceRole          string    `json:"source_role"`
+	TargetRole          string    `json:"target_role"`
+	CreatedAt           time.Time `json:"created_at"`
+}
+
+// === Enum DTOs ===
+
+type CreateEnumRequest struct {
+	Name   string   `json:"name" validate:"required"`
+	Values []string `json:"values"`
+}
+
+type UpdateEnumRequest struct {
+	Name string `json:"name" validate:"required"`
+}
+
+type EnumResponse struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type EnumValueResponse struct {
+	ID      string `json:"id"`
+	Value   string `json:"value"`
+	Ordinal int    `json:"ordinal"`
+}
+
+type AddEnumValueRequest struct {
+	Value string `json:"value" validate:"required"`
+}
+
+type ReorderEnumValuesRequest struct {
+	OrderedIDs []string `json:"ordered_ids" validate:"required"`
+}
+
+// === Catalog Version DTOs ===
+
+type CreateCatalogVersionRequest struct {
+	VersionLabel string                 `json:"version_label" validate:"required"`
+	Pins         []CatalogVersionPinDTO `json:"pins"`
+}
+
+type CatalogVersionPinDTO struct {
+	EntityTypeVersionID string `json:"entity_type_version_id"`
+}
+
+type CatalogVersionResponse struct {
+	ID             string    `json:"id"`
+	VersionLabel   string    `json:"version_label"`
+	LifecycleStage string    `json:"lifecycle_stage"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type LifecycleTransitionResponse struct {
+	ID          string    `json:"id"`
+	FromStage   string    `json:"from_stage"`
+	ToStage     string    `json:"to_stage"`
+	PerformedBy string    `json:"performed_by"`
+	PerformedAt time.Time `json:"performed_at"`
+	Notes       string    `json:"notes,omitempty"`
+}
+
+// === Version History DTOs ===
+
+type VersionDiffResponse struct {
+	FromVersion int                  `json:"from_version"`
+	ToVersion   int                  `json:"to_version"`
+	Changes     []VersionDiffItemDTO `json:"changes"`
+}
+
+type VersionDiffItemDTO struct {
+	Name       string `json:"name"`
+	ChangeType string `json:"change_type"`
+	Category   string `json:"category"`
+	OldValue   string `json:"old_value,omitempty"`
+	NewValue   string `json:"new_value,omitempty"`
+}
+
+// === List Response ===
+
+type ListResponse struct {
+	Items interface{} `json:"items"`
+	Total int         `json:"total"`
+}
+
+// === Error Response ===
+
+type ErrorResponse struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}

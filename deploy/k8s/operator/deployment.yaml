@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: assethub-operator
+  namespace: assethub
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: assethub-operator
+  template:
+    metadata:
+      labels:
+        app: assethub-operator
+    spec:
+      serviceAccountName: assethub-operator
+      containers:
+        - name: operator
+          image: assethub/operator:latest
+          imagePullPolicy: Never

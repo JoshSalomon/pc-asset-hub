@@ -28,11 +28,11 @@ Development proceeds through three environment phases, each with increasing infr
 - Deployment on a real cluster
 - Real OpenShift RBAC (SubjectAccessReview against a live API server)
 
-**Milestones completed**: 1–9 (all code written and tested)
+**Milestones completed**: 1–9 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09 (154 test cases), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09 and T-CV.01 through T-CV.31 (185 test cases), using SQLite and mocked/simulated infrastructure.
 
-**Human checkpoint**: After all 154 tests pass with 100% coverage (documented exceptions). This is the first review point.
+**Human checkpoint**: After all 185 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
 ---
 
@@ -65,7 +65,7 @@ Development proceeds through three environment phases, each with increasing infr
 | T-B.10 | Demotion removes CRDs/CRs from kind cluster | E2E | US-12, US-25 |
 | T-B.11 | Operator uninstall cleans up all resources | E2E | US-24 |
 
-**Tests that must pass**: All Phase A tests (T-1.* through T-9.*) plus T-B.01 through T-B.11.
+**Tests that must pass**: All Phase A tests (T-1.* through T-9.*, T-CV.*) plus T-B.01 through T-B.11.
 
 **What cannot be tested**:
 - OpenShift-specific features (Routes, OAuth, OLM)
@@ -103,9 +103,148 @@ Development proceeds through three environment phases, each with increasing infr
 | T-C.10 | Operator upgrade (new version) without data loss | E2E | US-24: rolling upgrades |
 | T-C.11 | Operator uninstall via OLM cleanly removes all components | E2E | US-24: clean uninstall |
 
-**Tests that must pass**: All Phase A + Phase B + Phase C tests.
+**Tests that must pass**: All Phase A + Phase B + Phase C tests (T-C.01 through T-C.85).
 
 **Human checkpoint**: After all tests pass on OCP. Final acceptance.
+
+---
+
+### Entity Type Management — Backend + UI Tests
+
+These tests cover the full entity type management feature: backend API handlers for attributes, associations, enums, and version history, plus UI pages for entity type detail, enum management, and delete confirmation.
+
+#### Backend: Attribute Handler (T-C.12 through T-C.19)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-C.12 | GET /entity-types/:id/attributes → list attributes | API | 200 + attribute array |
+| T-C.13 | POST /entity-types/:id/attributes → add string attribute | API | 201 + new version |
+| T-C.14 | POST /entity-types/:id/attributes → add enum attribute with valid enum_id | API | 201 |
+| T-C.15 | POST /entity-types/:id/attributes with missing name | API | 400 |
+| T-C.16 | POST /entity-types/:id/attributes with duplicate name | API | 409 |
+| T-C.17 | DELETE /entity-types/:id/attributes/:name → remove attribute | API | 204 |
+| T-C.18 | PUT /entity-types/:id/attributes/reorder | API | 200 |
+| T-C.19 | POST /entity-types/:id/attributes as RO | API | 403 |
+
+#### Backend: Association Handler (T-C.20 through T-C.25)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-C.20 | GET /entity-types/:id/associations → list associations | API | 200 + association array |
+| T-C.21 | POST /entity-types/:id/associations → create containment | API | 201 + new version |
+| T-C.22 | POST /entity-types/:id/associations → create directional | API | 201 |
+| T-C.23 | POST /entity-types/:id/associations → containment cycle | API | 422 cycle detected |
+| T-C.24 | DELETE /entity-types/:id/associations/:assocId | API | 204 |
+| T-C.25 | POST /entity-types/:id/associations as RO | API | 403 |
+
+#### Backend: Enum Handler (T-C.26 through T-C.36)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-C.26 | GET /enums → list enums | API | 200 + enum array |
+| T-C.27 | POST /enums → create enum with values | API | 201 |
+| T-C.28 | POST /enums with missing name | API | 400 |
+| T-C.29 | POST /enums with duplicate name | API | 409 |
+| T-C.30 | GET /enums/:id → get enum by ID | API | 200 |
+| T-C.31 | PUT /enums/:id → update enum name | API | 200 |
+| T-C.32 | DELETE /enums/:id (unreferenced) | API | 204 |
+| T-C.33 | DELETE /enums/:id (referenced by attribute) | API | 422 |
+| T-C.34 | GET /enums/:id/values → list enum values | API | 200 + value array |
+| T-C.35 | POST /enums/:id/values → add enum value | API | 201 |
+| T-C.36 | PUT /enums/:id/values/reorder | API | 200 |
+
+#### Backend: Version History Handler (T-C.37 through T-C.39)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-C.37 | GET /entity-types/:id/versions → version history | API | 200 + version array |
+| T-C.38 | GET /entity-types/:id/versions/diff?v1=1&v2=2 → compare versions | API | 200 + diff |
+| T-C.39 | GET /entity-types/:id/versions/diff with nonexistent version | API | 404 |
+
+#### Backend: RBAC — Attributes (T-C.40 through T-C.45)
+
+Role hierarchy: RO (0) < RW (1) < Admin (2) < SuperAdmin (3). Write endpoints require Admin+. Read allowed for all authenticated roles.
+
+| ID | Test Case | Role | Method | Expected |
+|----|-----------|------|--------|----------|
+| T-C.40 | RO can list attributes | RO | GET | 200 |
+| T-C.41 | RW cannot add attribute | RW | POST | 403 |
+| T-C.42 | Admin can add attribute | Admin | POST | 201 |
+| T-C.43 | SuperAdmin can add attribute | SuperAdmin | POST | 201 |
+| T-C.44 | RO cannot remove attribute | RO | DELETE | 403 |
+| T-C.45 | RO cannot reorder attributes | RO | PUT reorder | 403 |
+
+#### Backend: RBAC — Associations (T-C.46 through T-C.50)
+
+| ID | Test Case | Role | Method | Expected |
+|----|-----------|------|--------|----------|
+| T-C.46 | RO can list associations | RO | GET | 200 |
+| T-C.47 | RW cannot create association | RW | POST | 403 |
+| T-C.48 | Admin can create association | Admin | POST | 201 |
+| T-C.49 | SuperAdmin can create association | SuperAdmin | POST | 201 |
+| T-C.50 | RO cannot delete association | RO | DELETE | 403 |
+
+#### Backend: RBAC — Enums (T-C.51 through T-C.59)
+
+| ID | Test Case | Role | Method | Expected |
+|----|-----------|------|--------|----------|
+| T-C.51 | RO can list enums | RO | GET | 200 |
+| T-C.52 | RO can get enum by ID | RO | GET :id | 200 |
+| T-C.53 | RO can list enum values | RO | GET :id/values | 200 |
+| T-C.54 | RW cannot create enum | RW | POST | 403 |
+| T-C.55 | Admin can create enum | Admin | POST | 201 |
+| T-C.56 | SuperAdmin can create enum | SuperAdmin | POST | 201 |
+| T-C.57 | RO cannot update enum | RO | PUT | 403 |
+| T-C.58 | RO cannot delete enum | RO | DELETE | 403 |
+| T-C.59 | RO cannot add enum value | RO | POST values | 403 |
+
+#### Backend: RBAC — Version History (T-C.60 through T-C.61)
+
+Version history endpoints are read-only — all authenticated roles can access.
+
+| ID | Test Case | Role | Method | Expected |
+|----|-----------|------|--------|----------|
+| T-C.60 | RO can list versions | RO | GET | 200 |
+| T-C.61 | RO can compare versions | RO | GET diff | 200 |
+
+#### UI: Delete Confirmation (T-C.62 through T-C.64)
+
+| ID | Test Case | Layer |
+|----|-----------|-------|
+| T-C.62 | Click Delete → confirmation modal shows entity type name | UI |
+| T-C.63 | Cancel confirmation → no deletion | UI |
+| T-C.64 | Confirm deletion → API called, entity removed from list | UI |
+
+#### UI: Entity Type Detail Page (T-C.65 through T-C.78)
+
+| ID | Test Case | Layer |
+|----|-----------|-------|
+| T-C.65 | Navigate to detail page → shows name, description, version | UI |
+| T-C.66 | Attributes tab lists attributes | UI |
+| T-C.67 | Add string attribute via modal | UI |
+| T-C.68 | Add enum attribute — enum selector shown when type=enum | UI |
+| T-C.69 | Remove attribute | UI |
+| T-C.70 | Reorder attributes with up/down buttons | UI |
+| T-C.71 | Associations tab lists associations | UI |
+| T-C.72 | Add containment association via modal | UI |
+| T-C.73 | Cycle detection error displayed (422) | UI |
+| T-C.74 | Remove association | UI |
+| T-C.75 | Version history tab shows versions | UI |
+| T-C.76 | Compare two versions shows diff | UI |
+| T-C.77 | Copy entity type via modal | UI |
+| T-C.78 | RO role hides add/remove controls | UI |
+
+#### UI: Enum Management (T-C.79 through T-C.85)
+
+| ID | Test Case | Layer |
+|----|-----------|-------|
+| T-C.79 | Enum list page shows enums | UI |
+| T-C.80 | Create enum with initial values | UI |
+| T-C.81 | Navigate to enum detail | UI |
+| T-C.82 | Add value to enum | UI |
+| T-C.83 | Remove value from enum | UI |
+| T-C.84 | Reorder enum values | UI |
+| T-C.85 | Delete referenced enum shows error | UI |
 
 ---
 
@@ -624,6 +763,92 @@ Development proceeds through three environment phases, each with increasing infr
 
 ---
 
+## CatalogVersion Discovery CRD
+
+This feature spans multiple layers: operator types → pure reconciler → controller → infrastructure (K8s client) → service → config. Test case IDs use the `T-CV.{sequence}` format.
+
+### CatalogVersion CRD Types (`catalogversion_types_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-CV.01 | CatalogVersion DeepCopy preserves all fields including EntityTypes slice | Unit | All fields match, slices are independent copies |
+| T-CV.02 | CatalogVersion DeepCopy of nil returns nil | Unit | Returns nil |
+| T-CV.03 | CatalogVersion DeepCopyObject returns valid runtime.Object | Unit | Non-nil, correct type |
+| T-CV.04 | CatalogVersionList DeepCopy preserves items | Unit | Items match, mutation of copy doesn't affect original |
+| T-CV.05 | CatalogVersionList DeepCopy of nil returns nil | Unit | Returns nil |
+| T-CV.06 | AddToScheme registers CatalogVersion and CatalogVersionList | Unit | scheme.New succeeds for both GVKs |
+
+### ClusterRole in Reconciler (`reconciler_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-CV.07 | ReconcileAssetHub with clusterRole="production" | Operator | ConfigMap has CLUSTER_ROLE=production |
+| T-CV.08 | ReconcileAssetHub with clusterRole="" | Operator | Defaults to CLUSTER_ROLE=development |
+| T-CV.09 | ReconcileAssetHub with clusterRole="testing" | Operator | ConfigMap has CLUSTER_ROLE=testing |
+| T-CV.10 | ReconcileCatalogVersionStatus with lifecycleStage="testing" | Operator | ready=true, message set |
+| T-CV.11 | ReconcileCatalogVersionStatus with lifecycleStage="production" | Operator | ready=true, message set |
+
+**Regression:** T-D.06 updated — ConfigMap now has 7 entries (adds CLUSTER_ROLE).
+
+### Controller with CatalogVersion (`controller_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-CV.12 | Reconcile with clusterRole="production" creates ConfigMap with CLUSTER_ROLE=production | Operator | ConfigMap data correct |
+| T-CV.13 | Reconcile sets owner reference on existing CatalogVersion CR | Operator | OwnerReferences non-empty, points to AssetHub |
+| T-CV.14 | Reconcile updates CatalogVersion status to ready=true | Operator | Status.Ready=true |
+| T-CV.15 | Reconcile with no CatalogVersion CRs in namespace | Operator | Succeeds without error |
+
+### K8s CR Manager (`cr_manager_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-CV.16 | CreateOrUpdate creates new CatalogVersion CR with correct spec | Unit | CR exists with matching fields |
+| T-CV.17 | CreateOrUpdate updates existing CatalogVersion CR | Unit | CR updated idempotently |
+| T-CV.18 | Delete removes existing CatalogVersion CR | Unit | CR no longer exists |
+| T-CV.19 | Delete of non-existent CR returns no error | Unit | nil error |
+| T-CV.20 | CreateOrUpdate sets all three annotations | Unit | Annotations present with correct values |
+
+### SanitizeK8sName (`cr_manager_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-CV.21 | SanitizeK8sName("Release 2.3") → "release-2-3" | Unit | Valid K8s name |
+| T-CV.22 | SanitizeK8sName with uppercase, underscores, leading/trailing special chars | Unit | Valid K8s name |
+
+### CatalogVersionService K8s Integration (`catalog_version_service_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-CV.23 | Promote dev→testing calls crManager.CreateOrUpdate with lifecycleStage="testing" | Unit | CreateOrUpdate called with correct args |
+| T-CV.24 | Promote testing→production calls crManager.CreateOrUpdate with lifecycleStage="production" | Unit | CreateOrUpdate called |
+| T-CV.25 | Demote testing→development calls crManager.Delete | Unit | Delete called |
+| T-CV.26 | Demote production→testing calls crManager.CreateOrUpdate (not Delete) | Unit | CreateOrUpdate called with stage="testing" |
+| T-CV.27 | Promote with crManager=nil does not panic, still updates DB | Unit | DB updated, no panic |
+| T-CV.28 | ListCatalogVersions with allowedStages=["production"] returns only production versions | Unit | Only production versions returned |
+| T-CV.29 | GetCatalogVersion returns Forbidden when version stage not in allowedStages | Unit | Forbidden error |
+
+### Config (`config_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-CV.30 | CLUSTER_ROLE env var defaults to "development" | Unit | ClusterRole="development" |
+| T-CV.31 | AllowedStages returns correct stages for each clusterRole value | Unit | Correct arrays |
+
+### CatalogVersion Discovery CRD Coverage Targets
+
+| Target | Scope |
+|--------|-------|
+| 100% | Pure reconciler functions (CLUSTER_ROLE, CatalogVersionStatus) |
+| 100% | CatalogVersion types (DeepCopy) |
+| 100% | SanitizeK8sName |
+| 100% | K8sCRManager |
+| ≥90% | Controller (excluding SetupWithManager) |
+| ≥90% | CatalogVersionService promotion/demotion with CR operations |
+| — | Documented exceptions per uncovered line |
+
+---
+
 ## Coverage Criteria Per Milestone (Phase A)
 
 Coverage is measured after each milestone. The target is 100% of the code written in that milestone. Lines that cannot be covered must be individually justified.
@@ -669,6 +894,11 @@ Coverage is measured after each milestone. The target is 100% of the code writte
   - `cmd/operator/main.go`: Operator binary entrypoint, manager setup, signal handling (~10-15 lines)
   - `internal/operator/controllers/`: Any code that directly calls k8s API for applying CRDs to a real cluster (as opposed to envtest). envtest covers reconciliation logic but the actual `kubectl apply`-equivalent code path for dynamic CRD registration may differ. Estimated: ~5-10 lines.
 
+### CatalogVersion Discovery CRD
+- **Target**: 100% of `internal/operator/api/v1alpha1/catalogversion_types.go`, `internal/service/meta/cr_manager.go`, `internal/infrastructure/k8s/cr_manager.go`, `internal/infrastructure/config/` (ClusterRole + AllowedStages)
+- **Target**: ≥90% of CatalogVersion-related code in `internal/operator/controllers/` (excluding SetupWithManager) and `internal/service/meta/catalog_version_service.go` (promotion/demotion with CR operations)
+- **Untestable in Phase A**: None — fake K8s client and mocks cover all code paths
+
 ### Cross-Milestone Untestable Code (Phase A)
 
 The following code paths cannot be covered in Phase A and are deferred to later phases:
@@ -691,10 +921,11 @@ The following code paths cannot be covered in Phase A and are deferred to later 
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 154 test cases (T-1.01 through T-9.09) pass
+- All 185 test cases (T-1.01 through T-9.09 and T-CV.01 through T-CV.31) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview
+- CatalogVersion CRD tests pass with fake K8s client
 
 **Coverage**:
 - 100% code coverage of all business logic, repository implementations, API handlers, UI components, and operator reconciliation logic

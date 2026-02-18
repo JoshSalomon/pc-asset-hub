@@ -1,28 +1,6 @@
 {
   "version": 1,
   "memories": {
-    "mem_416f76ae": {
-      "topic": "AI Asset Hub - Tech Stack Decisions",
-      "tags": [
-        "architecture",
-        "tech-stack",
-        "asset-hub"
-      ],
-      "phase": 0,
-      "difficulty": 0.7,
-      "created_at": "2026-02-12T17:36:23.527040+00:00"
-    },
-    "mem_ee0bef4e": {
-      "topic": "AI Asset Hub - Layered Architecture and Project Structure",
-      "tags": [
-        "architecture",
-        "project-structure",
-        "asset-hub"
-      ],
-      "phase": 0,
-      "difficulty": 0.7,
-      "created_at": "2026-02-12T17:36:23.838858+00:00"
-    },
     "mem_053f25a9": {
       "topic": "AI Asset Hub - Database Schema Design",
       "tags": [
@@ -35,29 +13,6 @@
       "difficulty": 0.8,
       "created_at": "2026-02-12T17:36:24.215804+00:00"
     },
-    "mem_a23c3165": {
-      "topic": "AI Asset Hub - API Design and URL Structure",
-      "tags": [
-        "architecture",
-        "api",
-        "asset-hub"
-      ],
-      "phase": 0,
-      "difficulty": 0.6,
-      "created_at": "2026-02-12T17:36:24.604288+00:00"
-    },
-    "mem_5546f408": {
-      "topic": "AI Asset Hub - Roles and Lifecycle Permissions",
-      "tags": [
-        "architecture",
-        "rbac",
-        "lifecycle",
-        "asset-hub"
-      ],
-      "phase": 0,
-      "difficulty": 0.6,
-      "created_at": "2026-02-12T17:36:24.921505+00:00"
-    },
     "mem_323f5b98": {
       "topic": "AI Asset Hub - Planning Methodology",
       "tags": [
@@ -68,6 +23,164 @@
       "phase": 0,
       "difficulty": 0.5,
       "created_at": "2026-02-12T17:36:25.286235+00:00"
+    },
+    "mem_de11fc07": {
+      "topic": "Go import ordering for golangci-lint (goimports)",
+      "tags": [
+        "go",
+        "lint",
+        "imports",
+        "gotcha"
+      ],
+      "phase": 0,
+      "difficulty": 0.3,
+      "created_at": "2026-02-15T21:17:32.216117+00:00"
+    },
+    "mem_a2c84dfc": {
+      "topic": "SQLite in-memory testing with GORM - key configuration",
+      "tags": [
+        "go",
+        "testing",
+        "sqlite",
+        "gorm",
+        "gotcha"
+      ],
+      "phase": 0,
+      "difficulty": 0.4,
+      "created_at": "2026-02-15T21:17:45.861365+00:00"
+    },
+    "mem_60e44fb1": {
+      "topic": "GORM ORDER BY SQL injection prevention",
+      "tags": [
+        "security",
+        "gorm",
+        "sql-injection",
+        "gotcha"
+      ],
+      "phase": 0,
+      "difficulty": 0.7,
+      "created_at": "2026-02-15T21:17:56.737324+00:00"
+    },
+    "mem_121b80c9": {
+      "topic": "Echo per-route middleware for RBAC enforcement",
+      "tags": [
+        "security",
+        "echo",
+        "rbac",
+        "middleware",
+        "gotcha"
+      ],
+      "phase": 0,
+      "difficulty": 0.5,
+      "created_at": "2026-02-15T21:18:13.316008+00:00"
+    },
+    "mem_40a3baaa": {
+      "topic": "Phase A implementation approach and Ralph Loop lessons",
+      "tags": [
+        "methodology",
+        "ralph-loop",
+        "lessons-learned",
+        "phase-a"
+      ],
+      "phase": 0,
+      "difficulty": 0.5,
+      "created_at": "2026-02-15T21:18:30.147024+00:00"
+    },
+    "mem_cbea494d": {
+      "topic": "Deploying to kind with podman - image loading workaround",
+      "tags": [
+        "kubernetes",
+        "kind",
+        "podman",
+        "docker",
+        "deployment",
+        "containers"
+      ],
+      "phase": 0,
+      "difficulty": 0.7,
+      "created_at": "2026-02-16T12:46:23.261893+00:00"
+    },
+    "mem_89515eca": {
+      "topic": "PC Asset Hub - complete testing strategy across all tiers",
+      "tags": [
+        "testing",
+        "vitest",
+        "playwright",
+        "patternfly",
+        "coverage",
+        "jsdom",
+        "browser-mode",
+        "go-testing",
+        "system-tests"
+      ],
+      "phase": 0,
+      "difficulty": 0.8,
+      "created_at": "2026-02-16T15:40:34.480514+00:00"
+    },
+    "mem_4041ec0c": {
+      "topic": "AI Asset Hub - Tech Stack and Architecture (current)",
+      "tags": [
+        "architecture",
+        "tech-stack",
+        "api",
+        "rbac",
+        "project-structure"
+      ],
+      "phase": 0,
+      "difficulty": 0.7,
+      "created_at": "2026-02-16T15:48:17.526342+00:00"
+    },
+    "mem_362537f9": {
+      "topic": "Phase B implementation - Entity Type Management (Backend API + UI)",
+      "tags": [
+        "phase-b",
+        "implementation",
+        "entity-types",
+        "enums",
+        "browser-testing",
+        "patternfly",
+        "react-router"
+      ],
+      "phase": 0,
+      "difficulty": 0.6,
+      "created_at": "2026-02-16T18:15:14.270789+00:00"
+    },
+    "mem_aaa83856": {
+      "topic": "kubectl context for kind cluster",
+      "tags": [
+        "kubectl",
+        "kind",
+        "context",
+        "gotcha"
+      ],
+      "phase": 0,
+      "difficulty": 0.3,
+      "created_at": "2026-02-17T10:05:17.027738+00:00"
+    },
+    "mem_94f3205a": {
+      "topic": "CatalogVersion CRD and ClusterRole implementation",
+      "tags": [
+        "catalogversion",
+        "crd",
+        "clusterRole",
+        "operator",
+        "k8s"
+      ],
+      "phase": 0,
+      "difficulty": 0.7,
+      "created_at": "2026-02-18T08:45:19.627233+00:00"
+    },
+    "mem_bfaafe9e": {
+      "topic": "Always use --context=kind-assethub with kubectl",
+      "tags": [
+        "kubectl",
+        "context",
+        "kind",
+        "critical"
+      ],
+      "phase": 0,
+      "difficulty": 0.9,
+      "created_at": "2026-02-18T09:46:53.043938+00:00"
     }
   }
 }

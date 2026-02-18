@@ -83,9 +83,11 @@ Deployments reference a fixed catalog version. Once deployed, changes to the und
 
 Each catalog version progresses through lifecycle stages:
 
-1. **Development** — Active editing. Meta configuration is stored in the database only. No CRs are generated.
-2. **Testing** — Catalog version is promoted. CRDs/CRs are generated and applied to the cluster for validation.
-3. **Production** — Catalog version is deployed. CRDs/CRs are applied. The version is frozen.
+1. **Development** — Active editing. Meta configuration is stored in the database only. No CRs are created in K8s. Development-stage catalog versions are mutable and managed entirely via the UI/API.
+2. **Testing** — Catalog version is promoted. A lightweight `CatalogVersion` CR is created in K8s for discovery (applications find available catalog versions via the K8s API). Entity type CRDs (full schema as K8s resources) are a separate, future feature.
+3. **Production** — Catalog version is deployed and frozen. The `CatalogVersion` CR is updated to reflect the production lifecycle stage.
+
+Demoting a catalog version back to Development deletes its `CatalogVersion` CR from K8s.
 
 ## 4. Persistence and Storage
 
@@ -106,11 +108,17 @@ Version management is automatic and handled by the system — no manual version 
 
 ### 4.2 CRDs as Deployment Artifacts
 
-Kubernetes Custom Resources are **not** the source of truth. They are generated artifacts:
+Kubernetes Custom Resources are **not** the source of truth. They are generated artifacts. Two types of CRs are distinguished:
 
-- CRs are generated only when a catalog version is promoted to **testing** or **production**.
-- The operator watches these CRs and reconciles the runtime accordingly.
-- During development, all work happens via the UI/API against the database. No CRs are created.
+**CatalogVersion CRs (discovery artifacts):**
+- Lightweight CRs created when a catalog version is promoted to **testing** or **production**.
+- Contain version label, description, lifecycle stage, and entity type names — just enough for applications to discover available catalog versions via the K8s API.
+- The API server creates CatalogVersion CRs on promotion; the operator reconciles them (sets owner references to the AssetHub CR for garbage collection, updates status conditions).
+- During development, no CRs are created — all work happens via the UI/API against the database.
+
+**Entity type CRDs (future scope):**
+- Full schema-as-CRD artifacts generated from entity type definitions. These would allow entity instances to be represented as native K8s resources.
+- This feature is out of scope for the current implementation and will be addressed in a future phase.
 
 This separation supports:
 - Iterative development workflows (save-in-progress via UI without cluster side effects)
@@ -347,9 +355,100 @@ The role model is designed to be extensible for future additional roles.
 The system is deployed via an operator built with **operator-sdk**. The operator:
 
 - Installs and manages all system components on OpenShift
-- Watches CRDs/CRs generated during catalog version promotion (test/prod)
-- Reconciles the runtime state based on the deployed catalog version
+- Watches `CatalogVersion` CRs created during catalog version promotion (test/prod)
+- Sets owner references on CatalogVersion CRs pointing to the AssetHub CR (enables automatic garbage collection)
+- Updates CatalogVersion CR status conditions
+- Manages a `clusterRole` configuration that controls which lifecycle stages the API server exposes
+- Passes `CLUSTER_ROLE` to the API server ConfigMap
 - Leverages existing OpenShift and Kubernetes capabilities (RBAC, networking, storage) — no duplication of OCP functionality
+
+**Note:** `clusterRole` is separate from infrastructure `environment` — these are orthogonal concerns. `environment` (development/openshift) controls infrastructure behavior (NodePort vs ClusterIP, image pull policy, Routes, RBAC mode). `clusterRole` (development/testing/production) controls data visibility (which catalog version lifecycle stages the API serves).
+
+### 8.3 Cluster Role Configuration
+
+The operator manages a `clusterRole` field on the AssetHub CR that controls which catalog version lifecycle stages the API server exposes:
+
+| clusterRole | Visible lifecycle stages |
+|-------------|--------------------------|
+| `development` (default) | development, testing, production |
+| `testing` | testing, production |
+| `production` | production only |
+
+This enables:
+- **Production clusters** to only serve production catalog versions, preventing accidental exposure of in-progress configurations.
+- **Test clusters** to serve testing and production catalog versions for validation workflows.
+- **Development clusters** to serve all stages for unrestricted development access.
+
+The operator passes the `CLUSTER_ROLE` value to the API server ConfigMap. The API server filters list/get responses for catalog versions accordingly.
+
+### 8.4 Future Enhancement: Centralized Hub with Remote Consuming Clusters
+
+The current architecture assumes a single-cluster deployment where the API server, database, and operator all run together. A future enhancement will support a **hub-and-spoke topology** where one central AssetHub instance serves an entire organization across multiple clusters.
+
+#### Architecture
+
+```
+┌─────────────────────────────────┐
+│       Central Hub Cluster       │
+│                                 │
+│  ┌──────────┐  ┌─────────────┐  │
+│  │ Database │◄─│ API Server  │◄──── authoring (UI, Meta API)
+│  │ (source  │  │ (full stack)│  │
+│  │ of truth)│  │             │  │
+│  └──────────┘  └──────┬──────┘  │
+│                       │         │
+│                       │ Operational API
+│                       ▼         │
+│               ┌──────────────┐  │
+│               │   Operator   │  │
+│               └──────────────┘  │
+└─────────────────────────────────┘
+        │
+        │  remote API access
+        ▼
+┌──────────────────────────┐   ┌──────────────────────────┐
+│   Consuming Cluster A    │   │   Consuming Cluster B    │
+│                          │   │                          │
+│  ┌────────────────────┐  │   │  ┌────────────────────┐  │
+│  │ Operator (local)   │  │   │  │ Operator (local)   │  │
+│  │ syncs CVs from     │  │   │  │ syncs CVs from     │  │
+│  │ central API        │  │   │  │ central API        │  │
+│  └────────────────────┘  │   │  └────────────────────┘  │
+│                          │   │                          │
+│  CatalogVersion CRs     │   │  CatalogVersion CRs     │
+│  (auto-created)          │   │  (auto-created)          │
+└──────────────────────────┘   └──────────────────────────┘
+```
+
+#### Concept
+
+- **Central hub cluster**: Runs the full AssetHub stack (DB, API server, UI, operator). All schema authoring, catalog version creation, and lifecycle management happens here. This is the single source of truth for an organization's AI asset metadata.
+
+- **Consuming clusters**: Run only the operator. The operator connects to the **remote** central API server (not a local DB) and periodically syncs `CatalogVersion` CRs into the local cluster. Applications on the consuming cluster discover available catalog versions via the local K8s API and use the central Operational API for data access.
+
+- **No local promotion**: Consuming clusters do not perform promotion. The central hub promotes catalog versions through the lifecycle. The consuming cluster's operator polls or watches the central API and automatically creates/updates/deletes local `CatalogVersion` CRs to reflect the central state. The `clusterRole` of the consuming cluster determines which lifecycle stages are synced.
+
+#### Key Design Points
+
+- **External DB connection**: The AssetHub CR on the consuming cluster points to the central API server URL instead of a local database. The operator uses this to sync catalog version state.
+
+- **Automatic CR creation**: On consuming clusters, `CatalogVersion` CRs are created without manual promotion. The operator's sync loop detects new or changed catalog versions on the central hub and creates/updates local CRs accordingly. Deletions on the central hub cascade to local CR deletions.
+
+- **Cluster role filtering at sync time**: A consuming cluster with `clusterRole=production` only syncs production-stage catalog versions. A `clusterRole=testing` cluster syncs testing and production. This ensures consuming clusters only see the stages appropriate to their role.
+
+- **Operational API routing**: Applications on consuming clusters use the central API server's Operational API (`/api/data/v1/:catalog-version/...`) for entity instance access. The local `CatalogVersion` CRs provide discovery only — the data lives in the central database.
+
+- **Network requirements**: Consuming clusters need network access to the central API server. This may require cross-cluster networking, ingress routes, or service mesh configuration depending on the infrastructure.
+
+#### Open Questions
+
+| Item | Notes |
+|------|-------|
+| Sync mechanism | Polling interval vs. watch/webhook from central hub |
+| Authentication | How consuming cluster operators authenticate to the central API |
+| Offline resilience | Behavior when the central hub is temporarily unreachable |
+| Multi-tenancy | Whether a single hub can serve multiple organizations with isolation |
+| Data locality | Whether consuming clusters cache entity instance data locally |
 
 ### 8.2 Constraints
 
@@ -480,16 +579,17 @@ Acceptance Criteria:
 ---
 
 **US-9: Promote a catalog version to testing**
-As an RW user, I want to promote a catalog version from Development to Testing, so that CRs are generated and applied to the cluster for validation.
+As an RW user, I want to promote a catalog version from Development to Testing, so that a CatalogVersion CR is created in K8s for discovery and validation.
 
-**Why**: Testing in a real cluster environment is the only way to validate that the meta configuration works correctly with the operator and runtime. Generating CRs at this stage catches deployment issues before production.
+**Why**: Testing in a real cluster environment is the only way to validate that the meta configuration works correctly with the operator and runtime. Creating a CatalogVersion CR at this stage makes the catalog version discoverable via the K8s API and catches deployment issues before production.
 
 Acceptance Criteria:
 - RW (and above) users can promote a catalog version from Development to Testing.
-- On promotion, the system generates CRDs/CRs from the pinned entity definitions and applies them to the cluster.
-- The catalog version status is updated to Testing.
-- If CR generation or application fails, the promotion is rolled back with an error message.
-- RW (and above) users can demote a catalog version back from Testing to Development if testing reveals issues.
+- On promotion, a `CatalogVersion` CR is created in K8s containing: version label, description, lifecycle stage (`testing`), and entity type names from the pinned definitions.
+- Applications can discover the promoted catalog version via the K8s API and use it with the operational API (`/api/data/v1/:catalog-version/...`).
+- The catalog version status is updated to Testing in the database.
+- If CR creation fails, the promotion is rolled back with an error message.
+- RW (and above) users can demote a catalog version back from Testing to Development if testing reveals issues (which deletes the CR).
 - RO users cannot promote or demote; the API returns a 403.
 
 ---
@@ -501,7 +601,8 @@ As an Admin, I want to promote a catalog version from Testing to Production, so 
 
 Acceptance Criteria:
 - Admin (and above) users can promote a catalog version from Testing to Production.
-- On promotion, CRs are applied to the production environment.
+- On promotion, the `CatalogVersion` CR is updated to lifecycle stage `production`.
+- Production environments (clusters with `clusterRole=production`) filter API responses to only serve production catalog versions.
 - The catalog version is frozen — no modifications are allowed by Admin or lower role users.
 - The Operational API begins serving data scoped to this catalog version.
 - Only Super Admin users can modify or demote the catalog version after this point.
@@ -529,7 +630,8 @@ As a Super Admin, I want to take a catalog version out of production, so that it
 
 Acceptance Criteria:
 - Super Admin can demote a catalog version from Production to Testing or Development.
-- The associated CRs are removed from the cluster.
+- On demotion to Testing, the `CatalogVersion` CR is updated with lifecycle stage `testing`.
+- On demotion to Development, the `CatalogVersion` CR is deleted from K8s (development-stage versions do not have CRs).
 - The Operational API stops serving data scoped to the demoted catalog version (or returns an appropriate error to consumers still referencing it).
 - The catalog version data is retained in the database for audit and potential re-promotion.
 - Admin, RW, and RO users cannot demote from production; the API returns a 403.
@@ -712,16 +814,16 @@ Acceptance Criteria:
 ---
 
 **US-25: Operator reconciliation on promotion**
-As a cluster administrator, I want the operator to watch for CRs generated during catalog version promotion and reconcile the runtime state accordingly, so that the cluster reflects the deployed catalog version.
+As a cluster administrator, I want the operator to watch for `CatalogVersion` CRs created during catalog version promotion and reconcile their status and ownership, so that the cluster reflects the deployed catalog version.
 
-**Why**: The operator is the bridge between the database (source of truth) and the cluster runtime. Without reconciliation, promoted catalog versions would exist in the database but have no effect on the running system.
+**Why**: The operator is the bridge between the database (source of truth) and the cluster runtime. Without reconciliation, CatalogVersion CRs would lack owner references (preventing garbage collection) and status conditions (preventing observability).
 
 Acceptance Criteria:
-- The operator watches for CRs generated during catalog version promotion to Testing or Production.
-- When new CRs are detected, the operator reconciles the runtime state to match.
-- If a CR is removed (catalog version demoted), the operator cleans up the corresponding runtime resources.
+- The operator watches for `CatalogVersion` CRs in its managed namespace.
+- When a CatalogVersion CR is detected, the operator sets an owner reference to the AssetHub CR (enabling automatic garbage collection when the AssetHub CR is deleted).
+- The operator updates CatalogVersion CR status conditions (ready state, message).
 - Reconciliation errors are reported via the CR's status conditions and operator logs.
-- The operator does not modify the database — it only reads CRs and manages cluster-side resources.
+- The operator does not modify the database — it only manages CatalogVersion CRs on the cluster side.
 
 ### Meta Operations UI
 
@@ -924,10 +1026,12 @@ The following items are acknowledged but not yet fully specified:
 | Item | Notes |
 |------|-------|
 | ID calculation strategy | How entity IDs are generated (UUID, hash, deterministic from name+version, etc.) |
-| Exact CRD schema | Structure of the generated CRs for test/prod deployment |
+| Exact CRD schema | Partially resolved: `CatalogVersion` CRD defined for discovery. Entity type CRD schema (full schema-as-CRD) remains open. |
+| Entity type CRDs | Full schema-as-CRD feature where entity type definitions become native K8s CRDs. Future scope — separate from CatalogVersion discovery CRs. |
 | Catalog version creation workflow | How an author assembles a catalog version from entity definition versions — manual selection vs. automatic "snapshot current state" |
 | Concurrent editing model | Optimistic locking, pessimistic locking, or merge-based conflict resolution |
 | Ad-hoc query language | Whether complex cross-entity queries (beyond filter+sort) will be needed in the future |
 | Predefined queries | Which standard queries are provided out of the box |
 | Entity instance versioning depth | Whether full version history is retained or only N recent versions |
 | Technology choices | Backend language/framework, UI framework, API style (REST vs. GraphQL) |
+| Centralized hub topology | Hub-and-spoke deployment where consuming clusters sync CatalogVersion CRs from a central API. See Section 8.4. |
