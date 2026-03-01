@@ -37,12 +37,68 @@ import {
 } from '@patternfly/react-core'
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
 import { api, setAuthRole } from './api/client'
-import type { EntityType, CatalogVersion, Role } from './types'
+import type { EntityType, CatalogVersion, ContainmentTreeNode, Role } from './types'
 import EntityTypeDetailPage from './pages/meta/EntityTypeDetailPage'
 import EnumListPage from './pages/meta/EnumListPage'
 import EnumDetailPage from './pages/meta/EnumDetailPage'
+import CatalogVersionDetailPage from './pages/meta/CatalogVersionDetailPage'
 
 const ROLES: Role[] = ['RO', 'RW', 'Admin', 'SuperAdmin']
+
+function TreeNodeRow({
+  node,
+  depth,
+  selectedVersions,
+  onToggle,
+  onVersionChange,
+}: {
+  node: ContainmentTreeNode
+  depth: number
+  selectedVersions: Record<string, string>
+  onToggle: (entityTypeId: string, checked: boolean) => void
+  onVersionChange: (entityTypeId: string, versionId: string) => void
+}) {
+  const isChecked = !!selectedVersions[node.entity_type.id]
+  const latestVersionId = node.versions.find(v => v.version === node.latest_version)?.id || node.versions[0]?.id || ''
+  const selectedVersionId = selectedVersions[node.entity_type.id] || latestVersionId
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '0.35rem 0', marginLeft: `${depth * 1.5}rem` }}>
+        <input
+          type="checkbox"
+          aria-label={node.entity_type.name}
+          checked={isChecked}
+          onChange={(e) => onToggle(node.entity_type.id, e.target.checked)}
+          style={{ marginRight: '0.5rem' }}
+        />
+        <span style={{ flex: 1, fontWeight: node.children.length > 0 ? 600 : 400 }}>
+          {node.entity_type.name}
+        </span>
+        <select
+          aria-label={`Version for ${node.entity_type.name}`}
+          value={selectedVersionId}
+          onChange={(e) => onVersionChange(node.entity_type.id, e.target.value)}
+          style={{ marginLeft: '0.5rem', minWidth: '4rem' }}
+        >
+          {node.versions.map((v) => (
+            <option key={v.id} value={v.id}>V{v.version}</option>
+          ))}
+        </select>
+      </div>
+      {node.children.map((child) => (
+        <TreeNodeRow
+          key={child.entity_type.id}
+          node={child}
+          depth={depth + 1}
+          selectedVersions={selectedVersions}
+          onToggle={onToggle}
+          onVersionChange={onVersionChange}
+        />
+      ))}
+    </>
+  )
+}
 
 function App() {
   const navigate = useNavigate()
@@ -82,10 +138,17 @@ function App() {
   // Delete catalog version confirmation
   const [deleteCvTarget, setDeleteCvTarget] = useState<CatalogVersion | null>(null)
 
+  // Stage filter
+  const [stageFilter, setStageFilter] = useState('')
+  const [stageFilterOpen, setStageFilterOpen] = useState(false)
+
   // Create Catalog Version modal
   const [createCvOpen, setCreateCvOpen] = useState(false)
   const [newCvLabel, setNewCvLabel] = useState('')
   const [createCvError, setCreateCvError] = useState<string | null>(null)
+  const [cvTree, setCvTree] = useState<ContainmentTreeNode[]>([])
+  const [cvSelectedVersions, setCvSelectedVersions] = useState<Record<string, string>>({})
+  const [cvEtLoading, setCvEtLoading] = useState(false)
 
   // Sync role to API client
   useEffect(() => {
@@ -112,7 +175,7 @@ function App() {
     setCvLoading(true)
     setCvError(null)
     try {
-      const res = await api.catalogVersions.list()
+      const res = await api.catalogVersions.list(stageFilter ? { stage: stageFilter } : undefined)
       setCatalogVersions(res.items || [])
       setCvTotal(res.total)
     } catch (e) {
@@ -120,15 +183,15 @@ function App() {
     } finally {
       setCvLoading(false)
     }
-  }, [])
+  }, [stageFilter])
 
-  // Load data on mount and tab change
+  // Load data on mount, tab change, and route change (e.g., navigating back from detail page)
   const activeTab = getActiveTab()
   useEffect(() => {
     setAuthRole(role)
-    if (activeTab === 'entityTypes') loadEntityTypes()
-    if (activeTab === 'catalogVersions') loadCatalogVersions()
-  }, [activeTab, role, loadEntityTypes, loadCatalogVersions])
+    if (activeTab === 'entityTypes' && location.pathname === '/') loadEntityTypes()
+    if (activeTab === 'catalogVersions' && location.pathname === '/catalog-versions') loadCatalogVersions()
+  }, [activeTab, role, location.pathname, loadEntityTypes, loadCatalogVersions])
 
   // Create entity type
   const handleCreateEntityType = async () => {
@@ -158,14 +221,107 @@ function App() {
     }
   }
 
+  // Load containment tree for CV creation
+  const loadCvTree = async () => {
+    setCvEtLoading(true)
+    try {
+      const tree = await api.entityTypes.containmentTree()
+      setCvTree(tree || [])
+    } catch { /* ignore */ }
+    setCvEtLoading(false)
+  }
+
+  // Collect all entity type IDs from tree nodes recursively
+  const collectDescendantIds = (nodes: ContainmentTreeNode[]): string[] => {
+    const ids: string[] = []
+    for (const node of nodes) {
+      ids.push(node.entity_type.id)
+      ids.push(...collectDescendantIds(node.children))
+    }
+    return ids
+  }
+
+  // Collect all ancestor IDs for a given entity type ID in the tree
+  const collectAncestorIds = (nodes: ContainmentTreeNode[], targetId: string, path: string[] = []): string[] | null => {
+    for (const node of nodes) {
+      if (node.entity_type.id === targetId) return path
+      const result = collectAncestorIds(node.children, targetId, [...path, node.entity_type.id])
+      if (result !== null) return result
+    }
+    return null
+  }
+
+  // Find a node by ID in the tree
+  const findNode = (nodes: ContainmentTreeNode[], id: string): ContainmentTreeNode | null => {
+    for (const node of nodes) {
+      if (node.entity_type.id === id) return node
+      const found = findNode(node.children, id)
+      if (found) return found
+    }
+    return null
+  }
+
+  // Get the latest version ID for a given entity type node
+  const getLatestVersionId = (node: ContainmentTreeNode): string => {
+    const latest = node.versions.find(v => v.version === node.latest_version)
+    return latest?.id || node.versions[0]?.id || ''
+  }
+
+  // Handle checkbox toggle with cascade logic
+  const handleTreeSelect = (entityTypeId: string, checked: boolean) => {
+    setCvSelectedVersions(prev => {
+      const next = { ...prev }
+      if (checked) {
+        // Select this node with its latest version
+        const node = findNode(cvTree, entityTypeId)
+        if (node) {
+          next[entityTypeId] = getLatestVersionId(node)
+          // Auto-select all descendants recursively
+          const descendantIds = collectDescendantIds(node.children)
+          for (const did of descendantIds) {
+            const dNode = findNode(cvTree, did)
+            if (dNode && !next[did]) {
+              next[did] = getLatestVersionId(dNode)
+            }
+          }
+          // Auto-select all ancestors up to root
+          const ancestorIds = collectAncestorIds(cvTree, entityTypeId) || []
+          for (const aid of ancestorIds) {
+            const aNode = findNode(cvTree, aid)
+            if (aNode && !next[aid]) {
+              next[aid] = getLatestVersionId(aNode)
+            }
+          }
+        }
+      } else {
+        // Deselect this node
+        delete next[entityTypeId]
+        // Deselect all descendants recursively
+        const node = findNode(cvTree, entityTypeId)
+        if (node) {
+          const descendantIds = collectDescendantIds(node.children)
+          for (const did of descendantIds) {
+            delete next[did]
+          }
+        }
+        // Do NOT deselect ancestors
+      }
+      return next
+    })
+  }
+
   // Create catalog version
   const handleCreateCatalogVersion = async () => {
     if (!newCvLabel.trim()) return
     setCreateCvError(null)
     try {
-      await api.catalogVersions.create({ version_label: newCvLabel.trim() })
+      const pins = Object.values(cvSelectedVersions)
+        .filter(Boolean)
+        .map((versionId) => ({ entity_type_version_id: versionId }))
+      await api.catalogVersions.create({ version_label: newCvLabel.trim(), pins: pins.length > 0 ? pins : undefined })
       setCreateCvOpen(false)
       setNewCvLabel('')
+      setCvSelectedVersions({})
       loadCatalogVersions()
     } catch (e) {
       setCreateCvError(e instanceof Error ? e.message : 'Failed to create')
@@ -314,9 +470,27 @@ function App() {
 
       <Toolbar>
         <ToolbarContent>
+          <ToolbarItem>
+            <Select
+              isOpen={stageFilterOpen}
+              selected={stageFilter || 'all'}
+              onSelect={(_e, value) => { setStageFilter(value === 'all' ? '' : value as string); setStageFilterOpen(false) }}
+              onOpenChange={setStageFilterOpen}
+              toggle={(ref: React.Ref<MenuToggleElement>) => (
+                <MenuToggle ref={ref} onClick={() => setStageFilterOpen(!stageFilterOpen)} isExpanded={stageFilterOpen}>
+                  Stage: {stageFilter || 'All'}
+                </MenuToggle>
+              )}
+            >
+              <SelectOption value="all">All</SelectOption>
+              <SelectOption value="development">Development</SelectOption>
+              <SelectOption value="testing">Testing</SelectOption>
+              <SelectOption value="production">Production</SelectOption>
+            </Select>
+          </ToolbarItem>
           {canCreate && (
             <ToolbarItem>
-              <Button variant="primary" onClick={() => setCreateCvOpen(true)}>Create Catalog Version</Button>
+              <Button variant="primary" onClick={() => { setCreateCvOpen(true); loadCvTree() }}>Create Catalog Version</Button>
             </ToolbarItem>
           )}
           <ToolbarItem>
@@ -344,7 +518,11 @@ function App() {
           <Tbody>
             {catalogVersions.map((cv) => (
               <Tr key={cv.id}>
-                <Td>{cv.version_label}</Td>
+                <Td>
+                  <Button variant="link" isInline onClick={() => navigate(`/catalog-versions/${cv.id}`)}>
+                    {cv.version_label}
+                  </Button>
+                </Td>
                 <Td><Label color={stageColor(cv.lifecycle_stage)}>{cv.lifecycle_stage}</Label></Td>
                 <Td>{new Date(cv.created_at).toLocaleString()}</Td>
                 {canCreate && (
@@ -356,7 +534,10 @@ function App() {
                         )}
                       </span>
                       <span style={{ minWidth: '5.5rem' }}>
-                        {cv.lifecycle_stage !== 'development' && (
+                        {cv.lifecycle_stage === 'testing' && (
+                          <Button variant="warning" size="sm" onClick={() => handleDemote(cv.id, cv.lifecycle_stage)}>Demote</Button>
+                        )}
+                        {cv.lifecycle_stage === 'production' && role === 'SuperAdmin' && (
                           <Button variant="warning" size="sm" onClick={() => handleDemote(cv.id, cv.lifecycle_stage)}>Demote</Button>
                         )}
                       </span>
@@ -413,6 +594,7 @@ function App() {
     >
       <Routes>
         <Route path="/entity-types/:id" element={<EntityTypeDetailPage role={role} />} />
+        <Route path="/catalog-versions/:id" element={<CatalogVersionDetailPage role={role} />} />
         <Route path="/enums/:id" element={<EnumDetailPage role={role} />} />
         <Route path="*" element={
           <PageSection>
@@ -473,9 +655,9 @@ function App() {
 
       {/* Create Catalog Version Modal */}
       <Modal
-        variant={ModalVariant.small}
+        variant={ModalVariant.medium}
         isOpen={createCvOpen}
-        onClose={() => { setCreateCvOpen(false); setCreateCvError(null) }}
+        onClose={() => { setCreateCvOpen(false); setCreateCvError(null); setCvSelectedVersions({}) }}
       >
         <ModalHeader title="Create Catalog Version" />
         <ModalBody>
@@ -485,10 +667,34 @@ function App() {
               <TextInput id="cv-label" value={newCvLabel} onChange={(_e, v) => setNewCvLabel(v)} isRequired placeholder="e.g. v1.0" />
             </FormGroup>
           </Form>
+          <Title headingLevel="h4" style={{ marginTop: '1.5rem', marginBottom: '0.5rem' }}>Entity Types to Include</Title>
+          {cvEtLoading ? (
+            <Spinner aria-label="Loading entity types" />
+          ) : cvTree.length === 0 ? (
+            <EmptyState><EmptyStateBody>No entity types available.</EmptyStateBody></EmptyState>
+          ) : (
+            <div>
+              {cvTree.map((node) => (
+                <TreeNodeRow
+                  key={node.entity_type.id}
+                  node={node}
+                  depth={0}
+                  selectedVersions={cvSelectedVersions}
+                  onToggle={handleTreeSelect}
+                  onVersionChange={(etId, versionId) => {
+                    setCvSelectedVersions(prev => ({ ...prev, [etId]: versionId }))
+                  }}
+                />
+              ))}
+            </div>
+          )}
+          {Object.keys(cvSelectedVersions).length > 0 && (
+            <Alert variant="info" title={`${Object.keys(cvSelectedVersions).length} entity type(s) selected`} isInline style={{ marginTop: '0.5rem' }} />
+          )}
         </ModalBody>
         <ModalFooter>
           <Button variant="primary" onClick={handleCreateCatalogVersion} isDisabled={!newCvLabel.trim()}>Create</Button>
-          <Button variant="link" onClick={() => { setCreateCvOpen(false); setCreateCvError(null) }}>Cancel</Button>
+          <Button variant="link" onClick={() => { setCreateCvOpen(false); setCreateCvError(null); setCvSelectedVersions({}) }}>Cancel</Button>
         </ModalFooter>
       </Modal>
 

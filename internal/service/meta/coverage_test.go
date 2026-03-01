@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	domainerrors "github.com/project-catalyst/pc-asset-hub/internal/domain/errors"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/repository/mocks"
 	"github.com/project-catalyst/pc-asset-hub/internal/service/meta"
@@ -384,4 +385,147 @@ func TestListAssociations(t *testing.T) {
 	assocs, err := svc.ListAssociations(context.Background(), "et1")
 	require.NoError(t, err)
 	assert.Len(t, assocs, 1)
+}
+
+func TestListAllAssociations_BothDirections(t *testing.T) {
+	assocRepo := new(mocks.MockAssociationRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewAssociationService(assocRepo, etvRepo, nil)
+
+	// Entity type A (et-a) has an outgoing containment to B (et-b)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-b").Return(
+		&models.EntityTypeVersion{ID: "v-b1", EntityTypeID: "et-b", Version: 1}, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(
+		&models.EntityTypeVersion{ID: "v-a1", EntityTypeID: "et-a", Version: 1}, nil)
+
+	// B has no outgoing associations
+	assocRepo.On("ListByVersion", mock.Anything, "v-b1").Return([]*models.Association{}, nil)
+
+	// B is targeted by A's containment association
+	assocRepo.On("ListByTargetEntityType", mock.Anything, "et-b").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "v-a1", TargetEntityTypeID: "et-b", Type: models.AssociationTypeContainment, SourceRole: "parent", TargetRole: "child"},
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "v-a1").Return(
+		&models.EntityTypeVersion{ID: "v-a1", EntityTypeID: "et-a", Version: 1}, nil)
+
+	result, err := svc.ListAllAssociations(context.Background(), "et-b")
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	assert.Equal(t, "incoming", result[0].Direction)
+	assert.Equal(t, "et-a", result[0].SourceEntityTypeID)
+	assert.Equal(t, models.AssociationTypeContainment, result[0].Type)
+}
+
+func TestListAllAssociations_OutgoingAndIncoming(t *testing.T) {
+	assocRepo := new(mocks.MockAssociationRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewAssociationService(assocRepo, etvRepo, nil)
+
+	// A contains B, B references C
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-b").Return(
+		&models.EntityTypeVersion{ID: "v-b1", EntityTypeID: "et-b", Version: 1}, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(
+		&models.EntityTypeVersion{ID: "v-a1", EntityTypeID: "et-a", Version: 1}, nil)
+
+	// B has an outgoing directional reference to C
+	assocRepo.On("ListByVersion", mock.Anything, "v-b1").Return([]*models.Association{
+		{ID: "assoc-bc", EntityTypeVersionID: "v-b1", TargetEntityTypeID: "et-c", Type: models.AssociationTypeDirectional},
+	}, nil)
+
+	// B is also targeted by A
+	assocRepo.On("ListByTargetEntityType", mock.Anything, "et-b").Return([]*models.Association{
+		{ID: "assoc-ab", EntityTypeVersionID: "v-a1", TargetEntityTypeID: "et-b", Type: models.AssociationTypeContainment},
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "v-a1").Return(
+		&models.EntityTypeVersion{ID: "v-a1", EntityTypeID: "et-a", Version: 1}, nil)
+
+	result, err := svc.ListAllAssociations(context.Background(), "et-b")
+	require.NoError(t, err)
+	require.Len(t, result, 2)
+
+	// One outgoing, one incoming
+	var outCount, inCount int
+	for _, r := range result {
+		if r.Direction == "outgoing" {
+			outCount++
+		} else {
+			inCount++
+		}
+	}
+	assert.Equal(t, 1, outCount)
+	assert.Equal(t, 1, inCount)
+}
+
+func TestListAllAssociations_ListByTargetError(t *testing.T) {
+	assocRepo := new(mocks.MockAssociationRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewAssociationService(assocRepo, etvRepo, nil)
+
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-b").Return(
+		&models.EntityTypeVersion{ID: "v-b1", EntityTypeID: "et-b", Version: 1}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v-b1").Return([]*models.Association{}, nil)
+	assocRepo.On("ListByTargetEntityType", mock.Anything, "et-b").Return(([]*models.Association)(nil), domainerrors.NewNotFound("Association", "et-b"))
+
+	_, err := svc.ListAllAssociations(context.Background(), "et-b")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestListAllAssociations_GetByIDError(t *testing.T) {
+	assocRepo := new(mocks.MockAssociationRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewAssociationService(assocRepo, etvRepo, nil)
+
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-b").Return(
+		&models.EntityTypeVersion{ID: "v-b1", EntityTypeID: "et-b", Version: 1}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v-b1").Return([]*models.Association{}, nil)
+	assocRepo.On("ListByTargetEntityType", mock.Anything, "et-b").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "v-a1", TargetEntityTypeID: "et-b", Type: models.AssociationTypeContainment},
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "v-a1").Return(nil, domainerrors.NewNotFound("EntityTypeVersion", "v-a1"))
+
+	_, err := svc.ListAllAssociations(context.Background(), "et-b")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestListAllAssociations_GetLatestSourceError(t *testing.T) {
+	assocRepo := new(mocks.MockAssociationRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewAssociationService(assocRepo, etvRepo, nil)
+
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-b").Return(
+		&models.EntityTypeVersion{ID: "v-b1", EntityTypeID: "et-b", Version: 1}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v-b1").Return([]*models.Association{}, nil)
+	assocRepo.On("ListByTargetEntityType", mock.Anything, "et-b").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "v-a1", TargetEntityTypeID: "et-b", Type: models.AssociationTypeContainment},
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "v-a1").Return(
+		&models.EntityTypeVersion{ID: "v-a1", EntityTypeID: "et-a", Version: 1}, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(nil, domainerrors.NewNotFound("EntityTypeVersion", "et-a"))
+
+	_, err := svc.ListAllAssociations(context.Background(), "et-b")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestListAllAssociations_SkipsOldVersions(t *testing.T) {
+	assocRepo := new(mocks.MockAssociationRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewAssociationService(assocRepo, etvRepo, nil)
+
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-b").Return(
+		&models.EntityTypeVersion{ID: "v-b1", EntityTypeID: "et-b", Version: 1}, nil)
+	// A's latest is v-a2, but the incoming association is from v-a1 (old version)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(
+		&models.EntityTypeVersion{ID: "v-a2", EntityTypeID: "et-a", Version: 2}, nil)
+
+	assocRepo.On("ListByVersion", mock.Anything, "v-b1").Return([]*models.Association{}, nil)
+	assocRepo.On("ListByTargetEntityType", mock.Anything, "et-b").Return([]*models.Association{
+		{ID: "assoc-old", EntityTypeVersionID: "v-a1", TargetEntityTypeID: "et-b", Type: models.AssociationTypeContainment},
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "v-a1").Return(
+		&models.EntityTypeVersion{ID: "v-a1", EntityTypeID: "et-a", Version: 1}, nil)
+
+	result, err := svc.ListAllAssociations(context.Background(), "et-b")
+	require.NoError(t, err)
+	// Old version association is skipped
+	assert.Len(t, result, 0)
 }

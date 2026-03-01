@@ -54,6 +54,19 @@ func (r *AssociationGormRepo) ListByVersion(ctx context.Context, entityTypeVersi
 	return assocs, nil
 }
 
+func (r *AssociationGormRepo) ListByTargetEntityType(ctx context.Context, targetEntityTypeID string) ([]*models.Association, error) {
+	var records []gormmodels.Association
+	result := r.db.WithContext(ctx).Where("target_entity_type_id = ?", targetEntityTypeID).Find(&records)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	assocs := make([]*models.Association, len(records))
+	for i := range records {
+		assocs[i] = records[i].ToModel()
+	}
+	return assocs, nil
+}
+
 func (r *AssociationGormRepo) Delete(ctx context.Context, id string) error {
 	result := r.db.WithContext(ctx).Delete(&gormmodels.Association{}, "id = ?", id)
 	if result.Error != nil {

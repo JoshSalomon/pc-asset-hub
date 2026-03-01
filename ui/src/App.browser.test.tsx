@@ -11,6 +11,7 @@ vi.mock('./api/client', () => ({
       list: vi.fn(),
       create: vi.fn(),
       delete: vi.fn(),
+      containmentTree: vi.fn(),
     },
     catalogVersions: {
       list: vi.fn(),
@@ -37,6 +38,47 @@ const mockCatalogVersions = [
   { id: 'cv-3', version_label: 'v3.0', lifecycle_stage: 'production', created_at: '2026-01-03T00:00:00Z', updated_at: '2026-01-03T00:00:00Z' },
 ]
 
+// Containment tree: Server (root) → Tool (child) → Subcomponent (grandchild), plus standalone Dataset
+const mockContainmentTree = [
+  {
+    entity_type: { id: 'et-server', name: 'Server', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+    versions: [
+      { id: 'vs1', entity_type_id: 'et-server', version: 1, description: 'V1', created_at: '2026-01-01T00:00:00Z' },
+    ],
+    latest_version: 1,
+    children: [
+      {
+        entity_type: { id: 'et-tool', name: 'Tool', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+        versions: [
+          { id: 'vt1', entity_type_id: 'et-tool', version: 1, description: 'V1', created_at: '2026-01-01T00:00:00Z' },
+          { id: 'vt2', entity_type_id: 'et-tool', version: 2, description: 'V2', created_at: '2026-01-02T00:00:00Z' },
+        ],
+        latest_version: 2,
+        children: [
+          {
+            entity_type: { id: 'et-sub', name: 'Subcomponent', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+            versions: [
+              { id: 'vsc1', entity_type_id: 'et-sub', version: 1, description: 'V1', created_at: '2026-01-01T00:00:00Z' },
+            ],
+            latest_version: 1,
+            children: [],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    entity_type: { id: 'et-dataset', name: 'Dataset', created_at: '2026-01-02T00:00:00Z', updated_at: '2026-01-02T00:00:00Z' },
+    versions: [
+      { id: 'vd1', entity_type_id: 'et-dataset', version: 1, description: 'V1', created_at: '2026-01-01T00:00:00Z' },
+      { id: 'vd2', entity_type_id: 'et-dataset', version: 2, description: 'V2', created_at: '2026-01-02T00:00:00Z' },
+      { id: 'vd3', entity_type_id: 'et-dataset', version: 3, description: 'V3', created_at: '2026-01-03T00:00:00Z' },
+    ],
+    latest_version: 3,
+    children: [],
+  },
+]
+
 function renderApp(initialPath = '/') {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
@@ -57,6 +99,9 @@ beforeEach(() => {
   ;(api.catalogVersions.delete as Mock).mockResolvedValue(undefined)
   if (api.enums?.list) {
     ;(api.enums.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  }
+  if (api.entityTypes?.containmentTree) {
+    ;(api.entityTypes.containmentTree as Mock).mockResolvedValue(mockContainmentTree)
   }
 })
 
@@ -251,13 +296,29 @@ test('shows correct Promote/Demote buttons per lifecycle stage', async () => {
   await page.getByRole('tab', { name: /Catalog Versions/i }).click()
   await expect.element(page.getByText('v1.0')).toBeVisible()
 
-  // 2 Promote buttons (dev + testing), 2 Demote buttons (testing + production)
+  // Admin: 2 Promote buttons (dev→test, test→prod), 1 Demote button (testing only, not production)
   const promoteButtons = page.getByRole('button', { name: 'Promote' })
   const demoteButtons = page.getByRole('button', { name: 'Demote' })
   await expect.element(promoteButtons.nth(0)).toBeVisible()
   await expect.element(promoteButtons.nth(1)).toBeVisible()
   await expect.element(demoteButtons.nth(0)).toBeVisible()
-  await expect.element(demoteButtons.nth(1)).toBeVisible()
+  // Production Demote should NOT be visible for Admin
+  await expect.element(demoteButtons.nth(1)).not.toBeInTheDocument()
+})
+
+test('Admin cannot see Demote on production catalog version', async () => {
+  renderApp()
+  await expect.element(page.getByText('MLModel')).toBeVisible()
+  await page.getByRole('tab', { name: /Catalog Versions/i }).click()
+  await expect.element(page.getByText('v3.0')).toBeVisible()
+
+  // The production CV row should NOT have a Demote button for Admin
+  const prodRow = page.getByRole('row').filter({ hasText: 'v3.0' })
+  await expect.element(prodRow.getByRole('button', { name: 'Demote' })).not.toBeInTheDocument()
+
+  // Testing CV row SHOULD have Demote for Admin
+  const testRow = page.getByRole('row').filter({ hasText: 'v2.0' })
+  await expect.element(testRow.getByRole('button', { name: 'Demote' })).toBeVisible()
 })
 
 test('shows empty state for catalog versions', async () => {
@@ -290,13 +351,21 @@ test('demotes a testing version to development', async () => {
   expect(api.catalogVersions.demote).toHaveBeenCalledWith('cv-2', 'development')
 })
 
-test('demotes a production version to testing', async () => {
+test('demotes a production version to testing (SuperAdmin)', async () => {
   renderApp()
   await expect.element(page.getByText('MLModel')).toBeVisible()
+
+  // Switch to SuperAdmin — only SuperAdmin can demote from production
+  await page.getByRole('button', { name: /Role: Admin/i }).click()
+  await page.getByRole('option', { name: 'SuperAdmin' }).click()
+  await expect.element(page.getByRole('button', { name: /Role: SuperAdmin/i })).toBeVisible()
+
   await page.getByRole('tab', { name: /Catalog Versions/i }).click()
   await expect.element(page.getByText('v3.0')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Demote' }).nth(1).click()
+  // SuperAdmin sees Demote on production row
+  const prodRow = page.getByRole('row').filter({ hasText: 'v3.0' })
+  await prodRow.getByRole('button', { name: 'Demote' }).click()
   expect(api.catalogVersions.demote).toHaveBeenCalledWith('cv-3', 'testing')
 })
 
@@ -541,4 +610,84 @@ test('catalog version delete error shows alert', async () => {
   await page.getByRole('button', { name: 'Delete' }).first().click()
   await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
   await expect.element(page.getByText('403: forbidden')).toBeVisible()
+})
+
+// === CV Create Containment Tree Tests (T-E.55 through T-E.58) ===
+
+test('T-E.55: CV create modal shows containment tree with indentation', async () => {
+  renderApp()
+  await expect.element(page.getByText('MLModel')).toBeVisible()
+  await page.getByRole('tab', { name: /Catalog Versions/i }).click()
+  await expect.element(page.getByText('v1.0')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Create Catalog Version' }).click()
+  await expect.element(page.getByPlaceholder('e.g. v1.0')).toBeVisible()
+
+  // Tree nodes should be visible
+  await expect.element(page.getByRole('dialog').getByText('Server')).toBeVisible()
+  await expect.element(page.getByRole('dialog').getByText('Tool')).toBeVisible()
+  await expect.element(page.getByRole('dialog').getByText('Dataset')).toBeVisible()
+  // Subcomponent is a grandchild — visible in tree
+  await expect.element(page.getByRole('dialog').getByText('Subcomponent')).toBeVisible()
+})
+
+test('T-E.56: Selecting parent auto-selects all descendants recursively', async () => {
+  renderApp()
+  await expect.element(page.getByText('MLModel')).toBeVisible()
+  await page.getByRole('tab', { name: /Catalog Versions/i }).click()
+  await expect.element(page.getByText('v1.0')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Create Catalog Version' }).click()
+  await expect.element(page.getByRole('dialog').getByText('Server')).toBeVisible()
+
+  // Check Server → Tool and Subcomponent should auto-check
+  await page.getByRole('dialog').getByRole('checkbox', { name: 'Server' }).click()
+
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Server' })).toBeChecked()
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Tool' })).toBeChecked()
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Subcomponent' })).toBeChecked()
+  // Dataset should not be affected
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Dataset' })).not.toBeChecked()
+})
+
+test('T-E.57: Deselecting parent deselects all descendants recursively', async () => {
+  renderApp()
+  await expect.element(page.getByText('MLModel')).toBeVisible()
+  await page.getByRole('tab', { name: /Catalog Versions/i }).click()
+  await expect.element(page.getByText('v1.0')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Create Catalog Version' }).click()
+  await expect.element(page.getByRole('dialog').getByText('Server')).toBeVisible()
+
+  // Select Server first (selects all descendants)
+  await page.getByRole('dialog').getByRole('checkbox', { name: 'Server' }).click()
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Tool' })).toBeChecked()
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Subcomponent' })).toBeChecked()
+
+  // Deselect Server → all descendants deselected
+  await page.getByRole('dialog').getByRole('checkbox', { name: 'Server' }).click()
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Server' })).not.toBeChecked()
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Tool' })).not.toBeChecked()
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Subcomponent' })).not.toBeChecked()
+})
+
+test('T-E.58: Version dropdown shows all versions, defaults to latest', async () => {
+  renderApp()
+  await expect.element(page.getByText('MLModel')).toBeVisible()
+  await page.getByRole('tab', { name: /Catalog Versions/i }).click()
+  await expect.element(page.getByText('v1.0')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Create Catalog Version' }).click()
+  await expect.element(page.getByRole('dialog').getByText('Server')).toBeVisible()
+
+  // Dataset has 3 versions — the version dropdown should exist with latest (V3) selected
+  const datasetSelect = page.getByRole('dialog').getByRole('combobox', { name: 'Version for Dataset' })
+  await expect.element(datasetSelect).toBeVisible()
+  // The selected value should be vd3 (latest version ID for Dataset)
+  await expect.element(datasetSelect).toHaveValue('vd3')
+
+  // Tool has 2 versions — latest is V2
+  const toolSelect = page.getByRole('dialog').getByRole('combobox', { name: 'Version for Tool' })
+  await expect.element(toolSelect).toBeVisible()
+  await expect.element(toolSelect).toHaveValue('vt2')
 })

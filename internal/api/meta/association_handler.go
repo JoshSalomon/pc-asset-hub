@@ -20,7 +20,7 @@ func NewAssociationHandler(svc *svcmeta.AssociationService) *AssociationHandler 
 
 func (h *AssociationHandler) List(c echo.Context) error {
 	entityTypeID := c.Param("entityTypeId")
-	assocs, err := h.svc.ListAssociations(c.Request().Context(), entityTypeID)
+	assocs, err := h.svc.ListAllAssociations(c.Request().Context(), entityTypeID)
 	if err != nil {
 		return mapError(err)
 	}
@@ -31,6 +31,7 @@ func (h *AssociationHandler) List(c echo.Context) error {
 			ID: a.ID, EntityTypeVersionID: a.EntityTypeVersionID,
 			TargetEntityTypeID: a.TargetEntityTypeID, Type: string(a.Type),
 			SourceRole: a.SourceRole, TargetRole: a.TargetRole, CreatedAt: a.CreatedAt,
+			Direction: a.Direction, SourceEntityTypeID: a.SourceEntityTypeID,
 		}
 	}
 	return c.JSON(http.StatusOK, dto.ListResponse{Items: resp, Total: len(resp)})

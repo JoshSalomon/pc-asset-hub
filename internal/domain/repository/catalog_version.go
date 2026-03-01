@@ -18,6 +18,7 @@ type CatalogVersionRepository interface {
 type CatalogVersionPinRepository interface {
 	Create(ctx context.Context, pin *models.CatalogVersionPin) error
 	ListByCatalogVersion(ctx context.Context, catalogVersionID string) ([]*models.CatalogVersionPin, error)
+	ListByEntityTypeVersionIDs(ctx context.Context, etvIDs []string) ([]*models.CatalogVersionPin, error)
 	Delete(ctx context.Context, id string) error
 }
 

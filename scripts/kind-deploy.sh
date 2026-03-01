@@ -1,18 +1,37 @@
 #!/usr/bin/env bash
 #
-# Deploy AI Asset Hub to a local kind cluster.
+# Deploy AI Asset Hub to a Kubernetes cluster.
 #
 # Usage:
-#   ./scripts/kind-deploy.sh          # full deploy (build + create cluster + deploy)
-#   ./scripts/kind-deploy.sh up       # deploy using existing images (skip build)
-#   ./scripts/kind-deploy.sh rebuild  # rebuild images and redeploy (keeps cluster)
-#   ./scripts/kind-deploy.sh teardown # delete the cluster
+#   ./scripts/kind-deploy.sh [command] [kube-cmd]
+#
+# Commands:
+#   deploy   - build images, create cluster, deploy everything (full setup)
+#   up       - create cluster and deploy using existing images (skip build)
+#   rebuild  - rebuild images and redeploy (keep cluster)
+#   teardown - delete the cluster
+#
+# kube-cmd (optional):
+#   The kubectl/oc command (with flags) to use for all cluster operations.
+#   Defaults to "oc". Examples:
+#     oc
+#     kubectl --context kind-assethub
+#     kubectl --context my-cluster --namespace my-ns
+#
+# Examples:
+#   ./scripts/kind-deploy.sh deploy "kubectl --context kind-assethub"
+#   ./scripts/kind-deploy.sh rebuild "oc"
+#   ./scripts/kind-deploy.sh rebuild "kubectl --context kind-assethub"
+#   ./scripts/kind-deploy.sh teardown
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CLUSTER_NAME="assethub"
+
+# Kubernetes CLI command — second positional argument, defaults to "oc"
+KUBE_CMD="${2:-oc}"
 
 # Detect container engine — check that the daemon is actually reachable,
 # not just that the binary exists on PATH.
@@ -34,6 +53,7 @@ if [ "$ENGINE" = "podman" ]; then
 fi
 
 echo "==> Using container engine: $ENGINE"
+echo "==> Using kube command: $KUBE_CMD"
 
 log() { echo "==> $*"; }
 err() { echo "ERROR: $*" >&2; exit 1; }
@@ -72,7 +92,7 @@ create_cluster() {
         --name "$CLUSTER_NAME"
 
     log "Cluster created. Waiting for node to be ready..."
-    kubectl wait --for=condition=Ready node --all --timeout=120s
+    $KUBE_CMD wait --for=condition=Ready node --all --timeout=120s
 }
 
 # ──────────────────────────────────────────────
@@ -117,31 +137,31 @@ load_images() {
 # ──────────────────────────────────────────────
 deploy_resources() {
     log "Deploying namespace..."
-    kubectl apply -f "$PROJECT_ROOT/deploy/k8s/namespace.yaml"
+    $KUBE_CMD apply -f "$PROJECT_ROOT/deploy/k8s/namespace.yaml"
 
     log "Deploying PostgreSQL..."
-    kubectl apply -f "$PROJECT_ROOT/deploy/k8s/postgres/"
+    $KUBE_CMD apply -f "$PROJECT_ROOT/deploy/k8s/postgres/"
 
     log "Waiting for PostgreSQL to be ready..."
-    kubectl -n assethub rollout status statefulset/postgres --timeout=120s
+    $KUBE_CMD -n assethub rollout status statefulset/postgres --timeout=120s
 
     log "Deploying operator CRDs and resources (operator manages API server and UI)..."
-    kubectl apply -f "$PROJECT_ROOT/deploy/k8s/operator/crd.yaml"
-    kubectl apply -f "$PROJECT_ROOT/deploy/k8s/operator/catalogversion-crd.yaml"
-    kubectl apply -f "$PROJECT_ROOT/deploy/k8s/operator/"
+    $KUBE_CMD apply -f "$PROJECT_ROOT/deploy/k8s/operator/crd.yaml"
+    $KUBE_CMD apply -f "$PROJECT_ROOT/deploy/k8s/operator/catalogversion-crd.yaml"
+    $KUBE_CMD apply -f "$PROJECT_ROOT/deploy/k8s/operator/"
 
     log "Deploying API server RBAC..."
-    kubectl apply -f "$PROJECT_ROOT/deploy/k8s/api-server/rbac.yaml"
+    $KUBE_CMD apply -f "$PROJECT_ROOT/deploy/k8s/api-server/rbac.yaml"
 
     log "Waiting for operator to be ready..."
-    kubectl -n assethub rollout status deployment/assethub-operator --timeout=120s
+    $KUBE_CMD -n assethub rollout status deployment/assethub-operator --timeout=120s
 
     log "Waiting for operator-managed deployments..."
     # The operator creates these deployments from the CR; wait for them to appear
     local retries=30
     local delay=2
     for i in $(seq 1 $retries); do
-        if kubectl -n assethub get deployment assethub-api &>/dev/null; then
+        if $KUBE_CMD -n assethub get deployment assethub-api &>/dev/null; then
             break
         fi
         if [ "$i" -eq "$retries" ]; then
@@ -149,8 +169,8 @@ deploy_resources() {
         fi
         sleep "$delay"
     done
-    kubectl -n assethub rollout status deployment/assethub-api --timeout=120s
-    kubectl -n assethub rollout status deployment/assethub-ui --timeout=120s
+    $KUBE_CMD -n assethub rollout status deployment/assethub-api --timeout=120s
+    $KUBE_CMD -n assethub rollout status deployment/assethub-ui --timeout=120s
 }
 
 # ──────────────────────────────────────────────
@@ -159,7 +179,7 @@ deploy_resources() {
 verify() {
     log "Verifying deployment..."
     echo ""
-    kubectl -n assethub get pods
+    $KUBE_CMD -n assethub get pods
     echo ""
 
     # Health check with retries
@@ -172,7 +192,7 @@ verify() {
         fi
         if [ "$i" -eq "$retries" ]; then
             echo "Warning: API health check did not pass after ${retries} attempts."
-            echo "The pods may still be starting. Check with: kubectl -n assethub get pods"
+            echo "The pods may still be starting. Check with: $KUBE_CMD -n assethub get pods"
         else
             sleep "$delay"
         fi
@@ -193,8 +213,8 @@ verify() {
     echo "      -H 'X-User-Role: Admin' | jq ."
     echo ""
     echo "  Useful commands:"
-    echo "    kubectl -n assethub get pods       # list pods"
-    echo "    kubectl -n assethub logs -f <pod>  # stream logs"
+    echo "    $KUBE_CMD -n assethub get pods       # list pods"
+    echo "    $KUBE_CMD -n assethub logs -f <pod>  # stream logs"
     echo "    ./scripts/kind-deploy.sh teardown  # delete cluster"
     echo ""
 }
@@ -215,14 +235,25 @@ rebuild() {
     build_images
     load_images
 
-    log "Restarting deployments..."
-    kubectl -n assethub rollout restart deployment/assethub-operator
-    kubectl -n assethub rollout restart deployment/assethub-api
-    kubectl -n assethub rollout restart deployment/assethub-ui
+    # On kind clusters, rollout restart alone doesn't guarantee new images are used
+    # because imagePullPolicy=Never and the tag (latest) doesn't change. The pod
+    # spec hash stays the same so pods may not be recreated. Deleting pods forces
+    # the deployment controller to create new ones from the updated image cache.
+    if echo "$KUBE_CMD" | grep -q "kind"; then
+        log "Kind cluster detected — deleting pods to force image refresh..."
+        $KUBE_CMD -n assethub delete pods -l app=assethub-operator --wait=false 2>/dev/null || true
+        $KUBE_CMD -n assethub delete pods -l app=assethub-api --wait=false 2>/dev/null || true
+        $KUBE_CMD -n assethub delete pods -l app=assethub-ui --wait=false 2>/dev/null || true
+    else
+        log "Restarting deployments..."
+        $KUBE_CMD -n assethub rollout restart deployment/assethub-operator
+        $KUBE_CMD -n assethub rollout restart deployment/assethub-api
+        $KUBE_CMD -n assethub rollout restart deployment/assethub-ui
+    fi
 
-    kubectl -n assethub rollout status deployment/assethub-operator --timeout=120s
-    kubectl -n assethub rollout status deployment/assethub-api --timeout=120s
-    kubectl -n assethub rollout status deployment/assethub-ui --timeout=120s
+    $KUBE_CMD -n assethub rollout status deployment/assethub-operator --timeout=120s
+    $KUBE_CMD -n assethub rollout status deployment/assethub-api --timeout=120s
+    $KUBE_CMD -n assethub rollout status deployment/assethub-ui --timeout=120s
 
     verify
 }
@@ -251,12 +282,20 @@ case "${1:-deploy}" in
         teardown
         ;;
     *)
-        echo "Usage: $0 {deploy|up|rebuild|teardown}"
+        echo "Usage: $0 {deploy|up|rebuild|teardown} [kube-cmd]"
         echo ""
-        echo "  deploy   - build images, create cluster, deploy everything (full setup)"
-        echo "  up       - create cluster and deploy using existing images (skip build)"
-        echo "  rebuild  - rebuild images and redeploy (keep cluster)"
-        echo "  teardown - delete the cluster"
+        echo "  Commands:"
+        echo "    deploy   - build images, create cluster, deploy everything (full setup)"
+        echo "    up       - create cluster and deploy using existing images (skip build)"
+        echo "    rebuild  - rebuild images and redeploy (keep cluster)"
+        echo "    teardown - delete the cluster"
+        echo ""
+        echo "  kube-cmd (optional, default: oc):"
+        echo "    The kubectl/oc command to use for cluster operations."
+        echo "    Examples:"
+        echo "      $0 deploy \"kubectl --context kind-assethub\""
+        echo "      $0 rebuild \"oc\""
+        echo "      $0 rebuild \"kubectl --context kind-assethub\""
         exit 1
         ;;
 esac

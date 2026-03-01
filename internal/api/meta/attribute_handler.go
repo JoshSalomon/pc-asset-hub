@@ -86,9 +86,61 @@ func (h *AttributeHandler) Reorder(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "reordered"})
 }
 
+func (h *AttributeHandler) Edit(c echo.Context) error {
+	entityTypeID := c.Param("entityTypeId")
+	name := c.Param("name")
+
+	var req dto.UpdateAttributeRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+
+	var newType *models.AttributeType
+	if req.Type != nil {
+		t := models.AttributeType(*req.Type)
+		newType = &t
+	}
+
+	newVersion, err := h.svc.EditAttribute(c.Request().Context(), entityTypeID, name, req.Name, req.Description, newType, req.EnumID)
+	if err != nil {
+		return mapError(err)
+	}
+
+	return c.JSON(http.StatusOK, dto.EntityTypeVersionResponse{
+		ID: newVersion.ID, EntityTypeID: newVersion.EntityTypeID,
+		Version: newVersion.Version, Description: newVersion.Description, CreatedAt: newVersion.CreatedAt,
+	})
+}
+
+func (h *AttributeHandler) CopyAttributes(c echo.Context) error {
+	entityTypeID := c.Param("entityTypeId")
+	var req dto.CopyAttributesRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	if req.SourceEntityTypeID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "source_entity_type_id is required")
+	}
+	if len(req.AttributeNames) == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "attribute_names is required")
+	}
+
+	newVersion, err := h.svc.CopyAttributesFromType(c.Request().Context(), entityTypeID, req.SourceEntityTypeID, req.SourceVersion, req.AttributeNames)
+	if err != nil {
+		return mapError(err)
+	}
+
+	return c.JSON(http.StatusOK, dto.EntityTypeVersionResponse{
+		ID: newVersion.ID, EntityTypeID: newVersion.EntityTypeID,
+		Version: newVersion.Version, Description: newVersion.Description, CreatedAt: newVersion.CreatedAt,
+	})
+}
+
 func RegisterAttributeRoutes(g *echo.Group, h *AttributeHandler, requireAdmin echo.MiddlewareFunc) {
 	g.GET("/entity-types/:entityTypeId/attributes", h.List)
 	g.POST("/entity-types/:entityTypeId/attributes", h.Add, requireAdmin)
+	g.PUT("/entity-types/:entityTypeId/attributes/:name", h.Edit, requireAdmin)
 	g.DELETE("/entity-types/:entityTypeId/attributes/:name", h.Remove, requireAdmin)
 	g.PUT("/entity-types/:entityTypeId/attributes/reorder", h.Reorder, requireAdmin)
+	g.POST("/entity-types/:entityTypeId/attributes/copy", h.CopyAttributes, requireAdmin)
 }

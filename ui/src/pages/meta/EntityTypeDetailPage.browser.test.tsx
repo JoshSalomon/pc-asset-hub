@@ -12,12 +12,15 @@ vi.mock('../../api/client', () => ({
       list: vi.fn(),
       copy: vi.fn(),
       delete: vi.fn(),
+      rename: vi.fn(),
     },
     attributes: {
       list: vi.fn(),
       add: vi.fn(),
       remove: vi.fn(),
       reorder: vi.fn(),
+      edit: vi.fn(),
+      copyFrom: vi.fn(),
     },
     associations: {
       list: vi.fn(),
@@ -45,11 +48,11 @@ const mockEntityType = {
 const mockAttributes = [
   { id: 'a1', name: 'hostname', description: 'The host', type: 'string', ordinal: 0, required: false },
   { id: 'a2', name: 'cpu_count', description: '', type: 'number', ordinal: 1, required: false },
-  { id: 'a3', name: 'status', description: '', type: 'enum', enum_id: 'enum1234abcd', ordinal: 2, required: false },
+  { id: 'a3', name: 'status', description: '', type: 'enum', enum_id: 'enum1', ordinal: 2, required: false },
 ]
 
 const mockAssociations = [
-  { id: 'assoc1', entity_type_version_id: 'v1', target_entity_type_id: 'et-2', type: 'containment', source_role: 'parent', target_role: 'child' },
+  { id: 'assoc1', entity_type_version_id: 'v1', target_entity_type_id: 'et-2', type: 'containment', source_role: 'parent', target_role: 'child', direction: 'outgoing' },
 ]
 
 const mockVersions = [
@@ -83,6 +86,9 @@ beforeEach(() => {
   ;(api.attributes.add as Mock).mockResolvedValue({ id: 'v3', version: 3 })
   ;(api.attributes.remove as Mock).mockResolvedValue(undefined)
   ;(api.attributes.reorder as Mock).mockResolvedValue({ status: 'reordered' })
+  ;(api.attributes.edit as Mock).mockResolvedValue({ id: 'v3', version: 3 })
+  ;(api.attributes.copyFrom as Mock).mockResolvedValue({ id: 'v3', version: 3 })
+  ;(api.entityTypes.rename as Mock).mockResolvedValue({ entity_type: { ...mockEntityType, name: 'NewName' }, was_deep_copy: false })
   ;(api.associations.list as Mock).mockResolvedValue({ items: mockAssociations, total: 1 })
   ;(api.associations.create as Mock).mockResolvedValue({ id: 'v3', version: 3 })
   ;(api.associations.delete as Mock).mockResolvedValue(undefined)
@@ -101,8 +107,8 @@ test('T-C.32: shows entity type name, ID, and dates on overview', async () => {
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
   await expect.element(page.getByText('et-1')).toBeVisible()
-  await expect.element(page.getByText('Name')).toBeVisible()
-  await expect.element(page.getByText('ID')).toBeVisible()
+  await expect.element(page.getByText('Name', { exact: true })).toBeVisible()
+  await expect.element(page.getByText('ID', { exact: true })).toBeVisible()
 })
 
 test('shows back link to entity types list', async () => {
@@ -215,7 +221,7 @@ test('T-C.33: attributes tab lists attributes', async () => {
   await page.getByRole('tab', { name: /Attributes/i }).click()
   await expect.element(page.getByText('hostname')).toBeVisible()
   await expect.element(page.getByText('cpu_count')).toBeVisible()
-  await expect.element(page.getByText('status')).toBeVisible()
+  await expect.element(page.getByText('status', { exact: true })).toBeVisible()
 })
 
 test('attributes tab shows type labels', async () => {
@@ -226,16 +232,16 @@ test('attributes tab shows type labels', async () => {
   // Check that all three attribute types are displayed as labels
   await expect.element(page.getByText('hostname')).toBeVisible()
   await expect.element(page.getByText('cpu_count')).toBeVisible()
-  // 'enum' substring appears in '(enum1234)' too, so use the Label specifically
-  await expect.element(page.getByText('(enum1234)')).toBeVisible()
+  // Enum attribute should show the enum name
+  await expect.element(page.getByText('enum (Status)')).toBeVisible()
 })
 
-test('attributes tab shows enum_id for enum attributes', async () => {
+test('attributes tab shows enum name for enum attributes', async () => {
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
 
   await page.getByRole('tab', { name: /Attributes/i }).click()
-  await expect.element(page.getByText('(enum1234)')).toBeVisible()
+  await expect.element(page.getByText('enum (Status)')).toBeVisible()
 })
 
 test('attributes empty state', async () => {
@@ -336,9 +342,9 @@ test('T-C.38: associations tab lists associations', async () => {
   await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
 
   await page.getByRole('tab', { name: /Associations/i }).click()
+  await expect.element(page.getByText('contains')).toBeVisible()
   await expect.element(page.getByText('Dataset')).toBeVisible()
-  await expect.element(page.getByText('containment')).toBeVisible()
-  await expect.element(page.getByText('parent')).toBeVisible()
+  // Role column shows the other entity's role (target_role for outgoing)
   await expect.element(page.getByText('child')).toBeVisible()
 })
 
@@ -543,4 +549,231 @@ test('load versions error shows alert', async () => {
 
   await page.getByRole('tab', { name: /Version History/i }).click()
   await expect.element(page.getByText('500: versions failed')).toBeVisible()
+})
+
+// === Edit Attribute Modal ===
+
+test('edit attribute opens modal pre-filled with current values', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await expect.element(page.getByText('hostname')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit' }).first().click()
+  await expect.element(page.getByText('Edit Attribute')).toBeVisible()
+
+  // Modal should be pre-filled with the attribute's current name
+  const nameInput = page.getByRole('textbox', { name: /Name/i })
+  await expect.element(nameInput).toHaveValue('hostname')
+})
+
+test('edit attribute submits with new name', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await expect.element(page.getByText('hostname')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit' }).first().click()
+  await expect.element(page.getByText('Edit Attribute')).toBeVisible()
+
+  await page.getByRole('textbox', { name: /Name/i }).fill('host')
+  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
+
+  expect(api.attributes.edit).toHaveBeenCalledWith('et-1', 'hostname', expect.objectContaining({
+    name: 'host',
+  }))
+})
+
+test('edit attribute shows error on failure', async () => {
+  ;(api.attributes.edit as Mock).mockRejectedValue(new Error('409: name conflict'))
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Edit' }).first().click()
+  await page.getByRole('textbox', { name: /Name/i }).fill('cpu_count')
+  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
+
+  await expect.element(page.getByText('409: name conflict')).toBeVisible()
+})
+
+test('edit attribute cancel closes modal', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Edit' }).first().click()
+  await expect.element(page.getByText('Edit Attribute')).toBeVisible()
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  await expect.element(page.getByText('Edit Attribute')).not.toBeInTheDocument()
+})
+
+// === Rename Entity Type ===
+
+test('rename button opens rename modal', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByText('Rename', { exact: true }).click()
+  await expect.element(page.getByText('Rename Entity Type')).toBeVisible()
+})
+
+test('rename submits with new name', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByText('Rename', { exact: true }).click()
+  await page.getByRole('textbox', { name: /New Name/i }).fill('RenamedModel')
+  await page.getByRole('dialog').getByRole('button', { name: 'Rename' }).click()
+
+  expect(api.entityTypes.rename).toHaveBeenCalledWith('et-1', 'RenamedModel', false)
+})
+
+test('rename shows deep copy warning on 409', async () => {
+  ;(api.entityTypes.rename as Mock).mockRejectedValue(new Error('409: DEEP_COPY_REQUIRED'))
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByText('Rename', { exact: true }).click()
+  await page.getByRole('textbox', { name: /New Name/i }).fill('NewName')
+  await page.getByRole('dialog').getByRole('button', { name: 'Rename' }).click()
+
+  await expect.element(page.getByText('Deep Copy Required')).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Create Copy' })).toBeVisible()
+})
+
+test('rename error (non-deep-copy) shows in modal', async () => {
+  ;(api.entityTypes.rename as Mock).mockRejectedValue(new Error('409: name already exists'))
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByText('Rename', { exact: true }).click()
+  await page.getByRole('textbox', { name: /New Name/i }).fill('ExistingName')
+  await page.getByRole('dialog').getByRole('button', { name: 'Rename' }).click()
+
+  await expect.element(page.getByText('409: name already exists')).toBeVisible()
+})
+
+test('rename cancel closes modal', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByText('Rename', { exact: true }).click()
+  await expect.element(page.getByText('Rename Entity Type')).toBeVisible()
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  await expect.element(page.getByText('Rename Entity Type')).not.toBeInTheDocument()
+})
+
+test('RO cannot see edit name button', async () => {
+  renderDetail('RO')
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+  await expect.element(page.getByText('Rename', { exact: true })).not.toBeInTheDocument()
+})
+
+// === Copy Attributes Picker ===
+
+test('copy from button opens copy attributes modal', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await expect.element(page.getByText('hostname')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Copy from...' }).click()
+  await expect.element(page.getByText('Copy Attributes from Another Type')).toBeVisible()
+})
+
+test('copy attributes shows source entity types', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Copy from...' }).click()
+  await expect.element(page.getByText('Copy Attributes from Another Type')).toBeVisible()
+
+  // Source selector should be visible
+  await expect.element(page.getByRole('button', { name: 'Select source type' })).toBeVisible()
+})
+
+test('copy attributes cancel closes modal', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Copy from...' }).click()
+  await expect.element(page.getByText('Copy Attributes from Another Type')).toBeVisible()
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  await expect.element(page.getByText('Copy Attributes from Another Type')).not.toBeInTheDocument()
+})
+
+test('RO cannot see copy from button', async () => {
+  renderDetail('RO')
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await expect.element(page.getByText('hostname')).toBeVisible()
+
+  await expect.element(page.getByRole('button', { name: 'Copy from...' })).not.toBeInTheDocument()
+})
+
+// === Copy Attributes — Enum Name Display ===
+// Note: PatternFly Select dropdowns can't be reliably clicked in browser tests.
+// The enum name display in the copy-from modal is tested by verifying that the
+// main attributes table also resolves enum names correctly (same code path).
+// The copy modal source selection is tested via the system test suite.
+
+test('attributes table shows enum name for enum-type attributes', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await expect.element(page.getByText('hostname')).toBeVisible()
+  // The enum attribute shows resolved enum name, not truncated ID
+  await expect.element(page.getByText('enum (Status)')).toBeVisible()
+})
+
+test('RO cannot see edit buttons on attributes', async () => {
+  renderDetail('RO')
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await expect.element(page.getByText('hostname')).toBeVisible()
+
+  await expect.element(page.getByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+})
+
+// Bidirectional associations should show "references (mutual)" label
+test('Associations tab shows bidirectional as "references (mutual)"', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'assoc-bi', entity_type_version_id: 'v1', target_entity_type_id: 'et-2', type: 'bidirectional', source_role: 'in-group', target_role: 'tools', direction: 'outgoing' },
+    ],
+    total: 1,
+  })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await expect.element(page.getByText('references (mutual)')).toBeVisible()
+  await expect.element(page.getByText('Dataset')).toBeVisible()
+  await expect.element(page.getByRole('gridcell', { name: 'tools', exact: true })).toBeVisible()
+})
+
+// Incoming bidirectional should also show "references (mutual)"
+test('Associations tab shows incoming bidirectional as "references (mutual)"', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'assoc-bi-in', entity_type_version_id: 'v-other', target_entity_type_id: 'et-1', type: 'bidirectional', source_role: 'in-group', target_role: 'tools', direction: 'incoming', source_entity_type_id: 'et-2' },
+    ],
+    total: 1,
+  })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await expect.element(page.getByText('references (mutual)')).toBeVisible()
+  await expect.element(page.getByText('Dataset')).toBeVisible()
+  // For incoming, show the source role (the other entity's role)
+  await expect.element(page.getByRole('gridcell', { name: 'in-group', exact: true })).toBeVisible()
 })

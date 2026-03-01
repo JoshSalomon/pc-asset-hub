@@ -72,6 +72,30 @@ func TestDomainErrorWithWrappedError(t *testing.T) {
 	}
 }
 
+func TestNewDeepCopyRequired(t *testing.T) {
+	err := NewDeepCopyRequired("version is pinned in a non-development catalog")
+	if err.Code != "DEEP_COPY_REQUIRED" {
+		t.Fatalf("expected code DEEP_COPY_REQUIRED, got %s", err.Code)
+	}
+	if err.Message != "version is pinned in a non-development catalog" {
+		t.Fatalf("unexpected message: %s", err.Message)
+	}
+}
+
+func TestIsDeepCopyRequired_True(t *testing.T) {
+	err := NewDeepCopyRequired("version is pinned")
+	if !IsDeepCopyRequired(err) {
+		t.Fatal("IsDeepCopyRequired should return true for DeepCopyRequired error")
+	}
+}
+
+func TestIsDeepCopyRequired_False(t *testing.T) {
+	err := NewConflict("EntityType", "name already exists")
+	if IsDeepCopyRequired(err) {
+		t.Fatal("IsDeepCopyRequired should return false for non-DeepCopyRequired error")
+	}
+}
+
 func TestIsCheckersReturnFalseForNonDomainErrors(t *testing.T) {
 	err := fmt.Errorf("some other error")
 	if IsNotFound(err) {
@@ -91,5 +115,8 @@ func TestIsCheckersReturnFalseForNonDomainErrors(t *testing.T) {
 	}
 	if IsReferencedEnum(err) {
 		t.Fatal("IsReferencedEnum should return false for non-domain error")
+	}
+	if IsDeepCopyRequired(err) {
+		t.Fatal("IsDeepCopyRequired should return false for non-domain error")
 	}
 }

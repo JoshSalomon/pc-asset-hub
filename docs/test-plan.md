@@ -132,6 +132,14 @@ Each feature area is tested at the appropriate layers:
 | ClusterRole / stage filtering | X | | X | | X |
 | Operator reconciliation | | | | | X |
 | Association map visualization | | | | X | |
+| Edit attribute (COW) | X | | X | X | |
+| Rename entity type (simple + deep copy) | X | | X | X | |
+| Catalog version pins + transitions | X | | X | X | |
+| Catalog version stage filter | | | X | X | |
+| Catalog version detail page | | | | X | |
+| CV create with entity selection | X | | X | X | |
+| CV create containment tree + version picker | X | | X | X | |
+| Version snapshot + read-only BOM modal | X | | X | X | |
 
 ---
 
@@ -196,3 +204,64 @@ Catalog version scoping is the core isolation mechanism for the operational API:
 - **API tests**: Verify that every operational API call scoped to a catalog version returns only entity types and instances consistent with that version's pinned entity type definitions.
 - **API tests**: Verify that creating or modifying entities in one catalog version does not affect another.
 - **API tests**: Verify that requests with an invalid catalog version return a clear error. Verify that requests against a demoted (no longer in production) catalog version return an appropriate error rather than stale data.
+
+### 5.6 Edit Attribute
+
+EditAttribute uses the same copy-on-write versioning pattern as AddAttribute/RemoveAttribute.
+
+- **Unit tests (service)**: Verify COW version increment on edit. Verify field updates (name, description, type, enumID) are applied to the correct attribute in the new version. Verify name conflict detection against other attributes in the same version. Verify enum validation (enum type requires enumID, invalid enumID rejected). Verify NotFound for nonexistent attribute. Verify ordinal is preserved.
+- **API tests (handler)**: Verify `PUT /entity-types/:entityTypeId/attributes/:name` returns 200 with new version on success, 403 for RO role, 404 for nonexistent attribute, 409 for name conflict, 400 for invalid enum reference.
+
+### 5.7 Rename Entity Type
+
+Rename is context-sensitive: simple rename when safe, deep copy when the entity type is referenced by non-development catalog versions.
+
+- **Unit tests (service)**: Verify simple rename when entity type is not in any catalog version. Verify simple rename when entity type is in exactly one development-stage catalog version. Verify deep copy is triggered when entity type is in a testing/production catalog version. Verify deep copy is triggered when entity type is in multiple catalog versions. Verify `DeepCopyRequired` error returned when `deepCopyAllowed=false` and deep copy is needed. Verify name uniqueness check. Verify empty name validation.
+- **API tests (handler)**: Verify `POST /entity-types/:id/rename` returns 200 with updated entity type on simple rename, 409 with `deep_copy_required` error when deep copy needed and not allowed, 200 with new entity type and `was_deep_copy=true` when deep copy allowed.
+- **UI tests**: Verify two-step rename flow — first attempt without deep copy, warning modal on 409 response, retry with deep copy on user confirmation.
+
+### 5.8 Copy Attributes Handler
+
+Service method already exists and is tested. This adds the HTTP handler layer.
+
+- **API tests (handler)**: Verify `POST /entity-types/:entityTypeId/attributes/copy` returns 200 with new version on success, 403 for RO role, 409 for name conflict.
+- **UI tests**: Verify copy attributes picker — source entity type selection, attribute checkboxes, conflict indicators for same-name attributes, API call on confirm.
+
+### 5.9 Catalog Version Detail — Pins and Transitions
+
+Two new read-only endpoints expose catalog version internals.
+
+- **Unit tests (service)**: Verify `ListPins` resolves pins to entity type names and version numbers. Verify empty pins list for CV with no pins. Verify NotFound for nonexistent CV. Verify `ListTransitions` returns chronologically ordered history. Verify empty history for new CV.
+- **API tests (handler)**: Verify `GET /catalog-versions/:id/pins` returns 200 with resolved pin data. Verify `GET /catalog-versions/:id/transitions` returns 200 with ordered transitions.
+- **UI tests**: Verify CV detail page renders tabs (Overview, Bill of Materials, Transitions). Verify pins table shows entity type names and versions. Verify transitions table shows ordered history with from/to stages and timestamps.
+
+### 5.10 Catalog Version Create with Entity Selection
+
+The backend already accepts pins in `CreateCatalogVersionRequest`. Tests verify the pin-handling path works correctly end-to-end.
+
+- **Unit tests (service)**: Verify `CreateCatalogVersion` with pins creates pin records linked to the CV. Verify CV creation with empty pins list succeeds (no pins created). Verify pin with invalid entity type version ID is rejected.
+- **API tests (handler)**: Verify `POST /catalog-versions` with `pins` array creates CV and associated pins. Verify response reflects created CV. Verify 403 for RO role.
+- **UI tests**: Verify entity type selection checkboxes in create modal. Verify containment cascade on check. Verify BOM summary panel. Verify pins are sent in API request on create.
+
+### 5.11 Catalog Version Stage Filter
+
+Stage filtering uses existing GORM filter support. Only the handler needs to pass the query parameter through.
+
+- **API tests (handler)**: Verify `GET /catalog-versions?stage=testing` returns only testing+production CVs (respecting allowedStages). Verify omitting stage returns all CVs.
+- **UI tests**: Verify stage filter dropdown in CV list toolbar. Verify list updates on filter change.
+
+### 5.12 CV Create Containment Tree and Version Picker
+
+The CV creation modal shows entity types organized as a containment tree with per-entity version selection.
+
+- **Unit tests (service)**: Verify `GetContainmentTree` builds tree from containment edges. Verify root identification (entities not appearing as target in any containment edge). Verify multi-level nesting. Verify flat entities (no containment) appear as standalone roots. Verify all versions included per node with latest_version set.
+- **API tests (handler)**: Verify `GET /entity-types/containment-tree` returns 200 with tree response. Verify empty tree when no entity types.
+- **UI tests**: Verify tree structure with indentation and parent/child hierarchy. Verify recursive containment cascade selection: selecting a parent auto-selects all descendants (children, grandchildren, etc.); deselecting a parent deselects all descendants recursively; selecting a child auto-selects all ancestors up to the root; deselecting a child does NOT deselect its parent or ancestors. Verify version dropdown shows all versions per entity type, defaults to latest, selection changes pin.
+
+### 5.13 Version Snapshot and Read-Only BOM Modal
+
+The catalog version BOM tab shows pinned entity types. Clicking an entity type name opens a read-only modal displaying the pinned version's attributes and associations.
+
+- **Unit tests (service)**: Verify `GetVersionSnapshot` returns attributes and associations (both outgoing and incoming) for a specific entity type version. Verify enum names resolved for enum-type attributes. Verify target entity type names resolved for associations. Verify error when entity type or version not found.
+- **API tests (handler)**: Verify `GET /entity-types/:id/versions/:version/snapshot` returns 200 with attributes, associations, resolved enum names, and resolved entity type names. Verify 404 for nonexistent entity type or version. Verify 400 for invalid version (negative, zero).
+- **UI tests**: Verify clicking an entity type name in the BOM tab opens a modal (not navigates). Verify modal shows entity type name, pinned version, attributes with resolved enum names (e.g., "boolean (enum)"), and associations with contextual relationship labels (contains/contained by/references/referenced by/references (mutual)) and perspective-correct roles. Verify no edit controls are present in the modal.

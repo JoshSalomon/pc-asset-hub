@@ -32,6 +32,8 @@ export interface Association {
   type: 'containment' | 'directional' | 'bidirectional'
   source_role: string
   target_role: string
+  direction: 'outgoing' | 'incoming'
+  source_entity_type_id?: string
 }
 
 export interface Enum {
@@ -67,6 +69,64 @@ export interface CatalogVersion {
   lifecycle_stage: 'development' | 'testing' | 'production'
   created_at: string
   updated_at: string
+}
+
+export interface CatalogVersionPin {
+  entity_type_name: string
+  entity_type_id: string
+  entity_type_version_id: string
+  version: number
+}
+
+export interface LifecycleTransition {
+  id: string
+  from_stage: string
+  to_stage: string
+  performed_by: string
+  performed_at: string
+  notes?: string
+}
+
+export interface RenameEntityTypeResponse {
+  entity_type: EntityType
+  was_deep_copy: boolean
+}
+
+export interface ContainmentTreeNode {
+  entity_type: EntityType
+  versions: EntityTypeVersion[]
+  latest_version: number
+  children: ContainmentTreeNode[]
+}
+
+export interface SnapshotAttribute {
+  id: string
+  name: string
+  description: string
+  type: string
+  enum_id?: string
+  enum_name?: string
+  ordinal: number
+  required: boolean
+}
+
+export interface SnapshotAssociation {
+  id: string
+  type: string
+  target_entity_type_id: string
+  target_entity_type_name: string
+  source_role: string
+  target_role: string
+  direction: 'outgoing' | 'incoming'
+  source_entity_type_id?: string
+  source_entity_type_name?: string
+}
+
+export interface VersionSnapshot {
+  entity_type: EntityType
+  version: EntityTypeVersion
+  attributes: SnapshotAttribute[]
+  associations: SnapshotAssociation[]
 }
 
 export interface ListResponse<T> {

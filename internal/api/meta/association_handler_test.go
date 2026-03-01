@@ -42,6 +42,7 @@ func TestTC09_ListAssociations(t *testing.T) {
 	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{
 		{ID: "assoc1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment, CreatedAt: time.Now()},
 	}, nil)
+	assocRepo.On("ListByTargetEntityType", mock.Anything, "et1").Return([]*models.Association{}, nil)
 
 	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types/et1/associations", "", apimw.RoleRO)
 	assert.Equal(t, http.StatusOK, rec.Code)

@@ -102,3 +102,17 @@ func IsReferencedEnum(err error) bool {
 	}
 	return false
 }
+
+func NewDeepCopyRequired(detail string) *DomainError {
+	return &DomainError{
+		Code:    "DEEP_COPY_REQUIRED",
+		Message: detail,
+	}
+}
+
+func IsDeepCopyRequired(err error) bool {
+	if e, ok := err.(*DomainError); ok {
+		return e.Code == "DEEP_COPY_REQUIRED"
+	}
+	return false
+}

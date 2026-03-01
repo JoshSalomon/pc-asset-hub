@@ -43,6 +43,9 @@ func (h *CatalogVersionHandler) Create(c echo.Context) error {
 
 func (h *CatalogVersionHandler) List(c echo.Context) error {
 	params := models.ListParams{Limit: 20}
+	if stage := c.QueryParam("stage"); stage != "" {
+		params.Filters = map[string]string{"lifecycle_stage": stage}
+	}
 	items, total, err := h.svc.ListCatalogVersions(c.Request().Context(), params)
 	if err != nil {
 		return mapError(err)
@@ -142,6 +145,42 @@ func (h *CatalogVersionHandler) Delete(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+func (h *CatalogVersionHandler) ListPins(c echo.Context) error {
+	id := c.Param("id")
+	pins, err := h.svc.ListPins(c.Request().Context(), id)
+	if err != nil {
+		return mapError(err)
+	}
+
+	resp := make([]dto.CatalogVersionPinResponse, len(pins))
+	for i, p := range pins {
+		resp[i] = dto.CatalogVersionPinResponse{
+			EntityTypeName:      p.EntityTypeName,
+			EntityTypeID:        p.EntityTypeID,
+			EntityTypeVersionID: p.EntityTypeVersionID,
+			Version:             p.Version,
+		}
+	}
+	return c.JSON(http.StatusOK, dto.ListResponse{Items: resp, Total: len(resp)})
+}
+
+func (h *CatalogVersionHandler) ListTransitions(c echo.Context) error {
+	id := c.Param("id")
+	transitions, err := h.svc.ListTransitions(c.Request().Context(), id)
+	if err != nil {
+		return mapError(err)
+	}
+
+	resp := make([]dto.LifecycleTransitionResponse, len(transitions))
+	for i, lt := range transitions {
+		resp[i] = dto.LifecycleTransitionResponse{
+			ID: lt.ID, FromStage: lt.FromStage, ToStage: lt.ToStage,
+			PerformedBy: lt.PerformedBy, PerformedAt: lt.PerformedAt, Notes: lt.Notes,
+		}
+	}
+	return c.JSON(http.StatusOK, dto.ListResponse{Items: resp, Total: len(resp)})
+}
+
 // RegisterCatalogVersionRoutes registers catalog version routes.
 func RegisterCatalogVersionRoutes(g *echo.Group, h *CatalogVersionHandler, requireRW echo.MiddlewareFunc) {
 	g.GET("/catalog-versions", h.List)
@@ -150,4 +189,6 @@ func RegisterCatalogVersionRoutes(g *echo.Group, h *CatalogVersionHandler, requi
 	g.POST("/catalog-versions/:id/promote", h.Promote, requireRW)
 	g.POST("/catalog-versions/:id/demote", h.Demote, requireRW)
 	g.DELETE("/catalog-versions/:id", h.Delete, requireRW)
+	g.GET("/catalog-versions/:id/pins", h.ListPins)
+	g.GET("/catalog-versions/:id/transitions", h.ListTransitions)
 }

@@ -415,7 +415,7 @@ The current architecture assumes a single-cluster deployment where the API serve
 │  │ central API        │  │   │  │ central API        │  │
 │  └────────────────────┘  │   │  └────────────────────┘  │
 │                          │   │                          │
-│  CatalogVersion CRs     │   │  CatalogVersion CRs     │
+│  CatalogVersion CRs      │   │  CatalogVersion CRs      │
 │  (auto-created)          │   │  (auto-created)          │
 └──────────────────────────┘   └──────────────────────────┘
 ```
@@ -953,6 +953,8 @@ Acceptance Criteria:
 - A creation interface shows all entity types with their available versions.
 - The latest version of each entity type is pre-selected as the default.
 - Admin can change the selected version for any entity type via a version dropdown.
+- The selection interface shows entity types organized as a containment tree. Root entity types (not contained by any other) appear at the top level. Contained entity types appear as indented children of their parent. Entity types with no containment associations appear as standalone roots.
+- Selecting a parent entity type auto-selects all its contained descendants recursively (children, grandchildren, etc.). Deselecting a parent deselects all descendants recursively. A contained entity type cannot be selected unless its containing parent is selected — selecting a child auto-selects all ancestors up to the root. Deselecting a child does NOT deselect its parent or ancestors.
 - A summary/review step shows the complete bill of materials (all entity type + version pairs) before confirmation.
 - On confirmation, the catalog version is created in the Development lifecycle stage.
 - The Admin is navigated to the new catalog version's detail view.
@@ -965,7 +967,8 @@ As an Admin, I want to see a catalog version's full bill of materials and promot
 **Why**: Lifecycle promotion is a critical operation with real cluster-side effects (CR generation and application). The UI must provide clear context and confirmation to prevent accidental promotions and help Admins understand the current state.
 
 Acceptance Criteria:
-- The detail view shows: catalog version identifier, current lifecycle stage (visually indicated with color-coded badge), creation date, and the full bill of materials (entity type name + pinned version, each linking to that version's read-only detail view).
+- The detail view shows: catalog version identifier, current lifecycle stage (visually indicated with color-coded badge), creation date, and the full bill of materials (entity type name + pinned version).
+- Clicking an entity type name in the bill of materials opens a read-only modal showing the pinned version's attributes and associations. The modal displays the entity type name, pinned version number, and two sections. Attributes show name, type (with resolved enum name for enum types, e.g., "boolean (enum)"), and description. Associations show both outgoing and incoming with contextual relationship labels: "contains"/"contained by" for containment, "references"/"referenced by" for directional, "references (mutual)" for bidirectional — each color-coded. The other entity type name and the perspective-correct role are shown (target role for outgoing, source role for incoming). No edit controls are shown — the modal is purely informational.
 - The view shows a history of lifecycle transitions (who promoted/demoted, when).
 - Available actions are displayed based on current stage and user role:
   - Development: "Promote to Testing" (RW and above).
@@ -1035,3 +1038,75 @@ The following items are acknowledged but not yet fully specified:
 | Entity instance versioning depth | Whether full version history is retained or only N recent versions |
 | Technology choices | Backend language/framework, UI framework, API style (REST vs. GraphQL) |
 | Centralized hub topology | Hub-and-spoke deployment where consuming clusters sync CatalogVersion CRs from a central API. See Section 8.4. |
+
+## 11. Technical Debt
+
+Items where the current implementation diverges from the intended behavior described in this PRD. These should be addressed in priority order.
+
+| ID | Item | Current Behavior | Required Behavior |
+|----|------|-----------------|-------------------|
+| TD-1 | Enum deletion safety | Enum delete checks if any attribute references it across all entity type versions (flat check) | Enum cannot be deleted if it is used by any attribute in a **used entity version**. A used entity version is defined as: (1) any entity type version pinned by a catalog version, or (2) the latest version of any entity type (which belongs to an implicit pre-production catalog). Unused historical versions that are not pinned by any CV and are not the latest version should not block deletion. |
+| TD-2 | Catalog version timestamp uniqueness | Two catalog versions can have the same `created_at` timestamp, causing non-deterministic sort order | `created_at` must be unique across catalog versions. The backend should enforce this (e.g., retry with a small delay if a timestamp collision is detected). This ensures deterministic sort order in the CV list (`ORDER BY created_at DESC`). |
+| TD-3 | Association target+role uniqueness | No uniqueness constraint on (target entity type, target role) per source entity type version | Target entity type + target role must be unique per source entity type version. Empty target role is valid (one allowed per target). API should reject duplicates with 409 Conflict. |
+| TD-4 | Copy attributes dialog: enum name display | Enum attributes in the copy-from picker show type label "enum" without the enum name | Enum attributes should display the enum name alongside the type (e.g., "enum (Month)") so users can distinguish between different enum types when deciding which attributes to copy. |
+| TD-5 | Version lineage tracking | Entity type versions are sequential integers with no parent tracking. Version 4 is created from version 3, but this relationship is not recorded. | Each entity type version should record which version it was derived from (`parent_version_id`). This enables: (1) understanding the edit history as a DAG rather than a flat list, (2) supporting future scenarios where editing from a catalog version context creates a branch, (3) detecting when two catalog versions diverge from a common base version. **Decision: deferred for v1.** The current simple incrementing scheme is sufficient for the initial release. Revisit when implementing edit-from-CV-context or version branching features (see FF-3). |
+| TD-6 | Duplicate DTO mapping logic | Attribute and Association model-to-DTO conversion is duplicated across handlers (attribute_handler, association_handler, entity_type_handler VersionSnapshot) | Extract shared helper functions (e.g., `dto.ToAttributeResponse`, `dto.ToAssociationResponse`) to eliminate duplication. All handlers should use these helpers instead of inline conversion loops. |
+| TD-7 | Bidirectional association removal only from source | A bidirectional association can only be removed from the entity type that created it (the source/outgoing side). From the target entity type's Associations tab, the Remove button is hidden for incoming associations, including bidirectional ones. | Since bidirectional associations are symmetric, the Remove button should be available from either side. Removing from the target side should delete the same association record. The UI currently hides Remove for all incoming associations — bidirectional should be an exception. |
+
+## 12. Future Features
+
+Features planned for future implementation. These are not yet specified in detail and are not part of the current scope.
+
+### FF-1: Association Cardinality
+
+Associations should support cardinality constraints on both ends (UML-style multiplicity notation).
+
+**Standard cardinality options:**
+- `0..1` — optional, at most one
+- `0..n` — optional, any number
+- `1` — exactly one (required)
+- `1..n` — at least one (required)
+
+**Custom cardinality:** In some cases, non-standard ranges are needed (e.g., `2..n`, `1..2`, `3..5`). The UI should support:
+- A dropdown for the four standard options above
+- A "Custom" option that reveals min/max input fields for arbitrary ranges
+- Validation that min <= max, both are non-negative integers, and max can be `n` (unbounded)
+
+Cardinality applies to both the source and target ends of the association. For example, a containment association between `Server` and `Tool` might have cardinality `1` on the source (a tool belongs to exactly one server) and `0..n` on the target (a server can have zero or more tools).
+
+**Model changes:** Add `source_cardinality` and `target_cardinality` fields to the Association model (string, e.g., `"0..1"`, `"1..n"`, `"2..5"`). Default: `0..n` on both ends (no constraint) for backward compatibility.
+
+### FF-2: Entity Version Labels
+
+Entity type versions should support user-defined labels for easy identification, grouping, and catalog version assembly.
+
+**Use cases:**
+- Mark a version as "stable", "draft", "reviewed", "release-candidate"
+- Group versions across entity types by label (e.g., label all versions as "Q1-2026-release") for easy catalog version creation
+- Filter entity type versions by label when selecting which versions to pin in a catalog version
+
+**Model changes:** Add a `labels` field to EntityTypeVersion — a set of string tags (e.g., `["stable", "Q1-2026"]`). Labels are free-form text, not predefined.
+
+**UI:** Label badges on the version history table, label filter in the CV creation entity selection dialog, bulk-label operation to tag multiple entity type versions at once.
+
+**API:**
+- `PUT /entity-types/:id/versions/:version/labels` — set labels on a version
+- `GET /entity-types?version_label=stable` — filter entity types by version label
+- CV creation dialog: filter entity types by label to quickly select a coherent set of versions
+
+### FF-3: Version Lineage and Edit-from-CV Context
+
+Entity type versions currently form a flat sequence (V1, V2, V3...). A future enhancement would track version lineage — recording which version each new version was derived from — enabling a DAG-based version history.
+
+**Motivation:** When viewing an entity type from a catalog version's BOM, the user may want to edit it in-place. Today, clicking an entity type from the BOM should show a read-only view of the pinned version (attributes + associations). Editing requires navigating to the entity type management area, making changes (which creates a new version), then updating the CV pin.
+
+A future edit-from-CV workflow could:
+- Create a new version derived from the pinned version (not necessarily the latest)
+- Automatically update the CV pin to the new version
+- Track that V5 was branched from V3 (not V4), enabling divergence detection
+
+**Model changes:** Add `parent_version_id` (nullable UUID FK) to `EntityTypeVersion`. For the initial version (V1), this is null. For subsequent versions, it points to the version that was the base for the copy-on-write operation.
+
+**Depends on:** TD-5 (version lineage tracking).
+
+**Decision:** Deferred. The v1 read-only BOM view is sufficient. Revisit when user feedback indicates demand for in-place editing from the CV context.

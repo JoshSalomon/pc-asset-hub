@@ -178,6 +178,7 @@ Meta API:
   /api/meta/v1/entity-types/{id}/associations
   /api/meta/v1/entity-types/{id}/versions
   /api/meta/v1/entity-types/{id}/versions/{v1}/compare/{v2}
+  /api/meta/v1/entity-types/{id}/versions/{version}/snapshot
   /api/meta/v1/enums
   /api/meta/v1/enums/{id}
   /api/meta/v1/catalog-versions

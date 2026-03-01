@@ -6,7 +6,12 @@ import type {
   Enum,
   EnumValue,
   CatalogVersion,
+  CatalogVersionPin,
+  LifecycleTransition,
+  RenameEntityTypeResponse,
   VersionDiff,
+  ContainmentTreeNode,
+  VersionSnapshot,
   ListResponse,
 } from '../types'
 
@@ -59,6 +64,13 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    rename: (id: string, name: string, deepCopyAllowed = false) =>
+      fetchJSON<RenameEntityTypeResponse>(`${BASE_URL}/entity-types/${id}/rename`, {
+        method: 'POST',
+        body: JSON.stringify({ name, deep_copy_allowed: deepCopyAllowed }),
+      }),
+    containmentTree: () =>
+      fetchJSON<ContainmentTreeNode[]>(`${BASE_URL}/entity-types/containment-tree`),
   },
   attributes: {
     list: (entityTypeId: string) =>
@@ -76,6 +88,16 @@ export const api = {
       fetchJSON(`${BASE_URL}/entity-types/${entityTypeId}/attributes/reorder`, {
         method: 'PUT',
         body: JSON.stringify({ ordered_ids: orderedIds }),
+      }),
+    edit: (entityTypeId: string, name: string, data: { name?: string; description?: string; type?: string; enum_id?: string }) =>
+      fetchJSON<EntityTypeVersion>(`${BASE_URL}/entity-types/${entityTypeId}/attributes/${encodeURIComponent(name)}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    copyFrom: (entityTypeId: string, data: { source_entity_type_id: string; source_version: number; attribute_names: string[] }) =>
+      fetchJSON<EntityTypeVersion>(`${BASE_URL}/entity-types/${entityTypeId}/attributes/copy`, {
+        method: 'POST',
+        body: JSON.stringify(data),
       }),
   },
   associations: {
@@ -128,10 +150,19 @@ export const api = {
       fetchJSON<ListResponse<EntityTypeVersion>>(`${BASE_URL}/entity-types/${entityTypeId}/versions`),
     diff: (entityTypeId: string, v1: number, v2: number) =>
       fetchJSON<VersionDiff>(`${BASE_URL}/entity-types/${entityTypeId}/versions/diff?v1=${v1}&v2=${v2}`),
+    snapshot: (entityTypeId: string, version: number) =>
+      fetchJSON<VersionSnapshot>(`${BASE_URL}/entity-types/${entityTypeId}/versions/${version}/snapshot`),
   },
   catalogVersions: {
-    list: () => fetchJSON<ListResponse<CatalogVersion>>(`${BASE_URL}/catalog-versions`),
+    list: (params?: { stage?: string }) => {
+      const query = params?.stage ? `?stage=${encodeURIComponent(params.stage)}` : ''
+      return fetchJSON<ListResponse<CatalogVersion>>(`${BASE_URL}/catalog-versions${query}`)
+    },
     get: (id: string) => fetchJSON<CatalogVersion>(`${BASE_URL}/catalog-versions/${id}`),
+    listPins: (id: string) =>
+      fetchJSON<ListResponse<CatalogVersionPin>>(`${BASE_URL}/catalog-versions/${id}/pins`),
+    listTransitions: (id: string) =>
+      fetchJSON<ListResponse<LifecycleTransition>>(`${BASE_URL}/catalog-versions/${id}/transitions`),
     create: (data: { version_label: string; pins?: { entity_type_version_id: string }[] }) =>
       fetchJSON<CatalogVersion>(`${BASE_URL}/catalog-versions`, {
         method: 'POST',

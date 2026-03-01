@@ -122,10 +122,75 @@ func (s *AssociationService) DeleteAssociation(ctx context.Context, entityTypeID
 	return newVersion, nil
 }
 
+// DirectedAssociation wraps an Association with direction metadata.
+type DirectedAssociation struct {
+	*models.Association
+	Direction          string // "outgoing" or "incoming"
+	SourceEntityTypeID string // set for incoming associations
+}
+
+// ListAssociations returns associations owned by this entity type (outgoing).
 func (s *AssociationService) ListAssociations(ctx context.Context, entityTypeID string) ([]*models.Association, error) {
 	latest, err := s.etvRepo.GetLatestByEntityType(ctx, entityTypeID)
 	if err != nil {
 		return nil, err
 	}
 	return s.assocRepo.ListByVersion(ctx, latest.ID)
+}
+
+// ListAllAssociations returns both outgoing (owned) and incoming (targeted) associations
+// for an entity type, with direction metadata.
+func (s *AssociationService) ListAllAssociations(ctx context.Context, entityTypeID string) ([]*DirectedAssociation, error) {
+	latest, err := s.etvRepo.GetLatestByEntityType(ctx, entityTypeID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Outgoing: associations owned by this entity type
+	outgoing, err := s.assocRepo.ListByVersion(ctx, latest.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Incoming: associations from other entity types that target this one
+	incoming, err := s.assocRepo.ListByTargetEntityType(ctx, entityTypeID)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []*DirectedAssociation
+	for _, a := range outgoing {
+		result = append(result, &DirectedAssociation{
+			Association: a,
+			Direction:   "outgoing",
+		})
+	}
+
+	// For incoming, resolve the source entity type ID from the version
+	for _, a := range incoming {
+		etv, err := s.etvRepo.GetByID(ctx, a.EntityTypeVersionID)
+		if err != nil {
+			return nil, err
+		}
+		// Skip if this is actually an outgoing association (same entity type targeting itself)
+		if etv.EntityTypeID == entityTypeID {
+			continue
+		}
+		// Only include the latest version's association from each source entity type
+		// to avoid showing duplicate associations from old versions
+		latestSrc, err := s.etvRepo.GetLatestByEntityType(ctx, etv.EntityTypeID)
+		if err != nil {
+			return nil, err
+		}
+		if a.EntityTypeVersionID != latestSrc.ID {
+			continue
+		}
+		result = append(result, &DirectedAssociation{
+			Association:        a,
+			Direction:          "incoming",
+			SourceEntityTypeID: etv.EntityTypeID,
+		})
+	}
+
+	return result, nil
 }

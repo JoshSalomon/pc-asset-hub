@@ -363,3 +363,150 @@ func TestDeleteCatalogVersion_NotFound(t *testing.T) {
 	err := svc.DeleteCatalogVersion(context.Background(), "bad", meta.RoleAdmin)
 	assert.True(t, domainerrors.IsNotFound(err))
 }
+
+// === ListPins and ListTransitions Tests (T-E.22 through T-E.24) ===
+
+func TestTE22_ListPinsResolvedNames(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etRepo := new(mocks.MockEntityTypeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, etRepo, etvRepo)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 3,
+	}, nil)
+	etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{
+		ID: "et1", Name: "Model",
+	}, nil)
+
+	pins, err := svc.ListPins(context.Background(), "cv1")
+	require.NoError(t, err)
+	require.Len(t, pins, 1)
+	assert.Equal(t, "Model", pins[0].EntityTypeName)
+	assert.Equal(t, "et1", pins[0].EntityTypeID)
+	assert.Equal(t, "etv1", pins[0].EntityTypeVersionID)
+	assert.Equal(t, 3, pins[0].Version)
+}
+
+func TestTE23_ListPinsEmpty(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+
+	pins, err := svc.ListPins(context.Background(), "cv1")
+	require.NoError(t, err)
+	assert.Empty(t, pins)
+}
+
+// === ListPins and ListTransitions Error Path Tests ===
+
+func TestListPins_PinRepoError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return(([]*models.CatalogVersionPin)(nil), domainerrors.NewNotFound("Pin", "cv1"))
+
+	_, err := svc.ListPins(context.Background(), "cv1")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestListPins_EtvGetByIDError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1").Return(nil, domainerrors.NewNotFound("EntityTypeVersion", "etv1"))
+
+	_, err := svc.ListPins(context.Background(), "cv1")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestListPins_EtGetByIDError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etRepo := new(mocks.MockEntityTypeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, etRepo, etvRepo)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 3,
+	}, nil)
+	etRepo.On("GetByID", mock.Anything, "et1").Return(nil, domainerrors.NewNotFound("EntityType", "et1"))
+
+	_, err := svc.ListPins(context.Background(), "cv1")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestListTransitions_LtRepoError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	ltRepo := new(mocks.MockLifecycleTransitionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, ltRepo, nil, "", nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+	ltRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return(([]*models.LifecycleTransition)(nil), domainerrors.NewNotFound("LifecycleTransition", "cv1"))
+
+	_, err := svc.ListTransitions(context.Background(), "cv1")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestListTransitions_NotFoundCV(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	ltRepo := new(mocks.MockLifecycleTransitionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, ltRepo, nil, "", nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "bad").Return(nil, domainerrors.NewNotFound("CatalogVersion", "bad"))
+
+	_, err := svc.ListTransitions(context.Background(), "bad")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestTE24_ListTransitionsOrdered(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	ltRepo := new(mocks.MockLifecycleTransitionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, ltRepo, nil, "", nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+	ltRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.LifecycleTransition{
+		{ID: "lt1", CatalogVersionID: "cv1", ToStage: "development", PerformedBy: "system"},
+		{ID: "lt2", CatalogVersionID: "cv1", FromStage: "development", ToStage: "testing", PerformedBy: "admin"},
+	}, nil)
+
+	transitions, err := svc.ListTransitions(context.Background(), "cv1")
+	require.NoError(t, err)
+	require.Len(t, transitions, 2)
+	assert.Equal(t, "development", transitions[0].ToStage)
+	assert.Equal(t, "testing", transitions[1].ToStage)
+}
