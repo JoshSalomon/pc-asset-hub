@@ -1,6 +1,6 @@
 # AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-03-01
+Last updated: 2026-03-02
 
 ---
 
@@ -8,11 +8,11 @@ Last updated: 2026-03-01
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 660 | 100% | 86.3% | — |
+| Backend (Go) | 725 | 100% | 85.8% | — |
 | UI — Unit tests | 62 | 100% | 17.9% | 20.6% |
-| UI — Browser tests (Playwright) | 210 | 100% | 79.3% | 85.6% |
-| UI — System tests (Playwright + live server) | 29 | 100% | — | — |
-| **Total** | **961** | **100%** | — | — |
+| UI — Browser tests (Playwright) | 219 | 100% | — | — |
+| UI — System tests (Playwright + live server) | 30 | 100% | — | — |
+| **Total** | **1036** | **100%** | — | — |
 
 ---
 
@@ -21,7 +21,7 @@ Last updated: 2026-03-01
 | Package | Coverage | Notes |
 |---------|----------|-------|
 | `internal/api/health` | 90.0% | Readyz DB-ping error path |
-| `internal/api/meta` | 90.6% | Handler bind-error branches in some handlers |
+| `internal/api/meta` | 88.8% | Handler bind-error branches in some handlers |
 | `internal/api/middleware` | 100.0% | |
 | `internal/api/operational` | 91.4% | Handler bind-error branches |
 | `internal/domain/errors` | 100.0% | |
@@ -32,9 +32,9 @@ Last updated: 2026-03-01
 | `internal/operator/api/v1alpha1` | 98.2% | `DeepCopyObject` nil-receiver guard |
 | `internal/operator/controllers` | 85.5% | `SetupWithManager`, Route reconciliation, complex controller paths |
 | `internal/operator/crdgen` | 84.2% | `GenerateCRDJSON`, `GenerateCR` error paths |
-| `internal/service/meta` | 93.4% | `ListAttributes` and `ListValues` at 0% (trivial delegators) |
+| `internal/service/meta` | 94.6% | `ListAttributes` and `ListValues` at 0% (trivial delegators) |
 | `internal/service/operational` | 100.0% | |
-| `internal/service/validation` | 91.7% | |
+| `internal/service/validation` | 95.6% | |
 
 ### Excluded from Coverage
 
@@ -108,19 +108,19 @@ These methods are single-line delegations to the repository layer with no branch
 |-----------|-------|--------|
 | `App.browser.test.tsx` | 45 | Pass |
 | `client.browser.test.ts` | 35 | Pass |
-| `EntityTypeDetailPage.browser.test.tsx` | 57 | Pass |
+| `EntityTypeDetailPage.browser.test.tsx` | 65 | Pass |
 | `EntityTypeListPage.browser.test.tsx` | 12 | Pass |
 | `EnumDetailPage.browser.test.tsx` | 24 | Pass |
 | `EnumListPage.browser.test.tsx` | 14 | Pass |
-| `CatalogVersionDetailPage.browser.test.tsx` | 23 | Pass |
-| **Total** | **210** | **100% pass** |
+| `CatalogVersionDetailPage.browser.test.tsx` | 24 | Pass |
+| **Total** | **219** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
 | Test File | Tests | Status |
 |-----------|-------|--------|
-| `App.system.test.ts` | 29 | Pass |
-| **Total** | **29** | **100% pass** |
+| `App.system.test.ts` | 30 | Pass |
+| **Total** | **30** | **100% pass** |
 
 ### Code Coverage (v8 provider)
 
@@ -163,6 +163,22 @@ All new functions added in this session are at 100% coverage:
 | `api/meta/entity_type_handler.go` | `ContainmentTree` | 100% |
 | `api/meta/entity_type_handler.go` | `VersionSnapshot` | 100% |
 | `api/meta/entity_type_handler.go` | `convertTreeNodes` | 100% |
+
+### New Code Coverage (Session 002 — Cardinality + Edit + Names)
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/validation/cardinality.go` | `ValidateCardinality` | 100% |
+| `service/validation/cardinality.go` | `NormalizeCardinality` | 100% |
+| `service/validation/cardinality.go` | `NormalizeSourceCardinality` | 100% |
+| `service/validation/cardinality.go` | All functions | 100% |
+| `service/meta/association_service.go` | `EditAssociation` | 96.2% |
+| `service/meta/association_service.go` | `checkNameConflict` | 100% |
+| `service/meta/association_service.go` | `DeleteAssociation` | 94.7% |
+| `service/meta/association_service.go` | `CreateAssociation` | 96.4% |
+| `api/meta/association_handler.go` | `List` | 100% |
+| `api/meta/association_handler.go` | `Create` | 91.7% |
+| `api/meta/association_handler.go` | `Edit` | 88.9% |
 
 ### Coverage Gaps to Address
 

@@ -28,10 +28,13 @@ export interface Attribute {
 export interface Association {
   id: string
   entity_type_version_id: string
+  name: string
   target_entity_type_id: string
   type: 'containment' | 'directional' | 'bidirectional'
   source_role: string
   target_role: string
+  source_cardinality: string
+  target_cardinality: string
   direction: 'outgoing' | 'incoming'
   source_entity_type_id?: string
 }
@@ -112,11 +115,14 @@ export interface SnapshotAttribute {
 
 export interface SnapshotAssociation {
   id: string
+  name: string
   type: string
   target_entity_type_id: string
   target_entity_type_name: string
   source_role: string
   target_role: string
+  source_cardinality: string
+  target_cardinality: string
   direction: 'outgoing' | 'incoming'
   source_entity_type_id?: string
   source_entity_type_name?: string

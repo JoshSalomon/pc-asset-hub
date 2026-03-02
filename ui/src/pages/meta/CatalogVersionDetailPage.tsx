@@ -333,7 +333,9 @@ export default function CatalogVersionDetailPage({ role }: Props) {
                     <Tr>
                       <Th>Relationship</Th>
                       <Th>Entity Type</Th>
+                      <Th>Name</Th>
                       <Th>Role</Th>
+                      <Th>Cardinality</Th>
                     </Tr>
                   </Thead>
                   <Tbody>
@@ -357,9 +359,11 @@ export default function CatalogVersionDetailPage({ role }: Props) {
                       const role = isOutgoing ? assoc.target_role : assoc.source_role
                       return (
                         <Tr key={assoc.id}>
-                          <Td style={{ width: '10rem' }}><Label color={labelColor}>{relationship}</Label></Td>
+                          <Td><Label color={labelColor}>{relationship}</Label></Td>
                           <Td>{otherName}</Td>
+                          <Td>{assoc.name}</Td>
                           <Td>{role}</Td>
+                          <Td>{isOutgoing ? `${assoc.source_cardinality} → ${assoc.target_cardinality}` : `${assoc.target_cardinality} → ${assoc.source_cardinality}`}</Td>
                         </Tr>
                       )
                     })}

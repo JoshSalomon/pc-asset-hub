@@ -123,6 +123,9 @@ func (m *MockAssociationRepo) ListByTargetEntityType(ctx context.Context, target
 	args := m.Called(ctx, targetEntityTypeID)
 	return args.Get(0).([]*models.Association), args.Error(1)
 }
+func (m *MockAssociationRepo) Update(ctx context.Context, assoc *models.Association) error {
+	return m.Called(ctx, assoc).Error(0)
+}
 func (m *MockAssociationRepo) Delete(ctx context.Context, id string) error {
 	return m.Called(ctx, id).Error(0)
 }

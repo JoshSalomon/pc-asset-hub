@@ -48,9 +48,9 @@ const mockSnapshot = {
     { id: 'a3', name: 'status', description: 'Status flag', type: 'enum', enum_id: 'e1', enum_name: 'boolean', ordinal: 3, required: false },
   ],
   associations: [
-    { id: 'as1', type: 'containment', target_entity_type_id: 'et-2', target_entity_type_name: 'Tool', source_role: 'model', target_role: 'tool', direction: 'outgoing' },
-    { id: 'as2', type: 'containment', target_entity_type_id: 'et-1', target_entity_type_name: 'Model', source_role: 'parent', target_role: 'child', direction: 'incoming', source_entity_type_id: 'et-3', source_entity_type_name: 'Platform' },
-    { id: 'as3', type: 'bidirectional', target_entity_type_id: 'et-4', target_entity_type_name: 'Dataset', source_role: 'model', target_role: 'data', direction: 'outgoing' },
+    { id: 'as1', name: 'tools', type: 'containment', target_entity_type_id: 'et-2', target_entity_type_name: 'Tool', source_role: 'model', target_role: 'tool', source_cardinality: '1', target_cardinality: '0..n', direction: 'outgoing' },
+    { id: 'as2', name: 'platform', type: 'containment', target_entity_type_id: 'et-1', target_entity_type_name: 'Model', source_role: 'parent', target_role: 'child', source_cardinality: '1', target_cardinality: '0..1', direction: 'incoming', source_entity_type_id: 'et-3', source_entity_type_name: 'Platform' },
+    { id: 'as3', name: 'datasets', type: 'bidirectional', target_entity_type_id: 'et-4', target_entity_type_name: 'Dataset', source_role: 'model', target_role: 'data', source_cardinality: '0..n', target_cardinality: '0..n', direction: 'outgoing' },
   ],
 }
 
@@ -274,4 +274,25 @@ test('Transitions tab shows error when listTransitions fails', async () => {
   renderDetail()
   await page.getByRole('tab', { name: 'Transitions' }).click()
   await expect.element(page.getByText('500: server error')).toBeVisible()
+})
+
+// T-E.87: BOM modal associations table includes cardinality
+test('T-E.87: BOM modal associations table includes cardinality column', async () => {
+  renderDetail()
+  // Click BOM tab, then click entity type name to open snapshot
+  await page.getByRole('tab', { name: 'Bill of Materials' }).click()
+  await page.getByRole('button', { name: 'Model' }).click()
+  // Verify cardinality values: outgoing containment "1 → 0..n"
+  await expect.element(page.getByText('1 → 0..n')).toBeVisible()
+})
+
+// BOM modal associations show name column
+test('BOM modal associations show name column', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: 'Bill of Materials' }).click()
+  await page.getByRole('button', { name: 'Model' }).click()
+  // Verify association name "tools" is displayed in the modal
+  await expect.element(page.getByText('tools')).toBeVisible()
+  // Verify "datasets" name from bidirectional association
+  await expect.element(page.getByText('datasets')).toBeVisible()
 })

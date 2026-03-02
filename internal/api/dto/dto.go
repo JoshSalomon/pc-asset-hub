@@ -82,26 +82,39 @@ type RenameEntityTypeResponse struct {
 // === Association DTOs ===
 
 type CreateAssociationRequest struct {
-	SourceEntityTypeID string `json:"source_entity_type_id" validate:"required"`
 	TargetEntityTypeID string `json:"target_entity_type_id" validate:"required"`
 	Type               string `json:"type" validate:"required"`
+	Name               string `json:"name" validate:"required"`
 	SourceRole         string `json:"source_role"`
 	TargetRole         string `json:"target_role"`
+	SourceCardinality  string `json:"source_cardinality"`
+	TargetCardinality  string `json:"target_cardinality"`
 }
 
 type AssociationResponse struct {
 	ID                  string    `json:"id"`
 	EntityTypeVersionID string    `json:"entity_type_version_id"`
+	Name                string    `json:"name"`
 	TargetEntityTypeID  string    `json:"target_entity_type_id"`
 	Type                string    `json:"type"`
 	SourceRole          string    `json:"source_role"`
 	TargetRole          string    `json:"target_role"`
+	SourceCardinality   string    `json:"source_cardinality"`
+	TargetCardinality   string    `json:"target_cardinality"`
 	CreatedAt           time.Time `json:"created_at"`
 	// Direction indicates the perspective: "outgoing" (this entity owns the association)
 	// or "incoming" (this entity is the target of another entity's association).
 	Direction           string    `json:"direction"`
 	// SourceEntityTypeID is set for incoming associations to identify the other side.
 	SourceEntityTypeID  string    `json:"source_entity_type_id,omitempty"`
+}
+
+type UpdateAssociationRequest struct {
+	Name              *string `json:"name"`
+	SourceRole        *string `json:"source_role"`
+	TargetRole        *string `json:"target_role"`
+	SourceCardinality *string `json:"source_cardinality"`
+	TargetCardinality *string `json:"target_cardinality"`
 }
 
 // === Enum DTOs ===
@@ -202,11 +215,14 @@ type SnapshotAttributeResponse struct {
 
 type SnapshotAssociationResponse struct {
 	ID                   string `json:"id"`
+	Name                 string `json:"name"`
 	Type                 string `json:"type"`
 	TargetEntityTypeID   string `json:"target_entity_type_id"`
 	TargetEntityTypeName string `json:"target_entity_type_name"`
 	SourceRole           string `json:"source_role"`
 	TargetRole           string `json:"target_role"`
+	SourceCardinality    string `json:"source_cardinality"`
+	TargetCardinality    string `json:"target_cardinality"`
 	Direction            string `json:"direction"`
 	SourceEntityTypeID   string `json:"source_entity_type_id,omitempty"`
 	SourceEntityTypeName string `json:"source_entity_type_name,omitempty"`

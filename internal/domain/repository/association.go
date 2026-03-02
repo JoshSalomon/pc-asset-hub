@@ -17,6 +17,7 @@ type AssociationRepository interface {
 	GetByID(ctx context.Context, id string) (*models.Association, error)
 	ListByVersion(ctx context.Context, entityTypeVersionID string) ([]*models.Association, error)
 	ListByTargetEntityType(ctx context.Context, targetEntityTypeID string) ([]*models.Association, error)
+	Update(ctx context.Context, assoc *models.Association) error
 	Delete(ctx context.Context, id string) error
 	BulkCopyToVersion(ctx context.Context, fromVersionID string, toVersionID string) error
 	// GetContainmentGraph returns all containment edges across all entity type versions

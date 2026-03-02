@@ -24,30 +24,34 @@ func TestCreateAssociation_EtvRepoGetLatestError(t *testing.T) {
 
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(nil, dbErr)
 
-	_, err := svc.CreateAssociation(context.Background(), "et-a", "et-b", models.AssociationTypeDirectional, "", "")
+	_, err := svc.CreateAssociation(context.Background(), "et-a", "et-b", models.AssociationTypeDirectional, "test_assoc", "", "", "", "")
 	assert.ErrorIs(t, err, dbErr)
 }
 
 func TestCreateAssociation_EtvRepoCreateError(t *testing.T) {
-	svc, _, etvRepo, _ := setupAssocService()
+	svc, assocRepo, etvRepo, attrRepo := setupAssocService()
 
 	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(dbErr)
 
-	_, err := svc.CreateAssociation(context.Background(), "et-a", "et-b", models.AssociationTypeDirectional, "", "")
+	_, err := svc.CreateAssociation(context.Background(), "et-a", "et-b", models.AssociationTypeDirectional, "test_assoc", "", "", "", "")
 	assert.ErrorIs(t, err, dbErr)
 }
 
 func TestCreateAssociation_AttrBulkCopyError(t *testing.T) {
-	svc, _, etvRepo, attrRepo := setupAssocService()
+	svc, assocRepo, etvRepo, attrRepo := setupAssocService()
 
 	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(dbErr)
 
-	_, err := svc.CreateAssociation(context.Background(), "et-a", "et-b", models.AssociationTypeDirectional, "", "")
+	_, err := svc.CreateAssociation(context.Background(), "et-a", "et-b", models.AssociationTypeDirectional, "test_assoc", "", "", "", "")
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -56,11 +60,13 @@ func TestCreateAssociation_AssocBulkCopyError(t *testing.T) {
 
 	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(dbErr)
 
-	_, err := svc.CreateAssociation(context.Background(), "et-a", "et-b", models.AssociationTypeDirectional, "", "")
+	_, err := svc.CreateAssociation(context.Background(), "et-a", "et-b", models.AssociationTypeDirectional, "test_assoc", "", "", "", "")
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -69,12 +75,14 @@ func TestCreateAssociation_AssocCreateError(t *testing.T) {
 
 	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("Create", mock.Anything, mock.Anything).Return(dbErr)
 
-	_, err := svc.CreateAssociation(context.Background(), "et-a", "et-b", models.AssociationTypeDirectional, "", "")
+	_, err := svc.CreateAssociation(context.Background(), "et-a", "et-b", models.AssociationTypeDirectional, "test_assoc", "", "", "", "")
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -87,7 +95,7 @@ func TestDeleteAssociation_GetLatestError(t *testing.T) {
 
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(nil, dbErr)
 
-	_, err := svc.DeleteAssociation(context.Background(), "et-a", "assoc-1")
+	_, err := svc.DeleteAssociation(context.Background(), "et-a", "test_assoc")
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -98,7 +106,7 @@ func TestDeleteAssociation_EtvCreateError(t *testing.T) {
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(dbErr)
 
-	_, err := svc.DeleteAssociation(context.Background(), "et-a", "assoc-1")
+	_, err := svc.DeleteAssociation(context.Background(), "et-a", "test_assoc")
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -110,7 +118,7 @@ func TestDeleteAssociation_AttrBulkCopyError(t *testing.T) {
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(dbErr)
 
-	_, err := svc.DeleteAssociation(context.Background(), "et-a", "assoc-1")
+	_, err := svc.DeleteAssociation(context.Background(), "et-a", "test_assoc")
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -123,7 +131,7 @@ func TestDeleteAssociation_AssocBulkCopyError(t *testing.T) {
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(dbErr)
 
-	_, err := svc.DeleteAssociation(context.Background(), "et-a", "assoc-1")
+	_, err := svc.DeleteAssociation(context.Background(), "et-a", "test_assoc")
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -137,24 +145,7 @@ func TestDeleteAssociation_ListByVersionError(t *testing.T) {
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("ListByVersion", mock.Anything, mock.Anything).Return([]*models.Association(nil), dbErr)
 
-	_, err := svc.DeleteAssociation(context.Background(), "et-a", "assoc-1")
-	assert.ErrorIs(t, err, dbErr)
-}
-
-func TestDeleteAssociation_GetByIDError(t *testing.T) {
-	svc, assocRepo, etvRepo, attrRepo := setupAssocService()
-
-	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
-	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
-	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
-	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	assocRepo.On("ListByVersion", mock.Anything, mock.Anything).Return([]*models.Association{
-		{ID: "new-assoc-1", TargetEntityTypeID: "et-b", Type: models.AssociationTypeContainment},
-	}, nil)
-	assocRepo.On("GetByID", mock.Anything, "assoc-1").Return(nil, dbErr)
-
-	_, err := svc.DeleteAssociation(context.Background(), "et-a", "assoc-1")
+	_, err := svc.DeleteAssociation(context.Background(), "et-a", "test_assoc")
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -167,14 +158,11 @@ func TestDeleteAssociation_DeleteError(t *testing.T) {
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("ListByVersion", mock.Anything, mock.Anything).Return([]*models.Association{
-		{ID: "new-assoc-1", TargetEntityTypeID: "et-b", Type: models.AssociationTypeContainment},
-	}, nil)
-	assocRepo.On("GetByID", mock.Anything, "assoc-1").Return(&models.Association{
-		ID: "assoc-1", TargetEntityTypeID: "et-b", Type: models.AssociationTypeContainment,
+		{ID: "new-assoc-1", Name: "test_assoc", TargetEntityTypeID: "et-b", Type: models.AssociationTypeContainment},
 	}, nil)
 	assocRepo.On("Delete", mock.Anything, "new-assoc-1").Return(dbErr)
 
-	_, err := svc.DeleteAssociation(context.Background(), "et-a", "assoc-1")
+	_, err := svc.DeleteAssociation(context.Background(), "et-a", "test_assoc")
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -217,11 +205,12 @@ func TestAddAttribute_ListByVersionError(t *testing.T) {
 }
 
 func TestAddAttribute_EtvCreateError(t *testing.T) {
-	svc, attrRepo, etvRepo, _, _ := setupAttrService()
+	svc, attrRepo, etvRepo, assocRepo, _ := setupAttrService()
 
 	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(dbErr)
 
 	_, err := svc.AddAttribute(context.Background(), "et1", "attr", "", models.AttributeTypeString, "")
@@ -229,11 +218,12 @@ func TestAddAttribute_EtvCreateError(t *testing.T) {
 }
 
 func TestAddAttribute_AttrBulkCopyError(t *testing.T) {
-	svc, attrRepo, etvRepo, _, _ := setupAttrService()
+	svc, attrRepo, etvRepo, assocRepo, _ := setupAttrService()
 
 	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(dbErr)
 
@@ -247,6 +237,7 @@ func TestAddAttribute_AssocBulkCopyError(t *testing.T) {
 	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(dbErr)
@@ -261,6 +252,7 @@ func TestAddAttribute_AttrCreateError(t *testing.T) {
 	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
@@ -1002,5 +994,137 @@ func TestListAssociations_ListByVersionError(t *testing.T) {
 	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association(nil), dbErr)
 
 	_, err := svc.ListAssociations(context.Background(), "et1")
+	assert.ErrorIs(t, err, dbErr)
+}
+
+// ============================================================================
+// EditAssociation error branches
+// ============================================================================
+
+func TestEditAssociation_GetLatestError(t *testing.T) {
+	svc, _, etvRepo, _ := setupAssocService()
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(nil, dbErr)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, nil, nil, nil, nil)
+	assert.ErrorIs(t, err, dbErr)
+}
+
+func TestEditAssociation_ListByVersionError(t *testing.T) {
+	svc, assocRepo, etvRepo, _ := setupAssocService()
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return(([]*models.Association)(nil), dbErr)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, nil, nil, nil, nil)
+	assert.ErrorIs(t, err, dbErr)
+}
+
+func TestEditAssociation_TargetCardinalityInvalid(t *testing.T) {
+	svc, assocRepo, etvRepo, _ := setupAssocService()
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{
+		{ID: "a1", Name: "test", Type: models.AssociationTypeDirectional},
+	}, nil)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, nil, nil, nil, strPtr("bad"))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "target_cardinality")
+}
+
+func TestEditAssociation_EtvCreateError(t *testing.T) {
+	svc, assocRepo, etvRepo, attrRepo := setupAssocService()
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{
+		{ID: "a1", Name: "test", Type: models.AssociationTypeDirectional},
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.Anything).Return(dbErr)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, strPtr("role"), nil, nil, nil)
+	assert.ErrorIs(t, err, dbErr)
+}
+
+func TestEditAssociation_AttrBulkCopyError(t *testing.T) {
+	svc, assocRepo, etvRepo, attrRepo := setupAssocService()
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{
+		{ID: "a1", Name: "test", Type: models.AssociationTypeDirectional},
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(dbErr)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, strPtr("role"), nil, nil, nil)
+	assert.ErrorIs(t, err, dbErr)
+}
+
+func TestEditAssociation_AssocBulkCopyError(t *testing.T) {
+	svc, assocRepo, etvRepo, attrRepo := setupAssocService()
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{
+		{ID: "a1", Name: "test", Type: models.AssociationTypeDirectional},
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(dbErr)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, strPtr("role"), nil, nil, nil)
+	assert.ErrorIs(t, err, dbErr)
+}
+
+func TestEditAssociation_ListNewVersionError(t *testing.T) {
+	svc, assocRepo, etvRepo, attrRepo := setupAssocService()
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{
+		{ID: "a1", Name: "test", Type: models.AssociationTypeDirectional},
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("ListByVersion", mock.Anything, mock.MatchedBy(func(id string) bool { return id != "v1" })).Return(([]*models.Association)(nil), dbErr)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, strPtr("role"), nil, nil, nil)
+	assert.ErrorIs(t, err, dbErr)
+}
+
+func TestEditAssociation_UpdateError(t *testing.T) {
+	svc, assocRepo, etvRepo, attrRepo := setupAssocService()
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{
+		{ID: "a1", Name: "test", Type: models.AssociationTypeDirectional},
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("ListByVersion", mock.Anything, mock.MatchedBy(func(id string) bool { return id != "v1" })).Return([]*models.Association{
+		{ID: "a1-copy", Name: "test", Type: models.AssociationTypeDirectional},
+	}, nil)
+	assocRepo.On("Update", mock.Anything, mock.Anything).Return(dbErr)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, strPtr("role"), nil, nil, nil)
+	assert.ErrorIs(t, err, dbErr)
+}
+
+// ============================================================================
+// checkNameConflict error branches
+// ============================================================================
+
+func TestCheckNameConflict_AttrListError(t *testing.T) {
+	svc, _, etvRepo, attrRepo := setupAssocService()
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return(([]*models.Attribute)(nil), dbErr)
+	_, err := svc.CreateAssociation(context.Background(), "et-a", "et-b", models.AssociationTypeDirectional, "test", "", "", "", "")
+	assert.ErrorIs(t, err, dbErr)
+}
+
+func TestCheckNameConflict_AssocListError(t *testing.T) {
+	svc, assocRepo, etvRepo, attrRepo := setupAssocService()
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return(([]*models.Association)(nil), dbErr)
+	_, err := svc.CreateAssociation(context.Background(), "et-a", "et-b", models.AssociationTypeDirectional, "test", "", "", "", "")
 	assert.ErrorIs(t, err, dbErr)
 }

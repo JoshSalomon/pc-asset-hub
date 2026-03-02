@@ -103,11 +103,14 @@ func AttributeFromModel(m *domain.Attribute) *Attribute {
 
 type Association struct {
 	ID                  string `gorm:"primaryKey;size:36"`
-	EntityTypeVersionID string `gorm:"not null;size:36"`
+	EntityTypeVersionID string `gorm:"not null;size:36;uniqueIndex:idx_assoc_version_name"`
+	Name                string `gorm:"not null;size:255;uniqueIndex:idx_assoc_version_name"`
 	TargetEntityTypeID  string `gorm:"not null;size:36"`
 	Type                string `gorm:"not null;size:20"` // containment, directional, bidirectional
 	SourceRole          string `gorm:"size:255"`
 	TargetRole          string `gorm:"size:255"`
+	SourceCardinality   string `gorm:"size:20;default:'0..n'"`
+	TargetCardinality   string `gorm:"size:20;default:'0..n'"`
 	CreatedAt           time.Time
 }
 
@@ -115,10 +118,13 @@ func (a *Association) ToModel() *domain.Association {
 	return &domain.Association{
 		ID:                  a.ID,
 		EntityTypeVersionID: a.EntityTypeVersionID,
+		Name:                a.Name,
 		TargetEntityTypeID:  a.TargetEntityTypeID,
 		Type:                domain.AssociationType(a.Type),
 		SourceRole:          a.SourceRole,
 		TargetRole:          a.TargetRole,
+		SourceCardinality:   a.SourceCardinality,
+		TargetCardinality:   a.TargetCardinality,
 		CreatedAt:           a.CreatedAt,
 	}
 }
@@ -127,10 +133,13 @@ func AssociationFromModel(m *domain.Association) *Association {
 	return &Association{
 		ID:                  m.ID,
 		EntityTypeVersionID: m.EntityTypeVersionID,
+		Name:                m.Name,
 		TargetEntityTypeID:  m.TargetEntityTypeID,
 		Type:                string(m.Type),
 		SourceRole:          m.SourceRole,
 		TargetRole:          m.TargetRole,
+		SourceCardinality:   m.SourceCardinality,
+		TargetCardinality:   m.TargetCardinality,
 		CreatedAt:           m.CreatedAt,
 	}
 }
@@ -397,7 +406,40 @@ func AllModels() []any {
 	}
 }
 
-// InitDB initializes the database with auto-migration.
+// InitDB initializes the database with auto-migration and data fixups.
 func InitDB(db *gorm.DB) error {
-	return db.AutoMigrate(AllModels()...)
+	// Pre-migration: if associations table exists but has no name column, add it
+	// as nullable first, populate names, then let AutoMigrate add the NOT NULL constraint.
+	if db.Migrator().HasTable(&Association{}) && !db.Migrator().HasColumn(&Association{}, "Name") {
+		// Add column as nullable
+		if err := db.Exec("ALTER TABLE associations ADD COLUMN name VARCHAR(255) DEFAULT ''").Error; err != nil {
+			return err
+		}
+		// Populate names from target_role, then source_role, then type
+		var unnamed []Association
+		if err := db.Where("name = ''").Find(&unnamed).Error; err != nil {
+			return err
+		}
+		for i := range unnamed {
+			n := unnamed[i].TargetRole
+			if n == "" {
+				n = unnamed[i].SourceRole
+			}
+			if n == "" {
+				n = unnamed[i].Type + "_assoc"
+			}
+			unnamed[i].Name = n
+			if err := db.Save(&unnamed[i]).Error; err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := db.AutoMigrate(AllModels()...); err != nil {
+		return err
+	}
+	// Fix containment associations: source cardinality should be "0..1", not empty or "0..n"
+	return db.Model(&Association{}).
+		Where("type = ? AND (source_cardinality IS NULL OR source_cardinality = '' OR source_cardinality = '0..n')", "containment").
+		Update("source_cardinality", "0..1").Error
 }

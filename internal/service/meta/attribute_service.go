@@ -56,7 +56,7 @@ func (s *AttributeService) AddAttribute(ctx context.Context, entityTypeID string
 		return nil, err
 	}
 
-	// Check for duplicate name in current version
+	// Check for duplicate name in current version (attributes)
 	attrs, err := s.attrRepo.ListByVersion(ctx, latest.ID)
 	if err != nil {
 		return nil, err
@@ -64,6 +64,17 @@ func (s *AttributeService) AddAttribute(ctx context.Context, entityTypeID string
 	for _, a := range attrs {
 		if a.Name == name {
 			return nil, domainerrors.NewConflict("Attribute", "attribute name already exists: "+name)
+		}
+	}
+
+	// Check shared namespace: name must not conflict with association names
+	assocs, err := s.assocRepo.ListByVersion(ctx, latest.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range assocs {
+		if a.Name == name {
+			return nil, domainerrors.NewConflict("Attribute", "name conflicts with association: "+name)
 		}
 	}
 
@@ -258,6 +269,19 @@ func (s *AttributeService) EditAttribute(ctx context.Context, entityTypeID, curr
 	}
 	if !targetFound {
 		return nil, domainerrors.NewNotFound("Attribute", currentName)
+	}
+
+	// Check shared namespace: renamed attribute must not conflict with association names
+	if newName != nil && *newName != currentName {
+		assocs, err := s.assocRepo.ListByVersion(ctx, latest.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range assocs {
+			if a.Name == *newName {
+				return nil, domainerrors.NewConflict("Attribute", "name conflicts with association: "+*newName)
+			}
+		}
 	}
 
 	// Create new version with copy-on-write

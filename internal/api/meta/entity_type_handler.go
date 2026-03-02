@@ -9,6 +9,7 @@ import (
 	"github.com/project-catalyst/pc-asset-hub/internal/api/dto"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
 	svcmeta "github.com/project-catalyst/pc-asset-hub/internal/service/meta"
+	"github.com/project-catalyst/pc-asset-hub/internal/service/validation"
 )
 
 type EntityTypeHandler struct {
@@ -209,11 +210,13 @@ func (h *EntityTypeHandler) VersionSnapshot(c echo.Context) error {
 	assocs := make([]dto.SnapshotAssociationResponse, len(snapshot.Associations))
 	for i, da := range snapshot.Associations {
 		resp := dto.SnapshotAssociationResponse{
-			ID: da.ID, Type: string(da.Type),
+			ID: da.ID, Name: da.Name, Type: string(da.Type),
 			TargetEntityTypeID:   da.TargetEntityTypeID,
 			TargetEntityTypeName: snapshot.TargetEntityTypeNames[da.TargetEntityTypeID],
 			SourceRole:           da.SourceRole,
 			TargetRole:           da.TargetRole,
+			SourceCardinality:    validation.NormalizeSourceCardinality(da.SourceCardinality, da.Type == models.AssociationTypeContainment),
+			TargetCardinality:    validation.NormalizeCardinality(da.TargetCardinality),
 			Direction:            da.Direction,
 		}
 		if da.Direction == "incoming" {

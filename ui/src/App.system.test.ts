@@ -446,7 +446,7 @@ test('add association between entity types', async () => {
   // Create association via API (PatternFly Select dropdowns are unreliable in E2E)
   const targetRole = `role_${ts}`
   await apiCall('POST', `/api/meta/v1/entity-types/${etId1}/associations`, {
-    target_entity_type_id: etId2, type: 'directional', target_role: targetRole,
+    target_entity_type_id: etId2, type: 'directional', name: `ref_${ts}`, target_role: targetRole,
   })
 
   // Navigate and verify it shows in the UI
@@ -921,7 +921,7 @@ test('full workflow: create entity type → add attributes → add association �
 
   // Add association via API
   await apiCall('POST', `/api/meta/v1/entity-types/${etId1}/associations`, {
-    target_entity_type_id: etId2, type: 'directional',
+    target_entity_type_id: etId2, type: 'directional', name: `ref_${Date.now()}`,
   })
 
   await navigateToEntityType(name1)
@@ -955,6 +955,46 @@ test('full workflow: create entity type → add attributes → add association �
   const cvId = (cvRes.body as { id: string }).id
   trackResource('catalog-version', cvId)
   await apiCall('DELETE', `/api/meta/v1/catalog-versions/${cvId}`)
+  await apiCall('DELETE', `/api/meta/v1/entity-types/${etId1}`)
+  await apiCall('DELETE', `/api/meta/v1/entity-types/${etId2}`)
+})
+
+// Association cardinality: create with non-default values, verify in API and UI
+test('Association cardinality is stored and displayed', async () => {
+  const ts = Date.now()
+  const name1 = `CardSrc_${ts}`
+  const name2 = `CardTgt_${ts}`
+
+  // Create two entity types
+  const res1 = await apiCall('POST', '/api/meta/v1/entity-types', { name: name1 })
+  const res2 = await apiCall('POST', '/api/meta/v1/entity-types', { name: name2 })
+  const etId1 = (res1.body as { entity_type: { id: string } }).entity_type.id
+  const etId2 = (res2.body as { entity_type: { id: string } }).entity_type.id
+  trackResource('entity-type', etId1)
+  trackResource('entity-type', etId2)
+
+  // Create association with non-default cardinality
+  await apiCall('POST', `/api/meta/v1/entity-types/${etId1}/associations`, {
+    target_entity_type_id: etId2, type: 'containment',
+    name: `tools_${ts}`,
+    source_role: 'server', target_role: 'tool',
+    source_cardinality: '1', target_cardinality: '1..n',
+  })
+
+  // Verify via API — cardinality in list response
+  const assocRes = await apiCall('GET', `/api/meta/v1/entity-types/${etId1}/associations`)
+  const assocItems = (assocRes.body as { items: { source_cardinality: string; target_cardinality: string; direction: string }[] }).items
+  const outgoing = assocItems.find(a => a.direction === 'outgoing')
+  expect(outgoing).toBeDefined()
+  expect(outgoing!.source_cardinality).toBe('1')
+  expect(outgoing!.target_cardinality).toBe('1..n')
+
+  // Verify in UI
+  await navigateToEntityType(name1)
+  await pg.getByRole('tab', { name: /Associations/i }).click()
+  await visible(pg.getByText('1 → 1..n'))
+
+  // Clean up
   await apiCall('DELETE', `/api/meta/v1/entity-types/${etId1}`)
   await apiCall('DELETE', `/api/meta/v1/entity-types/${etId2}`)
 })

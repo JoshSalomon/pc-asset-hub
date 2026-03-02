@@ -140,6 +140,9 @@ Each feature area is tested at the appropriate layers:
 | CV create with entity selection | X | | X | X | |
 | CV create containment tree + version picker | X | | X | X | |
 | Version snapshot + read-only BOM modal | X | | X | X | |
+| Association cardinality | X | X | X | X | |
+| Edit association (COW) | X | | X | X | |
+| Association names + shared namespace | X | X | X | X | |
 
 ---
 
@@ -265,3 +268,30 @@ The catalog version BOM tab shows pinned entity types. Clicking an entity type n
 - **Unit tests (service)**: Verify `GetVersionSnapshot` returns attributes and associations (both outgoing and incoming) for a specific entity type version. Verify enum names resolved for enum-type attributes. Verify target entity type names resolved for associations. Verify error when entity type or version not found.
 - **API tests (handler)**: Verify `GET /entity-types/:id/versions/:version/snapshot` returns 200 with attributes, associations, resolved enum names, and resolved entity type names. Verify 404 for nonexistent entity type or version. Verify 400 for invalid version (negative, zero).
 - **UI tests**: Verify clicking an entity type name in the BOM tab opens a modal (not navigates). Verify modal shows entity type name, pinned version, attributes with resolved enum names (e.g., "boolean (enum)"), and associations with contextual relationship labels (contains/contained by/references/referenced by/references (mutual)) and perspective-correct roles. Verify no edit controls are present in the modal.
+
+### 5.14 Association Cardinality
+
+Cardinality adds UML-style multiplicity (`source_cardinality`, `target_cardinality`) to every association. Standard options: `0..1`, `0..n`, `1`, `1..n`. Custom ranges supported (e.g., `2..5`, `2..n`). Default: `0..n` on both ends for backward compatibility. Empty string is normalized to `0..n`.
+
+- **Unit tests (validation)**: Verify `ValidateCardinality` accepts all standard options, custom ranges (e.g., `2..5`, `2..n`), exact values (e.g., `3`), and empty string. Verify rejection of invalid formats: negative numbers, min > max, non-numeric, malformed patterns. Verify `NormalizeCardinality` returns `"0..n"` for empty string and passes through valid values unchanged.
+- **Unit tests (service)**: Verify `CreateAssociation` validates cardinality before creating. Verify invalid cardinality returns error. Verify empty cardinality is normalized to `"0..n"` on the created association. Verify cardinality values are passed through to the association model.
+- **Integration tests (repository)**: Verify cardinality fields are stored and retrieved correctly. Verify `BulkCopyToVersion` preserves cardinality values on copied associations.
+- **API tests (handler)**: Verify `POST /entity-types/:id/associations` accepts `source_cardinality` and `target_cardinality` fields. Verify `GET /entity-types/:id/associations` returns cardinality in response (normalized to `"0..n"` for existing associations). Verify invalid cardinality returns 400. Verify version snapshot includes cardinality.
+- **UI tests (browser)**: Verify add association modal includes cardinality dropdowns with standard options and custom input. Verify default is `0..n`. Verify cardinality column in associations table. Verify BOM modal shows cardinality for associations.
+
+### 5.15 Edit Association
+
+EditAssociation uses the same copy-on-write versioning pattern as EditAttribute. Editable fields are source role, target role, source cardinality, and target cardinality. Association type and target entity type are immutable (delete and recreate).
+
+- **Unit tests (service)**: Verify COW version increment on edit. Verify field updates (source role, target role, source cardinality, target cardinality) are applied to the correct association in the new version. Verify containment source cardinality constraint enforced on edit. Verify invalid cardinality rejected. Verify NotFound for nonexistent association.
+- **API tests (handler)**: Verify `PUT /entity-types/:entityTypeId/associations/:name` returns 200 with new version on success, 403 for RO role, 404 for nonexistent association, 400 for invalid cardinality.
+- **UI tests (browser)**: Verify Edit button in associations table opens modal with pre-filled values. Verify Save triggers API call with changed fields. Verify containment source cardinality restriction in edit modal.
+
+### 5.16 Association Names and Shared Namespace
+
+Associations have a required name, unique within the entity type version. Names share the same namespace as attributes — no collision allowed between attribute and association names on the same version.
+
+- **Unit tests (service)**: Verify CreateAssociation requires a name. Verify name uniqueness within version. Verify shared namespace — association name conflicts with existing attribute name. Verify attribute name conflicts with existing association name. Verify COW matching by name instead of all-properties. Verify EditAssociation can rename. Verify DeleteAssociation by name.
+- **Integration tests (repository)**: Verify name stored and retrieved. Verify unique constraint on (version_id, name). Verify BulkCopy preserves names.
+- **API tests (handler)**: Verify create requires name. Verify name in list response. Verify PUT/DELETE routes use `:name`. Verify 409 on duplicate name. Verify snapshot includes name.
+- **UI tests (browser)**: Verify name field in add/edit modals. Verify name displayed in associations table.

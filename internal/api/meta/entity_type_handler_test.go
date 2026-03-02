@@ -652,3 +652,35 @@ func TestVersionSnapshot_IncomingAssociation(t *testing.T) {
 	assert.Equal(t, "Server", resp.Associations[0].SourceEntityTypeName)
 	assert.Equal(t, "server", resp.Associations[0].SourceRole)
 }
+
+// T-E.83: Version snapshot includes cardinality
+func TestTE83_VersionSnapshotIncludesCardinality(t *testing.T) {
+	etRepo := new(mocks.MockEntityTypeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	assocRepo := new(mocks.MockAssociationRepo)
+	e := setupTestServer(etRepo, etvRepo, attrRepo, assocRepo)
+
+	now := time.Now()
+
+	etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "Server", CreatedAt: now, UpdatedAt: now}, nil)
+	etRepo.On("GetByID", mock.Anything, "et2").Return(&models.EntityType{ID: "et2", Name: "Tool", CreatedAt: now, UpdatedAt: now}, nil)
+	etvRepo.On("GetByEntityTypeAndVersion", mock.Anything, "et1", 1).Return(&models.EntityTypeVersion{
+		ID: "v1-id", EntityTypeID: "et1", Version: 1, CreatedAt: now,
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1-id").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1-id").Return([]*models.Association{
+		{ID: "as1", EntityTypeVersionID: "v1-id", TargetEntityTypeID: "et2", Type: "containment",
+			SourceCardinality: "1", TargetCardinality: "0..n", CreatedAt: now},
+	}, nil)
+	assocRepo.On("ListByTargetEntityType", mock.Anything, "et1").Return([]*models.Association{}, nil)
+
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types/et1/versions/1/snapshot", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.VersionSnapshotResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Len(t, resp.Associations, 1)
+	assert.Equal(t, "1", resp.Associations[0].SourceCardinality)
+	assert.Equal(t, "0..n", resp.Associations[0].TargetCardinality)
+}

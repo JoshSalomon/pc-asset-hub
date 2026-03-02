@@ -24,6 +24,9 @@ func (r *AssociationGormRepo) Create(ctx context.Context, assoc *models.Associat
 	record := gormmodels.AssociationFromModel(assoc)
 	result := r.db.WithContext(ctx).Create(record)
 	if result.Error != nil {
+		if isUniqueConstraintError(result.Error) {
+			return domainerrors.NewConflict("Association", "association name already exists in this version: "+assoc.Name)
+		}
 		return result.Error
 	}
 	return nil
@@ -65,6 +68,18 @@ func (r *AssociationGormRepo) ListByTargetEntityType(ctx context.Context, target
 		assocs[i] = records[i].ToModel()
 	}
 	return assocs, nil
+}
+
+func (r *AssociationGormRepo) Update(ctx context.Context, assoc *models.Association) error {
+	record := gormmodels.AssociationFromModel(assoc)
+	result := r.db.WithContext(ctx).Save(record)
+	if result.Error != nil {
+		if isUniqueConstraintError(result.Error) {
+			return domainerrors.NewConflict("Association", "association name already exists in this version: "+assoc.Name)
+		}
+		return result.Error
+	}
+	return nil
 }
 
 func (r *AssociationGormRepo) Delete(ctx context.Context, id string) error {

@@ -47,10 +47,13 @@ const (
 type Association struct {
 	ID                  string
 	EntityTypeVersionID string
+	Name                string
 	TargetEntityTypeID  string
 	Type                AssociationType
 	SourceRole          string
 	TargetRole          string
+	SourceCardinality   string
+	TargetCardinality   string
 	CreatedAt           time.Time
 }
 

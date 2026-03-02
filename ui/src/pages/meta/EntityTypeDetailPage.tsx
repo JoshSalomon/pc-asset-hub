@@ -106,13 +106,33 @@ export default function EntityTypeDetailPage({ role }: Props) {
 
   // Add association modal
   const [addAssocOpen, setAddAssocOpen] = useState(false)
+  const [assocName, setAssocName] = useState('')
   const [assocTargetId, setAssocTargetId] = useState('')
   const [assocTargetOpen, setAssocTargetOpen] = useState(false)
   const [assocType, setAssocType] = useState('containment')
   const [assocTypeOpen, setAssocTypeOpen] = useState(false)
   const [assocSourceRole, setAssocSourceRole] = useState('')
   const [assocTargetRole, setAssocTargetRole] = useState('')
+  const [assocSourceCardinality, setAssocSourceCardinality] = useState('0..n')
+  const [assocTargetCardinality, setAssocTargetCardinality] = useState('0..n')
+  const [assocSourceCardCustom, setAssocSourceCardCustom] = useState(false)
+  const [assocSourceCardMin, setAssocSourceCardMin] = useState('')
+  const [assocSourceCardMax, setAssocSourceCardMax] = useState('')
+  const [assocTargetCardCustom, setAssocTargetCardCustom] = useState(false)
+  const [assocTargetCardMin, setAssocTargetCardMin] = useState('')
+  const [assocTargetCardMax, setAssocTargetCardMax] = useState('')
   const [addAssocError, setAddAssocError] = useState<string | null>(null)
+
+  // Edit association modal
+  const [editAssocOpen, setEditAssocOpen] = useState(false)
+  const [editAssocOrigName, setEditAssocOrigName] = useState('')
+  const [editAssocName, setEditAssocName] = useState('')
+  const [editAssocType, setEditAssocType] = useState('')
+  const [editAssocSourceRole, setEditAssocSourceRole] = useState('')
+  const [editAssocTargetRole, setEditAssocTargetRole] = useState('')
+  const [editAssocSourceCard, setEditAssocSourceCard] = useState('0..n')
+  const [editAssocTargetCard, setEditAssocTargetCard] = useState('0..n')
+  const [editAssocError, setEditAssocError] = useState<string | null>(null)
 
   // Copy modal
   const [copyOpen, setCopyOpen] = useState(false)
@@ -245,20 +265,42 @@ export default function EntityTypeDetailPage({ role }: Props) {
   }
 
   const handleAddAssociation = async () => {
-    if (!id || !assocTargetId || !assocType) return
     setAddAssocError(null)
+    if (assocSourceCardCustom && (!assocSourceCardMin.trim() || !assocSourceCardMax.trim())) {
+      setAddAssocError('Source cardinality: both min and max are required for custom values')
+      return
+    }
+    if (assocTargetCardCustom && (!assocTargetCardMin.trim() || !assocTargetCardMax.trim())) {
+      setAddAssocError('Target cardinality: both min and max are required for custom values')
+      return
+    }
+    if (!id || !assocTargetId || !assocType) return
     try {
+      const srcCard = assocSourceCardCustom ? `${assocSourceCardMin}..${assocSourceCardMax}` : assocSourceCardinality
+      const tgtCard = assocTargetCardCustom ? `${assocTargetCardMin}..${assocTargetCardMax}` : assocTargetCardinality
       await api.associations.create(id, {
         target_entity_type_id: assocTargetId,
         type: assocType,
+        name: assocName,
         source_role: assocSourceRole || undefined,
         target_role: assocTargetRole || undefined,
+        source_cardinality: srcCard,
+        target_cardinality: tgtCard,
       })
       setAddAssocOpen(false)
+      setAssocName('')
       setAssocTargetId('')
       setAssocType('containment')
       setAssocSourceRole('')
       setAssocTargetRole('')
+      setAssocSourceCardinality('0..n')
+      setAssocTargetCardinality('0..n')
+      setAssocSourceCardCustom(false)
+      setAssocTargetCardCustom(false)
+      setAssocSourceCardMin('')
+      setAssocSourceCardMax('')
+      setAssocTargetCardMin('')
+      setAssocTargetCardMax('')
       loadAssociations()
       loadEntityType()
     } catch (e) {
@@ -266,14 +308,52 @@ export default function EntityTypeDetailPage({ role }: Props) {
     }
   }
 
-  const handleDeleteAssociation = async (assocId: string) => {
+  const handleDeleteAssociation = async (assocName: string) => {
     if (!id) return
     try {
-      await api.associations.delete(id, assocId)
+      await api.associations.delete(id, assocName)
       loadAssociations()
       loadEntityType()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to delete association')
+    }
+  }
+
+  const openEditAssoc = (assoc: Association) => {
+    setEditAssocOrigName(assoc.name)
+    setEditAssocName(assoc.name)
+    setEditAssocType(assoc.type)
+    setEditAssocSourceRole(assoc.source_role || '')
+    setEditAssocTargetRole(assoc.target_role || '')
+    setEditAssocSourceCard(assoc.source_cardinality || '0..n')
+    setEditAssocTargetCard(assoc.target_cardinality || '0..n')
+    setEditAssocError(null)
+    setEditAssocOpen(true)
+  }
+
+  const handleEditAssociation = async () => {
+    if (!id || !editAssocOrigName) return
+    setEditAssocError(null)
+    try {
+      const data: Record<string, string | undefined> = {}
+      if (editAssocName !== editAssocOrigName) data.name = editAssocName
+      data.source_role = editAssocSourceRole
+      data.target_role = editAssocTargetRole
+      data.source_cardinality = editAssocSourceCard
+      data.target_cardinality = editAssocTargetCard
+      await api.associations.edit(id, editAssocOrigName, data)
+      setEditAssocOpen(false)
+      setEditAssocOrigName('')
+      setEditAssocName('')
+      setEditAssocSourceRole('')
+      setEditAssocTargetRole('')
+      setEditAssocSourceCard('0..n')
+      setEditAssocTargetCard('0..n')
+      setEditAssocError(null)
+      loadAssociations()
+      loadEntityType()
+    } catch (e) {
+      setEditAssocError(e instanceof Error ? e.message : 'Failed to edit association')
     }
   }
 
@@ -565,9 +645,11 @@ export default function EntityTypeDetailPage({ role }: Props) {
               <Table aria-label="Associations">
                 <Thead>
                   <Tr>
-                    <Th style={{ width: '10rem' }}>Relationship</Th>
+                    <Th>Relationship</Th>
                     <Th>Entity Type</Th>
+                    <Th>Name</Th>
                     <Th>Role</Th>
+                    <Th>Cardinality</Th>
                     {canEdit && <Th>Actions</Th>}
                   </Tr>
                 </Thead>
@@ -594,10 +676,17 @@ export default function EntityTypeDetailPage({ role }: Props) {
                       <Tr key={assoc.id}>
                         <Td><Label color={labelColor}>{relationLabel}</Label></Td>
                         <Td>{otherName}</Td>
+                        <Td>{assoc.name}</Td>
                         <Td>{otherRole || '-'}</Td>
+                        <Td>{isIncoming ? `${assoc.target_cardinality} → ${assoc.source_cardinality}` : `${assoc.source_cardinality} → ${assoc.target_cardinality}`}</Td>
                         {canEdit && (
                           <Td>
-                            {!isIncoming && <Button variant="danger" size="sm" onClick={() => handleDeleteAssociation(assoc.id)}>Remove</Button>}
+                            {!isIncoming && (
+                              <>
+                                <Button variant="secondary" size="sm" onClick={() => openEditAssoc(assoc)} style={{ marginRight: '0.5rem' }}>Edit</Button>
+                                <Button variant="danger" size="sm" onClick={() => handleDeleteAssociation(assoc.name)}>Remove</Button>
+                              </>
+                            )}
                           </Td>
                         )}
                       </Tr>
@@ -776,6 +865,9 @@ export default function EntityTypeDetailPage({ role }: Props) {
         <ModalBody>
           {addAssocError && <Alert variant="danger" title={addAssocError} isInline style={{ marginBottom: '1rem' }} />}
           <Form>
+            <FormGroup label="Name" isRequired fieldId="assoc-name">
+              <TextInput id="assoc-name" value={assocName} onChange={(_e, v) => setAssocName(v)} isRequired />
+            </FormGroup>
             <FormGroup label="Target Entity Type" isRequired fieldId="assoc-target">
               <Select
                 isOpen={assocTargetOpen}
@@ -797,7 +889,18 @@ export default function EntityTypeDetailPage({ role }: Props) {
               <Select
                 isOpen={assocTypeOpen}
                 selected={assocType}
-                onSelect={(_e, value) => { setAssocType(value as string); setAssocTypeOpen(false) }}
+                onSelect={(_e, value) => {
+                  const newType = value as string
+                  setAssocType(newType)
+                  setAssocTypeOpen(false)
+                  // Reset source cardinality to valid value when switching to containment
+                  if (newType === 'containment') {
+                    setAssocSourceCardCustom(false)
+                    if (assocSourceCardinality !== '1' && assocSourceCardinality !== '0..1') {
+                      setAssocSourceCardinality('0..1')
+                    }
+                  }
+                }}
                 onOpenChange={setAssocTypeOpen}
                 toggle={(ref: React.Ref<MenuToggleElement>) => (
                   <MenuToggle ref={ref} onClick={() => setAssocTypeOpen(!assocTypeOpen)} isExpanded={assocTypeOpen}>{assocType}</MenuToggle>
@@ -814,11 +917,142 @@ export default function EntityTypeDetailPage({ role }: Props) {
             <FormGroup label="Target Role" fieldId="assoc-target-role">
               <TextInput id="assoc-target-role" value={assocTargetRole} onChange={(_e, v) => setAssocTargetRole(v)} />
             </FormGroup>
+            <FormGroup label="Source Cardinality" fieldId="assoc-source-cardinality">
+              {assocType === 'containment' ? (
+                <select
+                  id="assoc-source-cardinality"
+                  value={assocSourceCardinality === '1' ? '1' : '0..1'}
+                  onChange={(e) => { setAssocSourceCardCustom(false); setAssocSourceCardinality(e.target.value) }}
+                  className="pf-v6-c-form-control"
+                >
+                  <option value="0..1">0..1</option>
+                  <option value="1">1</option>
+                </select>
+              ) : (
+                <>
+                  <select
+                    id="assoc-source-cardinality"
+                    value={assocSourceCardCustom ? 'custom' : assocSourceCardinality}
+                    onChange={(e) => {
+                      if (e.target.value === 'custom') {
+                        setAssocSourceCardCustom(true)
+                      } else {
+                        setAssocSourceCardCustom(false)
+                        setAssocSourceCardinality(e.target.value)
+                      }
+                    }}
+                    className="pf-v6-c-form-control"
+                  >
+                    <option value="0..1">0..1</option>
+                    <option value="0..n">0..n</option>
+                    <option value="1">1</option>
+                    <option value="1..n">1..n</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                  {assocSourceCardCustom && (
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', alignItems: 'center' }}>
+                      <TextInput id="assoc-source-card-min" value={assocSourceCardMin} onChange={(_e, v) => { if (v === '' || /^\d+$/.test(v)) setAssocSourceCardMin(v) }} placeholder="min" style={{ width: '5rem' }} />
+                      <span>..</span>
+                      <TextInput id="assoc-source-card-max" value={assocSourceCardMax} onChange={(_e, v) => { if (v === '' || v === 'n' || /^\d+$/.test(v)) setAssocSourceCardMax(v) }} placeholder="max or n" style={{ width: '5rem' }} />
+                    </div>
+                  )}
+                </>
+              )}
+            </FormGroup>
+            <FormGroup label="Target Cardinality" fieldId="assoc-target-cardinality">
+              <select
+                id="assoc-target-cardinality"
+                value={assocTargetCardCustom ? 'custom' : assocTargetCardinality}
+                onChange={(e) => {
+                  if (e.target.value === 'custom') {
+                    setAssocTargetCardCustom(true)
+                  } else {
+                    setAssocTargetCardCustom(false)
+                    setAssocTargetCardinality(e.target.value)
+                  }
+                }}
+                className="pf-v6-c-form-control"
+              >
+                <option value="0..1">0..1</option>
+                <option value="0..n">0..n</option>
+                <option value="1">1</option>
+                <option value="1..n">1..n</option>
+                <option value="custom">Custom</option>
+              </select>
+              {assocTargetCardCustom && (
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', alignItems: 'center' }}>
+                  <TextInput id="assoc-target-card-min" value={assocTargetCardMin} onChange={(_e, v) => { if (v === '' || /^\d+$/.test(v)) setAssocTargetCardMin(v) }} placeholder="min" style={{ width: '5rem' }} />
+                  <span>..</span>
+                  <TextInput id="assoc-target-card-max" value={assocTargetCardMax} onChange={(_e, v) => { if (v === '' || v === 'n' || /^\d+$/.test(v)) setAssocTargetCardMax(v) }} placeholder="max or n" style={{ width: '5rem' }} />
+                </div>
+              )}
+            </FormGroup>
           </Form>
         </ModalBody>
         <ModalFooter>
-          <Button variant="primary" onClick={handleAddAssociation} isDisabled={!assocTargetId}>Add</Button>
+          <Button variant="primary" onClick={handleAddAssociation} isDisabled={!assocTargetId || !assocName.trim()}>Add</Button>
           <Button variant="link" onClick={() => { setAddAssocOpen(false); setAddAssocError(null) }}>Cancel</Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Edit Association Modal */}
+      <Modal variant={ModalVariant.small} isOpen={editAssocOpen} onClose={() => { setEditAssocOpen(false); setEditAssocError(null) }}>
+        <ModalHeader title="Edit Association" />
+        <ModalBody>
+          {editAssocError && <Alert variant="danger" title={editAssocError} isInline style={{ marginBottom: '1rem' }} />}
+          <Form>
+            <FormGroup label="Name" isRequired fieldId="edit-assoc-name">
+              <TextInput id="edit-assoc-name" value={editAssocName} onChange={(_e, v) => setEditAssocName(v)} isRequired />
+            </FormGroup>
+            <FormGroup label="Source Role" fieldId="edit-assoc-source-role">
+              <TextInput id="edit-assoc-source-role" value={editAssocSourceRole} onChange={(_e, v) => setEditAssocSourceRole(v)} />
+            </FormGroup>
+            <FormGroup label="Target Role" fieldId="edit-assoc-target-role">
+              <TextInput id="edit-assoc-target-role" value={editAssocTargetRole} onChange={(_e, v) => setEditAssocTargetRole(v)} />
+            </FormGroup>
+            <FormGroup label="Source Cardinality" fieldId="edit-assoc-source-cardinality">
+              {editAssocType === 'containment' ? (
+                <select
+                  id="edit-assoc-source-cardinality"
+                  value={editAssocSourceCard === '1' ? '1' : '0..1'}
+                  onChange={(e) => setEditAssocSourceCard(e.target.value)}
+                  className="pf-v6-c-form-control"
+                >
+                  <option value="0..1">0..1</option>
+                  <option value="1">1</option>
+                </select>
+              ) : (
+                <select
+                  id="edit-assoc-source-cardinality"
+                  value={editAssocSourceCard}
+                  onChange={(e) => setEditAssocSourceCard(e.target.value)}
+                  className="pf-v6-c-form-control"
+                >
+                  <option value="0..1">0..1</option>
+                  <option value="0..n">0..n</option>
+                  <option value="1">1</option>
+                  <option value="1..n">1..n</option>
+                </select>
+              )}
+            </FormGroup>
+            <FormGroup label="Target Cardinality" fieldId="edit-assoc-target-cardinality">
+              <select
+                id="edit-assoc-target-cardinality"
+                value={editAssocTargetCard}
+                onChange={(e) => setEditAssocTargetCard(e.target.value)}
+                className="pf-v6-c-form-control"
+              >
+                <option value="0..1">0..1</option>
+                <option value="0..n">0..n</option>
+                <option value="1">1</option>
+                <option value="1..n">1..n</option>
+              </select>
+            </FormGroup>
+          </Form>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="primary" onClick={handleEditAssociation}>Save</Button>
+          <Button variant="link" onClick={() => { setEditAssocOpen(false); setEditAssocError(null) }}>Cancel</Button>
         </ModalFooter>
       </Modal>
 

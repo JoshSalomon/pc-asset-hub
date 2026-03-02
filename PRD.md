@@ -487,6 +487,9 @@ Acceptance Criteria:
 - For directional references: the system records the direction (source → target).
 - The entity type definition version is incremented when an association is added.
 - Associations are reflected in the API URL structure (containment as sub-resources, references via `/references` endpoints).
+- Each association has source and target cardinality (UML-style multiplicity). Standard options: `0..1`, `0..n`, `1`, `1..n`. Custom ranges are also supported (e.g., `2..5`). Default cardinality is `0..n` on both ends when not specified.
+- Cardinality is stored as strings (`source_cardinality`, `target_cardinality`) on the Association model. Validation ensures min <= max, both non-negative, and max can be `n` (unbounded).
+- Each association has a required name that is unique within the entity type version. Association names share the same namespace as attribute names — no association can have the same name as an attribute on the same entity type version.
 
 ---
 
@@ -908,9 +911,12 @@ As an Admin, I want to add and remove associations between entity types through 
 Acceptance Criteria:
 - The entity type detail view lists all associations involving this entity type, grouped or labeled by type (containment vs. reference).
 - Admin can add a new association via a dialog: select target entity type, select association type (containment, directional reference, bidirectional reference), and select direction where applicable.
+- The add association dialog includes cardinality selection for both source and target ends. A dropdown offers standard options (`0..1`, `0..n`, `1`, `1..n`) plus a "Custom" option that reveals min/max input fields. Default is `0..n` on both ends.
+- Cardinality is displayed in the association list alongside the relationship label.
 - For containment: if the new association would create a cycle, the UI shows an error immediately (before the Admin can submit).
+- Admin can edit an existing association's roles and cardinality via a dialog. The association type and target entity type cannot be changed (delete and recreate instead). Editing creates a new entity type version (copy-on-write).
 - Admin can remove an association. A confirmation dialog explains the implications.
-- Adding or removing an association increments the entity type version.
+- Adding, editing, or removing an association increments the entity type version.
 
 ---
 
@@ -1057,7 +1063,7 @@ Items where the current implementation diverges from the intended behavior descr
 
 Features planned for future implementation. These are not yet specified in detail and are not part of the current scope.
 
-### FF-1: Association Cardinality
+### FF-1: Association Cardinality (IMPLEMENTED — see US-2 and US-31)
 
 Associations should support cardinality constraints on both ends (UML-style multiplicity notation).
 
@@ -1110,3 +1116,14 @@ A future edit-from-CV workflow could:
 **Depends on:** TD-5 (version lineage tracking).
 
 **Decision:** Deferred. The v1 read-only BOM view is sufficient. Revisit when user feedback indicates demand for in-place editing from the CV context.
+
+### FF-4: Edit Catalog Version
+
+Catalog versions are currently immutable after creation — pins (entity type version selections) cannot be changed, and there is no way to add or remove entity types from an existing CV. A future enhancement would allow editing a catalog version's pins.
+
+**Potential capabilities (details TBD):**
+- Add or remove entity type pins from an existing catalog version
+- Change the pinned version for an entity type (e.g., upgrade from V2 to V3)
+- Possibly restricted by lifecycle stage (e.g., only development-stage CVs are editable)
+
+**Decision:** Deferred. Requirements not yet clear. Revisit when usage patterns emerge.

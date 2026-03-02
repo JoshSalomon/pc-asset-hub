@@ -103,13 +103,18 @@ export const api = {
   associations: {
     list: (entityTypeId: string) =>
       fetchJSON<ListResponse<Association>>(`${BASE_URL}/entity-types/${entityTypeId}/associations`),
-    create: (entityTypeId: string, data: { target_entity_type_id: string; type: string; source_role?: string; target_role?: string }) =>
+    create: (entityTypeId: string, data: { target_entity_type_id: string; type: string; name: string; source_role?: string; target_role?: string; source_cardinality?: string; target_cardinality?: string }) =>
       fetchJSON<EntityTypeVersion>(`${BASE_URL}/entity-types/${entityTypeId}/associations`, {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    delete: (entityTypeId: string, associationId: string) =>
-      fetchJSON(`${BASE_URL}/entity-types/${entityTypeId}/associations/${associationId}`, {
+    edit: (entityTypeId: string, name: string, data: { name?: string; source_role?: string; target_role?: string; source_cardinality?: string; target_cardinality?: string }) =>
+      fetchJSON<EntityTypeVersion>(`${BASE_URL}/entity-types/${entityTypeId}/associations/${encodeURIComponent(name)}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    delete: (entityTypeId: string, name: string) =>
+      fetchJSON(`${BASE_URL}/entity-types/${entityTypeId}/associations/${encodeURIComponent(name)}`, {
         method: 'DELETE',
       }),
   },

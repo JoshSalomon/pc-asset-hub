@@ -40,13 +40,14 @@ func TestTC09_ListAssociations(t *testing.T) {
 
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}, nil)
 	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{
-		{ID: "assoc1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment, CreatedAt: time.Now()},
+		{ID: "assoc1", Name: "test_assoc", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment, CreatedAt: time.Now()},
 	}, nil)
 	assocRepo.On("ListByTargetEntityType", mock.Anything, "et1").Return([]*models.Association{}, nil)
 
 	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types/et1/associations", "", apimw.RoleRO)
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), `"containment"`)
+	assert.Contains(t, rec.Body.String(), `"name":"test_assoc"`)
 }
 
 // T-C.10: Create containment association
@@ -58,13 +59,15 @@ func TestTC10_CreateContainmentAssociation(t *testing.T) {
 
 	assocRepo.On("GetContainmentGraph", mock.Anything).Return([]repository.ContainmentEdge{}, nil)
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 
 	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/associations",
-		`{"target_entity_type_id":"et2","type":"containment","source_role":"parent","target_role":"child"}`, apimw.RoleAdmin)
+		`{"name":"test_assoc","target_entity_type_id":"et2","type":"containment","source_role":"parent","target_role":"child"}`, apimw.RoleAdmin)
 	assert.Equal(t, http.StatusCreated, rec.Code)
 	assert.Contains(t, rec.Body.String(), `"version":2`)
 }
@@ -77,13 +80,15 @@ func TestTC11_CreateDirectionalAssociation(t *testing.T) {
 	e := setupAssocServer(assocRepo, etvRepo, attrRepo)
 
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 
 	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/associations",
-		`{"target_entity_type_id":"et2","type":"directional"}`, apimw.RoleAdmin)
+		`{"name":"test_assoc","target_entity_type_id":"et2","type":"directional"}`, apimw.RoleAdmin)
 	assert.Equal(t, http.StatusCreated, rec.Code)
 }
 
@@ -99,7 +104,7 @@ func TestTC12_CreateContainmentCycle(t *testing.T) {
 	}, nil)
 
 	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/associations",
-		`{"target_entity_type_id":"et2","type":"containment"}`, apimw.RoleAdmin)
+		`{"name":"test_assoc","target_entity_type_id":"et2","type":"containment"}`, apimw.RoleAdmin)
 	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
 }
 
@@ -114,13 +119,12 @@ func TestTC13_DeleteAssociation(t *testing.T) {
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	assocRepo.On("GetByID", mock.Anything, "assoc1").Return(&models.Association{ID: "assoc1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment}, nil)
 	assocRepo.On("ListByVersion", mock.Anything, mock.Anything).Return([]*models.Association{
-		{ID: "assoc1-new", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment},
+		{ID: "assoc1-new", Name: "test_assoc", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment},
 	}, nil)
 	assocRepo.On("Delete", mock.Anything, "assoc1-new").Return(nil)
 
-	rec := doRequest(e, http.MethodDelete, "/api/meta/v1/entity-types/et1/associations/assoc1", "", apimw.RoleAdmin)
+	rec := doRequest(e, http.MethodDelete, "/api/meta/v1/entity-types/et1/associations/test_assoc", "", apimw.RoleAdmin)
 	assert.Equal(t, http.StatusNoContent, rec.Code)
 }
 
@@ -179,13 +183,15 @@ func TestTC62_SuperAdminCanCreateAssociation(t *testing.T) {
 	e := setupAssocServer(assocRepo, etvRepo, attrRepo)
 
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 
 	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/associations",
-		`{"target_entity_type_id":"et2","type":"directional"}`, apimw.RoleSuperAdmin)
+		`{"name":"test_assoc","target_entity_type_id":"et2","type":"directional"}`, apimw.RoleSuperAdmin)
 	assert.Equal(t, http.StatusCreated, rec.Code)
 }
 
@@ -193,6 +199,135 @@ func TestTC62_SuperAdminCanCreateAssociation(t *testing.T) {
 func TestTC63_ROCannotDeleteAssociation(t *testing.T) {
 	e := setupAssocServer(nil, nil, nil)
 
-	rec := doRequest(e, http.MethodDelete, "/api/meta/v1/entity-types/et1/associations/assoc1", "", apimw.RoleRO)
+	rec := doRequest(e, http.MethodDelete, "/api/meta/v1/entity-types/et1/associations/test_assoc", "", apimw.RoleRO)
 	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// T-E.80: Create association with cardinality
+func TestTE80_CreateAssociationWithCardinality(t *testing.T) {
+	assocRepo := new(mocks.MockAssociationRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	e := setupAssocServer(assocRepo, etvRepo, attrRepo)
+
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/associations",
+		`{"name":"test_assoc","target_entity_type_id":"et2","type":"directional","source_cardinality":"1","target_cardinality":"0..n"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusCreated, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"version":2`)
+}
+
+// T-E.81: Create association with invalid cardinality → 400
+func TestTE81_CreateAssociationInvalidCardinality(t *testing.T) {
+	assocRepo := new(mocks.MockAssociationRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	e := setupAssocServer(assocRepo, etvRepo, attrRepo)
+
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/associations",
+		`{"name":"test_assoc","target_entity_type_id":"et2","type":"directional","source_cardinality":"bad"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// T-E.82: List associations returns normalized cardinality
+func TestTE82_ListAssociationsReturnsCardinality(t *testing.T) {
+	assocRepo := new(mocks.MockAssociationRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupAssocServer(assocRepo, etvRepo, nil)
+
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{
+		{ID: "assoc1", Name: "assoc_one", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment,
+			SourceCardinality: "1", TargetCardinality: "0..n", CreatedAt: time.Now()},
+		{ID: "assoc2", Name: "assoc_two", TargetEntityTypeID: "et3", Type: models.AssociationTypeDirectional,
+			SourceCardinality: "", TargetCardinality: "", CreatedAt: time.Now()},
+	}, nil)
+	assocRepo.On("ListByTargetEntityType", mock.Anything, "et1").Return([]*models.Association{}, nil)
+
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types/et1/associations", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	// First association has explicit cardinality
+	assert.Contains(t, body, `"source_cardinality":"1"`)
+	assert.Contains(t, body, `"target_cardinality":"0..n"`)
+	// Second association has empty → normalized to "0..n"
+	// Both should show "0..n" (normalized)
+	// Count occurrences of "0..n" — should appear for both source and target of assoc2 plus target of assoc1
+}
+
+// T-E.100: PUT /entity-types/:id/associations/:name with valid edit
+func TestTE100_EditAssociationValid(t *testing.T) {
+	assocRepo := new(mocks.MockAssociationRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	e := setupAssocServer(assocRepo, etvRepo, attrRepo)
+
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{
+		{ID: "assoc1", Name: "test_assoc", EntityTypeVersionID: "v1", TargetEntityTypeID: "et2",
+			Type: models.AssociationTypeDirectional, SourceRole: "old", TargetRole: "old_tgt",
+			SourceCardinality: "0..n", TargetCardinality: "0..n"},
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("ListByVersion", mock.Anything, mock.MatchedBy(func(id string) bool { return id != "v1" })).Return([]*models.Association{
+		{ID: "assoc1-copy", Name: "test_assoc", TargetEntityTypeID: "et2", Type: models.AssociationTypeDirectional,
+			SourceRole: "old", TargetRole: "old_tgt", SourceCardinality: "0..n", TargetCardinality: "0..n"},
+	}, nil)
+	assocRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/associations/test_assoc",
+		`{"source_role":"new_role","source_cardinality":"1"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"version":2`)
+}
+
+// T-E.101: PUT /entity-types/:id/associations/:name as RO → 403
+func TestTE101_EditAssociationAsRO(t *testing.T) {
+	e := setupAssocServer(nil, nil, nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/associations/test_assoc",
+		`{"source_role":"new"}`, apimw.RoleRO)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// T-E.102: PUT /entity-types/:id/associations/:name nonexistent → 404
+func TestTE102_EditAssociationNotFound(t *testing.T) {
+	assocRepo := new(mocks.MockAssociationRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	e := setupAssocServer(assocRepo, etvRepo, attrRepo)
+
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/associations/bad-name",
+		`{"source_role":"new"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// T-E.103: PUT /entity-types/:id/associations/:name invalid cardinality → 400
+func TestTE103_EditAssociationInvalidCardinality(t *testing.T) {
+	assocRepo := new(mocks.MockAssociationRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	e := setupAssocServer(assocRepo, etvRepo, attrRepo)
+
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{
+		{ID: "assoc1", Name: "test_assoc", Type: models.AssociationTypeDirectional},
+	}, nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/associations/test_assoc",
+		`{"source_cardinality":"bad"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }

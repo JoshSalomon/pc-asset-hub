@@ -30,7 +30,7 @@ Development proceeds through three environment phases, each with increasing infr
 
 **Milestones completed**: 1–9 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, and T-E.01 through T-E.33 (218 test cases), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, and T-E.01 through T-E.126 (311 test cases), using SQLite and mocked/simulated infrastructure.
 
 **Human checkpoint**: After all 218 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
@@ -134,7 +134,7 @@ These tests cover the full entity type management feature: backend API handlers 
 | T-C.21 | POST /entity-types/:id/associations → create containment | API | 201 + new version |
 | T-C.22 | POST /entity-types/:id/associations → create directional | API | 201 |
 | T-C.23 | POST /entity-types/:id/associations → containment cycle | API | 422 cycle detected |
-| T-C.24 | DELETE /entity-types/:id/associations/:assocId | API | 204 |
+| T-C.24 | DELETE /entity-types/:id/associations/:name | API | 204 |
 | T-C.25 | POST /entity-types/:id/associations as RO | API | 403 |
 
 #### Backend: Enum Handler (T-C.26 through T-C.36)
@@ -947,6 +947,7 @@ These tests cover the remaining CRUD gaps identified in the meta model gap analy
 |----|-----------|-------|----------|
 | T-E.38 | Attributes table shows enum ID for enum-type attributes | Browser | Enum attributes display truncated enum_id in parentheses next to the type label |
 | T-E.39 | Copy attributes picker shows enum name for enum-type attributes | System | When selecting a source entity type with enum attributes, the Type column shows "enum (EnumName)" instead of just "enum" |
+| T-E.40 | Copy attributes from multi-version entity type works correctly | System | Create a source entity type, add an attribute (creating V2), then copy that attribute to a target — the copy uses the source's latest version, not V1 |
 
 ### Bidirectional Association Listing (`coverage_test.go`, `meta_repo_test.go`)
 
@@ -1015,11 +1016,134 @@ These tests cover the remaining CRUD gaps identified in the meta model gap analy
 | T-E.66 | BOM modal shows associations with contextual labels | Browser | Associations show relationship label (contains/contained by/references/referenced by/references (mutual)), other entity type name, perspective-correct role |
 | T-E.67 | BOM modal has no edit controls | Browser | No Add, Remove, Edit, or Reorder buttons in modal |
 
-### Copy Attributes Source Version (`App.system.test.ts`)
+### Association Cardinality — Validation (`cardinality_test.go`)
 
 | ID | Test Case | Layer | Expected |
 |----|-----------|-------|----------|
-| T-E.40 | Copy attributes from multi-version entity type works correctly | System | Create a source entity type, add an attribute (creating V2), then copy that attribute to a target — the copy uses the source's latest version, not V1 |
+| T-E.68 | ValidateCardinality accepts standard options (0..1, 0..n, 1, 1..n) | Unit | No error |
+| T-E.69 | ValidateCardinality accepts custom ranges (2..5, 2..n) | Unit | No error |
+| T-E.70 | ValidateCardinality accepts exact values (3) | Unit | No error |
+| T-E.71 | ValidateCardinality accepts empty string | Unit | No error |
+| T-E.72 | ValidateCardinality rejects invalid formats (negative, min>max, non-numeric, malformed) | Unit | Error returned for each invalid input |
+| T-E.73 | NormalizeCardinality returns "0..n" for empty string | Unit | "0..n" |
+| T-E.74 | NormalizeCardinality passes through valid values unchanged | Unit | Same value returned |
+
+### Association Cardinality — Service (`association_service_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.75 | CreateAssociation with valid cardinality passes through to model | Unit | Association created with specified cardinality values |
+| T-E.76 | CreateAssociation with empty cardinality normalizes to "0..n" | Unit | Association created with "0..n" on both ends |
+| T-E.77 | CreateAssociation with invalid cardinality returns error | Unit | Validation error, no version created |
+
+### Association Cardinality — Repository (`meta_repo_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.78 | Create association with cardinality stores and retrieves correctly | Integration | Fields persisted and returned on query |
+| T-E.79 | BulkCopyToVersion preserves cardinality on copied associations | Integration | Copied association has same cardinality values as original |
+
+### Association Cardinality — API (`association_handler_test.go`, `entity_type_handler_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.80 | POST /entity-types/:id/associations with cardinality | API | 201, version created, cardinality passed through |
+| T-E.81 | POST /entity-types/:id/associations with invalid cardinality | API | 400 |
+| T-E.82 | GET /entity-types/:id/associations returns normalized cardinality | API | Response includes source_cardinality and target_cardinality, empty → "0..n" |
+| T-E.83 | GET /entity-types/:id/versions/:v/snapshot includes cardinality | API | Snapshot associations include source_cardinality and target_cardinality |
+
+### Association Cardinality — UI (`EntityTypeDetailPage.browser.test.tsx`, `CatalogVersionDetailPage.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.84 | Add association modal has cardinality dropdowns defaulting to "0..n" | Browser | Two dropdowns with standard options, default "0..n" |
+| T-E.85 | Add association modal custom cardinality reveals min/max inputs | Browser | Selecting "Custom" shows min and max fields |
+| T-E.86 | Associations table shows cardinality column | Browser | Column displays source and target cardinality values |
+| T-E.87 | BOM modal associations table includes cardinality | Browser | Read-only cardinality values shown for each association |
+| T-E.88 | Custom cardinality with empty fields shows client-side error | Browser | Validation error shown before API call when custom selected with empty min/max |
+| T-E.89 | Custom cardinality min field only accepts digits | Browser | Non-digit characters rejected in min input field |
+
+### Association Cardinality — System (`App.system.test.ts`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.90 | Association cardinality is stored and displayed end-to-end | System | Create association with cardinality via API, verify in list response and UI display |
+
+### Association Cardinality — Containment Constraint (`association_service_test.go`, `EntityTypeDetailPage.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.91 | Containment rejects invalid source cardinality (0..n, 1..n) | Unit | Validation error, no version created |
+| T-E.92 | Containment accepts valid source cardinality (1, 0..1, empty) | Unit | Association created with valid cardinality |
+| T-E.93 | Non-containment allows any source cardinality | Unit | No restriction on directional/bidirectional |
+| T-E.94 | Containment source cardinality dropdown restricted to 1 and 0..1 | Browser | Only two options shown, default 0..1 |
+
+### Edit Association — Service (`association_service_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.95 | EditAssociation changes source role | Unit | New version created, source role updated, other fields preserved |
+| T-E.96 | EditAssociation changes cardinality | Unit | New version created, cardinality updated |
+| T-E.97 | EditAssociation with invalid cardinality | Unit | Validation error, no version created |
+| T-E.98 | EditAssociation containment rejects invalid source cardinality | Unit | Validation error when editing containment source to "0..n" |
+| T-E.99 | EditAssociation on nonexistent association | Unit | NotFound error |
+
+### Edit Association — API (`association_handler_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.100 | PUT /entity-types/:id/associations/:name with valid edit | API | 200, new version returned |
+| T-E.101 | PUT /entity-types/:id/associations/:name as RO | API | 403 |
+| T-E.102 | PUT /entity-types/:id/associations/:name nonexistent | API | 404 |
+| T-E.103 | PUT /entity-types/:id/associations/:name invalid cardinality | API | 400 |
+
+### Edit Association — UI (`EntityTypeDetailPage.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.104 | Edit button opens modal with pre-filled association values | Browser | Modal shows current role and cardinality values |
+| T-E.105 | Edit association Save triggers API call | Browser | API called with updated fields, table refreshes |
+
+### Association Names — Service (`association_service_test.go`, `attribute_service_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.106 | CreateAssociation requires name | Unit | Validation error when name is empty |
+| T-E.107 | CreateAssociation rejects duplicate association name | Unit | Conflict error when name already exists in version |
+| T-E.108 | CreateAssociation rejects name that conflicts with attribute | Unit | Conflict error when association name matches existing attribute name |
+| T-E.109 | AddAttribute rejects name that conflicts with association | Unit | Conflict error when attribute name matches existing association name |
+| T-E.110 | EditAssociation can rename | Unit | New version created, name updated |
+| T-E.111 | EditAssociation rename conflicts with attribute | Unit | Conflict error |
+| T-E.112 | DeleteAssociation by name | Unit | New version without the named association |
+| T-E.113 | COW matching uses name instead of all-properties | Unit | Correct association matched even with reordered list |
+
+### Association Names — Repository (`meta_repo_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.114 | Association name stored and retrieved | Integration | Name persisted and returned |
+| T-E.115 | Association unique constraint on (version_id, name) | Integration | Duplicate name in same version rejected |
+| T-E.116 | BulkCopyToVersion preserves association names | Integration | Copied associations retain names |
+
+### Association Names — API (`association_handler_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.117 | POST /associations with name returns 201 | API | Name included in create, version returned |
+| T-E.118 | POST /associations without name returns 400 | API | Name required |
+| T-E.119 | POST /associations duplicate name returns 409 | API | Conflict |
+| T-E.120 | GET /associations returns name in response | API | Name field present in list items |
+| T-E.121 | PUT /associations/:name with valid edit returns 200 | API | Route uses name param |
+| T-E.122 | DELETE /associations/:name returns 204 | API | Route uses name param |
+| T-E.123 | GET /versions/:v/snapshot includes association name | API | Name in snapshot response |
+
+### Association Names — UI (`EntityTypeDetailPage.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.124 | Add association modal has name field | Browser | Name input visible, required |
+| T-E.125 | Associations table shows Name column | Browser | Name displayed in table |
+| T-E.126 | Edit association modal shows name pre-filled | Browser | Current name editable |
 
 ---
 
@@ -1059,7 +1183,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 252 test cases (T-1.01 through T-9.09, T-CV.01 through T-CV.31, and T-E.01 through T-E.67) pass
+- All 275 test cases (T-1.01 through T-9.09, T-CV.01 through T-CV.31, and T-E.01 through T-E.90) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview
