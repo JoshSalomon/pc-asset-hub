@@ -37,7 +37,9 @@ import {
 } from '@patternfly/react-core'
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
 import { api, setAuthRole } from './api/client'
-import type { EntityType, CatalogVersion, ContainmentTreeNode, Role } from './types'
+import type { EntityType, CatalogVersion, ContainmentTreeNode, Role, VersionSnapshot } from './types'
+import EntityTypeDiagram, { type DiagramEntityType } from './components/EntityTypeDiagram'
+import EditAssociationModal from './components/EditAssociationModal'
 import EntityTypeDetailPage from './pages/meta/EntityTypeDetailPage'
 import EnumListPage from './pages/meta/EnumListPage'
 import EnumDetailPage from './pages/meta/EnumDetailPage'
@@ -110,6 +112,7 @@ function App() {
   const getActiveTab = () => {
     if (location.pathname.startsWith('/catalog-versions')) return 'catalogVersions'
     if (location.pathname.startsWith('/enums')) return 'enums'
+    if (location.pathname.startsWith('/model-diagram')) return 'modelDiagram'
     return 'entityTypes'
   }
 
@@ -192,6 +195,78 @@ function App() {
     if (activeTab === 'entityTypes' && location.pathname === '/') loadEntityTypes()
     if (activeTab === 'catalogVersions' && location.pathname === '/catalog-versions') loadCatalogVersions()
   }, [activeTab, role, location.pathname, loadEntityTypes, loadCatalogVersions])
+
+  // Model diagram state
+  const [diagramData, setDiagramData] = useState<DiagramEntityType[]>([])
+  const [diagramLoading, setDiagramLoading] = useState(false)
+
+  // Diagram edit association modal state
+  const [diagramEditOpen, setDiagramEditOpen] = useState(false)
+  const [diagramEditSourceId, setDiagramEditSourceId] = useState('')
+  const [diagramEditData, setDiagramEditData] = useState({
+    name: '', type: '', sourceRole: '', targetRole: '',
+    sourceCardinality: '0..n', targetCardinality: '0..n',
+    sourceName: '', targetName: '',
+  })
+
+  const handleDiagramEdgeClick = (edgeData: { name: string; assocType: string; sourceRole: string; targetRole: string; sourceCardinality: string; targetCardinality: string; sourceEntityTypeId: string; sourceEntityTypeName: string; targetEntityTypeName: string }) => {
+    setDiagramEditSourceId(edgeData.sourceEntityTypeId)
+    setDiagramEditData({
+      name: edgeData.name,
+      type: edgeData.assocType,
+      sourceRole: edgeData.sourceRole,
+      targetRole: edgeData.targetRole,
+      sourceCardinality: edgeData.sourceCardinality || '0..n',
+      targetCardinality: edgeData.targetCardinality || '0..n',
+      sourceName: edgeData.sourceEntityTypeName,
+      targetName: edgeData.targetEntityTypeName,
+    })
+    setDiagramEditOpen(true)
+  }
+
+  const handleDiagramEditSave = async (data: { name: string; type: string; sourceRole: string; targetRole: string; sourceCardinality: string; targetCardinality: string }) => {
+    if (!diagramEditSourceId) return
+    const req: Record<string, string | undefined> = {}
+    if (data.name !== diagramEditData.name) req.name = data.name
+    req.type = data.type
+    req.source_role = data.sourceRole
+    req.target_role = data.targetRole
+    req.source_cardinality = data.sourceCardinality
+    req.target_cardinality = data.targetCardinality
+    await api.associations.edit(diagramEditSourceId, diagramEditData.name, req)
+    setDiagramEditOpen(false)
+    loadDiagramData()
+  }
+
+  const loadDiagramData = useCallback(async () => {
+    setDiagramLoading(true)
+    try {
+      const etResult = await api.entityTypes.list()
+      const items = etResult.items || []
+      const snapshots: DiagramEntityType[] = await Promise.all(
+        items.map(async (et: EntityType) => {
+          const versions = await api.versions.list(et.id)
+          const latest = versions.items?.length ? Math.max(...versions.items.map((v: any) => v.version)) : 1
+          const snapshot: VersionSnapshot = await api.versions.snapshot(et.id, latest)
+          return {
+            entityType: et,
+            version: latest,
+            attributes: snapshot.attributes || [],
+            associations: snapshot.associations || [],
+          }
+        })
+      )
+      setDiagramData(snapshots)
+    } catch {
+      // Diagram data loading failed — show empty diagram
+    } finally {
+      setDiagramLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (activeTab === 'modelDiagram' && location.pathname === '/model-diagram') loadDiagramData()
+  }, [activeTab, location.pathname, loadDiagramData])
 
   // Create entity type
   const handleCreateEntityType = async () => {
@@ -387,6 +462,7 @@ function App() {
     if (key === 'entityTypes') navigate('/')
     else if (key === 'catalogVersions') navigate('/catalog-versions')
     else if (key === 'enums') navigate('/enums')
+    else if (key === 'modelDiagram') navigate('/model-diagram')
   }
 
   // Entity types list content
@@ -608,6 +684,19 @@ function App() {
               <Tab eventKey="enums" title={<TabTitleText>Enums</TabTitleText>}>
                 <EnumListPage role={role} />
               </Tab>
+              <Tab eventKey="modelDiagram" title={<TabTitleText>Model Diagram</TabTitleText>}>
+                <PageSection padding={{ default: 'noPadding' }}>
+                  {diagramLoading ? (
+                    <Spinner />
+                  ) : (
+                    <EntityTypeDiagram
+                      entityTypes={diagramData}
+                      onNodeDoubleClick={(entityTypeId) => navigate(`/entity-types/${entityTypeId}`)}
+                      onEdgeClick={handleDiagramEdgeClick}
+                    />
+                  )}
+                </PageSection>
+              </Tab>
             </Tabs>
           </PageSection>
         } />
@@ -716,6 +805,16 @@ function App() {
           <Button variant="link" onClick={() => setDeleteCvTarget(null)}>Cancel</Button>
         </ModalFooter>
       </Modal>
+      {/* Diagram Edit Association Modal */}
+      <EditAssociationModal
+        isOpen={diagramEditOpen}
+        onClose={() => setDiagramEditOpen(false)}
+        onSave={handleDiagramEditSave}
+        initialData={diagramEditData}
+        showEntityTypeNames
+        allowTypeChange
+      />
+
     </Page>
   )
 }

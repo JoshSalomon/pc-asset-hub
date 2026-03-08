@@ -108,7 +108,7 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    edit: (entityTypeId: string, name: string, data: { name?: string; source_role?: string; target_role?: string; source_cardinality?: string; target_cardinality?: string }) =>
+    edit: (entityTypeId: string, name: string, data: { name?: string; type?: string; source_role?: string; target_role?: string; source_cardinality?: string; target_cardinality?: string }) =>
       fetchJSON<EntityTypeVersion>(`${BASE_URL}/entity-types/${entityTypeId}/associations/${encodeURIComponent(name)}`, {
         method: 'PUT',
         body: JSON.stringify(data),

@@ -1004,7 +1004,7 @@ func TestListAssociations_ListByVersionError(t *testing.T) {
 func TestEditAssociation_GetLatestError(t *testing.T) {
 	svc, _, etvRepo, _ := setupAssocService()
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(nil, dbErr)
-	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, nil, nil, nil, nil)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, nil, nil, nil, nil, nil)
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -1013,7 +1013,7 @@ func TestEditAssociation_ListByVersionError(t *testing.T) {
 	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
 	assocRepo.On("ListByVersion", mock.Anything, "v1").Return(([]*models.Association)(nil), dbErr)
-	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, nil, nil, nil, nil)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, nil, nil, nil, nil, nil)
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -1024,7 +1024,7 @@ func TestEditAssociation_TargetCardinalityInvalid(t *testing.T) {
 	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{
 		{ID: "a1", Name: "test", Type: models.AssociationTypeDirectional},
 	}, nil)
-	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, nil, nil, nil, strPtr("bad"))
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, nil, nil, nil, strPtr("bad"), nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "target_cardinality")
 }
@@ -1038,7 +1038,7 @@ func TestEditAssociation_EtvCreateError(t *testing.T) {
 	}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(dbErr)
-	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, strPtr("role"), nil, nil, nil)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, strPtr("role"), nil, nil, nil, nil)
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -1052,7 +1052,7 @@ func TestEditAssociation_AttrBulkCopyError(t *testing.T) {
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(dbErr)
-	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, strPtr("role"), nil, nil, nil)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, strPtr("role"), nil, nil, nil, nil)
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -1067,7 +1067,7 @@ func TestEditAssociation_AssocBulkCopyError(t *testing.T) {
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(dbErr)
-	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, strPtr("role"), nil, nil, nil)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, strPtr("role"), nil, nil, nil, nil)
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -1083,7 +1083,7 @@ func TestEditAssociation_ListNewVersionError(t *testing.T) {
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("ListByVersion", mock.Anything, mock.MatchedBy(func(id string) bool { return id != "v1" })).Return(([]*models.Association)(nil), dbErr)
-	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, strPtr("role"), nil, nil, nil)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, strPtr("role"), nil, nil, nil, nil)
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -1102,7 +1102,7 @@ func TestEditAssociation_UpdateError(t *testing.T) {
 		{ID: "a1-copy", Name: "test", Type: models.AssociationTypeDirectional},
 	}, nil)
 	assocRepo.On("Update", mock.Anything, mock.Anything).Return(dbErr)
-	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, strPtr("role"), nil, nil, nil)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, strPtr("role"), nil, nil, nil, nil)
 	assert.ErrorIs(t, err, dbErr)
 }
 

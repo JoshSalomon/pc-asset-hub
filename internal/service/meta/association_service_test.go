@@ -290,7 +290,7 @@ func TestTE95_EditAssociationChangesSourceRole(t *testing.T) {
 		return a.SourceRole == "new_role"
 	})).Return(nil)
 
-	newVer, err := svc.EditAssociation(context.Background(), "et-a", "test_assoc", nil, strPtr("new_role"), nil, nil, nil)
+	newVer, err := svc.EditAssociation(context.Background(), "et-a", "test_assoc", nil, strPtr("new_role"), nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 2, newVer.Version)
 }
@@ -318,7 +318,7 @@ func TestTE96_EditAssociationChangesCardinality(t *testing.T) {
 		return a.SourceCardinality == "1" && a.TargetCardinality == "1..n"
 	})).Return(nil)
 
-	newVer, err := svc.EditAssociation(context.Background(), "et-a", "test_assoc", nil, nil, nil, strPtr("1"), strPtr("1..n"))
+	newVer, err := svc.EditAssociation(context.Background(), "et-a", "test_assoc", nil, nil, nil, strPtr("1"), strPtr("1..n"), nil)
 	require.NoError(t, err)
 	assert.Equal(t, 2, newVer.Version)
 }
@@ -334,7 +334,7 @@ func TestTE97_EditAssociationInvalidCardinality(t *testing.T) {
 		{ID: "assoc-1", Name: "test_assoc", Type: models.AssociationTypeDirectional},
 	}, nil)
 
-	_, err := svc.EditAssociation(context.Background(), "et-a", "test_assoc", nil, nil, nil, strPtr("bad"), nil)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test_assoc", nil, nil, nil, strPtr("bad"), nil, nil)
 	assert.Error(t, err)
 	assert.True(t, domainerrors.IsValidation(err))
 }
@@ -350,7 +350,7 @@ func TestTE98_EditAssociationContainmentRejectsInvalidSource(t *testing.T) {
 		{ID: "assoc-1", Name: "test_assoc", Type: models.AssociationTypeContainment, SourceCardinality: "0..1"},
 	}, nil)
 
-	_, err := svc.EditAssociation(context.Background(), "et-a", "test_assoc", nil, nil, nil, strPtr("0..n"), nil)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test_assoc", nil, nil, nil, strPtr("0..n"), nil, nil)
 	assert.Error(t, err)
 	assert.True(t, domainerrors.IsValidation(err))
 	assert.Contains(t, err.Error(), "source_cardinality")
@@ -365,7 +365,7 @@ func TestTE99_EditAssociationNotFound(t *testing.T) {
 	// ListByVersion returns no matching name
 	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 
-	_, err := svc.EditAssociation(context.Background(), "et-a", "bad_name", nil, nil, nil, nil, nil)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "bad_name", nil, nil, nil, nil, nil, nil)
 	assert.True(t, domainerrors.IsNotFound(err))
 }
 
@@ -403,7 +403,7 @@ func TestEditAssociation_MatchesCorrectDuplicate(t *testing.T) {
 		return a.ID == "copy-1" && a.SourceRole == "updated_primary"
 	})).Return(nil)
 
-	newVer, err := svc.EditAssociation(context.Background(), "et-a", "primary_ref", nil, strPtr("updated_primary"), nil, nil, nil)
+	newVer, err := svc.EditAssociation(context.Background(), "et-a", "primary_ref", nil, strPtr("updated_primary"), nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 2, newVer.Version)
 	// Verify that Update was called with copy-1 (not copy-2)
@@ -475,6 +475,53 @@ func TestTE108_CreateAssociationNameConflictsWithAttribute(t *testing.T) {
 	assert.Contains(t, err.Error(), "attribute")
 }
 
+// EditAssociation can change type
+func TestEditAssociation_ChangeType(t *testing.T) {
+	svc, assocRepo, etvRepo, attrRepo := setupAssocService()
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
+	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, "v1", mock.AnythingOfType("string")).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, "v1", mock.AnythingOfType("string")).Return(nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{
+		{ID: "a1", Name: "test", EntityTypeVersionID: "v1", TargetEntityTypeID: "et-b",
+			Type: models.AssociationTypeDirectional, SourceCardinality: "0..n", TargetCardinality: "0..n"},
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, mock.MatchedBy(func(id string) bool { return id != "v1" })).Return([]*models.Association{
+		{ID: "a1-copy", Name: "test", EntityTypeVersionID: "new-v", TargetEntityTypeID: "et-b",
+			Type: models.AssociationTypeDirectional, SourceCardinality: "0..n", TargetCardinality: "0..n"},
+	}, nil)
+	assocRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *models.Association) bool {
+		return a.Type == models.AssociationTypeBidirectional
+	})).Return(nil)
+
+	bidirectional := models.AssociationTypeBidirectional
+	newVer, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, nil, nil, nil, nil, &bidirectional)
+	require.NoError(t, err)
+	assert.Equal(t, 2, newVer.Version)
+}
+
+// EditAssociation rejects changing type to containment when source cardinality is invalid
+func TestEditAssociation_ChangeTypeToContainmentRejectsInvalidCardinality(t *testing.T) {
+	svc, assocRepo, etvRepo, _ := setupAssocService()
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
+	// Association has source_cardinality "0..n" which is invalid for containment
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{
+		{ID: "a1", Name: "test", EntityTypeVersionID: "v1", TargetEntityTypeID: "et-b",
+			Type: models.AssociationTypeDirectional, SourceCardinality: "0..n", TargetCardinality: "0..n"},
+	}, nil)
+
+	containment := models.AssociationTypeContainment
+	_, err := svc.EditAssociation(context.Background(), "et-a", "test", nil, nil, nil, nil, nil, &containment)
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "source_cardinality")
+}
+
 // T-E.110: EditAssociation can rename
 func TestTE110_EditAssociationRename(t *testing.T) {
 	svc, assocRepo, etvRepo, attrRepo := setupAssocService()
@@ -499,7 +546,7 @@ func TestTE110_EditAssociationRename(t *testing.T) {
 		return a.Name == "new_name"
 	})).Return(nil)
 
-	newVer, err := svc.EditAssociation(context.Background(), "et-a", "old_name", strPtr("new_name"), nil, nil, nil, nil)
+	newVer, err := svc.EditAssociation(context.Background(), "et-a", "old_name", strPtr("new_name"), nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 2, newVer.Version)
 }
@@ -517,7 +564,7 @@ func TestTE111_EditAssociationRenameConflictsWithAttribute(t *testing.T) {
 		{ID: "a1", Name: "hostname", Type: models.AttributeTypeString},
 	}, nil)
 
-	_, err := svc.EditAssociation(context.Background(), "et-a", "tools", strPtr("hostname"), nil, nil, nil, nil)
+	_, err := svc.EditAssociation(context.Background(), "et-a", "tools", strPtr("hostname"), nil, nil, nil, nil, nil)
 	assert.Error(t, err)
 	assert.True(t, domainerrors.IsConflict(err))
 }

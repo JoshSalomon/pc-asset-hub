@@ -75,7 +75,12 @@ func (h *AssociationHandler) Edit(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
-	newVersion, err := h.svc.EditAssociation(c.Request().Context(), entityTypeID, name, req.Name, req.SourceRole, req.TargetRole, req.SourceCardinality, req.TargetCardinality)
+	var newType *models.AssociationType
+	if req.Type != nil {
+		t := models.AssociationType(*req.Type)
+		newType = &t
+	}
+	newVersion, err := h.svc.EditAssociation(c.Request().Context(), entityTypeID, name, req.Name, req.SourceRole, req.TargetRole, req.SourceCardinality, req.TargetCardinality, newType)
 	if err != nil {
 		return mapError(err)
 	}

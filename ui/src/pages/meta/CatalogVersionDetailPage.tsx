@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   PageSection,
   Title,
@@ -26,8 +26,9 @@ import {
   ModalFooter,
 } from '@patternfly/react-core'
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
-import { api } from '../../api/client'
+import { api, setAuthRole } from '../../api/client'
 import type { CatalogVersion, CatalogVersionPin, LifecycleTransition, VersionSnapshot, Role } from '../../types'
+import EntityTypeDiagram, { type DiagramEntityType } from '../../components/EntityTypeDiagram'
 
 interface Props {
   role: Role
@@ -36,11 +37,16 @@ interface Props {
 export default function CatalogVersionDetailPage({ role }: Props) {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [cv, setCv] = useState<CatalogVersion | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<string | number>('overview')
+  const [activeTab, setActiveTab] = useState<string | number>(searchParams.get('tab') || 'overview')
+  const handleTabSelect = (_e: any, key: string | number) => {
+    setActiveTab(key)
+    setSearchParams({ tab: String(key) }, { replace: true })
+  }
 
   const [pins, setPins] = useState<CatalogVersionPin[]>([])
   const [pinsLoading, setPinsLoading] = useState(false)
@@ -52,6 +58,10 @@ export default function CatalogVersionDetailPage({ role }: Props) {
   const [snapshot, setSnapshot] = useState<VersionSnapshot | null>(null)
   const [snapshotLoading, setSnapshotLoading] = useState(false)
   const [snapshotError, setSnapshotError] = useState<string | null>(null)
+
+  // Diagram state
+  const [diagramData, setDiagramData] = useState<DiagramEntityType[]>([])
+  const [diagramLoading, setDiagramLoading] = useState(false)
 
   const loadCV = useCallback(async () => {
     if (!id) return
@@ -94,11 +104,12 @@ export default function CatalogVersionDetailPage({ role }: Props) {
   }, [id])
 
   useEffect(() => {
+    setAuthRole(role)
     loadCV()
-  }, [loadCV])
+  }, [loadCV, role])
 
   useEffect(() => {
-    if (activeTab === 'bom') loadPins()
+    if (activeTab === 'bom' || activeTab === 'diagram') loadPins()
     if (activeTab === 'transitions') loadTransitions()
   }, [activeTab, loadPins, loadTransitions])
 
@@ -116,6 +127,34 @@ export default function CatalogVersionDetailPage({ role }: Props) {
       setSnapshotLoading(false)
     }
   }
+
+  const loadDiagramData = useCallback(async () => {
+    if (pins.length === 0) return
+    setDiagramLoading(true)
+    try {
+      setAuthRole(role)
+      const snapshots: DiagramEntityType[] = await Promise.all(
+        pins.map(async (pin) => {
+          const snap: VersionSnapshot = await api.versions.snapshot(pin.entity_type_id, pin.version)
+          return {
+            entityType: { id: pin.entity_type_id, name: pin.entity_type_name, created_at: '', updated_at: '' },
+            version: pin.version,
+            attributes: snap.attributes || [],
+            associations: snap.associations || [],
+          }
+        })
+      )
+      setDiagramData(snapshots)
+    } catch {
+      // Diagram loading failed — will retry on next tab switch
+    } finally {
+      setDiagramLoading(false)
+    }
+  }, [pins, role])
+
+  useEffect(() => {
+    if (activeTab === 'diagram') loadDiagramData()
+  }, [activeTab, loadDiagramData])
 
   const handlePromote = async () => {
     if (!id) return
@@ -171,7 +210,7 @@ export default function CatalogVersionDetailPage({ role }: Props) {
         {cv.version_label} <Label color={stageColor(cv.lifecycle_stage)}>{cv.lifecycle_stage}</Label>
       </Title>
 
-      <Tabs activeKey={activeTab} onSelect={(_e, key) => setActiveTab(key)} style={{ marginTop: '1rem' }}>
+      <Tabs activeKey={activeTab} onSelect={handleTabSelect} style={{ marginTop: '1rem' }}>
         {/* Overview Tab */}
         <Tab eventKey="overview" title={<TabTitleText>Overview</TabTitleText>}>
           <PageSection padding={{ default: 'noPadding' }} style={{ marginTop: '1rem' }}>
@@ -282,6 +321,17 @@ export default function CatalogVersionDetailPage({ role }: Props) {
                   ))}
                 </Tbody>
               </Table>
+            )}
+          </PageSection>
+        </Tab>
+        <Tab eventKey="diagram" title={<TabTitleText>Diagram</TabTitleText>}>
+          <PageSection padding={{ default: 'noPadding' }} style={{ marginTop: '1rem' }}>
+            {(diagramLoading || (pinsLoading && diagramData.length === 0)) ? (
+              <Spinner aria-label="Loading diagram" />
+            ) : diagramData.length === 0 ? (
+              <EmptyState><EmptyStateBody>No entity types pinned.</EmptyStateBody></EmptyState>
+            ) : (
+              <EntityTypeDiagram entityTypes={diagramData} />
             )}
           </PageSection>
         </Tab>

@@ -116,7 +116,7 @@ test('T-C.32: shows entity type name, ID, and dates on overview', async () => {
 test('shows back link to entity types list', async () => {
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
-  const backLink = page.getByRole('button', { name: /Back to Entity Types/i })
+  const backLink = page.getByRole('button', { name: /Back/i })
   await expect.element(backLink).toBeVisible()
 })
 
@@ -923,4 +923,245 @@ test('Associations table column order: Entity Type before Name', async () => {
   // cells[0] = Relationship (contains), cells[1] = Entity Type (Dataset), cells[2] = Name (tools)
   await expect.element(cells[1]).toHaveTextContent('Dataset')
   await expect.element(cells[2]).toHaveTextContent('tools')
+})
+
+// T-E.137: Edit modal shows custom cardinality option
+test('T-E.137: Edit modal source cardinality has Custom option', async () => {
+  // Use directional association (containment restricts source cardinality)
+  ;(api.associations.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'assoc1', entity_type_version_id: 'v1', name: 'ref', target_entity_type_id: 'et-2',
+        type: 'directional', source_role: 'src', target_role: 'tgt',
+        source_cardinality: '0..n', target_cardinality: '0..n', direction: 'outgoing' },
+    ],
+    total: 1,
+  })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  const dialog = page.getByRole('dialog')
+  // Select "Custom" for source cardinality
+  await userEvent.selectOptions(dialog.getByLabelText('Source Cardinality', { exact: true }), 'custom')
+  // Min/max inputs should appear
+  await expect.element(dialog.getByPlaceholder('min')).toBeVisible()
+  await expect.element(dialog.getByPlaceholder('max or n')).toBeVisible()
+})
+
+// T-E.139: Edit modal pre-fills non-standard cardinality as Custom
+test('T-E.139: Edit modal pre-fills custom cardinality', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'assoc1', entity_type_version_id: 'v1', name: 'ref', target_entity_type_id: 'et-2',
+        type: 'directional', source_role: 'src', target_role: 'tgt',
+        source_cardinality: '2..5', target_cardinality: '0..n', direction: 'outgoing' },
+    ],
+    total: 1,
+  })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  const dialog = page.getByRole('dialog')
+  // Custom cardinality "2..5" should show min/max inputs pre-filled
+  await expect.element(dialog.getByPlaceholder('min')).toHaveValue('2')
+  await expect.element(dialog.getByPlaceholder('max or n')).toHaveValue('5')
+})
+
+// Edit modal: target custom cardinality pre-fills correctly
+test('Edit modal pre-fills custom target cardinality', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'assoc1', entity_type_version_id: 'v1', name: 'ref', target_entity_type_id: 'et-2',
+        type: 'directional', source_role: 'src', target_role: 'tgt',
+        source_cardinality: '0..n', target_cardinality: '3..n', direction: 'outgoing' },
+    ],
+    total: 1,
+  })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  const dialog = page.getByRole('dialog')
+  // Target cardinality "3..n" should show custom inputs
+  const tgtMins = await dialog.getByPlaceholder('min').all()
+  const tgtMaxes = await dialog.getByPlaceholder('max or n').all()
+  // Second set of min/max inputs is for target (first is source if custom)
+  // Since source is standard (0..n), only target should have custom inputs
+  await expect.element(tgtMins[0]).toHaveValue('3')
+  await expect.element(tgtMaxes[0]).toHaveValue('n')
+})
+
+// Edit modal: target custom cardinality select and type values
+test('Edit modal target Custom option reveals min/max inputs', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'assoc1', entity_type_version_id: 'v1', name: 'ref', target_entity_type_id: 'et-2',
+        type: 'directional', source_role: 'src', target_role: 'tgt',
+        source_cardinality: '0..n', target_cardinality: '0..n', direction: 'outgoing' },
+    ],
+    total: 1,
+  })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  const dialog = page.getByRole('dialog')
+  // Select Custom for target cardinality
+  await userEvent.selectOptions(dialog.getByLabelText('Target Cardinality', { exact: true }), 'custom')
+  // Min/max inputs should appear for target
+  const mins = await dialog.getByPlaceholder('min').all()
+  expect(mins.length).toBeGreaterThan(0)
+})
+
+// T-E.138: Edit modal custom cardinality sends correct value
+test('T-E.138: Edit modal custom cardinality sends correct value', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'assoc1', entity_type_version_id: 'v1', name: 'ref', target_entity_type_id: 'et-2',
+        type: 'directional', source_role: 'src', target_role: 'tgt',
+        source_cardinality: '0..n', target_cardinality: '0..n', direction: 'outgoing' },
+    ],
+    total: 1,
+  })
+  ;(api.associations.edit as Mock).mockResolvedValue({ id: 'v3', version: 3 })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  const dialog = page.getByRole('dialog')
+  // Select Custom for source cardinality (already directional type)
+  await userEvent.selectOptions(dialog.getByLabelText('Source Cardinality', { exact: true }), 'custom')
+  // Fill in custom values
+  await userEvent.type(dialog.getByPlaceholder('min'), '3')
+  await userEvent.type(dialog.getByPlaceholder('max or n'), '7')
+  // Save
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  // Verify API was called with custom cardinality
+  expect(api.associations.edit).toHaveBeenCalledWith('et-1', 'ref', expect.objectContaining({
+    source_cardinality: '3..7',
+  }))
+})
+
+// Edit modal: target custom min/max digit-only validation
+test('Edit modal target custom min only accepts digits, max accepts digits or n', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'assoc1', entity_type_version_id: 'v1', name: 'ref', target_entity_type_id: 'et-2',
+        type: 'directional', source_role: 'src', target_role: 'tgt',
+        source_cardinality: '0..n', target_cardinality: '0..n', direction: 'outgoing' },
+    ],
+    total: 1,
+  })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  const dialog = page.getByRole('dialog')
+  // Select Custom for target cardinality
+  await userEvent.selectOptions(dialog.getByLabelText('Target Cardinality', { exact: true }), 'custom')
+  const mins = await dialog.getByPlaceholder('min').all()
+  const maxes = await dialog.getByPlaceholder('max or n').all()
+  // Target min/max should be the first (only) set since source is standard
+  const tgtMin = mins[0]
+  const tgtMax = maxes[0]
+  // Type digits — should work
+  await userEvent.type(tgtMin, '4')
+  await expect.element(tgtMin).toHaveValue('4')
+  // Type letters — should be rejected
+  await userEvent.type(tgtMin, 'abc')
+  await expect.element(tgtMin).toHaveValue('4')
+  // Max accepts 'n'
+  await userEvent.type(tgtMax, 'n')
+  await expect.element(tgtMax).toHaveValue('n')
+  // Max accepts digits
+  await userEvent.clear(tgtMax)
+  await userEvent.type(tgtMax, '10')
+  await expect.element(tgtMax).toHaveValue('10')
+  // Max rejects letters
+  await userEvent.type(tgtMax, 'xyz')
+  await expect.element(tgtMax).toHaveValue('10')
+})
+
+// Edit modal: switching source cardinality from Custom back to standard
+test('Edit modal source cardinality switch from Custom back to standard', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'assoc1', entity_type_version_id: 'v1', name: 'ref', target_entity_type_id: 'et-2',
+        type: 'directional', source_role: 'src', target_role: 'tgt',
+        source_cardinality: '0..n', target_cardinality: '0..n', direction: 'outgoing' },
+    ],
+    total: 1,
+  })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  const dialog = page.getByRole('dialog')
+  // Select Custom
+  await userEvent.selectOptions(dialog.getByLabelText('Source Cardinality', { exact: true }), 'custom')
+  await expect.element(dialog.getByPlaceholder('min')).toBeVisible()
+  // Switch back to standard "1..n"
+  await userEvent.selectOptions(dialog.getByLabelText('Source Cardinality', { exact: true }), '1..n')
+  // Custom inputs should disappear
+  const mins = await dialog.getByPlaceholder('min').all()
+  expect(mins.length).toBe(0)
+})
+
+// Edit modal: switching target cardinality from Custom back to standard
+test('Edit modal target cardinality switch from Custom back to standard', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'assoc1', entity_type_version_id: 'v1', name: 'ref', target_entity_type_id: 'et-2',
+        type: 'directional', source_role: 'src', target_role: 'tgt',
+        source_cardinality: '0..n', target_cardinality: '0..n', direction: 'outgoing' },
+    ],
+    total: 1,
+  })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  const dialog = page.getByRole('dialog')
+  // Select Custom for target
+  await userEvent.selectOptions(dialog.getByLabelText('Target Cardinality', { exact: true }), 'custom')
+  const mins = await dialog.getByPlaceholder('min').all()
+  expect(mins.length).toBeGreaterThan(0)
+  // Switch back to standard "1"
+  await userEvent.selectOptions(dialog.getByLabelText('Target Cardinality', { exact: true }), '1')
+  // Custom inputs should disappear
+  const minsAfter = await dialog.getByPlaceholder('min').all()
+  expect(minsAfter.length).toBe(0)
+})
+
+// Edit modal: changing type to containment resets source cardinality
+test('Edit modal type change to containment resets source cardinality', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'assoc1', entity_type_version_id: 'v1', name: 'ref', target_entity_type_id: 'et-2',
+        type: 'directional', source_role: 'src', target_role: 'tgt',
+        source_cardinality: '1..n', target_cardinality: '0..n', direction: 'outgoing' },
+    ],
+    total: 1,
+  })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  const dialog = page.getByRole('dialog')
+  // Type is editable (allowTypeChange is set) — change to containment
+  await userEvent.selectOptions(dialog.getByLabelText('Type', { exact: true }), 'containment')
+  // Source cardinality "1..n" is invalid for containment — should reset to "0..1"
+  const srcSelect = dialog.getByLabelText('Source Cardinality', { exact: true })
+  await expect.element(srcSelect).toHaveValue('0..1')
+})
+
+// Edit modal: save error is displayed
+test('Edit modal shows save error', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'assoc1', entity_type_version_id: 'v1', name: 'ref', target_entity_type_id: 'et-2',
+        type: 'directional', source_role: 'src', target_role: 'tgt',
+        source_cardinality: '0..n', target_cardinality: '0..n', direction: 'outgoing' },
+    ],
+    total: 1,
+  })
+  ;(api.associations.edit as Mock).mockRejectedValue(new Error('500: server error'))
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  await expect.element(dialog.getByText('500: server error')).toBeVisible()
 })

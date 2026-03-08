@@ -248,6 +248,20 @@
       "phase": 0,
       "difficulty": 0.6,
       "created_at": "2026-03-02T12:42:57.457650+00:00"
+    },
+    "mem_881deaf8": {
+      "topic": "Entity Type Diagram (US-32) — implementation lessons",
+      "tags": [
+        "diagram",
+        "topology",
+        "patternfly",
+        "US-32",
+        "visualization",
+        "lessons"
+      ],
+      "phase": 0,
+      "difficulty": 0.8,
+      "created_at": "2026-03-04T22:16:34.168927+00:00"
     }
   }
 }

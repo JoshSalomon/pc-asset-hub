@@ -395,7 +395,7 @@ test('navigate to entity type detail page', async () => {
   await visible(pg.getByRole('tab', { name: 'Version History' }))
 
   // Back link exists
-  await visible(pg.getByRole('button', { name: /Back to Entity Types/i }))
+  await visible(pg.getByRole('button', { name: /Back/i }))
 
   await apiCall('DELETE', `/api/meta/v1/entity-types/${etId}`)
 })
@@ -495,7 +495,7 @@ test('rename entity type and navigate back shows new name in list', async () => 
   await visible(pg.getByRole('heading', { name: newName }))
 
   // Navigate back to entity types list
-  await pg.getByRole('button', { name: /Back to Entity Types/i }).click()
+  await pg.getByRole('button', { name: /Back/i }).click()
 
   // The list should show the new name, not the old one
   await pg.getByPlaceholder('Filter by name').fill(newName)
@@ -664,7 +664,7 @@ test('copy entity type from detail page', async () => {
   await pg.getByRole('dialog').getByRole('button', { name: 'Copy' }).click()
 
   // Should navigate back to list
-  await visible(pg.getByText('Entity Types'))
+  await visible(pg.getByRole('heading', { name: 'Entity Types' }))
 
   // Verify copy exists via API
   const list = await apiCall('GET', '/api/meta/v1/entity-types')

@@ -111,6 +111,7 @@ type AssociationResponse struct {
 
 type UpdateAssociationRequest struct {
 	Name              *string `json:"name"`
+	Type              *string `json:"type"`
 	SourceRole        *string `json:"source_role"`
 	TargetRole        *string `json:"target_role"`
 	SourceCardinality *string `json:"source_cardinality"`

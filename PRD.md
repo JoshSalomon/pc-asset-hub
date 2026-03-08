@@ -928,10 +928,13 @@ As an Admin, I want to see a diagram showing all entity types and their associat
 Acceptance Criteria:
 - A graph/diagram view shows entity types as nodes and associations as labeled edges.
 - Containment associations are visually distinct from reference associations (e.g., different line styles or colors).
-- Edge labels indicate the association type and direction.
+- Entity type nodes display the type name, version number, and a list of attributes with their types (UML class diagram style).
+- Edge labels indicate the association name, type, and cardinality.
 - The diagram updates automatically when entity types or associations are added or removed.
-- The diagram is interactive — clicking a node navigates to that entity type's detail view.
-- The diagram handles 10+ entity types without becoming unreadable (supports zoom/pan or layout adjustments).
+- The diagram is interactive — double-clicking a node navigates to that entity type's detail view. Double-clicking an edge opens the edit association modal (main page only).
+- The diagram handles 10+ entity types without becoming unreadable (supports zoom/pan and automatic layout).
+- The diagram appears as a "Model Diagram" tab on the main page (showing all entity types) and as a "Diagram" tab on the catalog version detail page (showing only pinned entity types, read-only).
+- Built with `@patternfly/react-topology` (OCP Console native component).
 
 ---
 
@@ -1058,6 +1061,10 @@ Items where the current implementation diverges from the intended behavior descr
 | TD-5 | Version lineage tracking | Entity type versions are sequential integers with no parent tracking. Version 4 is created from version 3, but this relationship is not recorded. | Each entity type version should record which version it was derived from (`parent_version_id`). This enables: (1) understanding the edit history as a DAG rather than a flat list, (2) supporting future scenarios where editing from a catalog version context creates a branch, (3) detecting when two catalog versions diverge from a common base version. **Decision: deferred for v1.** The current simple incrementing scheme is sufficient for the initial release. Revisit when implementing edit-from-CV-context or version branching features (see FF-3). |
 | TD-6 | Duplicate DTO mapping logic | Attribute and Association model-to-DTO conversion is duplicated across handlers (attribute_handler, association_handler, entity_type_handler VersionSnapshot) | Extract shared helper functions (e.g., `dto.ToAttributeResponse`, `dto.ToAssociationResponse`) to eliminate duplication. All handlers should use these helpers instead of inline conversion loops. |
 | TD-7 | Bidirectional association removal only from source | A bidirectional association can only be removed from the entity type that created it (the source/outgoing side). From the target entity type's Associations tab, the Remove button is hidden for incoming associations, including bidirectional ones. | Since bidirectional associations are symmetric, the Remove button should be available from either side. Removing from the target side should delete the same association record. The UI currently hides Remove for all incoming associations — bidirectional should be an exception. |
+| TD-8a | Extract shared EditAssociationModal component | Edit association modal is duplicated between `App.tsx` (diagram edit) and `EntityTypeDetailPage.tsx` (associations tab edit) — ~110 lines of duplication | Extract into shared `ui/src/components/EditAssociationModal.tsx` with props for `showEntityTypeNames`, `allowTypeChange`, `onSave`. |
+| TD-8b | Consolidate edit modal state into a single object | Diagram edit modal in `App.tsx` uses 12 separate `useState` calls for one form | Group into a single state object or move into the shared component from TD-8a. |
+| TD-8c | Extract diagram data loading into a custom hook | `App.tsx` and `CatalogVersionDetailPage.tsx` both have `loadDiagramData` functions that fetch snapshots and build `DiagramEntityType[]` | Extract into `ui/src/hooks/useDiagramData.ts` with `loadFromAllEntityTypes()` and `loadFromPins(pins)` methods. |
+| TD-8d | Extract EdgeClickData interface | `onEdgeClick` prop on `EntityTypeDiagramProps` uses inline type with 9 fields | Extract to a named `EdgeClickData` interface for reuse and readability. |
 
 ## 12. Future Features
 
@@ -1127,3 +1134,16 @@ Catalog versions are currently immutable after creation — pins (entity type ve
 - Possibly restricted by lifecycle stage (e.g., only development-stage CVs are editable)
 
 **Decision:** Deferred. Requirements not yet clear. Revisit when usage patterns emerge.
+
+### FF-5: Configurable Diagram Layout
+
+The entity type diagram currently uses a hardcoded Dagre (hierarchical top-to-bottom) layout algorithm. A future enhancement would make the layout algorithm configurable at runtime — either per-user preference or as a UI dropdown — without requiring recompilation.
+
+**Supported layouts** (all available in `@patternfly/react-topology`):
+- Dagre (current default — hierarchical, instant positioning)
+- Cola (force-directed, iterative settling)
+- Force (D3 force simulation)
+- Concentric, Grid, BreadthFirst
+
+**Decision:** Deferred. Current Dagre layout works well for the UML class diagram use case.
+

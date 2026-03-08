@@ -30,7 +30,7 @@ Development proceeds through three environment phases, each with increasing infr
 
 **Milestones completed**: 1–9 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, and T-E.01 through T-E.126 (311 test cases), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, and T-E.01 through T-E.139 (324 test cases), using SQLite and mocked/simulated infrastructure.
 
 **Human checkpoint**: After all 218 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
@@ -1104,6 +1104,14 @@ These tests cover the remaining CRUD gaps identified in the meta model gap analy
 | T-E.104 | Edit button opens modal with pre-filled association values | Browser | Modal shows current role and cardinality values |
 | T-E.105 | Edit association Save triggers API call | Browser | API called with updated fields, table refreshes |
 
+### Shared EditAssociationModal + Custom Cardinality (`EntityTypeDetailPage.browser.test.tsx`, `App.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.137 | Edit modal shows custom cardinality option | Browser | Selecting "Custom" in edit modal reveals min/max inputs |
+| T-E.138 | Edit modal custom cardinality sends correct value | Browser | Custom min/max values sent as "min..max" in API call |
+| T-E.139 | Edit modal pre-fills custom cardinality correctly | Browser | Association with non-standard cardinality (e.g., "2..5") shows "Custom" selected with min=2, max=5 |
+
 ### Association Names — Service (`association_service_test.go`, `attribute_service_test.go`)
 
 | ID | Test Case | Layer | Expected |
@@ -1144,6 +1152,26 @@ These tests cover the remaining CRUD gaps identified in the meta model gap analy
 | T-E.124 | Add association modal has name field | Browser | Name input visible, required |
 | T-E.125 | Associations table shows Name column | Browser | Name displayed in table |
 | T-E.126 | Edit association modal shows name pre-filled | Browser | Current name editable |
+
+### Entity Type Diagram — Main Page (`App.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.127 | Model Diagram tab exists on main page | Browser | Tab labeled "Model Diagram" is visible |
+| T-E.128 | Diagram renders entity type nodes with names | Browser | Node labels show entity type names |
+| T-E.129 | Diagram nodes show attributes with types | Browser | Attributes listed as "name : type" (enum shows enum name) |
+| T-E.130 | Diagram renders edges with association labels | Browser | Edges show association name and cardinality |
+| T-E.131 | Bidirectional edges have two arrowheads (filled target, hollow source) | Browser | Bidirectional edge renders with label and dual arrowhead markers |
+| T-E.134 | Double-click entity type node navigates to detail page | Browser | Router navigates to /entity-types/:id |
+| T-E.135 | Click association label on diagram opens edit modal | Browser | Edit modal opens with name, type, roles, cardinality; source/target entities read-only |
+| T-E.136 | EditAssociation can change association type | Unit | New version created with changed type (e.g., directional → bidirectional) |
+
+### Entity Type Diagram — CV Detail Page (`CatalogVersionDetailPage.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.132 | Diagram tab exists on CV detail page | Browser | Tab labeled "Diagram" is visible |
+| T-E.133 | CV diagram renders pinned entity types with attributes | Browser | Only pinned entity types shown as nodes with attributes |
 
 ---
 

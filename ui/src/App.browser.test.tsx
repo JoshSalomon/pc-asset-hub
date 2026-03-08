@@ -1,6 +1,6 @@
 import { render } from 'vitest-browser-react'
 import { expect, test, vi, beforeEach, type Mock } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { MemoryRouter } from 'react-router-dom'
 import App from './App'
 import { api, setAuthRole } from './api/client'
@@ -22,6 +22,14 @@ vi.mock('./api/client', () => ({
     },
     enums: {
       list: vi.fn(),
+    },
+    versions: {
+      snapshot: vi.fn(),
+      list: vi.fn(),
+    },
+    associations: {
+      list: vi.fn(),
+      edit: vi.fn(),
     },
   },
   setAuthRole: vi.fn(),
@@ -102,6 +110,23 @@ beforeEach(() => {
   }
   if (api.entityTypes?.containmentTree) {
     ;(api.entityTypes.containmentTree as Mock).mockResolvedValue(mockContainmentTree)
+  }
+  if (api.versions?.snapshot) {
+    ;(api.versions.snapshot as Mock).mockResolvedValue({
+      entity_type: { id: 'et-1', name: 'MLModel' },
+      version: { id: 'v1', version: 1 },
+      attributes: [
+        { id: 'a1', name: 'hostname', type: 'string', ordinal: 0, required: false },
+        { id: 'a2', name: 'status', type: 'enum', enum_name: 'server-status', ordinal: 1, required: false },
+      ],
+      associations: [],
+    })
+  }
+  if (api.versions?.list) {
+    ;(api.versions.list as Mock).mockResolvedValue({ items: [{ id: 'v1', entity_type_id: 'et-1', version: 1 }], total: 1 })
+  }
+  if (api.associations?.list) {
+    ;(api.associations.list as Mock).mockResolvedValue({ items: [], total: 0 })
   }
 })
 
@@ -690,4 +715,131 @@ test('T-E.58: Version dropdown shows all versions, defaults to latest', async ()
   const toolSelect = page.getByRole('dialog').getByRole('combobox', { name: 'Version for Tool' })
   await expect.element(toolSelect).toBeVisible()
   await expect.element(toolSelect).toHaveValue('vt2')
+})
+
+// === Model Diagram Tab ===
+
+// T-E.127: Model Diagram tab exists on main page
+test('T-E.127: Model Diagram tab exists on main page', async () => {
+  renderApp()
+  await expect.element(page.getByRole('tab', { name: 'Model Diagram' })).toBeVisible()
+})
+
+// T-E.128: Diagram renders entity type nodes with names
+test('T-E.128: Diagram renders entity type nodes with names', async () => {
+  renderApp()
+  await page.getByRole('tab', { name: 'Model Diagram' }).click()
+  // Entity type names should appear as node labels
+  await expect.element(page.getByText('MLModel')).toBeVisible()
+  await expect.element(page.getByText('Dataset')).toBeVisible()
+})
+
+// T-E.129: Diagram nodes show attributes with types
+test('T-E.129: Diagram nodes show attributes with types', async () => {
+  // Mock different snapshots per entity type
+  ;(api.versions.snapshot as Mock).mockImplementation((_id: string, _v: number) => {
+    return Promise.resolve({
+      entity_type: { id: _id, name: _id === 'et-1' ? 'MLModel' : 'Dataset' },
+      version: { id: 'v1', version: 1 },
+      attributes: _id === 'et-1'
+        ? [{ id: 'a1', name: 'hostname', type: 'string', ordinal: 0, required: false },
+           { id: 'a2', name: 'status', type: 'enum', enum_name: 'server-status', ordinal: 1, required: false }]
+        : [{ id: 'a3', name: 'format', type: 'string', ordinal: 0, required: false }],
+      associations: [],
+    })
+  })
+  renderApp()
+  await page.getByRole('tab', { name: 'Model Diagram' }).click()
+  // MLModel node should show its attributes
+  await expect.element(page.getByText('hostname : string')).toBeVisible()
+  await expect.element(page.getByText('status : server-status')).toBeVisible()
+  // Dataset node should show its attribute
+  await expect.element(page.getByText('format : string')).toBeVisible()
+})
+
+// T-E.131: Bidirectional edges show two arrowheads (filled target, hollow source)
+test('T-E.131: Bidirectional edges have two arrowheads', async () => {
+  ;(api.versions.snapshot as Mock).mockImplementation((_id: string) => {
+    return Promise.resolve({
+      entity_type: { id: _id, name: _id === 'et-1' ? 'MLModel' : 'Dataset' },
+      version: { id: 'v1', version: 1 },
+      attributes: [],
+      associations: _id === 'et-1' ? [{
+        id: 'bi1', name: 'related', type: 'bidirectional', direction: 'outgoing',
+        target_entity_type_id: 'et-2', target_entity_type_name: 'Dataset',
+        source_role: 'model', target_role: 'data',
+        source_cardinality: '0..n', target_cardinality: '0..n',
+      }] : [],
+    })
+  })
+  renderApp()
+  await page.getByRole('tab', { name: 'Model Diagram' }).click()
+  await expect.element(page.getByText('related [0..n → 0..n]')).toBeVisible()
+})
+
+// Clicking an association label on Model Diagram opens edit modal
+test('Clicking association on diagram opens edit modal', async () => {
+  ;(api.versions.snapshot as Mock).mockImplementation((_id: string) => {
+    return Promise.resolve({
+      entity_type: { id: _id, name: _id === 'et-1' ? 'MLModel' : 'Dataset' },
+      version: { id: 'v1', version: 1 },
+      attributes: [],
+      associations: _id === 'et-1' ? [{
+        id: 'ref1', name: 'data_ref', type: 'directional', direction: 'outgoing',
+        target_entity_type_id: 'et-2', target_entity_type_name: 'Dataset',
+        source_role: 'model', target_role: 'data',
+        source_cardinality: '1', target_cardinality: '0..n',
+      }] : [],
+    })
+  })
+  ;(api.associations.edit as Mock).mockResolvedValue({ id: 'v2', version: 2 })
+  renderApp()
+  await page.getByRole('tab', { name: 'Model Diagram' }).click()
+  // Click the association label
+  const label = page.getByText('data_ref [1 → 0..n]')
+  await expect.element(label).toBeVisible()
+  await label.click()
+  // Edit Association modal should open
+  await expect.element(page.getByText('Edit Association')).toBeVisible()
+  // Should show editable name field
+  const dialog = page.getByRole('dialog')
+  await expect.element(dialog.getByLabelText('Name')).toHaveValue('data_ref')
+  // Source/target entity types shown read-only
+  await expect.element(dialog.getByLabelText('Source Entity Type')).toHaveValue('MLModel')
+  await expect.element(dialog.getByLabelText('Target Entity Type')).toHaveValue('Dataset')
+  // Roles pre-filled
+  await expect.element(dialog.getByLabelText('Source Role')).toHaveValue('model')
+  await expect.element(dialog.getByLabelText('Target Role')).toHaveValue('data')
+})
+
+// Diagram edit modal Save calls API and closes modal
+test('Diagram edit modal Save calls API', async () => {
+  ;(api.versions.snapshot as Mock).mockImplementation((_id: string) => {
+    return Promise.resolve({
+      entity_type: { id: _id, name: _id === 'et-1' ? 'MLModel' : 'Dataset' },
+      version: { id: 'v1', version: 1 },
+      attributes: [],
+      associations: _id === 'et-1' ? [{
+        id: 'ref1', name: 'data_ref', type: 'directional', direction: 'outgoing',
+        target_entity_type_id: 'et-2', target_entity_type_name: 'Dataset',
+        source_role: 'model', target_role: 'data',
+        source_cardinality: '1', target_cardinality: '0..n',
+      }] : [],
+    })
+  })
+  ;(api.associations.edit as Mock).mockResolvedValue({ id: 'v2', version: 2 })
+  renderApp()
+  await page.getByRole('tab', { name: 'Model Diagram' }).click()
+  await page.getByText('data_ref [1 → 0..n]').click()
+  // Change the source role
+  const dialog = page.getByRole('dialog')
+  const roleInput = dialog.getByLabelText('Source Role')
+  await userEvent.clear(roleInput)
+  await userEvent.type(roleInput, 'updated_model')
+  // Click Save
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  // Verify API was called
+  expect(api.associations.edit).toHaveBeenCalledWith('et-1', 'data_ref', expect.objectContaining({
+    source_role: 'updated_model',
+  }))
 })

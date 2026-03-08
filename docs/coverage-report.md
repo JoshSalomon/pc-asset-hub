@@ -8,11 +8,11 @@ Last updated: 2026-03-02
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 725 | 100% | 85.8% | — |
+| Backend (Go) | 727 | 100% | 85.9% | — |
 | UI — Unit tests | 62 | 100% | 17.9% | 20.6% |
-| UI — Browser tests (Playwright) | 219 | 100% | — | — |
+| UI — Browser tests (Playwright) | 240 | 100% | 80.7% | 85.3% |
 | UI — System tests (Playwright + live server) | 30 | 100% | — | — |
-| **Total** | **1036** | **100%** | — | — |
+| **Total** | **1059** | **100%** | — | — |
 
 ---
 
@@ -106,14 +106,14 @@ These methods are single-line delegations to the repository layer with no branch
 
 | Test File | Tests | Status |
 |-----------|-------|--------|
-| `App.browser.test.tsx` | 45 | Pass |
-| `client.browser.test.ts` | 35 | Pass |
-| `EntityTypeDetailPage.browser.test.tsx` | 65 | Pass |
+| `App.browser.test.tsx` | 51 | Pass |
+| `client.browser.test.ts` | 36 | Pass |
+| `EntityTypeDetailPage.browser.test.tsx` | 77 | Pass |
 | `EntityTypeListPage.browser.test.tsx` | 12 | Pass |
 | `EnumDetailPage.browser.test.tsx` | 24 | Pass |
 | `EnumListPage.browser.test.tsx` | 14 | Pass |
-| `CatalogVersionDetailPage.browser.test.tsx` | 24 | Pass |
-| **Total** | **219** | **100% pass** |
+| `CatalogVersionDetailPage.browser.test.tsx` | 27 | Pass |
+| **Total** | **240** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
@@ -179,6 +179,14 @@ All new functions added in this session are at 100% coverage:
 | `api/meta/association_handler.go` | `List` | 100% |
 | `api/meta/association_handler.go` | `Create` | 91.7% |
 | `api/meta/association_handler.go` | `Edit` | 88.9% |
+
+### New Code Coverage (Session 003 — Diagram + Shared Modal)
+
+| File | Component | Coverage |
+|------|-----------|----------|
+| `components/EntityTypeDiagram.tsx` | Diagram component | 90.7% stmts, 90.1% lines |
+| `components/EditAssociationModal.tsx` | Shared edit modal | 92.4% stmts, 92.7% lines |
+| `App.tsx` | Diagram tab + edit modal | 87.6% stmts, 91.3% lines |
 
 ### Coverage Gaps to Address
 

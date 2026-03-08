@@ -296,3 +296,18 @@ test('BOM modal associations show name column', async () => {
   // Verify "datasets" name from bidirectional association
   await expect.element(page.getByText('datasets')).toBeVisible()
 })
+
+// T-E.132: Diagram tab exists on CV detail page
+test('T-E.132: Diagram tab exists on CV detail page', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('tab', { name: 'Diagram' })).toBeVisible()
+})
+
+// T-E.133: CV diagram loads without visiting BOM tab first
+test('T-E.133: CV diagram renders when clicking Diagram tab directly', async () => {
+  renderDetail()
+  // Click Diagram tab directly — should load pins and render diagram
+  await page.getByRole('tab', { name: 'Diagram' }).click()
+  // The diagram container should appear (data-testid from EntityTypeDiagram)
+  await expect.element(page.getByTestId('entity-type-diagram')).toBeVisible()
+})

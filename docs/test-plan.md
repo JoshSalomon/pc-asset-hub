@@ -285,7 +285,7 @@ EditAssociation uses the same copy-on-write versioning pattern as EditAttribute.
 
 - **Unit tests (service)**: Verify COW version increment on edit. Verify field updates (source role, target role, source cardinality, target cardinality) are applied to the correct association in the new version. Verify containment source cardinality constraint enforced on edit. Verify invalid cardinality rejected. Verify NotFound for nonexistent association.
 - **API tests (handler)**: Verify `PUT /entity-types/:entityTypeId/associations/:name` returns 200 with new version on success, 403 for RO role, 404 for nonexistent association, 400 for invalid cardinality.
-- **UI tests (browser)**: Verify Edit button in associations table opens modal with pre-filled values. Verify Save triggers API call with changed fields. Verify containment source cardinality restriction in edit modal.
+- **UI tests (browser)**: Verify Edit button in associations table opens modal with pre-filled values. Verify Save triggers API call with changed fields. Verify containment source cardinality restriction in edit modal. Verify custom cardinality option in edit modal (same as add modal). Verify shared EditAssociationModal component used in both entity detail page and diagram.
 
 ### 5.16 Association Names and Shared Namespace
 
@@ -295,3 +295,10 @@ Associations have a required name, unique within the entity type version. Names 
 - **Integration tests (repository)**: Verify name stored and retrieved. Verify unique constraint on (version_id, name). Verify BulkCopy preserves names.
 - **API tests (handler)**: Verify create requires name. Verify name in list response. Verify PUT/DELETE routes use `:name`. Verify 409 on duplicate name. Verify snapshot includes name.
 - **UI tests (browser)**: Verify name field in add/edit modals. Verify name displayed in associations table.
+
+### 5.17 Entity Type Diagram (US-32)
+
+UML-like graphical diagram of entity types and their associations using `@patternfly/react-topology`. Appears in two locations: main page "Model Diagram" tab (all entity types, interactive) and CV detail page "Diagram" tab (pinned entity types, read-only).
+
+- **UI tests (browser — main page)**: Verify "Model Diagram" tab exists. Verify diagram renders entity type nodes with name, version, and attributes. Verify edges rendered between associated entity types with labels (name, type, cardinality). Verify containment edges visually distinct from reference edges. Verify zoom/pan controls present.
+- **UI tests (browser — CV detail)**: Verify "Diagram" tab exists on CV detail page. Verify diagram renders only pinned entity types with attributes and associations.

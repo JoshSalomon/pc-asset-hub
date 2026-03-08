@@ -104,7 +104,7 @@ func (s *AssociationService) CreateAssociation(ctx context.Context, sourceEntity
 
 // EditAssociation edits an association's roles, cardinality, and name, creating a new version (copy-on-write).
 // Only non-nil fields are updated. The association is identified by currentName.
-func (s *AssociationService) EditAssociation(ctx context.Context, entityTypeID, currentName string, newName, sourceRole, targetRole, sourceCardinality, targetCardinality *string) (*models.EntityTypeVersion, error) {
+func (s *AssociationService) EditAssociation(ctx context.Context, entityTypeID, currentName string, newName, sourceRole, targetRole, sourceCardinality, targetCardinality *string, newType *models.AssociationType) (*models.EntityTypeVersion, error) {
 	latest, err := s.etvRepo.GetLatestByEntityType(ctx, entityTypeID)
 	if err != nil {
 		return nil, err
@@ -126,12 +126,18 @@ func (s *AssociationService) EditAssociation(ctx context.Context, entityTypeID, 
 		return nil, domainerrors.NewNotFound("Association", currentName)
 	}
 
+	// Determine effective type (new type if changing, otherwise old type)
+	effectiveType := oldAssoc.Type
+	if newType != nil {
+		effectiveType = *newType
+	}
+
 	// Validate cardinality if provided
 	if sourceCardinality != nil {
 		if err := validation.ValidateCardinality(*sourceCardinality); err != nil {
 			return nil, domainerrors.NewValidation(fmt.Sprintf("source_cardinality: %s", err))
 		}
-		if oldAssoc.Type == models.AssociationTypeContainment {
+		if effectiveType == models.AssociationTypeContainment {
 			sc := validation.NormalizeSourceCardinality(*sourceCardinality, true)
 			if sc != "1" && sc != "0..1" {
 				return nil, domainerrors.NewValidation("source_cardinality: containment source must be \"1\" or \"0..1\"")
@@ -141,6 +147,14 @@ func (s *AssociationService) EditAssociation(ctx context.Context, entityTypeID, 
 	if targetCardinality != nil {
 		if err := validation.ValidateCardinality(*targetCardinality); err != nil {
 			return nil, domainerrors.NewValidation(fmt.Sprintf("target_cardinality: %s", err))
+		}
+	}
+
+	// If changing type to containment, validate existing source cardinality too
+	if newType != nil && *newType == models.AssociationTypeContainment && oldAssoc.Type != models.AssociationTypeContainment && sourceCardinality == nil {
+		sc := validation.NormalizeSourceCardinality(oldAssoc.SourceCardinality, true)
+		if sc != "1" && sc != "0..1" {
+			return nil, domainerrors.NewValidation("source_cardinality: cannot change to containment with current source cardinality \"" + oldAssoc.SourceCardinality + "\"; must be \"1\" or \"0..1\"")
 		}
 	}
 
@@ -183,6 +197,9 @@ func (s *AssociationService) EditAssociation(ctx context.Context, entityTypeID, 
 			}
 			if targetRole != nil {
 				a.TargetRole = *targetRole
+			}
+			if newType != nil {
+				a.Type = *newType
 			}
 			if sourceCardinality != nil {
 				a.SourceCardinality = validation.NormalizeSourceCardinality(*sourceCardinality, a.Type == models.AssociationTypeContainment)

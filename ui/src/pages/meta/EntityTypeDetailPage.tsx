@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   PageSection,
   Title,
@@ -36,6 +36,7 @@ import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
 import { ArrowUpIcon, ArrowDownIcon } from '@patternfly/react-icons'
 import { api } from '../../api/client'
 import type { EntityType, EntityTypeVersion, Attribute, Association, Enum, Role, VersionDiff } from '../../types'
+import EditAssociationModal from '../../components/EditAssociationModal'
 
 interface Props {
   role: Role
@@ -44,12 +45,13 @@ interface Props {
 export default function EntityTypeDetailPage({ role }: Props) {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const canEdit = role === 'Admin' || role === 'SuperAdmin'
 
   const [entityType, setEntityType] = useState<EntityType | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<string | number>('overview')
+  const [activeTab, setActiveTab] = useState<string | number>(searchParams.get('tab') || 'overview')
 
   // Attributes state
   const [attributes, setAttributes] = useState<Attribute[]>([])
@@ -125,14 +127,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
 
   // Edit association modal
   const [editAssocOpen, setEditAssocOpen] = useState(false)
-  const [editAssocOrigName, setEditAssocOrigName] = useState('')
-  const [editAssocName, setEditAssocName] = useState('')
-  const [editAssocType, setEditAssocType] = useState('')
-  const [editAssocSourceRole, setEditAssocSourceRole] = useState('')
-  const [editAssocTargetRole, setEditAssocTargetRole] = useState('')
-  const [editAssocSourceCard, setEditAssocSourceCard] = useState('0..n')
-  const [editAssocTargetCard, setEditAssocTargetCard] = useState('0..n')
-  const [editAssocError, setEditAssocError] = useState<string | null>(null)
+  const [editAssocData, setEditAssocData] = useState({ name: '', type: '', sourceRole: '', targetRole: '', sourceCardinality: '0..n', targetCardinality: '0..n' })
 
   // Copy modal
   const [copyOpen, setCopyOpen] = useState(false)
@@ -320,41 +315,30 @@ export default function EntityTypeDetailPage({ role }: Props) {
   }
 
   const openEditAssoc = (assoc: Association) => {
-    setEditAssocOrigName(assoc.name)
-    setEditAssocName(assoc.name)
-    setEditAssocType(assoc.type)
-    setEditAssocSourceRole(assoc.source_role || '')
-    setEditAssocTargetRole(assoc.target_role || '')
-    setEditAssocSourceCard(assoc.source_cardinality || '0..n')
-    setEditAssocTargetCard(assoc.target_cardinality || '0..n')
-    setEditAssocError(null)
+    setEditAssocData({
+      name: assoc.name,
+      type: assoc.type,
+      sourceRole: assoc.source_role || '',
+      targetRole: assoc.target_role || '',
+      sourceCardinality: assoc.source_cardinality || '0..n',
+      targetCardinality: assoc.target_cardinality || '0..n',
+    })
     setEditAssocOpen(true)
   }
 
-  const handleEditAssociation = async () => {
-    if (!id || !editAssocOrigName) return
-    setEditAssocError(null)
-    try {
-      const data: Record<string, string | undefined> = {}
-      if (editAssocName !== editAssocOrigName) data.name = editAssocName
-      data.source_role = editAssocSourceRole
-      data.target_role = editAssocTargetRole
-      data.source_cardinality = editAssocSourceCard
-      data.target_cardinality = editAssocTargetCard
-      await api.associations.edit(id, editAssocOrigName, data)
-      setEditAssocOpen(false)
-      setEditAssocOrigName('')
-      setEditAssocName('')
-      setEditAssocSourceRole('')
-      setEditAssocTargetRole('')
-      setEditAssocSourceCard('0..n')
-      setEditAssocTargetCard('0..n')
-      setEditAssocError(null)
-      loadAssociations()
-      loadEntityType()
-    } catch (e) {
-      setEditAssocError(e instanceof Error ? e.message : 'Failed to edit association')
-    }
+  const handleEditAssociationSave = async (data: { name: string; type: string; sourceRole: string; targetRole: string; sourceCardinality: string; targetCardinality: string }) => {
+    if (!id) return
+    const req: Record<string, string | undefined> = {}
+    if (data.name !== editAssocData.name) req.name = data.name
+    req.type = data.type
+    req.source_role = data.sourceRole
+    req.target_role = data.targetRole
+    req.source_cardinality = data.sourceCardinality
+    req.target_cardinality = data.targetCardinality
+    await api.associations.edit(id, editAssocData.name, req)
+    setEditAssocOpen(false)
+    loadAssociations()
+    loadEntityType()
   }
 
   const handleCopy = async () => {
@@ -498,8 +482,8 @@ export default function EntityTypeDetailPage({ role }: Props) {
 
   return (
     <PageSection>
-      <Button variant="link" onClick={() => navigate('/')} style={{ marginBottom: '1rem' }}>
-        &larr; Back to Entity Types
+      <Button variant="link" onClick={() => navigate(-1)} style={{ marginBottom: '1rem' }}>
+        &larr; Back
       </Button>
 
       {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: '1rem' }} />}
@@ -996,65 +980,13 @@ export default function EntityTypeDetailPage({ role }: Props) {
       </Modal>
 
       {/* Edit Association Modal */}
-      <Modal variant={ModalVariant.small} isOpen={editAssocOpen} onClose={() => { setEditAssocOpen(false); setEditAssocError(null) }}>
-        <ModalHeader title="Edit Association" />
-        <ModalBody>
-          {editAssocError && <Alert variant="danger" title={editAssocError} isInline style={{ marginBottom: '1rem' }} />}
-          <Form>
-            <FormGroup label="Name" isRequired fieldId="edit-assoc-name">
-              <TextInput id="edit-assoc-name" value={editAssocName} onChange={(_e, v) => setEditAssocName(v)} isRequired />
-            </FormGroup>
-            <FormGroup label="Source Role" fieldId="edit-assoc-source-role">
-              <TextInput id="edit-assoc-source-role" value={editAssocSourceRole} onChange={(_e, v) => setEditAssocSourceRole(v)} />
-            </FormGroup>
-            <FormGroup label="Target Role" fieldId="edit-assoc-target-role">
-              <TextInput id="edit-assoc-target-role" value={editAssocTargetRole} onChange={(_e, v) => setEditAssocTargetRole(v)} />
-            </FormGroup>
-            <FormGroup label="Source Cardinality" fieldId="edit-assoc-source-cardinality">
-              {editAssocType === 'containment' ? (
-                <select
-                  id="edit-assoc-source-cardinality"
-                  value={editAssocSourceCard === '1' ? '1' : '0..1'}
-                  onChange={(e) => setEditAssocSourceCard(e.target.value)}
-                  className="pf-v6-c-form-control"
-                >
-                  <option value="0..1">0..1</option>
-                  <option value="1">1</option>
-                </select>
-              ) : (
-                <select
-                  id="edit-assoc-source-cardinality"
-                  value={editAssocSourceCard}
-                  onChange={(e) => setEditAssocSourceCard(e.target.value)}
-                  className="pf-v6-c-form-control"
-                >
-                  <option value="0..1">0..1</option>
-                  <option value="0..n">0..n</option>
-                  <option value="1">1</option>
-                  <option value="1..n">1..n</option>
-                </select>
-              )}
-            </FormGroup>
-            <FormGroup label="Target Cardinality" fieldId="edit-assoc-target-cardinality">
-              <select
-                id="edit-assoc-target-cardinality"
-                value={editAssocTargetCard}
-                onChange={(e) => setEditAssocTargetCard(e.target.value)}
-                className="pf-v6-c-form-control"
-              >
-                <option value="0..1">0..1</option>
-                <option value="0..n">0..n</option>
-                <option value="1">1</option>
-                <option value="1..n">1..n</option>
-              </select>
-            </FormGroup>
-          </Form>
-        </ModalBody>
-        <ModalFooter>
-          <Button variant="primary" onClick={handleEditAssociation}>Save</Button>
-          <Button variant="link" onClick={() => { setEditAssocOpen(false); setEditAssocError(null) }}>Cancel</Button>
-        </ModalFooter>
-      </Modal>
+      <EditAssociationModal
+        isOpen={editAssocOpen}
+        onClose={() => setEditAssocOpen(false)}
+        onSave={handleEditAssociationSave}
+        initialData={editAssocData}
+        allowTypeChange
+      />
 
       {/* Copy Modal */}
       <Modal variant={ModalVariant.small} isOpen={copyOpen} onClose={() => { setCopyOpen(false); setCopyError(null) }}>
