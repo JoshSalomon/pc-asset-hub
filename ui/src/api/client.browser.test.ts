@@ -285,6 +285,7 @@ test('associations.create sends POST with body', async () => {
   await api.associations.create('et-1', {
     target_entity_type_id: 'et-2',
     type: 'containment',
+    name: 'tools',
     source_role: 'parent',
     target_role: 'child',
   })
@@ -295,6 +296,7 @@ test('associations.create sends POST with body', async () => {
       body: JSON.stringify({
         target_entity_type_id: 'et-2',
         type: 'containment',
+        name: 'tools',
         source_role: 'parent',
         target_role: 'child',
       }),

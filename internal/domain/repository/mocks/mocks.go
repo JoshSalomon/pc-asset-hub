@@ -119,6 +119,13 @@ func (m *MockAssociationRepo) ListByVersion(ctx context.Context, entityTypeVersi
 	args := m.Called(ctx, entityTypeVersionID)
 	return args.Get(0).([]*models.Association), args.Error(1)
 }
+func (m *MockAssociationRepo) ListByTargetEntityType(ctx context.Context, targetEntityTypeID string) ([]*models.Association, error) {
+	args := m.Called(ctx, targetEntityTypeID)
+	return args.Get(0).([]*models.Association), args.Error(1)
+}
+func (m *MockAssociationRepo) Update(ctx context.Context, assoc *models.Association) error {
+	return m.Called(ctx, assoc).Error(0)
+}
 func (m *MockAssociationRepo) Delete(ctx context.Context, id string) error {
 	return m.Called(ctx, id).Error(0)
 }
@@ -217,6 +224,10 @@ func (m *MockCatalogVersionPinRepo) Create(ctx context.Context, pin *models.Cata
 }
 func (m *MockCatalogVersionPinRepo) ListByCatalogVersion(ctx context.Context, catalogVersionID string) ([]*models.CatalogVersionPin, error) {
 	args := m.Called(ctx, catalogVersionID)
+	return args.Get(0).([]*models.CatalogVersionPin), args.Error(1)
+}
+func (m *MockCatalogVersionPinRepo) ListByEntityTypeVersionIDs(ctx context.Context, etvIDs []string) ([]*models.CatalogVersionPin, error) {
+	args := m.Called(ctx, etvIDs)
 	return args.Get(0).([]*models.CatalogVersionPin), args.Error(1)
 }
 func (m *MockCatalogVersionPinRepo) Delete(ctx context.Context, id string) error {

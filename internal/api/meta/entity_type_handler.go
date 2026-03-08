@@ -2,12 +2,14 @@ package meta
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/labstack/echo/v4"
 
 	"github.com/project-catalyst/pc-asset-hub/internal/api/dto"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
 	svcmeta "github.com/project-catalyst/pc-asset-hub/internal/service/meta"
+	"github.com/project-catalyst/pc-asset-hub/internal/service/validation"
 )
 
 type EntityTypeHandler struct {
@@ -128,12 +130,126 @@ func (h *EntityTypeHandler) Copy(c echo.Context) error {
 	})
 }
 
+func (h *EntityTypeHandler) Rename(c echo.Context) error {
+	id := c.Param("id")
+	var req dto.RenameEntityTypeRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	if req.Name == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "name is required")
+	}
+
+	result, err := h.svc.RenameEntityType(c.Request().Context(), id, req.Name, req.DeepCopyAllowed)
+	if err != nil {
+		return mapError(err)
+	}
+
+	return c.JSON(http.StatusOK, dto.RenameEntityTypeResponse{
+		EntityType: dto.EntityTypeResponse{
+			ID: result.EntityType.ID, Name: result.EntityType.Name,
+			CreatedAt: result.EntityType.CreatedAt, UpdatedAt: result.EntityType.UpdatedAt,
+		},
+		WasDeepCopy: result.WasDeepCopy,
+	})
+}
+
+func (h *EntityTypeHandler) ContainmentTree(c echo.Context) error {
+	tree, err := h.svc.GetContainmentTree(c.Request().Context())
+	if err != nil {
+		return mapError(err)
+	}
+	return c.JSON(http.StatusOK, convertTreeNodes(tree))
+}
+
+func convertTreeNodes(nodes []*svcmeta.ContainmentTreeNode) []dto.ContainmentTreeNodeDTO {
+	result := make([]dto.ContainmentTreeNodeDTO, len(nodes))
+	for i, node := range nodes {
+		versions := make([]dto.EntityTypeVersionResponse, len(node.Versions))
+		for j, v := range node.Versions {
+			versions[j] = dto.EntityTypeVersionResponse{
+				ID: v.ID, EntityTypeID: v.EntityTypeID, Version: v.Version,
+				Description: v.Description, CreatedAt: v.CreatedAt,
+			}
+		}
+		result[i] = dto.ContainmentTreeNodeDTO{
+			EntityType: dto.EntityTypeResponse{
+				ID: node.EntityType.ID, Name: node.EntityType.Name,
+				CreatedAt: node.EntityType.CreatedAt, UpdatedAt: node.EntityType.UpdatedAt,
+			},
+			Versions:      versions,
+			LatestVersion: node.LatestVersion,
+			Children:      convertTreeNodes(node.Children),
+		}
+	}
+	return result
+}
+
+func (h *EntityTypeHandler) VersionSnapshot(c echo.Context) error {
+	entityTypeID := c.Param("id")
+	versionStr := c.Param("version")
+	version, err := strconv.Atoi(versionStr)
+	if err != nil || version <= 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid version number")
+	}
+
+	snapshot, err := h.svc.GetVersionSnapshot(c.Request().Context(), entityTypeID, version)
+	if err != nil {
+		return mapError(err)
+	}
+
+	attrs := make([]dto.SnapshotAttributeResponse, len(snapshot.Attributes))
+	for i, a := range snapshot.Attributes {
+		attrs[i] = dto.SnapshotAttributeResponse{
+			ID: a.ID, Name: a.Name, Description: a.Description,
+			Type: string(a.Type), EnumID: a.EnumID, EnumName: snapshot.EnumNames[a.EnumID],
+			Ordinal: a.Ordinal, Required: a.Required,
+		}
+	}
+
+	assocs := make([]dto.SnapshotAssociationResponse, len(snapshot.Associations))
+	for i, da := range snapshot.Associations {
+		resp := dto.SnapshotAssociationResponse{
+			ID: da.ID, Name: da.Name, Type: string(da.Type),
+			TargetEntityTypeID:   da.TargetEntityTypeID,
+			TargetEntityTypeName: snapshot.TargetEntityTypeNames[da.TargetEntityTypeID],
+			SourceRole:           da.SourceRole,
+			TargetRole:           da.TargetRole,
+			SourceCardinality:    validation.NormalizeSourceCardinality(da.SourceCardinality, da.Type == models.AssociationTypeContainment),
+			TargetCardinality:    validation.NormalizeCardinality(da.TargetCardinality),
+			Direction:            da.Direction,
+		}
+		if da.Direction == "incoming" {
+			resp.SourceEntityTypeID = da.SourceEntityTypeID
+			resp.SourceEntityTypeName = snapshot.TargetEntityTypeNames[da.SourceEntityTypeID]
+		}
+		assocs[i] = resp
+	}
+
+	return c.JSON(http.StatusOK, dto.VersionSnapshotResponse{
+		EntityType: dto.EntityTypeResponse{
+			ID: snapshot.EntityType.ID, Name: snapshot.EntityType.Name,
+			CreatedAt: snapshot.EntityType.CreatedAt, UpdatedAt: snapshot.EntityType.UpdatedAt,
+		},
+		Version: dto.EntityTypeVersionResponse{
+			ID: snapshot.Version.ID, EntityTypeID: snapshot.Version.EntityTypeID,
+			Version: snapshot.Version.Version, Description: snapshot.Version.Description,
+			CreatedAt: snapshot.Version.CreatedAt,
+		},
+		Attributes:   attrs,
+		Associations: assocs,
+	})
+}
+
 // RegisterEntityTypeRoutes registers entity type routes on the given Echo group.
 func RegisterEntityTypeRoutes(g *echo.Group, h *EntityTypeHandler, requireAdmin echo.MiddlewareFunc) {
+	g.GET("/entity-types/containment-tree", h.ContainmentTree)
+	g.GET("/entity-types/:id/versions/:version/snapshot", h.VersionSnapshot)
 	g.GET("/entity-types", h.List)
 	g.GET("/entity-types/:id", h.GetByID)
 	g.POST("/entity-types", h.Create, requireAdmin)
 	g.PUT("/entity-types/:id", h.Update, requireAdmin)
 	g.DELETE("/entity-types/:id", h.Delete, requireAdmin)
 	g.POST("/entity-types/:id/copy", h.Copy, requireAdmin)
+	g.POST("/entity-types/:id/rename", h.Rename, requireAdmin)
 }

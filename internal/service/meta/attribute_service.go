@@ -56,7 +56,7 @@ func (s *AttributeService) AddAttribute(ctx context.Context, entityTypeID string
 		return nil, err
 	}
 
-	// Check for duplicate name in current version
+	// Check for duplicate name in current version (attributes)
 	attrs, err := s.attrRepo.ListByVersion(ctx, latest.ID)
 	if err != nil {
 		return nil, err
@@ -64,6 +64,17 @@ func (s *AttributeService) AddAttribute(ctx context.Context, entityTypeID string
 	for _, a := range attrs {
 		if a.Name == name {
 			return nil, domainerrors.NewConflict("Attribute", "attribute name already exists: "+name)
+		}
+	}
+
+	// Check shared namespace: name must not conflict with association names
+	assocs, err := s.assocRepo.ListByVersion(ctx, latest.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range assocs {
+		if a.Name == name {
+			return nil, domainerrors.NewConflict("Attribute", "name conflicts with association: "+name)
 		}
 	}
 
@@ -221,6 +232,103 @@ func (s *AttributeService) CopyAttributesFromType(ctx context.Context, targetEnt
 	}
 
 	return newVersion, nil
+}
+
+// EditAttribute edits an attribute on an entity type, creating a new version (copy-on-write).
+// Only non-nil fields are updated. The attribute is identified by currentName.
+func (s *AttributeService) EditAttribute(ctx context.Context, entityTypeID, currentName string, newName, newDesc *string, newType *models.AttributeType, newEnumID *string) (*models.EntityTypeVersion, error) {
+	// Validate enum reference if changing type to enum
+	if newType != nil && *newType == models.AttributeTypeEnum {
+		if newEnumID == nil || *newEnumID == "" {
+			return nil, domainerrors.NewValidation("enum_id is required for enum type attributes")
+		}
+		if _, err := s.enumRepo.GetByID(ctx, *newEnumID); err != nil {
+			return nil, domainerrors.NewValidation("invalid enum_id: " + *newEnumID)
+		}
+	}
+
+	latest, err := s.etvRepo.GetLatestByEntityType(ctx, entityTypeID)
+	if err != nil {
+		return nil, err
+	}
+
+	attrs, err := s.attrRepo.ListByVersion(ctx, latest.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Find the target attribute and check for name conflicts
+	var targetFound bool
+	for _, a := range attrs {
+		if a.Name == currentName {
+			targetFound = true
+		}
+		if newName != nil && a.Name == *newName && a.Name != currentName {
+			return nil, domainerrors.NewConflict("Attribute", "attribute name already exists: "+*newName)
+		}
+	}
+	if !targetFound {
+		return nil, domainerrors.NewNotFound("Attribute", currentName)
+	}
+
+	// Check shared namespace: renamed attribute must not conflict with association names
+	if newName != nil && *newName != currentName {
+		assocs, err := s.assocRepo.ListByVersion(ctx, latest.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range assocs {
+			if a.Name == *newName {
+				return nil, domainerrors.NewConflict("Attribute", "name conflicts with association: "+*newName)
+			}
+		}
+	}
+
+	// Create new version with copy-on-write
+	newVersion := &models.EntityTypeVersion{
+		ID:           uuid.Must(uuid.NewV7()).String(),
+		EntityTypeID: entityTypeID,
+		Version:      latest.Version + 1,
+		Description:  latest.Description,
+	}
+	if err := s.etvRepo.Create(ctx, newVersion); err != nil {
+		return nil, err
+	}
+
+	if err := s.attrRepo.BulkCopyToVersion(ctx, latest.ID, newVersion.ID); err != nil {
+		return nil, err
+	}
+	if err := s.assocRepo.BulkCopyToVersion(ctx, latest.ID, newVersion.ID); err != nil {
+		return nil, err
+	}
+
+	// Find the copied attribute in the new version and update it
+	newAttrs, err := s.attrRepo.ListByVersion(ctx, newVersion.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range newAttrs {
+		if a.Name == currentName {
+			if newName != nil {
+				a.Name = *newName
+			}
+			if newDesc != nil {
+				a.Description = *newDesc
+			}
+			if newType != nil {
+				a.Type = *newType
+			}
+			if newEnumID != nil {
+				a.EnumID = *newEnumID
+			}
+			if err := s.attrRepo.Update(ctx, a); err != nil {
+				return nil, err
+			}
+			return newVersion, nil
+		}
+	}
+
+	return nil, domainerrors.NewNotFound("Attribute", currentName)
 }
 
 // ListAttributes returns the attributes for the latest version of the given entity type.

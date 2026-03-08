@@ -77,6 +77,8 @@ func main() {
 
 	// Services
 	etSvc := svcmeta.NewEntityTypeService(etRepo, etvRepo, attrRepo, assocRepo)
+	svcmeta.WithCatalogRepos(etSvc, pinRepo, cvRepo)
+	svcmeta.WithEnumRepo(etSvc, enumRepo)
 	attrSvc := svcmeta.NewAttributeService(attrRepo, etvRepo, etRepo, assocRepo, enumRepo)
 	enumSvc := svcmeta.NewEnumService(enumRepo, gormrepo.NewEnumValueGormRepo(db), attrRepo)
 	assocSvc := svcmeta.NewAssociationService(assocRepo, etvRepo, attrRepo)

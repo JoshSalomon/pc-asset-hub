@@ -30,6 +30,7 @@ func TestT3_11_AddAttribute(t *testing.T) {
 	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityTypeVersion")).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, "v1", mock.AnythingOfType("string")).Return(nil)
 	assocRepo.On("BulkCopyToVersion", mock.Anything, "v1", mock.AnythingOfType("string")).Return(nil)
@@ -59,6 +60,7 @@ func TestT3_13_AddAttributeEnumValid(t *testing.T) {
 	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	enumRepo.On("GetByID", mock.Anything, "enum1").Return(&models.Enum{ID: "enum1", Name: "Status"}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
@@ -151,6 +153,279 @@ func TestT3_18_CopyAttributesSourceUnchanged(t *testing.T) {
 	attrRepo.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything)
 }
 
+// === EditAttribute Tests (T-E.01 through T-E.07) ===
+
+func TestTE01_EditAttributeChangesName(t *testing.T) {
+	svc, attrRepo, etvRepo, assocRepo, _ := setupAttrService()
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "old_name", Description: "desc", Type: models.AttributeTypeString, Ordinal: 0},
+		{ID: "attr2", Name: "other", Description: "other desc", Type: models.AttributeTypeNumber, Ordinal: 1},
+	}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityTypeVersion")).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, "v1", mock.AnythingOfType("string")).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, "v1", mock.AnythingOfType("string")).Return(nil)
+	// After BulkCopy, ListByVersion on the new version returns the copied attrs
+	attrRepo.On("ListByVersion", mock.Anything, mock.MatchedBy(func(id string) bool { return id != "v1" })).Return([]*models.Attribute{
+		{ID: "attr1-copy", Name: "old_name", Description: "desc", Type: models.AttributeTypeString, Ordinal: 0},
+		{ID: "attr2-copy", Name: "other", Description: "other desc", Type: models.AttributeTypeNumber, Ordinal: 1},
+	}, nil)
+	attrRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *models.Attribute) bool {
+		return a.Name == "new_name"
+	})).Return(nil)
+
+	newVer, err := svc.EditAttribute(context.Background(), "et1", "old_name", strPtr("new_name"), nil, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 2, newVer.Version)
+	attrRepo.AssertCalled(t, "Update", mock.Anything, mock.MatchedBy(func(a *models.Attribute) bool {
+		return a.Name == "new_name" && a.Description == "desc"
+	}))
+}
+
+func TestTE02_EditAttributeChangesDescription(t *testing.T) {
+	svc, attrRepo, etvRepo, assocRepo, _ := setupAttrService()
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "endpoint", Description: "old desc", Type: models.AttributeTypeString, Ordinal: 0},
+	}, nil)
+	etvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityTypeVersion")).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, "v1", mock.AnythingOfType("string")).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, "v1", mock.AnythingOfType("string")).Return(nil)
+	attrRepo.On("ListByVersion", mock.Anything, mock.MatchedBy(func(id string) bool { return id != "v1" })).Return([]*models.Attribute{
+		{ID: "attr1-copy", Name: "endpoint", Description: "old desc", Type: models.AttributeTypeString, Ordinal: 0},
+	}, nil)
+	attrRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *models.Attribute) bool {
+		return a.Description == "new desc"
+	})).Return(nil)
+
+	newVer, err := svc.EditAttribute(context.Background(), "et1", "endpoint", nil, strPtr("new desc"), nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 2, newVer.Version)
+}
+
+func TestTE03_EditAttributeChangesTypeToEnum(t *testing.T) {
+	svc, attrRepo, etvRepo, assocRepo, enumRepo := setupAttrService()
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "status", Description: "desc", Type: models.AttributeTypeString, Ordinal: 0},
+	}, nil)
+	enumRepo.On("GetByID", mock.Anything, "enum1").Return(&models.Enum{ID: "enum1", Name: "Status"}, nil)
+	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("ListByVersion", mock.Anything, mock.MatchedBy(func(id string) bool { return id != "v1" })).Return([]*models.Attribute{
+		{ID: "attr1-copy", Name: "status", Description: "desc", Type: models.AttributeTypeString, Ordinal: 0},
+	}, nil)
+	enumType := models.AttributeTypeEnum
+	enumID := "enum1"
+	attrRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *models.Attribute) bool {
+		return a.Type == models.AttributeTypeEnum && a.EnumID == "enum1"
+	})).Return(nil)
+
+	newVer, err := svc.EditAttribute(context.Background(), "et1", "status", nil, nil, &enumType, &enumID)
+	require.NoError(t, err)
+	assert.Equal(t, 2, newVer.Version)
+}
+
+func TestTE04_EditAttributeNameConflict(t *testing.T) {
+	svc, attrRepo, etvRepo, _, _ := setupAttrService()
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "endpoint", Type: models.AttributeTypeString, Ordinal: 0},
+		{ID: "attr2", Name: "conflict_name", Type: models.AttributeTypeString, Ordinal: 1},
+	}, nil)
+
+	_, err := svc.EditAttribute(context.Background(), "et1", "endpoint", strPtr("conflict_name"), nil, nil, nil)
+	assert.True(t, domainerrors.IsConflict(err))
+}
+
+func TestTE05_EditAttributeNotFound(t *testing.T) {
+	svc, attrRepo, etvRepo, _, _ := setupAttrService()
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "endpoint", Type: models.AttributeTypeString},
+	}, nil)
+
+	_, err := svc.EditAttribute(context.Background(), "et1", "nonexistent", strPtr("new_name"), nil, nil, nil)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestTE06_EditAttributeEnumTypeMissingEnumID(t *testing.T) {
+	svc, attrRepo, etvRepo, _, _ := setupAttrService()
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "status", Type: models.AttributeTypeString, Ordinal: 0},
+	}, nil)
+
+	enumType := models.AttributeTypeEnum
+	_, err := svc.EditAttribute(context.Background(), "et1", "status", nil, nil, &enumType, nil)
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+func TestTE07_EditAttributePreservesOrdinal(t *testing.T) {
+	svc, attrRepo, etvRepo, assocRepo, _ := setupAttrService()
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "first", Type: models.AttributeTypeString, Ordinal: 0},
+		{ID: "attr2", Name: "second", Type: models.AttributeTypeString, Ordinal: 1},
+		{ID: "attr3", Name: "third", Type: models.AttributeTypeString, Ordinal: 2},
+	}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("ListByVersion", mock.Anything, mock.MatchedBy(func(id string) bool { return id != "v1" })).Return([]*models.Attribute{
+		{ID: "attr1-copy", Name: "first", Type: models.AttributeTypeString, Ordinal: 0},
+		{ID: "attr2-copy", Name: "second", Type: models.AttributeTypeString, Ordinal: 1},
+		{ID: "attr3-copy", Name: "third", Type: models.AttributeTypeString, Ordinal: 2},
+	}, nil)
+	attrRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *models.Attribute) bool {
+		return a.Ordinal == 1 && a.Name == "renamed_second"
+	})).Return(nil)
+
+	newVer, err := svc.EditAttribute(context.Background(), "et1", "second", strPtr("renamed_second"), nil, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 2, newVer.Version)
+}
+
+// === EditAttribute Error Path Tests ===
+
+func TestEditAttribute_GetLatestError(t *testing.T) {
+	svc, _, etvRepo, _, _ := setupAttrService()
+
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(nil, domainerrors.NewNotFound("EntityTypeVersion", "et1"))
+
+	_, err := svc.EditAttribute(context.Background(), "et1", "attr", nil, strPtr("new desc"), nil, nil)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestEditAttribute_ListByVersionError(t *testing.T) {
+	svc, attrRepo, etvRepo, _, _ := setupAttrService()
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return(([]*models.Attribute)(nil), domainerrors.NewNotFound("Attribute", "v1"))
+
+	_, err := svc.EditAttribute(context.Background(), "et1", "attr", nil, strPtr("new desc"), nil, nil)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestEditAttribute_EtvCreateError(t *testing.T) {
+	svc, attrRepo, etvRepo, assocRepo, _ := setupAttrService()
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "endpoint", Type: models.AttributeTypeString, Ordinal: 0},
+	}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityTypeVersion")).Return(domainerrors.NewConflict("EntityTypeVersion", "create failed"))
+
+	_, err := svc.EditAttribute(context.Background(), "et1", "endpoint", strPtr("new_name"), nil, nil, nil)
+	assert.True(t, domainerrors.IsConflict(err))
+}
+
+func TestEditAttribute_BulkCopyAttrError(t *testing.T) {
+	svc, attrRepo, etvRepo, assocRepo, _ := setupAttrService()
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "endpoint", Type: models.AttributeTypeString, Ordinal: 0},
+	}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityTypeVersion")).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, "v1", mock.AnythingOfType("string")).Return(domainerrors.NewNotFound("Attribute", "bulk copy failed"))
+
+	_, err := svc.EditAttribute(context.Background(), "et1", "endpoint", strPtr("new_name"), nil, nil, nil)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestEditAttribute_BulkCopyAssocError(t *testing.T) {
+	svc, attrRepo, etvRepo, assocRepo, _ := setupAttrService()
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "endpoint", Type: models.AttributeTypeString, Ordinal: 0},
+	}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityTypeVersion")).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, "v1", mock.AnythingOfType("string")).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, "v1", mock.AnythingOfType("string")).Return(domainerrors.NewNotFound("Association", "bulk copy failed"))
+
+	_, err := svc.EditAttribute(context.Background(), "et1", "endpoint", strPtr("new_name"), nil, nil, nil)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestEditAttribute_ListNewVersionError(t *testing.T) {
+	svc, attrRepo, etvRepo, assocRepo, _ := setupAttrService()
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "endpoint", Type: models.AttributeTypeString, Ordinal: 0},
+	}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityTypeVersion")).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, "v1", mock.AnythingOfType("string")).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, "v1", mock.AnythingOfType("string")).Return(nil)
+	attrRepo.On("ListByVersion", mock.Anything, mock.MatchedBy(func(id string) bool { return id != "v1" })).Return(([]*models.Attribute)(nil), domainerrors.NewNotFound("Attribute", "list failed"))
+
+	_, err := svc.EditAttribute(context.Background(), "et1", "endpoint", strPtr("new_name"), nil, nil, nil)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestEditAttribute_UpdateError(t *testing.T) {
+	svc, attrRepo, etvRepo, assocRepo, _ := setupAttrService()
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "endpoint", Type: models.AttributeTypeString, Ordinal: 0},
+	}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityTypeVersion")).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, "v1", mock.AnythingOfType("string")).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, "v1", mock.AnythingOfType("string")).Return(nil)
+	attrRepo.On("ListByVersion", mock.Anything, mock.MatchedBy(func(id string) bool { return id != "v1" })).Return([]*models.Attribute{
+		{ID: "attr1-copy", Name: "endpoint", Type: models.AttributeTypeString, Ordinal: 0},
+	}, nil)
+	attrRepo.On("Update", mock.Anything, mock.Anything).Return(domainerrors.NewConflict("Attribute", "update failed"))
+
+	_, err := svc.EditAttribute(context.Background(), "et1", "endpoint", strPtr("new_name"), nil, nil, nil)
+	assert.True(t, domainerrors.IsConflict(err))
+}
+
+func TestEditAttribute_EnumValidation(t *testing.T) {
+	svc, _, _, _, enumRepo := setupAttrService()
+
+	enumType := models.AttributeTypeEnum
+	enumID := "bad-enum"
+	enumRepo.On("GetByID", mock.Anything, "bad-enum").Return(nil, domainerrors.NewNotFound("Enum", "bad-enum"))
+
+	_, err := svc.EditAttribute(context.Background(), "et1", "status", nil, nil, &enumType, &enumID)
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+// strPtr is a helper to create a pointer to a string.
+func strPtr(s string) *string { return &s }
+
 func TestT3_19_ReorderAttributes(t *testing.T) {
 	svc, attrRepo, etvRepo, _, _ := setupAttrService()
 
@@ -160,4 +435,40 @@ func TestT3_19_ReorderAttributes(t *testing.T) {
 
 	err := svc.ReorderAttributes(context.Background(), "et1", []string{"c", "a", "b"})
 	assert.NoError(t, err)
+}
+
+// T-E.109: AddAttribute rejects name that conflicts with association
+func TestTE109_AddAttributeConflictsWithAssociation(t *testing.T) {
+	svc, attrRepo, etvRepo, assocRepo, _ := setupAttrService()
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{
+		{ID: "assoc1", Name: "tools", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment},
+	}, nil)
+
+	_, err := svc.AddAttribute(context.Background(), "et1", "tools", "", models.AttributeTypeString, "")
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsConflict(err))
+	assert.Contains(t, err.Error(), "association")
+}
+
+// EditAttribute rename conflicts with association name
+func TestEditAttribute_RenameConflictsWithAssociation(t *testing.T) {
+	svc, attrRepo, etvRepo, assocRepo, _ := setupAttrService()
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "a1", Name: "hostname", Type: models.AttributeTypeString, Ordinal: 0},
+	}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{
+		{ID: "assoc1", Name: "tools", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment},
+	}, nil)
+
+	_, err := svc.EditAttribute(context.Background(), "et1", "hostname", strPtr("tools"), nil, nil, nil)
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsConflict(err))
+	assert.Contains(t, err.Error(), "association")
 }

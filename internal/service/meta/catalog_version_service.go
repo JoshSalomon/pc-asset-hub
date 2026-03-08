@@ -303,6 +303,53 @@ func (s *CatalogVersionService) Demote(ctx context.Context, id string, role Role
 	return nil
 }
 
+// ResolvedPin represents a catalog version pin with resolved entity type information.
+type ResolvedPin struct {
+	EntityTypeName      string
+	EntityTypeID        string
+	EntityTypeVersionID string
+	Version             int
+}
+
+// ListPins returns resolved pins for a catalog version.
+func (s *CatalogVersionService) ListPins(ctx context.Context, cvID string) ([]ResolvedPin, error) {
+	if _, err := s.cvRepo.GetByID(ctx, cvID); err != nil {
+		return nil, err
+	}
+
+	pins, err := s.pinRepo.ListByCatalogVersion(ctx, cvID)
+	if err != nil {
+		return nil, err
+	}
+
+	resolved := make([]ResolvedPin, 0, len(pins))
+	for _, pin := range pins {
+		etv, err := s.etvRepo.GetByID(ctx, pin.EntityTypeVersionID)
+		if err != nil {
+			return nil, err
+		}
+		et, err := s.etRepo.GetByID(ctx, etv.EntityTypeID)
+		if err != nil {
+			return nil, err
+		}
+		resolved = append(resolved, ResolvedPin{
+			EntityTypeName:      et.Name,
+			EntityTypeID:        et.ID,
+			EntityTypeVersionID: pin.EntityTypeVersionID,
+			Version:             etv.Version,
+		})
+	}
+	return resolved, nil
+}
+
+// ListTransitions returns lifecycle transition history for a catalog version.
+func (s *CatalogVersionService) ListTransitions(ctx context.Context, cvID string) ([]*models.LifecycleTransition, error) {
+	if _, err := s.cvRepo.GetByID(ctx, cvID); err != nil {
+		return nil, err
+	}
+	return s.ltRepo.ListByCatalogVersion(ctx, cvID)
+}
+
 // getEntityTypeNamesForCV resolves entity type names from catalog version pins.
 func (s *CatalogVersionService) getEntityTypeNamesForCV(ctx context.Context, cvID string) ([]string, error) {
 	pins, err := s.pinRepo.ListByCatalogVersion(ctx, cvID)

@@ -41,6 +41,11 @@ func TestMapError_ReferencedEnum(t *testing.T) {
 	assert.Equal(t, http.StatusUnprocessableEntity, err.Code)
 }
 
+func TestMapError_DeepCopyRequired(t *testing.T) {
+	err := mapError(domainerrors.NewDeepCopyRequired("version is pinned in a non-development catalog"))
+	assert.Equal(t, http.StatusConflict, err.Code)
+}
+
 func TestMapError_Internal(t *testing.T) {
 	err := mapError(errors.New("unknown error"))
 	assert.Equal(t, http.StatusInternalServerError, err.Code)

@@ -95,10 +95,11 @@ Once complete, the services are available at:
 
 ### Script Commands
 
-The deploy script accepts an optional command argument:
+The deploy script accepts an optional command argument and an optional
+kube-cmd argument:
 
 ```bash
-./scripts/kind-deploy.sh [command]
+./scripts/kind-deploy.sh [command] [kube-cmd]
 ```
 
 | Command | Description | Builds Images | Creates Cluster | Deploys |
@@ -108,7 +109,36 @@ The deploy script accepts an optional command argument:
 | `rebuild` | Rebuild images and redeploy into existing cluster | Yes | No | Yes (restart) |
 | `teardown` | Delete the cluster and all resources | - | Deletes | - |
 
-**When to use each:**
+**kube-cmd** (optional, default: `oc`):
+
+The second argument controls which CLI command (with flags) is used for
+all Kubernetes API interactions (`apply`, `get`, `rollout`, etc.). This
+lets you target different clusters and tools without changing the script.
+
+| kube-cmd | When to use |
+|----------|-------------|
+| `oc` (default) | Deploying to OpenShift |
+| `kubectl --context kind-assethub` | Deploying to a local kind cluster |
+| `kubectl --context my-cluster` | Deploying to a specific kubeconfig context |
+| `oc --context my-ocp` | Targeting a specific OpenShift context |
+
+Examples:
+
+```bash
+# Deploy to kind cluster
+./scripts/kind-deploy.sh deploy "kubectl --context kind-assethub"
+
+# Rebuild and redeploy to kind
+./scripts/kind-deploy.sh rebuild "kubectl --context kind-assethub"
+
+# Deploy to OpenShift (default — uses oc)
+./scripts/kind-deploy.sh deploy
+
+# Deploy to a named OpenShift context
+./scripts/kind-deploy.sh deploy "oc --context my-ocp-cluster"
+```
+
+**When to use each command:**
 
 - **`deploy`** — First-time setup or starting fresh after a teardown.
 - **`up`** — Images are already built (e.g., after a previous `deploy`). Faster startup when only the cluster was deleted.
@@ -384,6 +414,10 @@ After modifying source code, rebuild and redeploy without recreating the
 cluster:
 
 ```bash
+# For kind cluster
+./scripts/kind-deploy.sh rebuild "kubectl --context kind-assethub"
+
+# For OpenShift (default)
 ./scripts/kind-deploy.sh rebuild
 ```
 

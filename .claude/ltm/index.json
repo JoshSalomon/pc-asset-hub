@@ -13,17 +13,6 @@
       "difficulty": 0.8,
       "created_at": "2026-02-12T17:36:24.215804+00:00"
     },
-    "mem_323f5b98": {
-      "topic": "AI Asset Hub - Planning Methodology",
-      "tags": [
-        "methodology",
-        "planning",
-        "process"
-      ],
-      "phase": 0,
-      "difficulty": 0.5,
-      "created_at": "2026-02-12T17:36:25.286235+00:00"
-    },
     "mem_de11fc07": {
       "topic": "Go import ordering for golangci-lint (goimports)",
       "tags": [
@@ -145,18 +134,6 @@
       "difficulty": 0.6,
       "created_at": "2026-02-16T18:15:14.270789+00:00"
     },
-    "mem_aaa83856": {
-      "topic": "kubectl context for kind cluster",
-      "tags": [
-        "kubectl",
-        "kind",
-        "context",
-        "gotcha"
-      ],
-      "phase": 0,
-      "difficulty": 0.3,
-      "created_at": "2026-02-17T10:05:17.027738+00:00"
-    },
     "mem_94f3205a": {
       "topic": "CatalogVersion CRD and ClusterRole implementation",
       "tags": [
@@ -181,6 +158,110 @@
       "phase": 0,
       "difficulty": 0.9,
       "created_at": "2026-02-18T09:46:53.043938+00:00"
+    },
+    "mem_7410a8e7": {
+      "topic": "Meta Model CRUD Gaps + CV Workflow implementation",
+      "tags": [
+        "meta-model",
+        "crud",
+        "catalog-version",
+        "implementation"
+      ],
+      "phase": 0,
+      "difficulty": 0.7,
+      "created_at": "2026-02-18T19:33:43.097329+00:00"
+    },
+    "mem_0f96fe43": {
+      "topic": "Kind deployment: pods don't pick up new images with rollout restart",
+      "tags": [
+        "deployment",
+        "kind",
+        "kubernetes",
+        "debugging"
+      ],
+      "phase": 0,
+      "difficulty": 0.6,
+      "created_at": "2026-02-19T20:10:02.411145+00:00"
+    },
+    "mem_5519b786": {
+      "topic": "Session 001 lessons learned - process discipline and technical gotchas",
+      "tags": [
+        "lessons-learned",
+        "process",
+        "tdd",
+        "infrastructure",
+        "associations",
+        "containment-tree"
+      ],
+      "phase": 0,
+      "difficulty": 0.7,
+      "created_at": "2026-03-01T17:31:04.960911+00:00"
+    },
+    "mem_43cb62f3": {
+      "topic": "Feature development methodology - feat-plan skill (8 phases)",
+      "tags": [
+        "methodology",
+        "planning",
+        "process",
+        "feat-plan",
+        "approval-gates"
+      ],
+      "phase": 0,
+      "difficulty": 0.6,
+      "created_at": "2026-03-01T17:35:13.007013+00:00"
+    },
+    "mem_4cc0673f": {
+      "topic": "Kind cluster deployment and crash recovery for pc-asset-hub",
+      "tags": [
+        "deployment",
+        "kind",
+        "kubectl",
+        "kubernetes",
+        "crash-recovery",
+        "podman"
+      ],
+      "phase": 0,
+      "difficulty": 0.4,
+      "created_at": "2026-03-01T17:35:40.030753+00:00"
+    },
+    "mem_7a79ce47": {
+      "topic": "Containment tree and version snapshot architecture patterns",
+      "tags": [
+        "architecture",
+        "containment-tree",
+        "version-snapshot",
+        "associations",
+        "deduplication"
+      ],
+      "phase": 0,
+      "difficulty": 0.6,
+      "created_at": "2026-03-01T17:36:02.100452+00:00"
+    },
+    "mem_8934acc7": {
+      "topic": "FF-1 Association Cardinality implementation",
+      "tags": [
+        "association",
+        "cardinality",
+        "FF-1",
+        "feature"
+      ],
+      "phase": 0,
+      "difficulty": 0.6,
+      "created_at": "2026-03-02T12:42:57.457650+00:00"
+    },
+    "mem_881deaf8": {
+      "topic": "Entity Type Diagram (US-32) — implementation lessons",
+      "tags": [
+        "diagram",
+        "topology",
+        "patternfly",
+        "US-32",
+        "visualization",
+        "lessons"
+      ],
+      "phase": 0,
+      "difficulty": 0.8,
+      "created_at": "2026-03-04T22:16:34.168927+00:00"
     }
   }
 }

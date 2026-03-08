@@ -24,6 +24,9 @@ func (r *AssociationGormRepo) Create(ctx context.Context, assoc *models.Associat
 	record := gormmodels.AssociationFromModel(assoc)
 	result := r.db.WithContext(ctx).Create(record)
 	if result.Error != nil {
+		if isUniqueConstraintError(result.Error) {
+			return domainerrors.NewConflict("Association", "association name already exists in this version: "+assoc.Name)
+		}
 		return result.Error
 	}
 	return nil
@@ -52,6 +55,31 @@ func (r *AssociationGormRepo) ListByVersion(ctx context.Context, entityTypeVersi
 		assocs[i] = records[i].ToModel()
 	}
 	return assocs, nil
+}
+
+func (r *AssociationGormRepo) ListByTargetEntityType(ctx context.Context, targetEntityTypeID string) ([]*models.Association, error) {
+	var records []gormmodels.Association
+	result := r.db.WithContext(ctx).Where("target_entity_type_id = ?", targetEntityTypeID).Find(&records)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	assocs := make([]*models.Association, len(records))
+	for i := range records {
+		assocs[i] = records[i].ToModel()
+	}
+	return assocs, nil
+}
+
+func (r *AssociationGormRepo) Update(ctx context.Context, assoc *models.Association) error {
+	record := gormmodels.AssociationFromModel(assoc)
+	result := r.db.WithContext(ctx).Save(record)
+	if result.Error != nil {
+		if isUniqueConstraintError(result.Error) {
+			return domainerrors.NewConflict("Association", "association name already exists in this version: "+assoc.Name)
+		}
+		return result.Error
+	}
+	return nil
 }
 
 func (r *AssociationGormRepo) Delete(ctx context.Context, id string) error {

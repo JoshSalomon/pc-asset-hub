@@ -1,6 +1,6 @@
 import { render } from 'vitest-browser-react'
 import { expect, test, vi, beforeEach, type Mock } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { MemoryRouter } from 'react-router-dom'
 import App from './App'
 import { api, setAuthRole } from './api/client'
@@ -11,6 +11,7 @@ vi.mock('./api/client', () => ({
       list: vi.fn(),
       create: vi.fn(),
       delete: vi.fn(),
+      containmentTree: vi.fn(),
     },
     catalogVersions: {
       list: vi.fn(),
@@ -21,6 +22,14 @@ vi.mock('./api/client', () => ({
     },
     enums: {
       list: vi.fn(),
+    },
+    versions: {
+      snapshot: vi.fn(),
+      list: vi.fn(),
+    },
+    associations: {
+      list: vi.fn(),
+      edit: vi.fn(),
     },
   },
   setAuthRole: vi.fn(),
@@ -35,6 +44,47 @@ const mockCatalogVersions = [
   { id: 'cv-1', version_label: 'v1.0', lifecycle_stage: 'development', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
   { id: 'cv-2', version_label: 'v2.0', lifecycle_stage: 'testing', created_at: '2026-01-02T00:00:00Z', updated_at: '2026-01-02T00:00:00Z' },
   { id: 'cv-3', version_label: 'v3.0', lifecycle_stage: 'production', created_at: '2026-01-03T00:00:00Z', updated_at: '2026-01-03T00:00:00Z' },
+]
+
+// Containment tree: Server (root) → Tool (child) → Subcomponent (grandchild), plus standalone Dataset
+const mockContainmentTree = [
+  {
+    entity_type: { id: 'et-server', name: 'Server', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+    versions: [
+      { id: 'vs1', entity_type_id: 'et-server', version: 1, description: 'V1', created_at: '2026-01-01T00:00:00Z' },
+    ],
+    latest_version: 1,
+    children: [
+      {
+        entity_type: { id: 'et-tool', name: 'Tool', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+        versions: [
+          { id: 'vt1', entity_type_id: 'et-tool', version: 1, description: 'V1', created_at: '2026-01-01T00:00:00Z' },
+          { id: 'vt2', entity_type_id: 'et-tool', version: 2, description: 'V2', created_at: '2026-01-02T00:00:00Z' },
+        ],
+        latest_version: 2,
+        children: [
+          {
+            entity_type: { id: 'et-sub', name: 'Subcomponent', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+            versions: [
+              { id: 'vsc1', entity_type_id: 'et-sub', version: 1, description: 'V1', created_at: '2026-01-01T00:00:00Z' },
+            ],
+            latest_version: 1,
+            children: [],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    entity_type: { id: 'et-dataset', name: 'Dataset', created_at: '2026-01-02T00:00:00Z', updated_at: '2026-01-02T00:00:00Z' },
+    versions: [
+      { id: 'vd1', entity_type_id: 'et-dataset', version: 1, description: 'V1', created_at: '2026-01-01T00:00:00Z' },
+      { id: 'vd2', entity_type_id: 'et-dataset', version: 2, description: 'V2', created_at: '2026-01-02T00:00:00Z' },
+      { id: 'vd3', entity_type_id: 'et-dataset', version: 3, description: 'V3', created_at: '2026-01-03T00:00:00Z' },
+    ],
+    latest_version: 3,
+    children: [],
+  },
 ]
 
 function renderApp(initialPath = '/') {
@@ -57,6 +107,26 @@ beforeEach(() => {
   ;(api.catalogVersions.delete as Mock).mockResolvedValue(undefined)
   if (api.enums?.list) {
     ;(api.enums.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  }
+  if (api.entityTypes?.containmentTree) {
+    ;(api.entityTypes.containmentTree as Mock).mockResolvedValue(mockContainmentTree)
+  }
+  if (api.versions?.snapshot) {
+    ;(api.versions.snapshot as Mock).mockResolvedValue({
+      entity_type: { id: 'et-1', name: 'MLModel' },
+      version: { id: 'v1', version: 1 },
+      attributes: [
+        { id: 'a1', name: 'hostname', type: 'string', ordinal: 0, required: false },
+        { id: 'a2', name: 'status', type: 'enum', enum_name: 'server-status', ordinal: 1, required: false },
+      ],
+      associations: [],
+    })
+  }
+  if (api.versions?.list) {
+    ;(api.versions.list as Mock).mockResolvedValue({ items: [{ id: 'v1', entity_type_id: 'et-1', version: 1 }], total: 1 })
+  }
+  if (api.associations?.list) {
+    ;(api.associations.list as Mock).mockResolvedValue({ items: [], total: 0 })
   }
 })
 
@@ -251,13 +321,29 @@ test('shows correct Promote/Demote buttons per lifecycle stage', async () => {
   await page.getByRole('tab', { name: /Catalog Versions/i }).click()
   await expect.element(page.getByText('v1.0')).toBeVisible()
 
-  // 2 Promote buttons (dev + testing), 2 Demote buttons (testing + production)
+  // Admin: 2 Promote buttons (dev→test, test→prod), 1 Demote button (testing only, not production)
   const promoteButtons = page.getByRole('button', { name: 'Promote' })
   const demoteButtons = page.getByRole('button', { name: 'Demote' })
   await expect.element(promoteButtons.nth(0)).toBeVisible()
   await expect.element(promoteButtons.nth(1)).toBeVisible()
   await expect.element(demoteButtons.nth(0)).toBeVisible()
-  await expect.element(demoteButtons.nth(1)).toBeVisible()
+  // Production Demote should NOT be visible for Admin
+  await expect.element(demoteButtons.nth(1)).not.toBeInTheDocument()
+})
+
+test('Admin cannot see Demote on production catalog version', async () => {
+  renderApp()
+  await expect.element(page.getByText('MLModel')).toBeVisible()
+  await page.getByRole('tab', { name: /Catalog Versions/i }).click()
+  await expect.element(page.getByText('v3.0')).toBeVisible()
+
+  // The production CV row should NOT have a Demote button for Admin
+  const prodRow = page.getByRole('row').filter({ hasText: 'v3.0' })
+  await expect.element(prodRow.getByRole('button', { name: 'Demote' })).not.toBeInTheDocument()
+
+  // Testing CV row SHOULD have Demote for Admin
+  const testRow = page.getByRole('row').filter({ hasText: 'v2.0' })
+  await expect.element(testRow.getByRole('button', { name: 'Demote' })).toBeVisible()
 })
 
 test('shows empty state for catalog versions', async () => {
@@ -290,13 +376,21 @@ test('demotes a testing version to development', async () => {
   expect(api.catalogVersions.demote).toHaveBeenCalledWith('cv-2', 'development')
 })
 
-test('demotes a production version to testing', async () => {
+test('demotes a production version to testing (SuperAdmin)', async () => {
   renderApp()
   await expect.element(page.getByText('MLModel')).toBeVisible()
+
+  // Switch to SuperAdmin — only SuperAdmin can demote from production
+  await page.getByRole('button', { name: /Role: Admin/i }).click()
+  await page.getByRole('option', { name: 'SuperAdmin' }).click()
+  await expect.element(page.getByRole('button', { name: /Role: SuperAdmin/i })).toBeVisible()
+
   await page.getByRole('tab', { name: /Catalog Versions/i }).click()
   await expect.element(page.getByText('v3.0')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Demote' }).nth(1).click()
+  // SuperAdmin sees Demote on production row
+  const prodRow = page.getByRole('row').filter({ hasText: 'v3.0' })
+  await prodRow.getByRole('button', { name: 'Demote' }).click()
   expect(api.catalogVersions.demote).toHaveBeenCalledWith('cv-3', 'testing')
 })
 
@@ -541,4 +635,211 @@ test('catalog version delete error shows alert', async () => {
   await page.getByRole('button', { name: 'Delete' }).first().click()
   await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
   await expect.element(page.getByText('403: forbidden')).toBeVisible()
+})
+
+// === CV Create Containment Tree Tests (T-E.55 through T-E.58) ===
+
+test('T-E.55: CV create modal shows containment tree with indentation', async () => {
+  renderApp()
+  await expect.element(page.getByText('MLModel')).toBeVisible()
+  await page.getByRole('tab', { name: /Catalog Versions/i }).click()
+  await expect.element(page.getByText('v1.0')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Create Catalog Version' }).click()
+  await expect.element(page.getByPlaceholder('e.g. v1.0')).toBeVisible()
+
+  // Tree nodes should be visible
+  await expect.element(page.getByRole('dialog').getByText('Server')).toBeVisible()
+  await expect.element(page.getByRole('dialog').getByText('Tool')).toBeVisible()
+  await expect.element(page.getByRole('dialog').getByText('Dataset')).toBeVisible()
+  // Subcomponent is a grandchild — visible in tree
+  await expect.element(page.getByRole('dialog').getByText('Subcomponent')).toBeVisible()
+})
+
+test('T-E.56: Selecting parent auto-selects all descendants recursively', async () => {
+  renderApp()
+  await expect.element(page.getByText('MLModel')).toBeVisible()
+  await page.getByRole('tab', { name: /Catalog Versions/i }).click()
+  await expect.element(page.getByText('v1.0')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Create Catalog Version' }).click()
+  await expect.element(page.getByRole('dialog').getByText('Server')).toBeVisible()
+
+  // Check Server → Tool and Subcomponent should auto-check
+  await page.getByRole('dialog').getByRole('checkbox', { name: 'Server' }).click()
+
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Server' })).toBeChecked()
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Tool' })).toBeChecked()
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Subcomponent' })).toBeChecked()
+  // Dataset should not be affected
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Dataset' })).not.toBeChecked()
+})
+
+test('T-E.57: Deselecting parent deselects all descendants recursively', async () => {
+  renderApp()
+  await expect.element(page.getByText('MLModel')).toBeVisible()
+  await page.getByRole('tab', { name: /Catalog Versions/i }).click()
+  await expect.element(page.getByText('v1.0')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Create Catalog Version' }).click()
+  await expect.element(page.getByRole('dialog').getByText('Server')).toBeVisible()
+
+  // Select Server first (selects all descendants)
+  await page.getByRole('dialog').getByRole('checkbox', { name: 'Server' }).click()
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Tool' })).toBeChecked()
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Subcomponent' })).toBeChecked()
+
+  // Deselect Server → all descendants deselected
+  await page.getByRole('dialog').getByRole('checkbox', { name: 'Server' }).click()
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Server' })).not.toBeChecked()
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Tool' })).not.toBeChecked()
+  await expect.element(page.getByRole('dialog').getByRole('checkbox', { name: 'Subcomponent' })).not.toBeChecked()
+})
+
+test('T-E.58: Version dropdown shows all versions, defaults to latest', async () => {
+  renderApp()
+  await expect.element(page.getByText('MLModel')).toBeVisible()
+  await page.getByRole('tab', { name: /Catalog Versions/i }).click()
+  await expect.element(page.getByText('v1.0')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Create Catalog Version' }).click()
+  await expect.element(page.getByRole('dialog').getByText('Server')).toBeVisible()
+
+  // Dataset has 3 versions — the version dropdown should exist with latest (V3) selected
+  const datasetSelect = page.getByRole('dialog').getByRole('combobox', { name: 'Version for Dataset' })
+  await expect.element(datasetSelect).toBeVisible()
+  // The selected value should be vd3 (latest version ID for Dataset)
+  await expect.element(datasetSelect).toHaveValue('vd3')
+
+  // Tool has 2 versions — latest is V2
+  const toolSelect = page.getByRole('dialog').getByRole('combobox', { name: 'Version for Tool' })
+  await expect.element(toolSelect).toBeVisible()
+  await expect.element(toolSelect).toHaveValue('vt2')
+})
+
+// === Model Diagram Tab ===
+
+// T-E.127: Model Diagram tab exists on main page
+test('T-E.127: Model Diagram tab exists on main page', async () => {
+  renderApp()
+  await expect.element(page.getByRole('tab', { name: 'Model Diagram' })).toBeVisible()
+})
+
+// T-E.128: Diagram renders entity type nodes with names
+test('T-E.128: Diagram renders entity type nodes with names', async () => {
+  renderApp()
+  await page.getByRole('tab', { name: 'Model Diagram' }).click()
+  // Entity type names should appear as node labels
+  await expect.element(page.getByText('MLModel')).toBeVisible()
+  await expect.element(page.getByText('Dataset')).toBeVisible()
+})
+
+// T-E.129: Diagram nodes show attributes with types
+test('T-E.129: Diagram nodes show attributes with types', async () => {
+  // Mock different snapshots per entity type
+  ;(api.versions.snapshot as Mock).mockImplementation((_id: string, _v: number) => {
+    return Promise.resolve({
+      entity_type: { id: _id, name: _id === 'et-1' ? 'MLModel' : 'Dataset' },
+      version: { id: 'v1', version: 1 },
+      attributes: _id === 'et-1'
+        ? [{ id: 'a1', name: 'hostname', type: 'string', ordinal: 0, required: false },
+           { id: 'a2', name: 'status', type: 'enum', enum_name: 'server-status', ordinal: 1, required: false }]
+        : [{ id: 'a3', name: 'format', type: 'string', ordinal: 0, required: false }],
+      associations: [],
+    })
+  })
+  renderApp()
+  await page.getByRole('tab', { name: 'Model Diagram' }).click()
+  // MLModel node should show its attributes
+  await expect.element(page.getByText('hostname : string')).toBeVisible()
+  await expect.element(page.getByText('status : server-status')).toBeVisible()
+  // Dataset node should show its attribute
+  await expect.element(page.getByText('format : string')).toBeVisible()
+})
+
+// T-E.131: Bidirectional edges show two arrowheads (filled target, hollow source)
+test('T-E.131: Bidirectional edges have two arrowheads', async () => {
+  ;(api.versions.snapshot as Mock).mockImplementation((_id: string) => {
+    return Promise.resolve({
+      entity_type: { id: _id, name: _id === 'et-1' ? 'MLModel' : 'Dataset' },
+      version: { id: 'v1', version: 1 },
+      attributes: [],
+      associations: _id === 'et-1' ? [{
+        id: 'bi1', name: 'related', type: 'bidirectional', direction: 'outgoing',
+        target_entity_type_id: 'et-2', target_entity_type_name: 'Dataset',
+        source_role: 'model', target_role: 'data',
+        source_cardinality: '0..n', target_cardinality: '0..n',
+      }] : [],
+    })
+  })
+  renderApp()
+  await page.getByRole('tab', { name: 'Model Diagram' }).click()
+  await expect.element(page.getByText('related [0..n → 0..n]')).toBeVisible()
+})
+
+// Clicking an association label on Model Diagram opens edit modal
+test('Clicking association on diagram opens edit modal', async () => {
+  ;(api.versions.snapshot as Mock).mockImplementation((_id: string) => {
+    return Promise.resolve({
+      entity_type: { id: _id, name: _id === 'et-1' ? 'MLModel' : 'Dataset' },
+      version: { id: 'v1', version: 1 },
+      attributes: [],
+      associations: _id === 'et-1' ? [{
+        id: 'ref1', name: 'data_ref', type: 'directional', direction: 'outgoing',
+        target_entity_type_id: 'et-2', target_entity_type_name: 'Dataset',
+        source_role: 'model', target_role: 'data',
+        source_cardinality: '1', target_cardinality: '0..n',
+      }] : [],
+    })
+  })
+  ;(api.associations.edit as Mock).mockResolvedValue({ id: 'v2', version: 2 })
+  renderApp()
+  await page.getByRole('tab', { name: 'Model Diagram' }).click()
+  // Click the association label
+  const label = page.getByText('data_ref [1 → 0..n]')
+  await expect.element(label).toBeVisible()
+  await label.click()
+  // Edit Association modal should open
+  await expect.element(page.getByText('Edit Association')).toBeVisible()
+  // Should show editable name field
+  const dialog = page.getByRole('dialog')
+  await expect.element(dialog.getByLabelText('Name')).toHaveValue('data_ref')
+  // Source/target entity types shown read-only
+  await expect.element(dialog.getByLabelText('Source Entity Type')).toHaveValue('MLModel')
+  await expect.element(dialog.getByLabelText('Target Entity Type')).toHaveValue('Dataset')
+  // Roles pre-filled
+  await expect.element(dialog.getByLabelText('Source Role')).toHaveValue('model')
+  await expect.element(dialog.getByLabelText('Target Role')).toHaveValue('data')
+})
+
+// Diagram edit modal Save calls API and closes modal
+test('Diagram edit modal Save calls API', async () => {
+  ;(api.versions.snapshot as Mock).mockImplementation((_id: string) => {
+    return Promise.resolve({
+      entity_type: { id: _id, name: _id === 'et-1' ? 'MLModel' : 'Dataset' },
+      version: { id: 'v1', version: 1 },
+      attributes: [],
+      associations: _id === 'et-1' ? [{
+        id: 'ref1', name: 'data_ref', type: 'directional', direction: 'outgoing',
+        target_entity_type_id: 'et-2', target_entity_type_name: 'Dataset',
+        source_role: 'model', target_role: 'data',
+        source_cardinality: '1', target_cardinality: '0..n',
+      }] : [],
+    })
+  })
+  ;(api.associations.edit as Mock).mockResolvedValue({ id: 'v2', version: 2 })
+  renderApp()
+  await page.getByRole('tab', { name: 'Model Diagram' }).click()
+  await page.getByText('data_ref [1 → 0..n]').click()
+  // Change the source role
+  const dialog = page.getByRole('dialog')
+  const roleInput = dialog.getByLabelText('Source Role')
+  await userEvent.clear(roleInput)
+  await userEvent.type(roleInput, 'updated_model')
+  // Click Save
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  // Verify API was called
+  expect(api.associations.edit).toHaveBeenCalledWith('et-1', 'data_ref', expect.objectContaining({
+    source_role: 'updated_model',
+  }))
 })

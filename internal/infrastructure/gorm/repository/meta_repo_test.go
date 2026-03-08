@@ -592,6 +592,37 @@ func TestT1_28_ListAssociationsByVersion(t *testing.T) {
 	assert.Len(t, assocs2, 0)
 }
 
+func TestListByTargetEntityType(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	etRepo := repository.NewEntityTypeGormRepo(db)
+	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
+	assocRepo := repository.NewAssociationGormRepo(db)
+	ctx := context.Background()
+
+	et1ID, et2ID, et3ID := newID(), newID(), newID()
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: et1ID, Name: "A", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: et2ID, Name: "B", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: et3ID, Name: "C", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	etvID1 := newID()
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID1, EntityTypeID: et1ID, Version: 1, CreatedAt: time.Now()}))
+	etvID3 := newID()
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID3, EntityTypeID: et3ID, Version: 1, CreatedAt: time.Now()}))
+
+	// A targets B, C targets B
+	require.NoError(t, assocRepo.Create(ctx, &models.Association{ID: newID(), EntityTypeVersionID: etvID1, TargetEntityTypeID: et2ID, Type: models.AssociationTypeContainment, CreatedAt: time.Now()}))
+	require.NoError(t, assocRepo.Create(ctx, &models.Association{ID: newID(), EntityTypeVersionID: etvID3, TargetEntityTypeID: et2ID, Type: models.AssociationTypeDirectional, CreatedAt: time.Now()}))
+
+	// Query by target B — should return both
+	assocs, err := assocRepo.ListByTargetEntityType(ctx, et2ID)
+	require.NoError(t, err)
+	assert.Len(t, assocs, 2)
+
+	// Query by target A — should return empty
+	assocsA, err := assocRepo.ListByTargetEntityType(ctx, et1ID)
+	require.NoError(t, err)
+	assert.Len(t, assocsA, 0)
+}
+
 func TestT1_29_DeleteAssociation(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	etRepo := repository.NewEntityTypeGormRepo(db)
@@ -758,6 +789,64 @@ func TestT1_38_InvalidTransitionValidation(t *testing.T) {
 	assert.NoError(t, err) // Repo allows it; service validates
 }
 
+func TestListByEntityTypeVersionIDs(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	pinRepo := repository.NewCatalogVersionPinGormRepo(db)
+	etRepo := repository.NewEntityTypeGormRepo(db)
+	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
+	ctx := context.Background()
+
+	// Create a catalog version
+	cvID := newID()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{ID: cvID, VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageDevelopment, CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+
+	// Create two entity types with versions
+	et1ID, et2ID := newID(), newID()
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: et1ID, Name: "Model", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: et2ID, Name: "Tool", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	etv1ID, etv2ID := newID(), newID()
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etv1ID, EntityTypeID: et1ID, Version: 1, CreatedAt: time.Now()}))
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etv2ID, EntityTypeID: et2ID, Version: 1, CreatedAt: time.Now()}))
+
+	// Pin both entity type versions to the catalog version
+	require.NoError(t, pinRepo.Create(ctx, &models.CatalogVersionPin{ID: newID(), CatalogVersionID: cvID, EntityTypeVersionID: etv1ID}))
+	require.NoError(t, pinRepo.Create(ctx, &models.CatalogVersionPin{ID: newID(), CatalogVersionID: cvID, EntityTypeVersionID: etv2ID}))
+
+	// Query by both entity type version IDs
+	pins, err := pinRepo.ListByEntityTypeVersionIDs(ctx, []string{etv1ID, etv2ID})
+	require.NoError(t, err)
+	assert.Len(t, pins, 2)
+
+	// Query by single entity type version ID
+	pins, err = pinRepo.ListByEntityTypeVersionIDs(ctx, []string{etv1ID})
+	require.NoError(t, err)
+	assert.Len(t, pins, 1)
+	assert.Equal(t, etv1ID, pins[0].EntityTypeVersionID)
+}
+
+func TestListByEntityTypeVersionIDs_Empty(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	pinRepo := repository.NewCatalogVersionPinGormRepo(db)
+	ctx := context.Background()
+
+	// Query with empty slice returns empty result
+	pins, err := pinRepo.ListByEntityTypeVersionIDs(ctx, []string{})
+	require.NoError(t, err)
+	assert.Len(t, pins, 0)
+}
+
+func TestListByEntityTypeVersionIDs_NoMatch(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	pinRepo := repository.NewCatalogVersionPinGormRepo(db)
+	ctx := context.Background()
+
+	// Query with non-matching IDs returns empty result
+	pins, err := pinRepo.ListByEntityTypeVersionIDs(ctx, []string{newID(), newID()})
+	require.NoError(t, err)
+	assert.Len(t, pins, 0)
+}
+
 func TestT1_39_ListTransitions(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	cvRepo := repository.NewCatalogVersionGormRepo(db)
@@ -777,4 +866,146 @@ func TestT1_39_ListTransitions(t *testing.T) {
 	assert.Len(t, transitions, 2)
 	assert.Equal(t, "development", transitions[0].ToStage)
 	assert.Equal(t, "testing", transitions[1].ToStage)
+}
+
+// T-E.78: Create association with cardinality stores and retrieves correctly
+func TestTE78_AssociationCardinalityStoredAndRetrieved(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	etRepo := repository.NewEntityTypeGormRepo(db)
+	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
+	assocRepo := repository.NewAssociationGormRepo(db)
+	ctx := context.Background()
+
+	et1ID, et2ID := newID(), newID()
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: et1ID, Name: "Server", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: et2ID, Name: "Tool", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	etvID := newID()
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: et1ID, Version: 1, CreatedAt: time.Now()}))
+
+	assoc := &models.Association{
+		ID: newID(), EntityTypeVersionID: etvID, TargetEntityTypeID: et2ID,
+		Type: models.AssociationTypeContainment, SourceRole: "contains", TargetRole: "part_of",
+		SourceCardinality: "1", TargetCardinality: "0..n",
+		CreatedAt: time.Now(),
+	}
+	require.NoError(t, assocRepo.Create(ctx, assoc))
+
+	found, err := assocRepo.GetByID(ctx, assoc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "1", found.SourceCardinality)
+	assert.Equal(t, "0..n", found.TargetCardinality)
+}
+
+// T-E.79: BulkCopyToVersion preserves cardinality on copied associations
+func TestTE79_BulkCopyPreservesCardinality(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	etRepo := repository.NewEntityTypeGormRepo(db)
+	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
+	assocRepo := repository.NewAssociationGormRepo(db)
+	ctx := context.Background()
+
+	et1ID, et2ID := newID(), newID()
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: et1ID, Name: "Server", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: et2ID, Name: "Tool", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	v1ID := newID()
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: v1ID, EntityTypeID: et1ID, Version: 1, CreatedAt: time.Now()}))
+	v2ID := newID()
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: v2ID, EntityTypeID: et1ID, Version: 2, CreatedAt: time.Now()}))
+
+	require.NoError(t, assocRepo.Create(ctx, &models.Association{
+		ID: newID(), EntityTypeVersionID: v1ID, TargetEntityTypeID: et2ID,
+		Type: models.AssociationTypeContainment,
+		SourceCardinality: "1..n", TargetCardinality: "0..1",
+		CreatedAt: time.Now(),
+	}))
+
+	require.NoError(t, assocRepo.BulkCopyToVersion(ctx, v1ID, v2ID))
+
+	v2Assocs, err := assocRepo.ListByVersion(ctx, v2ID)
+	require.NoError(t, err)
+	require.Len(t, v2Assocs, 1)
+	assert.Equal(t, "1..n", v2Assocs[0].SourceCardinality)
+	assert.Equal(t, "0..1", v2Assocs[0].TargetCardinality)
+}
+
+// T-E.114: Association name stored and retrieved
+func TestTE114_AssociationNameStoredAndRetrieved(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	etRepo := repository.NewEntityTypeGormRepo(db)
+	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
+	assocRepo := repository.NewAssociationGormRepo(db)
+	ctx := context.Background()
+
+	et1ID, et2ID := newID(), newID()
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: et1ID, Name: "Server", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: et2ID, Name: "Tool", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	etvID := newID()
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: et1ID, Version: 1, CreatedAt: time.Now()}))
+
+	assoc := &models.Association{
+		ID: newID(), EntityTypeVersionID: etvID, Name: "tools",
+		TargetEntityTypeID: et2ID, Type: models.AssociationTypeContainment,
+		CreatedAt: time.Now(),
+	}
+	require.NoError(t, assocRepo.Create(ctx, assoc))
+
+	found, err := assocRepo.GetByID(ctx, assoc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "tools", found.Name)
+}
+
+// T-E.115: Association unique constraint on (version_id, name)
+func TestTE115_AssociationNameUniqueConstraint(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	etRepo := repository.NewEntityTypeGormRepo(db)
+	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
+	assocRepo := repository.NewAssociationGormRepo(db)
+	ctx := context.Background()
+
+	et1ID, et2ID := newID(), newID()
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: et1ID, Name: "Server", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: et2ID, Name: "Tool", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	etvID := newID()
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: et1ID, Version: 1, CreatedAt: time.Now()}))
+
+	require.NoError(t, assocRepo.Create(ctx, &models.Association{
+		ID: newID(), EntityTypeVersionID: etvID, Name: "tools",
+		TargetEntityTypeID: et2ID, Type: models.AssociationTypeContainment, CreatedAt: time.Now(),
+	}))
+
+	// Duplicate name in same version should fail
+	err := assocRepo.Create(ctx, &models.Association{
+		ID: newID(), EntityTypeVersionID: etvID, Name: "tools",
+		TargetEntityTypeID: et2ID, Type: models.AssociationTypeDirectional, CreatedAt: time.Now(),
+	})
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsConflict(err))
+}
+
+// T-E.116: BulkCopyToVersion preserves association names
+func TestTE116_BulkCopyPreservesAssociationNames(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	etRepo := repository.NewEntityTypeGormRepo(db)
+	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
+	assocRepo := repository.NewAssociationGormRepo(db)
+	ctx := context.Background()
+
+	et1ID, et2ID := newID(), newID()
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: et1ID, Name: "Server", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: et2ID, Name: "Tool", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	v1ID, v2ID := newID(), newID()
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: v1ID, EntityTypeID: et1ID, Version: 1, CreatedAt: time.Now()}))
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: v2ID, EntityTypeID: et1ID, Version: 2, CreatedAt: time.Now()}))
+
+	require.NoError(t, assocRepo.Create(ctx, &models.Association{
+		ID: newID(), EntityTypeVersionID: v1ID, Name: "my_tools",
+		TargetEntityTypeID: et2ID, Type: models.AssociationTypeContainment, CreatedAt: time.Now(),
+	}))
+
+	require.NoError(t, assocRepo.BulkCopyToVersion(ctx, v1ID, v2ID))
+
+	v2Assocs, err := assocRepo.ListByVersion(ctx, v2ID)
+	require.NoError(t, err)
+	require.Len(t, v2Assocs, 1)
+	assert.Equal(t, "my_tools", v2Assocs[0].Name)
 }

@@ -57,6 +57,7 @@ func TestTC02_AddStringAttribute(t *testing.T) {
 
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
@@ -79,6 +80,7 @@ func TestTC03_AddEnumAttribute(t *testing.T) {
 	enumRepo.On("GetByID", mock.Anything, "enum1").Return(&models.Enum{ID: "enum1", Name: "Status"}, nil)
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
@@ -212,6 +214,7 @@ func TestTC56_SuperAdminCanAddAttribute(t *testing.T) {
 
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
@@ -237,4 +240,116 @@ func TestTC58_ROCannotReorderAttributes(t *testing.T) {
 	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/attributes/reorder",
 		`{"ordered_ids":["a2","a1"]}`, apimw.RoleRO)
 	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// === EditAttribute Handler Tests (T-E.16 through T-E.18) ===
+
+// T-E.16: PUT /attributes/:name with valid edit → 200
+func TestTE16_EditAttributeValid(t *testing.T) {
+	attrRepo := new(mocks.MockAttributeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	assocRepo := new(mocks.MockAssociationRepo)
+	e := setupAttrServer(attrRepo, etvRepo, assocRepo, nil)
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "a1", Name: "hostname", Description: "old", Type: models.AttributeTypeString, Ordinal: 0},
+	}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("ListByVersion", mock.Anything, mock.MatchedBy(func(id string) bool { return id != "v1" })).Return([]*models.Attribute{
+		{ID: "a1-copy", Name: "hostname", Description: "old", Type: models.AttributeTypeString, Ordinal: 0},
+	}, nil)
+	attrRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/attributes/hostname",
+		`{"name":"host","description":"updated"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"version":2`)
+}
+
+// T-E.17: PUT /attributes/:name as RO → 403
+func TestTE17_EditAttributeAsRO(t *testing.T) {
+	e := setupAttrServer(nil, nil, nil, nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/attributes/hostname",
+		`{"name":"new"}`, apimw.RoleRO)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// T-E.18: PUT /attributes/:name nonexistent → 404
+func TestTE18_EditAttributeNotFound(t *testing.T) {
+	attrRepo := new(mocks.MockAttributeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupAttrServer(attrRepo, etvRepo, nil, nil)
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/attributes/nonexistent",
+		`{"name":"new"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// === CopyAttributes Handler Tests (T-E.13 through T-E.15) ===
+
+// T-E.13: POST /attributes/copy with valid request → 200
+func TestTE13_CopyAttributesValid(t *testing.T) {
+	attrRepo := new(mocks.MockAttributeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	assocRepo := new(mocks.MockAssociationRepo)
+	e := setupAttrServer(attrRepo, etvRepo, assocRepo, nil)
+
+	srcV1 := &models.EntityTypeVersion{ID: "src-v1", EntityTypeID: "src-et", Version: 1}
+	tgtV1 := &models.EntityTypeVersion{ID: "tgt-v1", EntityTypeID: "tgt-et", Version: 1}
+	etvRepo.On("GetByEntityTypeAndVersion", mock.Anything, "src-et", 1).Return(srcV1, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "tgt-et").Return(tgtV1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "src-v1").Return([]*models.Attribute{
+		{Name: "attr1", Type: models.AttributeTypeString},
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "tgt-v1").Return([]*models.Attribute{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/tgt-et/attributes/copy",
+		`{"source_entity_type_id":"src-et","source_version":1,"attribute_names":["attr1"]}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"version":2`)
+}
+
+// T-E.14: POST /attributes/copy as RO → 403
+func TestTE14_CopyAttributesAsRO(t *testing.T) {
+	e := setupAttrServer(nil, nil, nil, nil)
+
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/tgt-et/attributes/copy",
+		`{"source_entity_type_id":"src-et","source_version":1,"attribute_names":["attr1"]}`, apimw.RoleRO)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// T-E.15: POST /attributes/copy with name conflict → 409
+func TestTE15_CopyAttributesConflict(t *testing.T) {
+	attrRepo := new(mocks.MockAttributeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupAttrServer(attrRepo, etvRepo, nil, nil)
+
+	srcV1 := &models.EntityTypeVersion{ID: "src-v1", EntityTypeID: "src-et", Version: 1}
+	tgtV1 := &models.EntityTypeVersion{ID: "tgt-v1", EntityTypeID: "tgt-et", Version: 1}
+	etvRepo.On("GetByEntityTypeAndVersion", mock.Anything, "src-et", 1).Return(srcV1, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "tgt-et").Return(tgtV1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "src-v1").Return([]*models.Attribute{
+		{Name: "conflict", Type: models.AttributeTypeString},
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "tgt-v1").Return([]*models.Attribute{
+		{Name: "conflict", Type: models.AttributeTypeString},
+	}, nil)
+
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/tgt-et/attributes/copy",
+		`{"source_entity_type_id":"src-et","source_version":1,"attribute_names":["conflict"]}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusConflict, rec.Code)
 }

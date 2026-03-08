@@ -62,24 +62,60 @@ type AttributeResponse struct {
 	Required    bool   `json:"required"`
 }
 
+type UpdateAttributeRequest struct {
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+	Type        *string `json:"type"`
+	EnumID      *string `json:"enum_id"`
+}
+
+type RenameEntityTypeRequest struct {
+	Name            string `json:"name" validate:"required"`
+	DeepCopyAllowed bool   `json:"deep_copy_allowed"`
+}
+
+type RenameEntityTypeResponse struct {
+	EntityType  EntityTypeResponse `json:"entity_type"`
+	WasDeepCopy bool               `json:"was_deep_copy"`
+}
+
 // === Association DTOs ===
 
 type CreateAssociationRequest struct {
-	SourceEntityTypeID string `json:"source_entity_type_id" validate:"required"`
 	TargetEntityTypeID string `json:"target_entity_type_id" validate:"required"`
 	Type               string `json:"type" validate:"required"`
+	Name               string `json:"name" validate:"required"`
 	SourceRole         string `json:"source_role"`
 	TargetRole         string `json:"target_role"`
+	SourceCardinality  string `json:"source_cardinality"`
+	TargetCardinality  string `json:"target_cardinality"`
 }
 
 type AssociationResponse struct {
 	ID                  string    `json:"id"`
 	EntityTypeVersionID string    `json:"entity_type_version_id"`
+	Name                string    `json:"name"`
 	TargetEntityTypeID  string    `json:"target_entity_type_id"`
 	Type                string    `json:"type"`
 	SourceRole          string    `json:"source_role"`
 	TargetRole          string    `json:"target_role"`
+	SourceCardinality   string    `json:"source_cardinality"`
+	TargetCardinality   string    `json:"target_cardinality"`
 	CreatedAt           time.Time `json:"created_at"`
+	// Direction indicates the perspective: "outgoing" (this entity owns the association)
+	// or "incoming" (this entity is the target of another entity's association).
+	Direction           string    `json:"direction"`
+	// SourceEntityTypeID is set for incoming associations to identify the other side.
+	SourceEntityTypeID  string    `json:"source_entity_type_id,omitempty"`
+}
+
+type UpdateAssociationRequest struct {
+	Name              *string `json:"name"`
+	Type              *string `json:"type"`
+	SourceRole        *string `json:"source_role"`
+	TargetRole        *string `json:"target_role"`
+	SourceCardinality *string `json:"source_cardinality"`
+	TargetCardinality *string `json:"target_cardinality"`
 }
 
 // === Enum DTOs ===
@@ -133,6 +169,13 @@ type CatalogVersionResponse struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
+type CatalogVersionPinResponse struct {
+	EntityTypeName      string `json:"entity_type_name"`
+	EntityTypeID        string `json:"entity_type_id"`
+	EntityTypeVersionID string `json:"entity_type_version_id"`
+	Version             int    `json:"version"`
+}
+
 type LifecycleTransitionResponse struct {
 	ID          string    `json:"id"`
 	FromStage   string    `json:"from_stage"`
@@ -156,6 +199,50 @@ type VersionDiffItemDTO struct {
 	Category   string `json:"category"`
 	OldValue   string `json:"old_value,omitempty"`
 	NewValue   string `json:"new_value,omitempty"`
+}
+
+// === Version Snapshot DTOs ===
+
+type SnapshotAttributeResponse struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+	EnumID      string `json:"enum_id,omitempty"`
+	EnumName    string `json:"enum_name,omitempty"`
+	Ordinal     int    `json:"ordinal"`
+	Required    bool   `json:"required"`
+}
+
+type SnapshotAssociationResponse struct {
+	ID                   string `json:"id"`
+	Name                 string `json:"name"`
+	Type                 string `json:"type"`
+	TargetEntityTypeID   string `json:"target_entity_type_id"`
+	TargetEntityTypeName string `json:"target_entity_type_name"`
+	SourceRole           string `json:"source_role"`
+	TargetRole           string `json:"target_role"`
+	SourceCardinality    string `json:"source_cardinality"`
+	TargetCardinality    string `json:"target_cardinality"`
+	Direction            string `json:"direction"`
+	SourceEntityTypeID   string `json:"source_entity_type_id,omitempty"`
+	SourceEntityTypeName string `json:"source_entity_type_name,omitempty"`
+}
+
+type VersionSnapshotResponse struct {
+	EntityType   EntityTypeResponse            `json:"entity_type"`
+	Version      EntityTypeVersionResponse     `json:"version"`
+	Attributes   []SnapshotAttributeResponse   `json:"attributes"`
+	Associations []SnapshotAssociationResponse  `json:"associations"`
+}
+
+// === Containment Tree DTOs ===
+
+type ContainmentTreeNodeDTO struct {
+	EntityType    EntityTypeResponse        `json:"entity_type"`
+	Versions      []EntityTypeVersionResponse `json:"versions"`
+	LatestVersion int                        `json:"latest_version"`
+	Children      []ContainmentTreeNodeDTO   `json:"children"`
 }
 
 // === List Response ===

@@ -415,7 +415,7 @@ The current architecture assumes a single-cluster deployment where the API serve
 │  │ central API        │  │   │  │ central API        │  │
 │  └────────────────────┘  │   │  └────────────────────┘  │
 │                          │   │                          │
-│  CatalogVersion CRs     │   │  CatalogVersion CRs     │
+│  CatalogVersion CRs      │   │  CatalogVersion CRs      │
 │  (auto-created)          │   │  (auto-created)          │
 └──────────────────────────┘   └──────────────────────────┘
 ```
@@ -487,6 +487,9 @@ Acceptance Criteria:
 - For directional references: the system records the direction (source → target).
 - The entity type definition version is incremented when an association is added.
 - Associations are reflected in the API URL structure (containment as sub-resources, references via `/references` endpoints).
+- Each association has source and target cardinality (UML-style multiplicity). Standard options: `0..1`, `0..n`, `1`, `1..n`. Custom ranges are also supported (e.g., `2..5`). Default cardinality is `0..n` on both ends when not specified.
+- Cardinality is stored as strings (`source_cardinality`, `target_cardinality`) on the Association model. Validation ensures min <= max, both non-negative, and max can be `n` (unbounded).
+- Each association has a required name that is unique within the entity type version. Association names share the same namespace as attribute names — no association can have the same name as an attribute on the same entity type version.
 
 ---
 
@@ -908,9 +911,12 @@ As an Admin, I want to add and remove associations between entity types through 
 Acceptance Criteria:
 - The entity type detail view lists all associations involving this entity type, grouped or labeled by type (containment vs. reference).
 - Admin can add a new association via a dialog: select target entity type, select association type (containment, directional reference, bidirectional reference), and select direction where applicable.
+- The add association dialog includes cardinality selection for both source and target ends. A dropdown offers standard options (`0..1`, `0..n`, `1`, `1..n`) plus a "Custom" option that reveals min/max input fields. Default is `0..n` on both ends.
+- Cardinality is displayed in the association list alongside the relationship label.
 - For containment: if the new association would create a cycle, the UI shows an error immediately (before the Admin can submit).
+- Admin can edit an existing association's roles and cardinality via a dialog. The association type and target entity type cannot be changed (delete and recreate instead). Editing creates a new entity type version (copy-on-write).
 - Admin can remove an association. A confirmation dialog explains the implications.
-- Adding or removing an association increments the entity type version.
+- Adding, editing, or removing an association increments the entity type version.
 
 ---
 
@@ -922,10 +928,13 @@ As an Admin, I want to see a diagram showing all entity types and their associat
 Acceptance Criteria:
 - A graph/diagram view shows entity types as nodes and associations as labeled edges.
 - Containment associations are visually distinct from reference associations (e.g., different line styles or colors).
-- Edge labels indicate the association type and direction.
+- Entity type nodes display the type name, version number, and a list of attributes with their types (UML class diagram style).
+- Edge labels indicate the association name, type, and cardinality.
 - The diagram updates automatically when entity types or associations are added or removed.
-- The diagram is interactive — clicking a node navigates to that entity type's detail view.
-- The diagram handles 10+ entity types without becoming unreadable (supports zoom/pan or layout adjustments).
+- The diagram is interactive — double-clicking a node navigates to that entity type's detail view. Double-clicking an edge opens the edit association modal (main page only).
+- The diagram handles 10+ entity types without becoming unreadable (supports zoom/pan and automatic layout).
+- The diagram appears as a "Model Diagram" tab on the main page (showing all entity types) and as a "Diagram" tab on the catalog version detail page (showing only pinned entity types, read-only).
+- Built with `@patternfly/react-topology` (OCP Console native component).
 
 ---
 
@@ -953,6 +962,8 @@ Acceptance Criteria:
 - A creation interface shows all entity types with their available versions.
 - The latest version of each entity type is pre-selected as the default.
 - Admin can change the selected version for any entity type via a version dropdown.
+- The selection interface shows entity types organized as a containment tree. Root entity types (not contained by any other) appear at the top level. Contained entity types appear as indented children of their parent. Entity types with no containment associations appear as standalone roots.
+- Selecting a parent entity type auto-selects all its contained descendants recursively (children, grandchildren, etc.). Deselecting a parent deselects all descendants recursively. A contained entity type cannot be selected unless its containing parent is selected — selecting a child auto-selects all ancestors up to the root. Deselecting a child does NOT deselect its parent or ancestors.
 - A summary/review step shows the complete bill of materials (all entity type + version pairs) before confirmation.
 - On confirmation, the catalog version is created in the Development lifecycle stage.
 - The Admin is navigated to the new catalog version's detail view.
@@ -965,7 +976,8 @@ As an Admin, I want to see a catalog version's full bill of materials and promot
 **Why**: Lifecycle promotion is a critical operation with real cluster-side effects (CR generation and application). The UI must provide clear context and confirmation to prevent accidental promotions and help Admins understand the current state.
 
 Acceptance Criteria:
-- The detail view shows: catalog version identifier, current lifecycle stage (visually indicated with color-coded badge), creation date, and the full bill of materials (entity type name + pinned version, each linking to that version's read-only detail view).
+- The detail view shows: catalog version identifier, current lifecycle stage (visually indicated with color-coded badge), creation date, and the full bill of materials (entity type name + pinned version).
+- Clicking an entity type name in the bill of materials opens a read-only modal showing the pinned version's attributes and associations. The modal displays the entity type name, pinned version number, and two sections. Attributes show name, type (with resolved enum name for enum types, e.g., "boolean (enum)"), and description. Associations show both outgoing and incoming with contextual relationship labels: "contains"/"contained by" for containment, "references"/"referenced by" for directional, "references (mutual)" for bidirectional — each color-coded. The other entity type name and the perspective-correct role are shown (target role for outgoing, source role for incoming). No edit controls are shown — the modal is purely informational.
 - The view shows a history of lifecycle transitions (who promoted/demoted, when).
 - Available actions are displayed based on current stage and user role:
   - Development: "Promote to Testing" (RW and above).
@@ -1035,3 +1047,103 @@ The following items are acknowledged but not yet fully specified:
 | Entity instance versioning depth | Whether full version history is retained or only N recent versions |
 | Technology choices | Backend language/framework, UI framework, API style (REST vs. GraphQL) |
 | Centralized hub topology | Hub-and-spoke deployment where consuming clusters sync CatalogVersion CRs from a central API. See Section 8.4. |
+
+## 11. Technical Debt
+
+Items where the current implementation diverges from the intended behavior described in this PRD. These should be addressed in priority order.
+
+| ID | Item | Current Behavior | Required Behavior |
+|----|------|-----------------|-------------------|
+| TD-1 | Enum deletion safety | Enum delete checks if any attribute references it across all entity type versions (flat check) | Enum cannot be deleted if it is used by any attribute in a **used entity version**. A used entity version is defined as: (1) any entity type version pinned by a catalog version, or (2) the latest version of any entity type (which belongs to an implicit pre-production catalog). Unused historical versions that are not pinned by any CV and are not the latest version should not block deletion. |
+| TD-2 | Catalog version timestamp uniqueness | Two catalog versions can have the same `created_at` timestamp, causing non-deterministic sort order | `created_at` must be unique across catalog versions. The backend should enforce this (e.g., retry with a small delay if a timestamp collision is detected). This ensures deterministic sort order in the CV list (`ORDER BY created_at DESC`). |
+| TD-3 | Association target+role uniqueness | No uniqueness constraint on (target entity type, target role) per source entity type version | Target entity type + target role must be unique per source entity type version. Empty target role is valid (one allowed per target). API should reject duplicates with 409 Conflict. |
+| TD-4 | Copy attributes dialog: enum name display | Enum attributes in the copy-from picker show type label "enum" without the enum name | Enum attributes should display the enum name alongside the type (e.g., "enum (Month)") so users can distinguish between different enum types when deciding which attributes to copy. |
+| TD-5 | Version lineage tracking | Entity type versions are sequential integers with no parent tracking. Version 4 is created from version 3, but this relationship is not recorded. | Each entity type version should record which version it was derived from (`parent_version_id`). This enables: (1) understanding the edit history as a DAG rather than a flat list, (2) supporting future scenarios where editing from a catalog version context creates a branch, (3) detecting when two catalog versions diverge from a common base version. **Decision: deferred for v1.** The current simple incrementing scheme is sufficient for the initial release. Revisit when implementing edit-from-CV-context or version branching features (see FF-3). |
+| TD-6 | Duplicate DTO mapping logic | Attribute and Association model-to-DTO conversion is duplicated across handlers (attribute_handler, association_handler, entity_type_handler VersionSnapshot) | Extract shared helper functions (e.g., `dto.ToAttributeResponse`, `dto.ToAssociationResponse`) to eliminate duplication. All handlers should use these helpers instead of inline conversion loops. |
+| TD-7 | Bidirectional association removal only from source | A bidirectional association can only be removed from the entity type that created it (the source/outgoing side). From the target entity type's Associations tab, the Remove button is hidden for incoming associations, including bidirectional ones. | Since bidirectional associations are symmetric, the Remove button should be available from either side. Removing from the target side should delete the same association record. The UI currently hides Remove for all incoming associations — bidirectional should be an exception. |
+| TD-8a | Extract shared EditAssociationModal component | Edit association modal is duplicated between `App.tsx` (diagram edit) and `EntityTypeDetailPage.tsx` (associations tab edit) — ~110 lines of duplication | Extract into shared `ui/src/components/EditAssociationModal.tsx` with props for `showEntityTypeNames`, `allowTypeChange`, `onSave`. |
+| TD-8b | Consolidate edit modal state into a single object | Diagram edit modal in `App.tsx` uses 12 separate `useState` calls for one form | Group into a single state object or move into the shared component from TD-8a. |
+| TD-8c | Extract diagram data loading into a custom hook | `App.tsx` and `CatalogVersionDetailPage.tsx` both have `loadDiagramData` functions that fetch snapshots and build `DiagramEntityType[]` | Extract into `ui/src/hooks/useDiagramData.ts` with `loadFromAllEntityTypes()` and `loadFromPins(pins)` methods. |
+| TD-8d | Extract EdgeClickData interface | `onEdgeClick` prop on `EntityTypeDiagramProps` uses inline type with 9 fields | Extract to a named `EdgeClickData` interface for reuse and readability. |
+
+## 12. Future Features
+
+Features planned for future implementation. These are not yet specified in detail and are not part of the current scope.
+
+### FF-1: Association Cardinality (IMPLEMENTED — see US-2 and US-31)
+
+Associations should support cardinality constraints on both ends (UML-style multiplicity notation).
+
+**Standard cardinality options:**
+- `0..1` — optional, at most one
+- `0..n` — optional, any number
+- `1` — exactly one (required)
+- `1..n` — at least one (required)
+
+**Custom cardinality:** In some cases, non-standard ranges are needed (e.g., `2..n`, `1..2`, `3..5`). The UI should support:
+- A dropdown for the four standard options above
+- A "Custom" option that reveals min/max input fields for arbitrary ranges
+- Validation that min <= max, both are non-negative integers, and max can be `n` (unbounded)
+
+Cardinality applies to both the source and target ends of the association. For example, a containment association between `Server` and `Tool` might have cardinality `1` on the source (a tool belongs to exactly one server) and `0..n` on the target (a server can have zero or more tools).
+
+**Model changes:** Add `source_cardinality` and `target_cardinality` fields to the Association model (string, e.g., `"0..1"`, `"1..n"`, `"2..5"`). Default: `0..n` on both ends (no constraint) for backward compatibility.
+
+### FF-2: Entity Version Labels
+
+Entity type versions should support user-defined labels for easy identification, grouping, and catalog version assembly.
+
+**Use cases:**
+- Mark a version as "stable", "draft", "reviewed", "release-candidate"
+- Group versions across entity types by label (e.g., label all versions as "Q1-2026-release") for easy catalog version creation
+- Filter entity type versions by label when selecting which versions to pin in a catalog version
+
+**Model changes:** Add a `labels` field to EntityTypeVersion — a set of string tags (e.g., `["stable", "Q1-2026"]`). Labels are free-form text, not predefined.
+
+**UI:** Label badges on the version history table, label filter in the CV creation entity selection dialog, bulk-label operation to tag multiple entity type versions at once.
+
+**API:**
+- `PUT /entity-types/:id/versions/:version/labels` — set labels on a version
+- `GET /entity-types?version_label=stable` — filter entity types by version label
+- CV creation dialog: filter entity types by label to quickly select a coherent set of versions
+
+### FF-3: Version Lineage and Edit-from-CV Context
+
+Entity type versions currently form a flat sequence (V1, V2, V3...). A future enhancement would track version lineage — recording which version each new version was derived from — enabling a DAG-based version history.
+
+**Motivation:** When viewing an entity type from a catalog version's BOM, the user may want to edit it in-place. Today, clicking an entity type from the BOM should show a read-only view of the pinned version (attributes + associations). Editing requires navigating to the entity type management area, making changes (which creates a new version), then updating the CV pin.
+
+A future edit-from-CV workflow could:
+- Create a new version derived from the pinned version (not necessarily the latest)
+- Automatically update the CV pin to the new version
+- Track that V5 was branched from V3 (not V4), enabling divergence detection
+
+**Model changes:** Add `parent_version_id` (nullable UUID FK) to `EntityTypeVersion`. For the initial version (V1), this is null. For subsequent versions, it points to the version that was the base for the copy-on-write operation.
+
+**Depends on:** TD-5 (version lineage tracking).
+
+**Decision:** Deferred. The v1 read-only BOM view is sufficient. Revisit when user feedback indicates demand for in-place editing from the CV context.
+
+### FF-4: Edit Catalog Version
+
+Catalog versions are currently immutable after creation — pins (entity type version selections) cannot be changed, and there is no way to add or remove entity types from an existing CV. A future enhancement would allow editing a catalog version's pins.
+
+**Potential capabilities (details TBD):**
+- Add or remove entity type pins from an existing catalog version
+- Change the pinned version for an entity type (e.g., upgrade from V2 to V3)
+- Possibly restricted by lifecycle stage (e.g., only development-stage CVs are editable)
+
+**Decision:** Deferred. Requirements not yet clear. Revisit when usage patterns emerge.
+
+### FF-5: Configurable Diagram Layout
+
+The entity type diagram currently uses a hardcoded Dagre (hierarchical top-to-bottom) layout algorithm. A future enhancement would make the layout algorithm configurable at runtime — either per-user preference or as a UI dropdown — without requiring recompilation.
+
+**Supported layouts** (all available in `@patternfly/react-topology`):
+- Dagre (current default — hierarchical, instant positioning)
+- Cola (force-directed, iterative settling)
+- Force (D3 force simulation)
+- Concentric, Grid, BreadthFirst
+
+**Decision:** Deferred. Current Dagre layout works well for the UML class diagram use case.
+

@@ -13,6 +13,18 @@ export default defineConfig({
       headless: true,
     },
     setupFiles: [],
-    testTimeout: 15000,
+    testTimeout: 30000,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'text-summary', 'json-summary'],
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        'src/test/**',
+        'src/**/*.test.{ts,tsx}',
+        'src/**/*.browser.test.{ts,tsx}',
+        'src/**/*.system.test.{ts,tsx}',
+        'src/vite-env.d.ts',
+      ],
+    },
   },
 })

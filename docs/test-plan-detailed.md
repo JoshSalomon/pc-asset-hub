@@ -30,9 +30,9 @@ Development proceeds through three environment phases, each with increasing infr
 
 **Milestones completed**: 1–9 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09 and T-CV.01 through T-CV.31 (185 test cases), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, and T-E.01 through T-E.139 (324 test cases), using SQLite and mocked/simulated infrastructure.
 
-**Human checkpoint**: After all 185 tests pass with 100% coverage (documented exceptions). This is the first review point.
+**Human checkpoint**: After all 218 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
 ---
 
@@ -134,7 +134,7 @@ These tests cover the full entity type management feature: backend API handlers 
 | T-C.21 | POST /entity-types/:id/associations → create containment | API | 201 + new version |
 | T-C.22 | POST /entity-types/:id/associations → create directional | API | 201 |
 | T-C.23 | POST /entity-types/:id/associations → containment cycle | API | 422 cycle detected |
-| T-C.24 | DELETE /entity-types/:id/associations/:assocId | API | 204 |
+| T-C.24 | DELETE /entity-types/:id/associations/:name | API | 204 |
 | T-C.25 | POST /entity-types/:id/associations as RO | API | 403 |
 
 #### Backend: Enum Handler (T-C.26 through T-C.36)
@@ -849,59 +849,349 @@ This feature spans multiple layers: operator types → pure reconciler → contr
 
 ---
 
-## Coverage Criteria Per Milestone (Phase A)
+## Meta Model CRUD Gaps + Catalog Version Workflow
 
-Coverage is measured after each milestone. The target is 100% of the code written in that milestone. Lines that cannot be covered must be individually justified.
+These tests cover the remaining CRUD gaps identified in the meta model gap analysis: editing attributes, renaming entity types (context-sensitive), wiring the copy-attributes handler, catalog version detail endpoints (pins + transitions), stage filtering, and catalog version creation with entity selection.
 
-### Milestone 1: Database Meta Tables
-- **Target**: 100% of `internal/infrastructure/gorm/models/` (meta models) and `internal/infrastructure/gorm/repository/` (meta repositories)
-- **Target**: 100% of `internal/domain/models/` and `internal/domain/repository/` (interfaces — covered by being implemented)
-- **Untestable in Phase A**: None — SQLite in-memory fully exercises all repository code
+### EditAttribute Service (`attribute_service_test.go`)
 
-### Milestone 2: Database Data Tables
-- **Target**: 100% of `internal/infrastructure/gorm/repository/` (data repositories: instance, attribute values, association links)
-- **Untestable in Phase A**: None
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.01 | EditAttribute changes name | Unit | New version created, attribute name updated, other attrs preserved |
+| T-E.02 | EditAttribute changes description | Unit | Description updated in new version |
+| T-E.03 | EditAttribute changes type to enum with valid enumID | Unit | Type and enumID updated |
+| T-E.04 | EditAttribute with name conflict | Unit | Conflict error returned |
+| T-E.05 | EditAttribute on nonexistent attribute | Unit | NotFound error |
+| T-E.06 | EditAttribute with enum type but missing enumID | Unit | Validation error |
+| T-E.07 | EditAttribute preserves ordinal | Unit | Ordinal unchanged in new version |
 
-### Milestone 3: Service Layer — Meta
-- **Target**: 100% of `internal/service/meta/`, `internal/service/versioning/`, `internal/service/validation/`
-- **Untestable in Phase A**: None — all business logic tested with mocked repositories
+### RenameEntityType Service (`entity_type_service_test.go`)
 
-### Milestone 4: Service Layer — Operational
-- **Target**: 100% of `internal/service/operational/`
-- **Untestable in Phase A**: None
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.08 | Rename entity not in any CV | Unit | Simple rename, EntityType.Name updated |
+| T-E.09 | Rename entity in one development CV | Unit | Simple rename |
+| T-E.10 | Rename entity in testing CV, deepCopyAllowed=false | Unit | DeepCopyRequired error returned |
+| T-E.11 | Rename entity in multiple CVs, deepCopyAllowed=true | Unit | New entity type created with new name, old unchanged |
+| T-E.12a | Rename with duplicate name | Unit | Conflict error |
+| T-E.12b | Rename with empty name | Unit | Validation error |
 
-### Milestone 5: API Layer — Meta API
-- **Target**: 100% of `internal/api/meta/`, `internal/api/middleware/`, `internal/api/dto/`
-- **Untestable in Phase A**:
-  - `internal/api/middleware/rbac.go`: The real SubjectAccessReview call to the k8s API server (the code path that calls `k8s.io/client-go` authorizationv1 API). Covered via mock in Phase A; real path covered in Phase C.
-  - Estimated: ~5-10 lines (the actual HTTP call to k8s API and response parsing for real RBAC). Documented per line.
+### CopyAttributes Handler (`attribute_handler_test.go`)
 
-### Milestone 6: API Layer — Operational API
-- **Target**: 100% of `internal/api/operational/`
-- **Untestable in Phase A**: None — httptest covers all handler code
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.13 | POST /entity-types/:id/attributes/copy with valid request | API | 200, new version returned |
+| T-E.14 | POST /entity-types/:id/attributes/copy as RO | API | 403 |
+| T-E.15 | POST /entity-types/:id/attributes/copy with name conflict | API | 409 |
 
-### Milestone 7: UI — Meta Operations
-- **Target**: 100% of `ui/src/pages/meta/`, `ui/src/components/`, `ui/src/hooks/`, `ui/src/context/`
-- **Untestable in Phase A**: None — Vitest with JSDOM and MSW covers all React components and hooks
+### EditAttribute Handler (`attribute_handler_test.go`)
 
-### Milestone 8: UI — Operational Pages
-- **Target**: 100% of `ui/src/pages/operational/`
-- **Untestable in Phase A**: None
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.16 | PUT /entity-types/:id/attributes/:name with valid edit | API | 200, new version |
+| T-E.17 | PUT /entity-types/:id/attributes/:name as RO | API | 403 |
+| T-E.18 | PUT /entity-types/:id/attributes/:name nonexistent | API | 404 |
 
-### Milestone 9: Operator
-- **Target**: 100% of `internal/operator/controllers/`, `internal/operator/crdgen/`
-- **Untestable in Phase A**:
-  - `cmd/operator/main.go`: Operator binary entrypoint, manager setup, signal handling (~10-15 lines)
-  - `internal/operator/controllers/`: Any code that directly calls k8s API for applying CRDs to a real cluster (as opposed to envtest). envtest covers reconciliation logic but the actual `kubectl apply`-equivalent code path for dynamic CRD registration may differ. Estimated: ~5-10 lines.
+### RenameEntityType Handler (`entity_type_handler_test.go`)
 
-### CatalogVersion Discovery CRD
-- **Target**: 100% of `internal/operator/api/v1alpha1/catalogversion_types.go`, `internal/service/meta/cr_manager.go`, `internal/infrastructure/k8s/cr_manager.go`, `internal/infrastructure/config/` (ClusterRole + AllowedStages)
-- **Target**: ≥90% of CatalogVersion-related code in `internal/operator/controllers/` (excluding SetupWithManager) and `internal/service/meta/catalog_version_service.go` (promotion/demotion with CR operations)
-- **Untestable in Phase A**: None — fake K8s client and mocks cover all code paths
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.19 | POST /entity-types/:id/rename simple rename | API | 200, updated entity type |
+| T-E.20 | POST /entity-types/:id/rename deep copy required, not allowed | API | 409 with deep_copy_required error |
+| T-E.21 | POST /entity-types/:id/rename deep copy allowed | API | 200, new entity type, was_deep_copy=true |
 
-### Cross-Milestone Untestable Code (Phase A)
+### Catalog Version Pins and Transitions (`catalog_version_service_test.go`, `catalog_version_handler_test.go`)
 
-The following code paths cannot be covered in Phase A and are deferred to later phases:
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.22 | ListPins returns resolved entity type names and versions | Unit | Pins with entity type name, ID, version |
+| T-E.23 | ListPins for CV with no pins | Unit | Empty list |
+| T-E.24 | ListTransitions returns ordered history | Unit | Transitions ordered by performed_at ASC |
+| T-E.25 | GET /catalog-versions/:id/pins | API | 200, resolved pins |
+| T-E.26 | GET /catalog-versions/:id/pins for nonexistent CV | API | 404 |
+| T-E.27 | GET /catalog-versions/:id/transitions | API | 200, ordered transitions |
+
+### Catalog Version Stage Filter (`catalog_version_handler_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.28 | GET /catalog-versions?stage=testing returns filtered | API | Only testing+production CVs returned |
+| T-E.29 | GET /catalog-versions without stage returns all | API | All CVs returned |
+
+### Catalog Version Create with Pins (`catalog_version_service_test.go`, `catalog_version_handler_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.30 | CreateCatalogVersion with pins creates pin records | Unit | CV created, pins linked |
+| T-E.31 | CreateCatalogVersion with empty pins | Unit | CV created, no pins |
+| T-E.32 | POST /catalog-versions with pins array | API | 201, CV with pins created |
+| T-E.33 | POST /catalog-versions as RO | API | 403 |
+
+### Rename Navigation (`App.system.test.ts`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.34 | Rename entity type and navigate back shows new name in list | System | After renaming via UI and clicking Back, entity types list shows the new name and not the old name |
+
+### Targeted Delete Safety (`App.system.test.ts`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.35 | Delete entity type targets correct row, not first | System | Create two entity types, delete the second (not first in list), verify only the targeted one is deleted and the other survives |
+| T-E.36 | Delete enum targets correct row, not first | System | Create two enums, delete the second (not first in list), verify only the targeted one is deleted and the other survives |
+| T-E.37 | Delete catalog version targets correct row, not first | System | Create two CVs with different timestamps, delete the older one (second in list), verify only the targeted one is deleted and the other survives |
+
+### Copy Attributes Enum Display (`EntityTypeDetailPage.browser.test.tsx`, `App.system.test.ts`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.38 | Attributes table shows enum ID for enum-type attributes | Browser | Enum attributes display truncated enum_id in parentheses next to the type label |
+| T-E.39 | Copy attributes picker shows enum name for enum-type attributes | System | When selecting a source entity type with enum attributes, the Type column shows "enum (EnumName)" instead of just "enum" |
+| T-E.40 | Copy attributes from multi-version entity type works correctly | System | Create a source entity type, add an attribute (creating V2), then copy that attribute to a target — the copy uses the source's latest version, not V1 |
+
+### Bidirectional Association Listing (`coverage_test.go`, `meta_repo_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.41 | ListAllAssociations returns incoming associations | Unit | Entity type targeted by containment from another type shows "incoming" association with source entity type ID |
+| T-E.42 | ListAllAssociations returns both outgoing and incoming | Unit | Entity type with outgoing directional and incoming containment shows both with correct directions |
+| T-E.43 | ListAllAssociations skips old version associations | Unit | Incoming association from an old version of the source entity type is filtered out |
+| T-E.44 | ListAllAssociations error on ListByTargetEntityType | Unit | Error from repo propagates correctly |
+| T-E.45 | ListAllAssociations error on GetByID | Unit | Error resolving source version propagates correctly |
+| T-E.46 | ListAllAssociations error on GetLatestByEntityType for source | Unit | Error resolving source latest version propagates correctly |
+| T-E.47 | ListByTargetEntityType GORM integration | Integration | Query by target entity type ID returns all associations targeting it |
+
+### Role-Aware Lifecycle Buttons (`App.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.48 | Admin cannot see Demote on production catalog version | Browser | Production CV row has no Demote button for Admin role; testing CV row does |
+
+### ContainmentTree Service (`entity_type_service_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.49 | GetContainmentTree with no entity types | Unit | Empty tree |
+| T-E.50 | GetContainmentTree flat entities (no containment) | Unit | All entity types as roots, no children |
+| T-E.51 | GetContainmentTree single parent | Unit | A contains B → A is root with B as child |
+| T-E.52 | GetContainmentTree multi-level | Unit | A contains B, B contains C → nested tree |
+| T-E.53 | GetContainmentTree includes all versions per node | Unit | Each node has full version list with latest_version set |
+
+### ContainmentTree Handler (`entity_type_handler_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.54 | GET /entity-types/containment-tree returns 200 | API | Tree response with entity types and versions |
+
+### CV Create Tree UI (`App.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.55 | CV create modal shows containment tree | Browser | Entity types rendered as tree with indentation |
+| T-E.56 | Selecting parent auto-selects all descendants recursively | Browser | Check parent → children and grandchildren become checked |
+| T-E.57 | Deselecting parent deselects all descendants recursively | Browser | Uncheck parent → children and grandchildren become unchecked |
+| T-E.58 | Version dropdown shows all versions, defaults to latest | Browser | Dropdown lists versions, latest pre-selected |
+
+### Version Snapshot Service (`entity_type_service_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.59 | GetVersionSnapshot returns attributes and associations for specific version | Unit | Returns snapshot with attributes and associations for the requested version |
+| T-E.60 | GetVersionSnapshot returns error for nonexistent entity type | Unit | NotFound error |
+| T-E.61 | GetVersionSnapshot returns error for nonexistent version | Unit | NotFound error |
+
+### Version Snapshot Handler (`entity_type_handler_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.62 | GET /entity-types/:id/versions/:version/snapshot returns 200 | API | Snapshot with attributes and associations |
+| T-E.63 | GET /entity-types/:id/versions/999/snapshot returns 404 | API | 404 for nonexistent version |
+
+### Read-Only BOM Modal (`CatalogVersionDetailPage.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.64 | Clicking entity type in BOM opens read-only modal | Browser | Modal opens with entity type name and pinned version |
+| T-E.65 | BOM modal shows attributes table with resolved enum names | Browser | Attributes listed with name, type (enum attributes show "EnumName (enum)"), description |
+| T-E.66 | BOM modal shows associations with contextual labels | Browser | Associations show relationship label (contains/contained by/references/referenced by/references (mutual)), other entity type name, perspective-correct role |
+| T-E.67 | BOM modal has no edit controls | Browser | No Add, Remove, Edit, or Reorder buttons in modal |
+
+### Association Cardinality — Validation (`cardinality_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.68 | ValidateCardinality accepts standard options (0..1, 0..n, 1, 1..n) | Unit | No error |
+| T-E.69 | ValidateCardinality accepts custom ranges (2..5, 2..n) | Unit | No error |
+| T-E.70 | ValidateCardinality accepts exact values (3) | Unit | No error |
+| T-E.71 | ValidateCardinality accepts empty string | Unit | No error |
+| T-E.72 | ValidateCardinality rejects invalid formats (negative, min>max, non-numeric, malformed) | Unit | Error returned for each invalid input |
+| T-E.73 | NormalizeCardinality returns "0..n" for empty string | Unit | "0..n" |
+| T-E.74 | NormalizeCardinality passes through valid values unchanged | Unit | Same value returned |
+
+### Association Cardinality — Service (`association_service_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.75 | CreateAssociation with valid cardinality passes through to model | Unit | Association created with specified cardinality values |
+| T-E.76 | CreateAssociation with empty cardinality normalizes to "0..n" | Unit | Association created with "0..n" on both ends |
+| T-E.77 | CreateAssociation with invalid cardinality returns error | Unit | Validation error, no version created |
+
+### Association Cardinality — Repository (`meta_repo_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.78 | Create association with cardinality stores and retrieves correctly | Integration | Fields persisted and returned on query |
+| T-E.79 | BulkCopyToVersion preserves cardinality on copied associations | Integration | Copied association has same cardinality values as original |
+
+### Association Cardinality — API (`association_handler_test.go`, `entity_type_handler_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.80 | POST /entity-types/:id/associations with cardinality | API | 201, version created, cardinality passed through |
+| T-E.81 | POST /entity-types/:id/associations with invalid cardinality | API | 400 |
+| T-E.82 | GET /entity-types/:id/associations returns normalized cardinality | API | Response includes source_cardinality and target_cardinality, empty → "0..n" |
+| T-E.83 | GET /entity-types/:id/versions/:v/snapshot includes cardinality | API | Snapshot associations include source_cardinality and target_cardinality |
+
+### Association Cardinality — UI (`EntityTypeDetailPage.browser.test.tsx`, `CatalogVersionDetailPage.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.84 | Add association modal has cardinality dropdowns defaulting to "0..n" | Browser | Two dropdowns with standard options, default "0..n" |
+| T-E.85 | Add association modal custom cardinality reveals min/max inputs | Browser | Selecting "Custom" shows min and max fields |
+| T-E.86 | Associations table shows cardinality column | Browser | Column displays source and target cardinality values |
+| T-E.87 | BOM modal associations table includes cardinality | Browser | Read-only cardinality values shown for each association |
+| T-E.88 | Custom cardinality with empty fields shows client-side error | Browser | Validation error shown before API call when custom selected with empty min/max |
+| T-E.89 | Custom cardinality min field only accepts digits | Browser | Non-digit characters rejected in min input field |
+
+### Association Cardinality — System (`App.system.test.ts`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.90 | Association cardinality is stored and displayed end-to-end | System | Create association with cardinality via API, verify in list response and UI display |
+
+### Association Cardinality — Containment Constraint (`association_service_test.go`, `EntityTypeDetailPage.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.91 | Containment rejects invalid source cardinality (0..n, 1..n) | Unit | Validation error, no version created |
+| T-E.92 | Containment accepts valid source cardinality (1, 0..1, empty) | Unit | Association created with valid cardinality |
+| T-E.93 | Non-containment allows any source cardinality | Unit | No restriction on directional/bidirectional |
+| T-E.94 | Containment source cardinality dropdown restricted to 1 and 0..1 | Browser | Only two options shown, default 0..1 |
+
+### Edit Association — Service (`association_service_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.95 | EditAssociation changes source role | Unit | New version created, source role updated, other fields preserved |
+| T-E.96 | EditAssociation changes cardinality | Unit | New version created, cardinality updated |
+| T-E.97 | EditAssociation with invalid cardinality | Unit | Validation error, no version created |
+| T-E.98 | EditAssociation containment rejects invalid source cardinality | Unit | Validation error when editing containment source to "0..n" |
+| T-E.99 | EditAssociation on nonexistent association | Unit | NotFound error |
+
+### Edit Association — API (`association_handler_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.100 | PUT /entity-types/:id/associations/:name with valid edit | API | 200, new version returned |
+| T-E.101 | PUT /entity-types/:id/associations/:name as RO | API | 403 |
+| T-E.102 | PUT /entity-types/:id/associations/:name nonexistent | API | 404 |
+| T-E.103 | PUT /entity-types/:id/associations/:name invalid cardinality | API | 400 |
+
+### Edit Association — UI (`EntityTypeDetailPage.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.104 | Edit button opens modal with pre-filled association values | Browser | Modal shows current role and cardinality values |
+| T-E.105 | Edit association Save triggers API call | Browser | API called with updated fields, table refreshes |
+
+### Shared EditAssociationModal + Custom Cardinality (`EntityTypeDetailPage.browser.test.tsx`, `App.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.137 | Edit modal shows custom cardinality option | Browser | Selecting "Custom" in edit modal reveals min/max inputs |
+| T-E.138 | Edit modal custom cardinality sends correct value | Browser | Custom min/max values sent as "min..max" in API call |
+| T-E.139 | Edit modal pre-fills custom cardinality correctly | Browser | Association with non-standard cardinality (e.g., "2..5") shows "Custom" selected with min=2, max=5 |
+
+### Association Names — Service (`association_service_test.go`, `attribute_service_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.106 | CreateAssociation requires name | Unit | Validation error when name is empty |
+| T-E.107 | CreateAssociation rejects duplicate association name | Unit | Conflict error when name already exists in version |
+| T-E.108 | CreateAssociation rejects name that conflicts with attribute | Unit | Conflict error when association name matches existing attribute name |
+| T-E.109 | AddAttribute rejects name that conflicts with association | Unit | Conflict error when attribute name matches existing association name |
+| T-E.110 | EditAssociation can rename | Unit | New version created, name updated |
+| T-E.111 | EditAssociation rename conflicts with attribute | Unit | Conflict error |
+| T-E.112 | DeleteAssociation by name | Unit | New version without the named association |
+| T-E.113 | COW matching uses name instead of all-properties | Unit | Correct association matched even with reordered list |
+
+### Association Names — Repository (`meta_repo_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.114 | Association name stored and retrieved | Integration | Name persisted and returned |
+| T-E.115 | Association unique constraint on (version_id, name) | Integration | Duplicate name in same version rejected |
+| T-E.116 | BulkCopyToVersion preserves association names | Integration | Copied associations retain names |
+
+### Association Names — API (`association_handler_test.go`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.117 | POST /associations with name returns 201 | API | Name included in create, version returned |
+| T-E.118 | POST /associations without name returns 400 | API | Name required |
+| T-E.119 | POST /associations duplicate name returns 409 | API | Conflict |
+| T-E.120 | GET /associations returns name in response | API | Name field present in list items |
+| T-E.121 | PUT /associations/:name with valid edit returns 200 | API | Route uses name param |
+| T-E.122 | DELETE /associations/:name returns 204 | API | Route uses name param |
+| T-E.123 | GET /versions/:v/snapshot includes association name | API | Name in snapshot response |
+
+### Association Names — UI (`EntityTypeDetailPage.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.124 | Add association modal has name field | Browser | Name input visible, required |
+| T-E.125 | Associations table shows Name column | Browser | Name displayed in table |
+| T-E.126 | Edit association modal shows name pre-filled | Browser | Current name editable |
+
+### Entity Type Diagram — Main Page (`App.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.127 | Model Diagram tab exists on main page | Browser | Tab labeled "Model Diagram" is visible |
+| T-E.128 | Diagram renders entity type nodes with names | Browser | Node labels show entity type names |
+| T-E.129 | Diagram nodes show attributes with types | Browser | Attributes listed as "name : type" (enum shows enum name) |
+| T-E.130 | Diagram renders edges with association labels | Browser | Edges show association name and cardinality |
+| T-E.131 | Bidirectional edges have two arrowheads (filled target, hollow source) | Browser | Bidirectional edge renders with label and dual arrowhead markers |
+| T-E.134 | Double-click entity type node navigates to detail page | Browser | Router navigates to /entity-types/:id |
+| T-E.135 | Click association label on diagram opens edit modal | Browser | Edit modal opens with name, type, roles, cardinality; source/target entities read-only |
+| T-E.136 | EditAssociation can change association type | Unit | New version created with changed type (e.g., directional → bidirectional) |
+
+### Entity Type Diagram — CV Detail Page (`CatalogVersionDetailPage.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.132 | Diagram tab exists on CV detail page | Browser | Tab labeled "Diagram" is visible |
+| T-E.133 | CV diagram renders pinned entity types with attributes | Browser | Only pinned entity types shown as nodes with attributes |
+
+---
+
+## Coverage Criteria
+
+### Pass Rate
+
+- **Target**: 100% of all test cases must pass before any code is considered complete.
+- Tests are run continuously during implementation. No code is merged or committed with failing tests.
+
+### Code Coverage
+
+- **Target**: Near-100% code coverage across all layers (backend, UI, operator).
+- **Backend**: `go test -coverprofile=coverage.out ./...` with `go tool cover -func=coverage.out` for analysis.
+- **UI**: Vitest with `--coverage` flag (v8 provider).
+- Any uncovered lines must be individually documented with a justification explaining why the line cannot be reached in the current test environment.
+
+### Known Untestable Code (Phase A)
+
+The following code paths cannot be covered in Phase A (no container runtime) and are deferred to later environment phases:
 
 | File/Package | Lines | Reason | Covered In |
 |---|---|---|---|
@@ -912,7 +1202,7 @@ The following code paths cannot be covered in Phase A and are deferred to later 
 | `internal/infrastructure/config/` (env-based config) | ~5-10 | Production configuration loading from environment variables / ConfigMaps | Phase B (kind) |
 | `internal/operator/controllers/` (real CRD apply) | ~5-10 | Dynamic CRD registration against a real k8s API (not envtest) | Phase B (kind) |
 
-**Phase A estimated uncoverable**: ~50-70 lines total across all milestones. All other code must be at 100%.
+**Phase A estimated uncoverable**: ~50-70 lines total. All other code must be at 100%.
 
 ---
 
@@ -921,7 +1211,7 @@ The following code paths cannot be covered in Phase A and are deferred to later 
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 185 test cases (T-1.01 through T-9.09 and T-CV.01 through T-CV.31) pass
+- All 275 test cases (T-1.01 through T-9.09, T-CV.01 through T-CV.31, and T-E.01 through T-E.90) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

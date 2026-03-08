@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   PageSection,
   Title,
@@ -36,6 +36,7 @@ import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
 import { ArrowUpIcon, ArrowDownIcon } from '@patternfly/react-icons'
 import { api } from '../../api/client'
 import type { EntityType, EntityTypeVersion, Attribute, Association, Enum, Role, VersionDiff } from '../../types'
+import EditAssociationModal from '../../components/EditAssociationModal'
 
 interface Props {
   role: Role
@@ -44,12 +45,13 @@ interface Props {
 export default function EntityTypeDetailPage({ role }: Props) {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const canEdit = role === 'Admin' || role === 'SuperAdmin'
 
   const [entityType, setEntityType] = useState<EntityType | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<string | number>('overview')
+  const [activeTab, setActiveTab] = useState<string | number>(searchParams.get('tab') || 'overview')
 
   // Attributes state
   const [attributes, setAttributes] = useState<Attribute[]>([])
@@ -77,15 +79,55 @@ export default function EntityTypeDetailPage({ role }: Props) {
   const [attrEnumOpen, setAttrEnumOpen] = useState(false)
   const [addAttrError, setAddAttrError] = useState<string | null>(null)
 
+  // Edit attribute modal
+  const [editAttrOpen, setEditAttrOpen] = useState(false)
+  const [editAttrOrigName, setEditAttrOrigName] = useState('')
+  const [editAttrName, setEditAttrName] = useState('')
+  const [editAttrDesc, setEditAttrDesc] = useState('')
+  const [editAttrType, setEditAttrType] = useState('string')
+  const [editAttrTypeOpen, setEditAttrTypeOpen] = useState(false)
+  const [editAttrEnumId, setEditAttrEnumId] = useState('')
+  const [editAttrEnumOpen, setEditAttrEnumOpen] = useState(false)
+  const [editAttrError, setEditAttrError] = useState<string | null>(null)
+
+  // Edit entity type name/description
+  const [editNameOpen, setEditNameOpen] = useState(false)
+  const [editNameValue, setEditNameValue] = useState('')
+  const [editNameError, setEditNameError] = useState<string | null>(null)
+  const [deepCopyWarningOpen, setDeepCopyWarningOpen] = useState(false)
+  const [pendingNewName, setPendingNewName] = useState('')
+
+  // Copy attributes modal
+  const [copyAttrsOpen, setCopyAttrsOpen] = useState(false)
+  const [copyAttrsSourceId, setCopyAttrsSourceId] = useState('')
+  const [copyAttrsSourceOpen, setCopyAttrsSourceOpen] = useState(false)
+  const [sourceAttributes, setSourceAttributes] = useState<Attribute[]>([])
+  const [sourceLatestVersion, setSourceLatestVersion] = useState(1)
+  const [selectedCopyAttrs, setSelectedCopyAttrs] = useState<string[]>([])
+  const [copyAttrsError, setCopyAttrsError] = useState<string | null>(null)
+
   // Add association modal
   const [addAssocOpen, setAddAssocOpen] = useState(false)
+  const [assocName, setAssocName] = useState('')
   const [assocTargetId, setAssocTargetId] = useState('')
   const [assocTargetOpen, setAssocTargetOpen] = useState(false)
   const [assocType, setAssocType] = useState('containment')
   const [assocTypeOpen, setAssocTypeOpen] = useState(false)
   const [assocSourceRole, setAssocSourceRole] = useState('')
   const [assocTargetRole, setAssocTargetRole] = useState('')
+  const [assocSourceCardinality, setAssocSourceCardinality] = useState('0..n')
+  const [assocTargetCardinality, setAssocTargetCardinality] = useState('0..n')
+  const [assocSourceCardCustom, setAssocSourceCardCustom] = useState(false)
+  const [assocSourceCardMin, setAssocSourceCardMin] = useState('')
+  const [assocSourceCardMax, setAssocSourceCardMax] = useState('')
+  const [assocTargetCardCustom, setAssocTargetCardCustom] = useState(false)
+  const [assocTargetCardMin, setAssocTargetCardMin] = useState('')
+  const [assocTargetCardMax, setAssocTargetCardMax] = useState('')
   const [addAssocError, setAddAssocError] = useState<string | null>(null)
+
+  // Edit association modal
+  const [editAssocOpen, setEditAssocOpen] = useState(false)
+  const [editAssocData, setEditAssocData] = useState({ name: '', type: '', sourceRole: '', targetRole: '', sourceCardinality: '0..n', targetCardinality: '0..n' })
 
   // Copy modal
   const [copyOpen, setCopyOpen] = useState(false)
@@ -218,20 +260,42 @@ export default function EntityTypeDetailPage({ role }: Props) {
   }
 
   const handleAddAssociation = async () => {
-    if (!id || !assocTargetId || !assocType) return
     setAddAssocError(null)
+    if (assocSourceCardCustom && (!assocSourceCardMin.trim() || !assocSourceCardMax.trim())) {
+      setAddAssocError('Source cardinality: both min and max are required for custom values')
+      return
+    }
+    if (assocTargetCardCustom && (!assocTargetCardMin.trim() || !assocTargetCardMax.trim())) {
+      setAddAssocError('Target cardinality: both min and max are required for custom values')
+      return
+    }
+    if (!id || !assocTargetId || !assocType) return
     try {
+      const srcCard = assocSourceCardCustom ? `${assocSourceCardMin}..${assocSourceCardMax}` : assocSourceCardinality
+      const tgtCard = assocTargetCardCustom ? `${assocTargetCardMin}..${assocTargetCardMax}` : assocTargetCardinality
       await api.associations.create(id, {
         target_entity_type_id: assocTargetId,
         type: assocType,
+        name: assocName,
         source_role: assocSourceRole || undefined,
         target_role: assocTargetRole || undefined,
+        source_cardinality: srcCard,
+        target_cardinality: tgtCard,
       })
       setAddAssocOpen(false)
+      setAssocName('')
       setAssocTargetId('')
       setAssocType('containment')
       setAssocSourceRole('')
       setAssocTargetRole('')
+      setAssocSourceCardinality('0..n')
+      setAssocTargetCardinality('0..n')
+      setAssocSourceCardCustom(false)
+      setAssocTargetCardCustom(false)
+      setAssocSourceCardMin('')
+      setAssocSourceCardMax('')
+      setAssocTargetCardMin('')
+      setAssocTargetCardMax('')
       loadAssociations()
       loadEntityType()
     } catch (e) {
@@ -239,15 +303,42 @@ export default function EntityTypeDetailPage({ role }: Props) {
     }
   }
 
-  const handleDeleteAssociation = async (assocId: string) => {
+  const handleDeleteAssociation = async (assocName: string) => {
     if (!id) return
     try {
-      await api.associations.delete(id, assocId)
+      await api.associations.delete(id, assocName)
       loadAssociations()
       loadEntityType()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to delete association')
     }
+  }
+
+  const openEditAssoc = (assoc: Association) => {
+    setEditAssocData({
+      name: assoc.name,
+      type: assoc.type,
+      sourceRole: assoc.source_role || '',
+      targetRole: assoc.target_role || '',
+      sourceCardinality: assoc.source_cardinality || '0..n',
+      targetCardinality: assoc.target_cardinality || '0..n',
+    })
+    setEditAssocOpen(true)
+  }
+
+  const handleEditAssociationSave = async (data: { name: string; type: string; sourceRole: string; targetRole: string; sourceCardinality: string; targetCardinality: string }) => {
+    if (!id) return
+    const req: Record<string, string | undefined> = {}
+    if (data.name !== editAssocData.name) req.name = data.name
+    req.type = data.type
+    req.source_role = data.sourceRole
+    req.target_role = data.targetRole
+    req.source_cardinality = data.sourceCardinality
+    req.target_cardinality = data.targetCardinality
+    await api.associations.edit(id, editAssocData.name, req)
+    setEditAssocOpen(false)
+    loadAssociations()
+    loadEntityType()
   }
 
   const handleCopy = async () => {
@@ -287,6 +378,102 @@ export default function EntityTypeDetailPage({ role }: Props) {
     }
   }
 
+  const openEditAttr = (attr: Attribute) => {
+    setEditAttrOrigName(attr.name)
+    setEditAttrName(attr.name)
+    setEditAttrDesc(attr.description || '')
+    setEditAttrType(attr.type)
+    setEditAttrEnumId(attr.enum_id || '')
+    setEditAttrError(null)
+    setEditAttrOpen(true)
+    if (enums.length === 0) {
+      api.enums.list().then((r) => setEnums(r.items || [])).catch(() => {})
+    }
+  }
+
+  const handleEditAttribute = async () => {
+    if (!id) return
+    setEditAttrError(null)
+    try {
+      const data: Record<string, string | undefined> = {}
+      if (editAttrName !== editAttrOrigName) data.name = editAttrName
+      if (editAttrDesc !== undefined) data.description = editAttrDesc
+      data.type = editAttrType
+      if (editAttrType === 'enum') data.enum_id = editAttrEnumId
+      await api.attributes.edit(id, editAttrOrigName, data)
+      setEditAttrOpen(false)
+      loadAttributes()
+      loadEntityType()
+    } catch (e) {
+      setEditAttrError(e instanceof Error ? e.message : 'Failed to edit attribute')
+    }
+  }
+
+  const handleRename = async (deepCopyAllowed = false) => {
+    if (!id || !editNameValue.trim()) return
+    setEditNameError(null)
+    try {
+      const result = await api.entityTypes.rename(id, editNameValue.trim(), deepCopyAllowed)
+      setEditNameOpen(false)
+      setDeepCopyWarningOpen(false)
+      if (result.was_deep_copy) {
+        navigate(`/entity-types/${result.entity_type.id}`)
+      } else {
+        loadEntityType()
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to rename'
+      if (msg.includes('DEEP_COPY_REQUIRED') || msg.includes('deep_copy_required')) {
+        setEditNameOpen(false)
+        setPendingNewName(editNameValue.trim())
+        setDeepCopyWarningOpen(true)
+      } else {
+        setEditNameError(msg)
+      }
+    }
+  }
+
+  const handleLoadSourceAttrs = async (sourceId: string) => {
+    setCopyAttrsSourceId(sourceId)
+    setSelectedCopyAttrs([])
+    try {
+      // Load source attributes, source versions, and enums in parallel
+      const [attrRes, versRes, enumRes] = await Promise.all([
+        api.attributes.list(sourceId),
+        api.versions.list(sourceId),
+        api.enums.list(),
+      ])
+      setSourceAttributes(attrRes.items || [])
+      setEnums(enumRes.items || [])
+      // Track the source's latest version for the copy API call
+      const srcVersions = versRes.items || []
+      const latest = srcVersions.length > 0 ? Math.max(...srcVersions.map((v) => v.version)) : 1
+      setSourceLatestVersion(latest)
+    } catch {
+      setSourceAttributes([])
+    }
+  }
+
+  const handleCopyAttributes = async () => {
+    if (!id || !copyAttrsSourceId || selectedCopyAttrs.length === 0) return
+    setCopyAttrsError(null)
+    try {
+      await api.attributes.copyFrom(id, {
+        source_entity_type_id: copyAttrsSourceId,
+        source_version: sourceLatestVersion,
+        attribute_names: selectedCopyAttrs,
+      })
+      setCopyAttrsOpen(false)
+      setCopyAttrsSourceId('')
+      setSourceAttributes([])
+      setSelectedCopyAttrs([])
+      loadAttributes()
+      loadEntityType()
+    } catch (e) {
+      setCopyAttrsError(e instanceof Error ? e.message : 'Failed to copy attributes')
+    }
+  }
+
   if (loading) return <PageSection><Spinner aria-label="Loading" /></PageSection>
   if (error && !entityType) return <PageSection><Alert variant="danger" title={error} /></PageSection>
   if (!entityType) return <PageSection><Alert variant="warning" title="Entity type not found" /></PageSection>
@@ -295,8 +482,8 @@ export default function EntityTypeDetailPage({ role }: Props) {
 
   return (
     <PageSection>
-      <Button variant="link" onClick={() => navigate('/')} style={{ marginBottom: '1rem' }}>
-        &larr; Back to Entity Types
+      <Button variant="link" onClick={() => navigate(-1)} style={{ marginBottom: '1rem' }}>
+        &larr; Back
       </Button>
 
       {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: '1rem' }} />}
@@ -310,7 +497,12 @@ export default function EntityTypeDetailPage({ role }: Props) {
             <DescriptionList>
               <DescriptionListGroup>
                 <DescriptionListTerm>Name</DescriptionListTerm>
-                <DescriptionListDescription>{entityType.name}</DescriptionListDescription>
+                <DescriptionListDescription>
+                  {entityType.name}
+                  {canEdit && (
+                    <Button variant="link" size="sm" onClick={() => { setEditNameValue(entityType.name); setEditNameError(null); setEditNameOpen(true) }} style={{ marginLeft: '0.5rem' }} aria-label="Edit name">Rename</Button>
+                  )}
+                </DescriptionListDescription>
               </DescriptionListGroup>
               <DescriptionListGroup>
                 <DescriptionListTerm>ID</DescriptionListTerm>
@@ -349,6 +541,9 @@ export default function EntityTypeDetailPage({ role }: Props) {
                   <ToolbarItem>
                     <Button variant="primary" onClick={() => setAddAttrOpen(true)}>Add Attribute</Button>
                   </ToolbarItem>
+                  <ToolbarItem>
+                    <Button variant="secondary" onClick={() => { setCopyAttrsOpen(true); api.entityTypes.list().then((r) => setEntityTypes(r.items || [])).catch(() => {}); if (enums.length === 0) api.enums.list().then((r) => setEnums(r.items || [])).catch(() => {}) }}>Copy from...</Button>
+                  </ToolbarItem>
                 </ToolbarContent>
               </Toolbar>
             )}
@@ -375,9 +570,8 @@ export default function EntityTypeDetailPage({ role }: Props) {
                       <Td>{attr.name}</Td>
                       <Td>
                         <Label color={attr.type === 'enum' ? 'purple' : attr.type === 'number' ? 'blue' : 'grey'}>
-                          {attr.type}
+                          {attr.type === 'enum' && attr.enum_id ? `enum (${enums.find((en) => en.id === attr.enum_id)?.name || attr.enum_id.slice(0, 8)})` : attr.type}
                         </Label>
-                        {attr.enum_id && <span style={{ marginLeft: '0.5rem' }}>({attr.enum_id.slice(0, 8)})</span>}
                       </Td>
                       <Td>{attr.description || '-'}</Td>
                       <Td>{attr.ordinal}</Td>
@@ -401,6 +595,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
                           >
                             <ArrowDownIcon />
                           </Button>
+                          <Button variant="secondary" size="sm" onClick={() => openEditAttr(attr)} style={{ marginRight: '0.25rem' }}>Edit</Button>
                           <Button variant="danger" size="sm" onClick={() => handleRemoveAttribute(attr.name)}>Remove</Button>
                         </Td>
                       )}
@@ -434,27 +629,53 @@ export default function EntityTypeDetailPage({ role }: Props) {
               <Table aria-label="Associations">
                 <Thead>
                   <Tr>
-                    <Th>Target</Th>
-                    <Th>Type</Th>
-                    <Th>Source Role</Th>
-                    <Th>Target Role</Th>
+                    <Th>Relationship</Th>
+                    <Th>Entity Type</Th>
+                    <Th>Name</Th>
+                    <Th>Role</Th>
+                    <Th>Cardinality</Th>
                     {canEdit && <Th>Actions</Th>}
                   </Tr>
                 </Thead>
                 <Tbody>
-                  {associations.map((assoc) => (
-                    <Tr key={assoc.id}>
-                      <Td>{targetName(assoc.target_entity_type_id)}</Td>
-                      <Td><Label>{assoc.type}</Label></Td>
-                      <Td>{assoc.source_role || '-'}</Td>
-                      <Td>{assoc.target_role || '-'}</Td>
-                      {canEdit && (
-                        <Td>
-                          <Button variant="danger" size="sm" onClick={() => handleDeleteAssociation(assoc.id)}>Remove</Button>
-                        </Td>
-                      )}
-                    </Tr>
-                  ))}
+                  {associations.map((assoc) => {
+                    const isIncoming = assoc.direction === 'incoming'
+                    const otherEntityId = isIncoming ? assoc.source_entity_type_id : assoc.target_entity_type_id
+                    const otherName = targetName(otherEntityId || '')
+                    // Show the other entity's role — answers "what role does the other entity play?"
+                    const otherRole = isIncoming ? assoc.source_role : assoc.target_role
+                    let relationLabel: string
+                    let labelColor: 'green' | 'grey' | 'blue' | 'purple' | undefined
+                    if (assoc.type === 'bidirectional') {
+                      relationLabel = 'references (mutual)'
+                      labelColor = 'purple'
+                    } else if (assoc.type === 'containment') {
+                      relationLabel = isIncoming ? 'contained by' : 'contains'
+                      labelColor = isIncoming ? 'grey' : 'green'
+                    } else {
+                      relationLabel = isIncoming ? 'referenced by' : 'references'
+                      labelColor = isIncoming ? 'grey' : 'blue'
+                    }
+                    return (
+                      <Tr key={assoc.id}>
+                        <Td><Label color={labelColor}>{relationLabel}</Label></Td>
+                        <Td>{otherName}</Td>
+                        <Td>{assoc.name}</Td>
+                        <Td>{otherRole || '-'}</Td>
+                        <Td>{isIncoming ? `${assoc.target_cardinality} → ${assoc.source_cardinality}` : `${assoc.source_cardinality} → ${assoc.target_cardinality}`}</Td>
+                        {canEdit && (
+                          <Td>
+                            {!isIncoming && (
+                              <>
+                                <Button variant="secondary" size="sm" onClick={() => openEditAssoc(assoc)} style={{ marginRight: '0.5rem' }}>Edit</Button>
+                                <Button variant="danger" size="sm" onClick={() => handleDeleteAssociation(assoc.name)}>Remove</Button>
+                              </>
+                            )}
+                          </Td>
+                        )}
+                      </Tr>
+                    )
+                  })}
                 </Tbody>
               </Table>
             )}
@@ -628,6 +849,9 @@ export default function EntityTypeDetailPage({ role }: Props) {
         <ModalBody>
           {addAssocError && <Alert variant="danger" title={addAssocError} isInline style={{ marginBottom: '1rem' }} />}
           <Form>
+            <FormGroup label="Name" isRequired fieldId="assoc-name">
+              <TextInput id="assoc-name" value={assocName} onChange={(_e, v) => setAssocName(v)} isRequired />
+            </FormGroup>
             <FormGroup label="Target Entity Type" isRequired fieldId="assoc-target">
               <Select
                 isOpen={assocTargetOpen}
@@ -649,7 +873,18 @@ export default function EntityTypeDetailPage({ role }: Props) {
               <Select
                 isOpen={assocTypeOpen}
                 selected={assocType}
-                onSelect={(_e, value) => { setAssocType(value as string); setAssocTypeOpen(false) }}
+                onSelect={(_e, value) => {
+                  const newType = value as string
+                  setAssocType(newType)
+                  setAssocTypeOpen(false)
+                  // Reset source cardinality to valid value when switching to containment
+                  if (newType === 'containment') {
+                    setAssocSourceCardCustom(false)
+                    if (assocSourceCardinality !== '1' && assocSourceCardinality !== '0..1') {
+                      setAssocSourceCardinality('0..1')
+                    }
+                  }
+                }}
                 onOpenChange={setAssocTypeOpen}
                 toggle={(ref: React.Ref<MenuToggleElement>) => (
                   <MenuToggle ref={ref} onClick={() => setAssocTypeOpen(!assocTypeOpen)} isExpanded={assocTypeOpen}>{assocType}</MenuToggle>
@@ -666,13 +901,92 @@ export default function EntityTypeDetailPage({ role }: Props) {
             <FormGroup label="Target Role" fieldId="assoc-target-role">
               <TextInput id="assoc-target-role" value={assocTargetRole} onChange={(_e, v) => setAssocTargetRole(v)} />
             </FormGroup>
+            <FormGroup label="Source Cardinality" fieldId="assoc-source-cardinality">
+              {assocType === 'containment' ? (
+                <select
+                  id="assoc-source-cardinality"
+                  value={assocSourceCardinality === '1' ? '1' : '0..1'}
+                  onChange={(e) => { setAssocSourceCardCustom(false); setAssocSourceCardinality(e.target.value) }}
+                  className="pf-v6-c-form-control"
+                >
+                  <option value="0..1">0..1</option>
+                  <option value="1">1</option>
+                </select>
+              ) : (
+                <>
+                  <select
+                    id="assoc-source-cardinality"
+                    value={assocSourceCardCustom ? 'custom' : assocSourceCardinality}
+                    onChange={(e) => {
+                      if (e.target.value === 'custom') {
+                        setAssocSourceCardCustom(true)
+                      } else {
+                        setAssocSourceCardCustom(false)
+                        setAssocSourceCardinality(e.target.value)
+                      }
+                    }}
+                    className="pf-v6-c-form-control"
+                  >
+                    <option value="0..1">0..1</option>
+                    <option value="0..n">0..n</option>
+                    <option value="1">1</option>
+                    <option value="1..n">1..n</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                  {assocSourceCardCustom && (
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', alignItems: 'center' }}>
+                      <TextInput id="assoc-source-card-min" value={assocSourceCardMin} onChange={(_e, v) => { if (v === '' || /^\d+$/.test(v)) setAssocSourceCardMin(v) }} placeholder="min" style={{ width: '5rem' }} />
+                      <span>..</span>
+                      <TextInput id="assoc-source-card-max" value={assocSourceCardMax} onChange={(_e, v) => { if (v === '' || v === 'n' || /^\d+$/.test(v)) setAssocSourceCardMax(v) }} placeholder="max or n" style={{ width: '5rem' }} />
+                    </div>
+                  )}
+                </>
+              )}
+            </FormGroup>
+            <FormGroup label="Target Cardinality" fieldId="assoc-target-cardinality">
+              <select
+                id="assoc-target-cardinality"
+                value={assocTargetCardCustom ? 'custom' : assocTargetCardinality}
+                onChange={(e) => {
+                  if (e.target.value === 'custom') {
+                    setAssocTargetCardCustom(true)
+                  } else {
+                    setAssocTargetCardCustom(false)
+                    setAssocTargetCardinality(e.target.value)
+                  }
+                }}
+                className="pf-v6-c-form-control"
+              >
+                <option value="0..1">0..1</option>
+                <option value="0..n">0..n</option>
+                <option value="1">1</option>
+                <option value="1..n">1..n</option>
+                <option value="custom">Custom</option>
+              </select>
+              {assocTargetCardCustom && (
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', alignItems: 'center' }}>
+                  <TextInput id="assoc-target-card-min" value={assocTargetCardMin} onChange={(_e, v) => { if (v === '' || /^\d+$/.test(v)) setAssocTargetCardMin(v) }} placeholder="min" style={{ width: '5rem' }} />
+                  <span>..</span>
+                  <TextInput id="assoc-target-card-max" value={assocTargetCardMax} onChange={(_e, v) => { if (v === '' || v === 'n' || /^\d+$/.test(v)) setAssocTargetCardMax(v) }} placeholder="max or n" style={{ width: '5rem' }} />
+                </div>
+              )}
+            </FormGroup>
           </Form>
         </ModalBody>
         <ModalFooter>
-          <Button variant="primary" onClick={handleAddAssociation} isDisabled={!assocTargetId}>Add</Button>
+          <Button variant="primary" onClick={handleAddAssociation} isDisabled={!assocTargetId || !assocName.trim()}>Add</Button>
           <Button variant="link" onClick={() => { setAddAssocOpen(false); setAddAssocError(null) }}>Cancel</Button>
         </ModalFooter>
       </Modal>
+
+      {/* Edit Association Modal */}
+      <EditAssociationModal
+        isOpen={editAssocOpen}
+        onClose={() => setEditAssocOpen(false)}
+        onSave={handleEditAssociationSave}
+        initialData={editAssocData}
+        allowTypeChange
+      />
 
       {/* Copy Modal */}
       <Modal variant={ModalVariant.small} isOpen={copyOpen} onClose={() => { setCopyOpen(false); setCopyError(null) }}>
@@ -700,6 +1014,161 @@ export default function EntityTypeDetailPage({ role }: Props) {
         <ModalFooter>
           <Button variant="danger" onClick={handleDelete}>Delete</Button>
           <Button variant="link" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Edit Attribute Modal */}
+      <Modal variant={ModalVariant.small} isOpen={editAttrOpen} onClose={() => { setEditAttrOpen(false); setEditAttrError(null) }}>
+        <ModalHeader title="Edit Attribute" />
+        <ModalBody>
+          {editAttrError && <Alert variant="danger" title={editAttrError} isInline style={{ marginBottom: '1rem' }} />}
+          <Form>
+            <FormGroup label="Name" isRequired fieldId="edit-attr-name">
+              <TextInput id="edit-attr-name" value={editAttrName} onChange={(_e, v) => setEditAttrName(v)} isRequired />
+            </FormGroup>
+            <FormGroup label="Description" fieldId="edit-attr-desc">
+              <TextInput id="edit-attr-desc" value={editAttrDesc} onChange={(_e, v) => setEditAttrDesc(v)} />
+            </FormGroup>
+            <FormGroup label="Type" isRequired fieldId="edit-attr-type">
+              <Select
+                isOpen={editAttrTypeOpen}
+                selected={editAttrType}
+                onSelect={(_e, value) => { setEditAttrType(value as string); setEditAttrTypeOpen(false) }}
+                onOpenChange={setEditAttrTypeOpen}
+                toggle={(ref: React.Ref<MenuToggleElement>) => (
+                  <MenuToggle ref={ref} onClick={() => setEditAttrTypeOpen(!editAttrTypeOpen)} isExpanded={editAttrTypeOpen}>{editAttrType}</MenuToggle>
+                )}
+              >
+                <SelectOption value="string">string</SelectOption>
+                <SelectOption value="number">number</SelectOption>
+                <SelectOption value="enum">enum</SelectOption>
+              </Select>
+            </FormGroup>
+            {editAttrType === 'enum' && (
+              <FormGroup label="Enum" isRequired fieldId="edit-attr-enum">
+                <Select
+                  isOpen={editAttrEnumOpen}
+                  selected={editAttrEnumId}
+                  onSelect={(_e, value) => { setEditAttrEnumId(value as string); setEditAttrEnumOpen(false) }}
+                  onOpenChange={setEditAttrEnumOpen}
+                  toggle={(ref: React.Ref<MenuToggleElement>) => (
+                    <MenuToggle ref={ref} onClick={() => setEditAttrEnumOpen(!editAttrEnumOpen)} isExpanded={editAttrEnumOpen}>
+                      {enums.find((en) => en.id === editAttrEnumId)?.name || 'Select enum'}
+                    </MenuToggle>
+                  )}
+                >
+                  {enums.map((en) => (
+                    <SelectOption key={en.id} value={en.id}>{en.name}</SelectOption>
+                  ))}
+                </Select>
+              </FormGroup>
+            )}
+          </Form>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="primary" onClick={handleEditAttribute} isDisabled={!editAttrName.trim()}>Save</Button>
+          <Button variant="link" onClick={() => { setEditAttrOpen(false); setEditAttrError(null) }}>Cancel</Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Edit Name Modal */}
+      <Modal variant={ModalVariant.small} isOpen={editNameOpen} onClose={() => { setEditNameOpen(false); setEditNameError(null) }}>
+        <ModalHeader title="Rename Entity Type" />
+        <ModalBody>
+          {editNameError && <Alert variant="danger" title={editNameError} isInline style={{ marginBottom: '1rem' }} />}
+          <Form>
+            <FormGroup label="New Name" isRequired fieldId="edit-name">
+              <TextInput id="edit-name" value={editNameValue} onChange={(_e, v) => setEditNameValue(v)} isRequired />
+            </FormGroup>
+          </Form>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="primary" onClick={() => handleRename(false)} isDisabled={!editNameValue.trim() || editNameValue.trim() === entityType.name}>Rename</Button>
+          <Button variant="link" onClick={() => { setEditNameOpen(false); setEditNameError(null) }}>Cancel</Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Deep Copy Warning Modal */}
+      <Modal variant={ModalVariant.small} isOpen={deepCopyWarningOpen} onClose={() => setDeepCopyWarningOpen(false)}>
+        <ModalHeader title="Deep Copy Required" />
+        <ModalBody>
+          <Alert variant="warning" title="This entity type is referenced by catalog versions in testing/production." isInline style={{ marginBottom: '1rem' }} />
+          Renaming will create a new entity type with the name &quot;{pendingNewName}&quot;. The original entity type will remain unchanged in existing catalog versions.
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="primary" onClick={() => { setEditNameValue(pendingNewName); handleRename(true) }}>Create Copy</Button>
+          <Button variant="link" onClick={() => setDeepCopyWarningOpen(false)}>Cancel</Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Copy Attributes Modal */}
+      <Modal variant={ModalVariant.medium} isOpen={copyAttrsOpen} onClose={() => { setCopyAttrsOpen(false); setCopyAttrsError(null) }}>
+        <ModalHeader title="Copy Attributes from Another Type" />
+        <ModalBody>
+          {copyAttrsError && <Alert variant="danger" title={copyAttrsError} isInline style={{ marginBottom: '1rem' }} />}
+          <Form>
+            <FormGroup label="Source Entity Type" isRequired fieldId="copy-attrs-source">
+              <Select
+                isOpen={copyAttrsSourceOpen}
+                selected={copyAttrsSourceId}
+                onSelect={(_e, value) => { handleLoadSourceAttrs(value as string); setCopyAttrsSourceOpen(false) }}
+                onOpenChange={setCopyAttrsSourceOpen}
+                toggle={(ref: React.Ref<MenuToggleElement>) => (
+                  <MenuToggle ref={ref} onClick={() => setCopyAttrsSourceOpen(!copyAttrsSourceOpen)} isExpanded={copyAttrsSourceOpen}>
+                    {entityTypes.find((et) => et.id === copyAttrsSourceId)?.name || 'Select source type'}
+                  </MenuToggle>
+                )}
+              >
+                {entityTypes.filter((et) => et.id !== id).map((et) => (
+                  <SelectOption key={et.id} value={et.id}>{et.name}</SelectOption>
+                ))}
+              </Select>
+            </FormGroup>
+          </Form>
+          {sourceAttributes.length > 0 && (
+            <Table aria-label="Source attributes" style={{ marginTop: '1rem' }}>
+              <Thead>
+                <Tr>
+                  <Th />
+                  <Th>Name</Th>
+                  <Th>Type</Th>
+                  <Th>Description</Th>
+                  <Th>Status</Th>
+                </Tr>
+              </Thead>
+              <Tbody>
+                {sourceAttributes.map((sa) => {
+                  const conflict = attributes.some((a) => a.name === sa.name)
+                  return (
+                    <Tr key={sa.id}>
+                      <Td>
+                        <input
+                          type="checkbox"
+                          disabled={conflict}
+                          checked={selectedCopyAttrs.includes(sa.name)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedCopyAttrs([...selectedCopyAttrs, sa.name])
+                            } else {
+                              setSelectedCopyAttrs(selectedCopyAttrs.filter((n) => n !== sa.name))
+                            }
+                          }}
+                        />
+                      </Td>
+                      <Td>{sa.name}</Td>
+                      <Td><Label color={sa.type === 'enum' ? 'purple' : sa.type === 'number' ? 'blue' : 'grey'}>{sa.type === 'enum' && sa.enum_id ? `enum (${enums.find((en) => en.id === sa.enum_id)?.name || sa.enum_id.slice(0, 8)})` : sa.type}</Label></Td>
+                      <Td>{sa.description || '-'}</Td>
+                      <Td>{conflict ? <Label color="red">Conflict</Label> : <Label color="green">Available</Label>}</Td>
+                    </Tr>
+                  )
+                })}
+              </Tbody>
+            </Table>
+          )}
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="primary" onClick={handleCopyAttributes} isDisabled={selectedCopyAttrs.length === 0}>Copy Selected</Button>
+          <Button variant="link" onClick={() => { setCopyAttrsOpen(false); setCopyAttrsError(null) }}>Cancel</Button>
         </ModalFooter>
       </Modal>
     </PageSection>

@@ -147,6 +147,22 @@ func (r *CatalogVersionPinGormRepo) ListByCatalogVersion(ctx context.Context, ca
 	return pins, nil
 }
 
+func (r *CatalogVersionPinGormRepo) ListByEntityTypeVersionIDs(ctx context.Context, etvIDs []string) ([]*models.CatalogVersionPin, error) {
+	if len(etvIDs) == 0 {
+		return []*models.CatalogVersionPin{}, nil
+	}
+	var records []gormmodels.CatalogVersionPin
+	result := r.db.WithContext(ctx).Where("entity_type_version_id IN ?", etvIDs).Find(&records)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	pins := make([]*models.CatalogVersionPin, len(records))
+	for i := range records {
+		pins[i] = records[i].ToModel()
+	}
+	return pins, nil
+}
+
 func (r *CatalogVersionPinGormRepo) Delete(ctx context.Context, id string) error {
 	result := r.db.WithContext(ctx).Delete(&gormmodels.CatalogVersionPin{}, "id = ?", id)
 	if result.Error != nil {
