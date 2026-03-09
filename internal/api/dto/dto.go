@@ -40,6 +40,7 @@ type CreateAttributeRequest struct {
 	Description string `json:"description"`
 	Type        string `json:"type" validate:"required"`
 	EnumID      string `json:"enum_id"`
+	Required    bool   `json:"required"`
 }
 
 type CopyAttributesRequest struct {
@@ -67,6 +68,7 @@ type UpdateAttributeRequest struct {
 	Description *string `json:"description"`
 	Type        *string `json:"type"`
 	EnumID      *string `json:"enum_id"`
+	Required    *bool   `json:"required"`
 }
 
 type RenameEntityTypeRequest struct {

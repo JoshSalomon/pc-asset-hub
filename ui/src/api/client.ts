@@ -75,7 +75,7 @@ export const api = {
   attributes: {
     list: (entityTypeId: string) =>
       fetchJSON<ListResponse<Attribute>>(`${BASE_URL}/entity-types/${entityTypeId}/attributes`),
-    add: (entityTypeId: string, data: { name: string; description?: string; type: string; enum_id?: string }) =>
+    add: (entityTypeId: string, data: { name: string; description?: string; type: string; enum_id?: string; required?: boolean }) =>
       fetchJSON<EntityTypeVersion>(`${BASE_URL}/entity-types/${entityTypeId}/attributes`, {
         method: 'POST',
         body: JSON.stringify(data),
@@ -89,7 +89,7 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify({ ordered_ids: orderedIds }),
       }),
-    edit: (entityTypeId: string, name: string, data: { name?: string; description?: string; type?: string; enum_id?: string }) =>
+    edit: (entityTypeId: string, name: string, data: { name?: string; description?: string; type?: string; enum_id?: string; required?: boolean }) =>
       fetchJSON<EntityTypeVersion>(`${BASE_URL}/entity-types/${entityTypeId}/attributes/${encodeURIComponent(name)}`, {
         method: 'PUT',
         body: JSON.stringify(data),

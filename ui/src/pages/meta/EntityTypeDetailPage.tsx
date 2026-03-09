@@ -76,6 +76,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
   const [attrType, setAttrType] = useState('string')
   const [attrTypeOpen, setAttrTypeOpen] = useState(false)
   const [attrEnumId, setAttrEnumId] = useState('')
+  const [attrRequired, setAttrRequired] = useState(false)
   const [attrEnumOpen, setAttrEnumOpen] = useState(false)
   const [addAttrError, setAddAttrError] = useState<string | null>(null)
 
@@ -88,6 +89,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
   const [editAttrTypeOpen, setEditAttrTypeOpen] = useState(false)
   const [editAttrEnumId, setEditAttrEnumId] = useState('')
   const [editAttrEnumOpen, setEditAttrEnumOpen] = useState(false)
+  const [editAttrRequired, setEditAttrRequired] = useState(false)
   const [editAttrError, setEditAttrError] = useState<string | null>(null)
 
   // Edit entity type name/description
@@ -221,12 +223,14 @@ export default function EntityTypeDetailPage({ role }: Props) {
         description: attrDesc.trim() || undefined,
         type: attrType,
         enum_id: attrType === 'enum' ? attrEnumId : undefined,
+        required: attrRequired,
       })
       setAddAttrOpen(false)
       setAttrName('')
       setAttrDesc('')
       setAttrType('string')
       setAttrEnumId('')
+      setAttrRequired(false)
       loadAttributes()
       loadEntityType()
     } catch (e) {
@@ -384,6 +388,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
     setEditAttrDesc(attr.description || '')
     setEditAttrType(attr.type)
     setEditAttrEnumId(attr.enum_id || '')
+    setEditAttrRequired(attr.required)
     setEditAttrError(null)
     setEditAttrOpen(true)
     if (enums.length === 0) {
@@ -395,11 +400,12 @@ export default function EntityTypeDetailPage({ role }: Props) {
     if (!id) return
     setEditAttrError(null)
     try {
-      const data: Record<string, string | undefined> = {}
+      const data: Record<string, string | boolean | undefined> = {}
       if (editAttrName !== editAttrOrigName) data.name = editAttrName
       if (editAttrDesc !== undefined) data.description = editAttrDesc
       data.type = editAttrType
       if (editAttrType === 'enum') data.enum_id = editAttrEnumId
+      data.required = editAttrRequired
       await api.attributes.edit(id, editAttrOrigName, data)
       setEditAttrOpen(false)
       loadAttributes()
@@ -567,7 +573,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
                 <Tbody>
                   {attributes.map((attr, idx) => (
                     <Tr key={attr.id}>
-                      <Td>{attr.name}</Td>
+                      <Td>{attr.name}{attr.required ? ' *' : ''}</Td>
                       <Td>
                         <Label color={attr.type === 'enum' ? 'purple' : attr.type === 'number' ? 'blue' : 'grey'}>
                           {attr.type === 'enum' && attr.enum_id ? `enum (${enums.find((en) => en.id === attr.enum_id)?.name || attr.enum_id.slice(0, 8)})` : attr.type}
@@ -835,6 +841,12 @@ export default function EntityTypeDetailPage({ role }: Props) {
                 </Select>
               </FormGroup>
             )}
+            <FormGroup fieldId="attr-required">
+              <label>
+                <input type="checkbox" id="attr-required" checked={attrRequired} onChange={(e) => setAttrRequired(e.target.checked)} />
+                {' '}Required
+              </label>
+            </FormGroup>
           </Form>
         </ModalBody>
         <ModalFooter>
@@ -1063,6 +1075,12 @@ export default function EntityTypeDetailPage({ role }: Props) {
                 </Select>
               </FormGroup>
             )}
+            <FormGroup fieldId="edit-attr-required">
+              <label>
+                <input type="checkbox" id="edit-attr-required" checked={editAttrRequired} onChange={(e) => setEditAttrRequired(e.target.checked)} />
+                {' '}Required
+              </label>
+            </FormGroup>
           </Form>
         </ModalBody>
         <ModalFooter>
@@ -1155,7 +1173,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
                           }}
                         />
                       </Td>
-                      <Td>{sa.name}</Td>
+                      <Td>{sa.name}{sa.required ? ' *' : ''}</Td>
                       <Td><Label color={sa.type === 'enum' ? 'purple' : sa.type === 'number' ? 'blue' : 'grey'}>{sa.type === 'enum' && sa.enum_id ? `enum (${enums.find((en) => en.id === sa.enum_id)?.name || sa.enum_id.slice(0, 8)})` : sa.type}</Label></Td>
                       <Td>{sa.description || '-'}</Td>
                       <Td>{conflict ? <Label color="red">Conflict</Label> : <Label color="green">Available</Label>}</Td>

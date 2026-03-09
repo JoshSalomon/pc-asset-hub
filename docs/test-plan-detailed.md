@@ -30,9 +30,9 @@ Development proceeds through three environment phases, each with increasing infr
 
 **Milestones completed**: 1–9 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, and T-E.01 through T-E.139 (324 test cases), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, and T-E.01 through T-E.146 (331 test cases), using SQLite and mocked/simulated infrastructure.
 
-**Human checkpoint**: After all 218 tests pass with 100% coverage (documented exceptions). This is the first review point.
+**Human checkpoint**: After all 331 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
 ---
 
@@ -1172,6 +1172,18 @@ These tests cover the remaining CRUD gaps identified in the meta model gap analy
 |----|-----------|-------|----------|
 | T-E.132 | Diagram tab exists on CV detail page | Browser | Tab labeled "Diagram" is visible |
 | T-E.133 | CV diagram renders pinned entity types with attributes | Browser | Only pinned entity types shown as nodes with attributes |
+
+### Attribute Required Field (`attribute_service_test.go`, `attribute_handler_test.go`, `EntityTypeDetailPage.browser.test.tsx`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-E.140 | AddAttribute with required=true stores required flag | Unit | Attribute created with required=true |
+| T-E.141 | EditAttribute can change required flag | Unit | New version created, required flag updated |
+| T-E.142 | POST /attributes with required field | API | 201, attribute created with required=true |
+| T-E.143 | PUT /attributes/:name with required field | API | 200, required flag updated |
+| T-E.144 | Add attribute modal has required checkbox | Browser | Checkbox visible, default unchecked |
+| T-E.145 | Edit attribute modal pre-fills required checkbox | Browser | Checkbox reflects current required value |
+| T-E.146 | Attributes table shows required indicator | Browser | Required attributes marked with indicator |
 
 ---
 
