@@ -48,7 +48,7 @@ func (h *AttributeHandler) Add(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "type is required")
 	}
 
-	newVersion, err := h.svc.AddAttribute(c.Request().Context(), entityTypeID, req.Name, req.Description, models.AttributeType(req.Type), req.EnumID)
+	newVersion, err := h.svc.AddAttribute(c.Request().Context(), entityTypeID, req.Name, req.Description, models.AttributeType(req.Type), req.EnumID, req.Required)
 	if err != nil {
 		return mapError(err)
 	}
@@ -101,7 +101,7 @@ func (h *AttributeHandler) Edit(c echo.Context) error {
 		newType = &t
 	}
 
-	newVersion, err := h.svc.EditAttribute(c.Request().Context(), entityTypeID, name, req.Name, req.Description, newType, req.EnumID)
+	newVersion, err := h.svc.EditAttribute(c.Request().Context(), entityTypeID, name, req.Name, req.Description, newType, req.EnumID, req.Required)
 	if err != nil {
 		return mapError(err)
 	}

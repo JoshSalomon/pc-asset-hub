@@ -273,6 +273,7 @@ test('T-C.34: add string attribute via modal', async () => {
     description: undefined,
     type: 'string',
     enum_id: undefined,
+    required: false,
   })
 })
 
@@ -1164,4 +1165,45 @@ test('Edit modal shows save error', async () => {
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: 'Save' }).click()
   await expect.element(dialog.getByText('500: server error')).toBeVisible()
+})
+
+// T-E.144: Add attribute modal has required checkbox
+test('T-E.144: Add attribute modal has required checkbox', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Add Attribute' }).click()
+  const dialog = page.getByRole('dialog')
+  const checkbox = dialog.getByLabelText('Required')
+  await expect.element(checkbox).toBeVisible()
+})
+
+// T-E.145: Edit attribute modal pre-fills required checkbox
+test('T-E.145: Edit attribute modal pre-fills required', async () => {
+  ;(api.attributes.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'a1', name: 'hostname', description: '', type: 'string', ordinal: 0, required: true },
+    ],
+    total: 1,
+  })
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  const dialog = page.getByRole('dialog')
+  const checkbox = dialog.getByRole('checkbox', { name: /Required/i })
+  await expect.element(checkbox).toBeChecked()
+})
+
+// T-E.146: Attributes table shows required indicator
+test('T-E.146: Attributes table shows required indicator', async () => {
+  ;(api.attributes.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'a1', name: 'hostname', description: '', type: 'string', ordinal: 0, required: true },
+      { id: 'a2', name: 'port', description: '', type: 'number', ordinal: 1, required: false },
+    ],
+    total: 2,
+  })
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  // Required attribute should have an indicator (asterisk or "Required" text)
+  await expect.element(page.getByText('hostname *')).toBeVisible()
 })

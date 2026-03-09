@@ -212,8 +212,9 @@ Catalog version scoping is the core isolation mechanism for the operational API:
 
 EditAttribute uses the same copy-on-write versioning pattern as AddAttribute/RemoveAttribute.
 
-- **Unit tests (service)**: Verify COW version increment on edit. Verify field updates (name, description, type, enumID) are applied to the correct attribute in the new version. Verify name conflict detection against other attributes in the same version. Verify enum validation (enum type requires enumID, invalid enumID rejected). Verify NotFound for nonexistent attribute. Verify ordinal is preserved.
-- **API tests (handler)**: Verify `PUT /entity-types/:entityTypeId/attributes/:name` returns 200 with new version on success, 403 for RO role, 404 for nonexistent attribute, 409 for name conflict, 400 for invalid enum reference.
+- **Unit tests (service)**: Verify COW version increment on edit. Verify field updates (name, description, type, enumID, required) are applied to the correct attribute in the new version. Verify name conflict detection against other attributes in the same version. Verify enum validation (enum type requires enumID, invalid enumID rejected). Verify NotFound for nonexistent attribute. Verify ordinal is preserved.
+- **API tests (handler)**: Verify `PUT /entity-types/:entityTypeId/attributes/:name` returns 200 with new version on success, 403 for RO role, 404 for nonexistent attribute, 409 for name conflict, 400 for invalid enum reference. Verify required field accepted in create and edit requests.
+- **UI tests (browser)**: Verify add attribute modal has required checkbox (default unchecked). Verify edit attribute modal has required checkbox pre-filled. Verify attributes table shows required indicator. Verify BOM modal shows required indicator.
 
 ### 5.7 Rename Entity Type
 

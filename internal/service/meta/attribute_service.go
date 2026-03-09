@@ -35,7 +35,7 @@ func NewAttributeService(
 }
 
 // AddAttribute adds an attribute to an entity type, creating a new version.
-func (s *AttributeService) AddAttribute(ctx context.Context, entityTypeID string, name, description string, attrType models.AttributeType, enumID string) (*models.EntityTypeVersion, error) {
+func (s *AttributeService) AddAttribute(ctx context.Context, entityTypeID string, name, description string, attrType models.AttributeType, enumID string, required bool) (*models.EntityTypeVersion, error) {
 	if name == "" {
 		return nil, domainerrors.NewValidation("attribute name is required")
 	}
@@ -104,6 +104,7 @@ func (s *AttributeService) AddAttribute(ctx context.Context, entityTypeID string
 		Type:                attrType,
 		EnumID:              enumID,
 		Ordinal:             len(attrs),
+		Required:            required,
 	}
 	if err := s.attrRepo.Create(ctx, attr); err != nil {
 		return nil, err
@@ -225,6 +226,7 @@ func (s *AttributeService) CopyAttributesFromType(ctx context.Context, targetEnt
 			Type:                src.Type,
 			EnumID:              src.EnumID,
 			Ordinal:             len(targetAttrs) + i,
+			Required:            src.Required,
 		}
 		if err := s.attrRepo.Create(ctx, attr); err != nil {
 			return nil, err
@@ -236,7 +238,7 @@ func (s *AttributeService) CopyAttributesFromType(ctx context.Context, targetEnt
 
 // EditAttribute edits an attribute on an entity type, creating a new version (copy-on-write).
 // Only non-nil fields are updated. The attribute is identified by currentName.
-func (s *AttributeService) EditAttribute(ctx context.Context, entityTypeID, currentName string, newName, newDesc *string, newType *models.AttributeType, newEnumID *string) (*models.EntityTypeVersion, error) {
+func (s *AttributeService) EditAttribute(ctx context.Context, entityTypeID, currentName string, newName, newDesc *string, newType *models.AttributeType, newEnumID *string, newRequired *bool) (*models.EntityTypeVersion, error) {
 	// Validate enum reference if changing type to enum
 	if newType != nil && *newType == models.AttributeTypeEnum {
 		if newEnumID == nil || *newEnumID == "" {
@@ -320,6 +322,9 @@ func (s *AttributeService) EditAttribute(ctx context.Context, entityTypeID, curr
 			}
 			if newEnumID != nil {
 				a.EnumID = *newEnumID
+			}
+			if newRequired != nil {
+				a.Required = *newRequired
 			}
 			if err := s.attrRepo.Update(ctx, a); err != nil {
 				return nil, err

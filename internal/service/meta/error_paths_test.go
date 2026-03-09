@@ -173,14 +173,14 @@ func TestDeleteAssociation_DeleteError(t *testing.T) {
 func TestAddAttribute_EmptyName(t *testing.T) {
 	svc, _, _, _, _ := setupAttrService()
 
-	_, err := svc.AddAttribute(context.Background(), "et1", "", "", models.AttributeTypeString, "")
+	_, err := svc.AddAttribute(context.Background(), "et1", "", "", models.AttributeTypeString, "", false)
 	assert.Error(t, err)
 }
 
 func TestAddAttribute_EnumMissingEnumID(t *testing.T) {
 	svc, _, _, _, _ := setupAttrService()
 
-	_, err := svc.AddAttribute(context.Background(), "et1", "status", "", models.AttributeTypeEnum, "")
+	_, err := svc.AddAttribute(context.Background(), "et1", "status", "", models.AttributeTypeEnum, "", false)
 	assert.Error(t, err)
 }
 
@@ -189,7 +189,7 @@ func TestAddAttribute_GetLatestError(t *testing.T) {
 
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(nil, dbErr)
 
-	_, err := svc.AddAttribute(context.Background(), "et1", "attr", "", models.AttributeTypeString, "")
+	_, err := svc.AddAttribute(context.Background(), "et1", "attr", "", models.AttributeTypeString, "", false)
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -200,7 +200,7 @@ func TestAddAttribute_ListByVersionError(t *testing.T) {
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute(nil), dbErr)
 
-	_, err := svc.AddAttribute(context.Background(), "et1", "attr", "", models.AttributeTypeString, "")
+	_, err := svc.AddAttribute(context.Background(), "et1", "attr", "", models.AttributeTypeString, "", false)
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -213,7 +213,7 @@ func TestAddAttribute_EtvCreateError(t *testing.T) {
 	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(dbErr)
 
-	_, err := svc.AddAttribute(context.Background(), "et1", "attr", "", models.AttributeTypeString, "")
+	_, err := svc.AddAttribute(context.Background(), "et1", "attr", "", models.AttributeTypeString, "", false)
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -227,7 +227,7 @@ func TestAddAttribute_AttrBulkCopyError(t *testing.T) {
 	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(dbErr)
 
-	_, err := svc.AddAttribute(context.Background(), "et1", "attr", "", models.AttributeTypeString, "")
+	_, err := svc.AddAttribute(context.Background(), "et1", "attr", "", models.AttributeTypeString, "", false)
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -242,7 +242,7 @@ func TestAddAttribute_AssocBulkCopyError(t *testing.T) {
 	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(dbErr)
 
-	_, err := svc.AddAttribute(context.Background(), "et1", "attr", "", models.AttributeTypeString, "")
+	_, err := svc.AddAttribute(context.Background(), "et1", "attr", "", models.AttributeTypeString, "", false)
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -258,7 +258,7 @@ func TestAddAttribute_AttrCreateError(t *testing.T) {
 	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	attrRepo.On("Create", mock.Anything, mock.Anything).Return(dbErr)
 
-	_, err := svc.AddAttribute(context.Background(), "et1", "attr", "", models.AttributeTypeString, "")
+	_, err := svc.AddAttribute(context.Background(), "et1", "attr", "", models.AttributeTypeString, "", false)
 	assert.ErrorIs(t, err, dbErr)
 }
 
