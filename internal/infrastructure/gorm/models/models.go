@@ -283,10 +283,44 @@ func LifecycleTransitionFromModel(m *domain.LifecycleTransition) *LifecycleTrans
 
 // === Data Table Models ===
 
+type Catalog struct {
+	ID               string `gorm:"primaryKey;size:36"`
+	Name             string `gorm:"uniqueIndex;not null;size:63"`
+	Description      string `gorm:"size:1024"`
+	CatalogVersionID string `gorm:"not null;size:36"`
+	ValidationStatus string `gorm:"not null;size:20;default:draft"`
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+func (c *Catalog) ToModel() *domain.Catalog {
+	return &domain.Catalog{
+		ID:               c.ID,
+		Name:             c.Name,
+		Description:      c.Description,
+		CatalogVersionID: c.CatalogVersionID,
+		ValidationStatus: domain.ValidationStatus(c.ValidationStatus),
+		CreatedAt:        c.CreatedAt,
+		UpdatedAt:        c.UpdatedAt,
+	}
+}
+
+func CatalogFromModel(m *domain.Catalog) *Catalog {
+	return &Catalog{
+		ID:               m.ID,
+		Name:             m.Name,
+		Description:      m.Description,
+		CatalogVersionID: m.CatalogVersionID,
+		ValidationStatus: string(m.ValidationStatus),
+		CreatedAt:        m.CreatedAt,
+		UpdatedAt:        m.UpdatedAt,
+	}
+}
+
 type EntityInstance struct {
 	ID               string `gorm:"primaryKey;size:36"`
 	EntityTypeID     string `gorm:"not null;size:36;uniqueIndex:idx_instance_scope"`
-	CatalogVersionID string `gorm:"not null;size:36;uniqueIndex:idx_instance_scope"`
+	CatalogID string `gorm:"column:catalog_id;not null;size:36;uniqueIndex:idx_instance_scope"`
 	ParentInstanceID string `gorm:"size:36;uniqueIndex:idx_instance_scope;default:''"`
 	Name             string `gorm:"not null;size:255;uniqueIndex:idx_instance_scope"`
 	Description      string `gorm:"size:1024"`
@@ -300,7 +334,7 @@ func (e *EntityInstance) ToModel() *domain.EntityInstance {
 	return &domain.EntityInstance{
 		ID:               e.ID,
 		EntityTypeID:     e.EntityTypeID,
-		CatalogVersionID: e.CatalogVersionID,
+		CatalogID:        e.CatalogID,
 		ParentInstanceID: e.ParentInstanceID,
 		Name:             e.Name,
 		Description:      e.Description,
@@ -315,7 +349,7 @@ func EntityInstanceFromModel(m *domain.EntityInstance) *EntityInstance {
 	return &EntityInstance{
 		ID:               m.ID,
 		EntityTypeID:     m.EntityTypeID,
-		CatalogVersionID: m.CatalogVersionID,
+		CatalogID:        m.CatalogID,
 		ParentInstanceID: m.ParentInstanceID,
 		Name:             m.Name,
 		Description:      m.Description,
@@ -400,6 +434,7 @@ func AllModels() []any {
 		&CatalogVersion{},
 		&CatalogVersionPin{},
 		&LifecycleTransition{},
+		&Catalog{},
 		&EntityInstance{},
 		&InstanceAttributeValue{},
 		&AssociationLink{},

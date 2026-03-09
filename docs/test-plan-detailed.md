@@ -1187,6 +1187,88 @@ These tests cover the remaining CRUD gaps identified in the meta model gap analy
 
 ---
 
+## Milestone 10: Catalog Foundation
+
+Catalogs are named data containers pinned to a catalog version. The operational API uses catalog names (DNS-label format) in URLs. This milestone covers the Catalog entity CRUD, domain model refactoring (`EntityInstance.CatalogVersionID` → `CatalogID`), and removal of the old CV-scoped operational scaffolding.
+
+### Catalog Domain Model and Repository
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-10.01 | Create catalog with valid name and CV ID | Integration | Catalog persisted with validation_status=draft |
+| T-10.02 | Create catalog with duplicate name | Integration | Unique constraint error |
+| T-10.03 | Create catalog with nonexistent CV ID | Integration | FK constraint error |
+| T-10.04 | GetByName retrieves catalog by name | Integration | Correct catalog returned |
+| T-10.05 | GetByName for nonexistent name | Integration | NotFound error |
+| T-10.06 | List catalogs returns all | Integration | All catalogs returned with total count |
+| T-10.07 | List catalogs filtered by catalog_version_id | Integration | Only catalogs with matching CV returned |
+| T-10.08 | List catalogs filtered by validation_status | Integration | Only catalogs with matching status returned |
+| T-10.09 | Delete catalog by ID | Integration | Catalog removed from DB |
+| T-10.10 | EntityInstance uses catalog_id FK (not catalog_version_id) | Integration | Instance created with catalog_id, FK enforced |
+
+### Catalog Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-10.11 | CreateCatalog with valid DNS-label name | Unit | Catalog created with draft status, UUID assigned |
+| T-10.12 | CreateCatalog with invalid name (uppercase) | Unit | Validation error |
+| T-10.13 | CreateCatalog with invalid name (special chars) | Unit | Validation error |
+| T-10.14 | CreateCatalog with invalid name (empty) | Unit | Validation error |
+| T-10.15 | CreateCatalog with invalid name (>63 chars) | Unit | Validation error |
+| T-10.16 | CreateCatalog with invalid name (starts with hyphen) | Unit | Validation error |
+| T-10.17 | CreateCatalog with invalid name (ends with hyphen) | Unit | Validation error |
+| T-10.18 | CreateCatalog with duplicate name | Unit | Conflict error |
+| T-10.19 | CreateCatalog with nonexistent CV ID | Unit | NotFound error |
+| T-10.20 | GetByName returns catalog with resolved CV label | Unit | Response includes CV version_label |
+| T-10.21 | GetByName for nonexistent name | Unit | NotFound error |
+| T-10.22 | List catalogs with no filters | Unit | All catalogs returned |
+| T-10.23 | List catalogs filtered by catalog_version_id | Unit | Filtered results |
+| T-10.24 | List catalogs filtered by validation_status | Unit | Filtered results |
+| T-10.25 | Delete catalog cascades to entity instances | Unit | All instances in catalog deleted |
+| T-10.26 | Delete nonexistent catalog | Unit | NotFound error |
+
+### Catalog API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-10.27 | POST /api/data/v1/catalogs with valid request | API | 201, catalog with id, name, status=draft |
+| T-10.28 | POST /api/data/v1/catalogs with invalid name format | API | 400, clear error message |
+| T-10.29 | POST /api/data/v1/catalogs with duplicate name | API | 409 |
+| T-10.30 | POST /api/data/v1/catalogs with nonexistent CV | API | 404 |
+| T-10.31 | POST /api/data/v1/catalogs as RO | API | 403 |
+| T-10.32 | POST /api/data/v1/catalogs as RW | API | 201 (RW can create) |
+| T-10.33 | GET /api/data/v1/catalogs returns list | API | 200, array with total count |
+| T-10.34 | GET /api/data/v1/catalogs?catalog_version_id=X | API | 200, filtered list |
+| T-10.35 | GET /api/data/v1/catalogs?validation_status=draft | API | 200, filtered list |
+| T-10.36 | GET /api/data/v1/catalogs/{name} returns detail | API | 200, catalog with resolved CV label |
+| T-10.37 | GET /api/data/v1/catalogs/{name} nonexistent | API | 404 |
+| T-10.38 | DELETE /api/data/v1/catalogs/{name} | API | 204, catalog and instances removed |
+| T-10.39 | DELETE /api/data/v1/catalogs/{name} as RO | API | 403 |
+| T-10.40 | DELETE /api/data/v1/catalogs/{name} nonexistent | API | 404 |
+
+### Catalog UI (Meta UI)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-10.41 | Catalogs nav item visible in sidebar | Browser | Nav item "Catalogs" present |
+| T-10.42 | Catalog list page shows name, CV label, status badge, date | Browser | All columns rendered with correct data |
+| T-10.43 | Catalog list status badge color-coded (draft=blue, valid=green, invalid=red) | Browser | Correct badge variant per status |
+| T-10.44 | Create catalog button visible for RW+, hidden for RO | Browser | Role-aware visibility |
+| T-10.45 | Create catalog modal: name input, description, CV dropdown | Browser | All form fields present |
+| T-10.46 | Create catalog modal: invalid name shows inline error | Browser | Error shown for uppercase, special chars, etc. |
+| T-10.47 | Create catalog modal: submit calls API, list refreshes | Browser | API called, new catalog appears in list |
+| T-10.48 | Delete catalog button visible for RW+, hidden for RO | Browser | Role-aware visibility |
+| T-10.49 | Delete catalog shows confirmation dialog | Browser | Confirmation required before delete |
+| T-10.50 | Delete catalog: confirm removes from list | Browser | Catalog disappears from list after delete |
+
+### Old Operational Scaffolding Removal
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-10.51 | Old CV-scoped routes (/api/catalog/{cv}/...) no longer registered | API | 404 for old route pattern |
+
+---
+
 ## Coverage Criteria
 
 ### Pass Rate
@@ -1223,7 +1305,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 275 test cases (T-1.01 through T-9.09, T-CV.01 through T-CV.31, and T-E.01 through T-E.90) pass
+- All 326 test cases (T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, and T-10.01 through T-10.51) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

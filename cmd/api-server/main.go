@@ -84,7 +84,9 @@ func main() {
 	assocSvc := svcmeta.NewAssociationService(assocRepo, etvRepo, attrRepo)
 	vhSvc := svcmeta.NewVersionHistoryService(etvRepo, attrRepo, assocRepo)
 	cvSvc := svcmeta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, crManager, watchNamespace, cfg.AllowedStages(), etRepo, etvRepo)
+	catalogRepo := gormrepo.NewCatalogGormRepo(db)
 	instSvc := svcop.NewEntityInstanceService(instRepo, iavRepo, attrRepo, cvRepo, linkRepo)
+	catalogSvc := svcop.NewCatalogService(catalogRepo, cvRepo, instRepo)
 
 	// Handlers
 	etHandler := apimeta.NewEntityTypeHandler(etSvc)
@@ -94,6 +96,7 @@ func main() {
 	vhHandler := apimeta.NewVersionHistoryHandler(vhSvc)
 	cvHandler := apimeta.NewCatalogVersionHandler(cvSvc)
 	opHandler := apiop.NewHandler(instSvc)
+	catalogHandler := apiop.NewCatalogHandler(catalogSvc)
 	healthHandler := apihealth.NewHandler(db)
 
 	// Echo server
@@ -122,7 +125,12 @@ func main() {
 	apimeta.RegisterVersionHistoryRoutes(metaGroup, vhHandler)
 	apimeta.RegisterCatalogVersionRoutes(metaGroup, cvHandler, requireRW)
 
-	// Operational API
+	// Operational API — Catalog CRUD
+	catalogGroup := e.Group("/api/data/v1/catalogs")
+	catalogGroup.Use(middleware.RBACMiddleware(rbacProvider))
+	apiop.RegisterCatalogRoutes(catalogGroup, catalogHandler, requireRW)
+
+	// Operational API — legacy instance routes (to be replaced)
 	opGroup := e.Group("/api/data/v1/:catalog-version")
 	opGroup.Use(middleware.RBACMiddleware(rbacProvider))
 	apiop.RegisterRoutes(opGroup, opHandler)

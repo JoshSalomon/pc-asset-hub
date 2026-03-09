@@ -9,8 +9,9 @@ import (
 type EntityInstanceRepository interface {
 	Create(ctx context.Context, inst *models.EntityInstance) error
 	GetByID(ctx context.Context, id string) (*models.EntityInstance, error)
-	GetByNameAndParent(ctx context.Context, entityTypeID, catalogVersionID, parentInstanceID, name string) (*models.EntityInstance, error)
-	List(ctx context.Context, entityTypeID, catalogVersionID string, params models.ListParams) ([]*models.EntityInstance, int, error)
+	GetByNameAndParent(ctx context.Context, entityTypeID, catalogID, parentInstanceID, name string) (*models.EntityInstance, error)
+	List(ctx context.Context, entityTypeID, catalogID string, params models.ListParams) ([]*models.EntityInstance, int, error)
+	DeleteByCatalogID(ctx context.Context, catalogID string) error
 	ListByParent(ctx context.Context, parentInstanceID string, params models.ListParams) ([]*models.EntityInstance, int, error)
 	Update(ctx context.Context, inst *models.EntityInstance) error
 	SoftDelete(ctx context.Context, id string) error

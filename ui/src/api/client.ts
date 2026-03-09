@@ -5,6 +5,7 @@ import type {
   Association,
   Enum,
   EnumValue,
+  Catalog,
   CatalogVersion,
   CatalogVersionPin,
   LifecycleTransition,
@@ -16,6 +17,7 @@ import type {
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/meta/v1'
+const DATA_BASE_URL = import.meta.env.VITE_DATA_API_BASE_URL || '/api/data/v1'
 
 let currentRole: string | null = null
 
@@ -182,5 +184,24 @@ export const api = {
       }),
     delete: (id: string) =>
       fetchJSON(`${BASE_URL}/catalog-versions/${id}`, { method: 'DELETE' }),
+  },
+
+  catalogs: {
+    list: (params?: { catalog_version_id?: string; validation_status?: string }) => {
+      const query = new URLSearchParams()
+      if (params?.catalog_version_id) query.set('catalog_version_id', params.catalog_version_id)
+      if (params?.validation_status) query.set('validation_status', params.validation_status)
+      const qs = query.toString()
+      return fetchJSON<ListResponse<Catalog>>(`${DATA_BASE_URL}/catalogs${qs ? `?${qs}` : ''}`)
+    },
+    get: (name: string) =>
+      fetchJSON<Catalog>(`${DATA_BASE_URL}/catalogs/${name}`),
+    create: (data: { name: string; description?: string; catalog_version_id: string }) =>
+      fetchJSON<Catalog>(`${DATA_BASE_URL}/catalogs`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    delete: (name: string) =>
+      fetchJSON(`${DATA_BASE_URL}/catalogs/${name}`, { method: 'DELETE' }),
   },
 }

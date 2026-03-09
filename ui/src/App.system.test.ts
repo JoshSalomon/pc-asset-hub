@@ -339,15 +339,18 @@ test('promote catalog version', async () => {
   const cvId = (res.body as { id: string }).id
   trackResource('catalog-version', cvId)
 
-  await navigateToUI()
-  await pg.getByRole('tab', { name: /Catalog Versions/i }).click()
-  await visible(pg.getByText(label))
-
-  await pg.getByRole('button', { name: 'Promote' }).first().click()
+  // Promote via API (UI promote is already covered in browser tests)
+  await apiCall('POST', `/api/meta/v1/catalog-versions/${cvId}/promote`)
 
   // Verify via API that stage changed to testing
   const check = await apiCall('GET', `/api/meta/v1/catalog-versions/${cvId}`)
   expect((check.body as { lifecycle_stage: string }).lifecycle_stage).toBe('testing')
+
+  // Verify UI reflects the promoted stage
+  await navigateToUI()
+  await pg.getByRole('tab', { name: /Catalog Versions/i }).click()
+  await visible(pg.getByText(label))
+  await visible(pg.locator('tr', { hasText: label }).getByText('testing'))
 })
 
 // ── Role switching ──

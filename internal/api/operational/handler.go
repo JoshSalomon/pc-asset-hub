@@ -40,7 +40,7 @@ func instanceToResponse(inst *models.EntityInstance) map[string]any {
 	return map[string]any{
 		"id":                 inst.ID,
 		"entity_type_id":     inst.EntityTypeID,
-		"catalog_version_id": inst.CatalogVersionID,
+		"catalog_id": inst.CatalogID,
 		"parent_instance_id": inst.ParentInstanceID,
 		"name":               inst.Name,
 		"description":        inst.Description,

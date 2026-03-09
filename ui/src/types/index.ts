@@ -135,6 +135,17 @@ export interface VersionSnapshot {
   associations: SnapshotAssociation[]
 }
 
+export interface Catalog {
+  id: string
+  name: string
+  description: string
+  catalog_version_id: string
+  catalog_version_label?: string
+  validation_status: 'draft' | 'valid' | 'invalid'
+  created_at: string
+  updated_at: string
+}
+
 export interface ListResponse<T> {
   items: T[]
   total: number

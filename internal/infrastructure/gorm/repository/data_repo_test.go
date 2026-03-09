@@ -60,7 +60,7 @@ func TestT2_01_CreateTopLevelInstance(t *testing.T) {
 	tc, ctx := setupTestContext(t)
 
 	inst := &models.EntityInstance{
-		ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "llama-3-70b", Description: "A large language model", Version: 1,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
@@ -77,13 +77,13 @@ func TestT2_02_CreateDuplicateInstanceName(t *testing.T) {
 	tc, ctx := setupTestContext(t)
 
 	inst1 := &models.EntityInstance{
-		ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "llama", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	require.NoError(t, tc.instRepo.Create(ctx, inst1))
 
 	inst2 := &models.EntityInstance{
-		ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "llama", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	err := tc.instRepo.Create(ctx, inst2)
@@ -94,13 +94,13 @@ func TestT2_03_CreateContainedInstance(t *testing.T) {
 	tc, ctx := setupTestContext(t)
 
 	parent := &models.EntityInstance{
-		ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "mcp-server-1", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	require.NoError(t, tc.instRepo.Create(ctx, parent))
 
 	child := &models.EntityInstance{
-		ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		ParentInstanceID: parent.ID, Name: "tool-1", Version: 1,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
@@ -115,23 +115,23 @@ func TestT2_04_SameNameDifferentParents(t *testing.T) {
 	tc, ctx := setupTestContext(t)
 
 	parent1 := &models.EntityInstance{
-		ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "server-1", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	parent2 := &models.EntityInstance{
-		ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "server-2", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	require.NoError(t, tc.instRepo.Create(ctx, parent1))
 	require.NoError(t, tc.instRepo.Create(ctx, parent2))
 
 	child1 := &models.EntityInstance{
-		ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		ParentInstanceID: parent1.ID, Name: "tool-A", Version: 1,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	child2 := &models.EntityInstance{
-		ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		ParentInstanceID: parent2.ID, Name: "tool-A", Version: 1,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
@@ -144,18 +144,18 @@ func TestT2_05_SameNameSameParent(t *testing.T) {
 	tc, ctx := setupTestContext(t)
 
 	parent := &models.EntityInstance{
-		ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "server-1", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	require.NoError(t, tc.instRepo.Create(ctx, parent))
 
 	child1 := &models.EntityInstance{
-		ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		ParentInstanceID: parent.ID, Name: "tool-A", Version: 1,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	child2 := &models.EntityInstance{
-		ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		ParentInstanceID: parent.ID, Name: "tool-A", Version: 1,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
@@ -168,7 +168,7 @@ func TestT2_06_CreateWithNonExistentParent(t *testing.T) {
 	tc, ctx := setupTestContext(t)
 
 	child := &models.EntityInstance{
-		ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		ParentInstanceID: "nonexistent-parent-id", Name: "orphan", Version: 1,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
@@ -182,7 +182,7 @@ func TestT2_07_UpdateInstanceVersion(t *testing.T) {
 	tc, ctx := setupTestContext(t)
 
 	inst := &models.EntityInstance{
-		ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "model-1", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	require.NoError(t, tc.instRepo.Create(ctx, inst))
@@ -200,7 +200,7 @@ func TestT2_08_SoftDeleteInstance(t *testing.T) {
 	tc, ctx := setupTestContext(t)
 
 	inst := &models.EntityInstance{
-		ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "model-1", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	require.NoError(t, tc.instRepo.Create(ctx, inst))
@@ -217,7 +217,7 @@ func TestT2_09_ListInstancesWithPagination(t *testing.T) {
 
 	for _, name := range []string{"alpha", "beta", "charlie", "delta"} {
 		require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
-			ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+			ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 			Name: name, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 		}))
 	}
@@ -232,21 +232,21 @@ func TestT2_10_ListByParent(t *testing.T) {
 	tc, ctx := setupTestContext(t)
 
 	parent := &models.EntityInstance{
-		ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "server-1", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	require.NoError(t, tc.instRepo.Create(ctx, parent))
 
 	for _, name := range []string{"tool-a", "tool-b"} {
 		require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
-			ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+			ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 			ParentInstanceID: parent.ID, Name: name, Version: 1,
 			CreatedAt: time.Now(), UpdatedAt: time.Now(),
 		}))
 	}
 	// Another top-level instance — should not appear
 	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
-		ID: id(), EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "other", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}))
 
@@ -263,7 +263,7 @@ func TestT2_11_SetStringValue(t *testing.T) {
 
 	instID := id()
 	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
-		ID: instID, EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: instID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "model-1", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}))
 
@@ -285,7 +285,7 @@ func TestT2_12_SetNumberValue(t *testing.T) {
 
 	instID := id()
 	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
-		ID: instID, EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: instID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "model-1", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}))
 
@@ -308,7 +308,7 @@ func TestT2_13_SetEnumValue(t *testing.T) {
 
 	instID := id()
 	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
-		ID: instID, EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: instID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "model-1", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}))
 
@@ -330,7 +330,7 @@ func TestT2_14_VersionedValues(t *testing.T) {
 	instID := id()
 	attrID := id()
 	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
-		ID: instID, EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: instID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "model-1", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}))
 
@@ -363,7 +363,7 @@ func TestT2_15_GetCurrentValues(t *testing.T) {
 	instID := id()
 	attrID := id()
 	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
-		ID: instID, EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: instID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "model-1", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}))
 
@@ -386,7 +386,7 @@ func TestT2_16_GetValuesForSpecificVersion(t *testing.T) {
 	instID := id()
 	attrID := id()
 	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
-		ID: instID, EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: instID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "model-1", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}))
 
@@ -408,7 +408,7 @@ func TestT2_17_UniqueConstraintOnAttributeValues(t *testing.T) {
 	instID := id()
 	attrID := id()
 	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
-		ID: instID, EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: instID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "model-1", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}))
 
@@ -430,11 +430,11 @@ func TestT2_18_CreateAssociationLink(t *testing.T) {
 
 	srcID, tgtID := id(), id()
 	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
-		ID: srcID, EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: srcID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "source", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}))
 	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
-		ID: tgtID, EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: tgtID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "target", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}))
 
@@ -458,7 +458,7 @@ func TestT2_19_GetForwardReferences(t *testing.T) {
 	srcID, tgt1ID, tgt2ID := id(), id(), id()
 	for _, inst := range []struct{ id, name string }{{srcID, "src"}, {tgt1ID, "tgt1"}, {tgt2ID, "tgt2"}} {
 		require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
-			ID: inst.id, EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+			ID: inst.id, EntityTypeID: tc.etID, CatalogID: tc.cvID,
 			Name: inst.name, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 		}))
 	}
@@ -478,7 +478,7 @@ func TestT2_20_GetReverseReferences(t *testing.T) {
 	src1ID, src2ID, tgtID := id(), id(), id()
 	for _, inst := range []struct{ id, name string }{{src1ID, "src1"}, {src2ID, "src2"}, {tgtID, "tgt"}} {
 		require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
-			ID: inst.id, EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+			ID: inst.id, EntityTypeID: tc.etID, CatalogID: tc.cvID,
 			Name: inst.name, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 		}))
 	}
@@ -497,11 +497,11 @@ func TestT2_21_DeleteAssociationLink(t *testing.T) {
 
 	srcID, tgtID := id(), id()
 	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
-		ID: srcID, EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: srcID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "source", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}))
 	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
-		ID: tgtID, EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+		ID: tgtID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "target", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}))
 
@@ -525,7 +525,7 @@ func TestT2_22_FilterForwardRefsByAssociationType(t *testing.T) {
 	srcID, tgt1ID, tgt2ID := id(), id(), id()
 	for _, inst := range []struct{ id, name string }{{srcID, "src"}, {tgt1ID, "tgt1"}, {tgt2ID, "tgt2"}} {
 		require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
-			ID: inst.id, EntityTypeID: tc.etID, CatalogVersionID: tc.cvID,
+			ID: inst.id, EntityTypeID: tc.etID, CatalogID: tc.cvID,
 			Name: inst.name, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 		}))
 	}

@@ -247,6 +247,25 @@ type ContainmentTreeNodeDTO struct {
 	Children      []ContainmentTreeNodeDTO   `json:"children"`
 }
 
+// === Catalog DTOs ===
+
+type CreateCatalogRequest struct {
+	Name             string `json:"name"`
+	Description      string `json:"description"`
+	CatalogVersionID string `json:"catalog_version_id"`
+}
+
+type CatalogResponse struct {
+	ID                  string    `json:"id"`
+	Name                string    `json:"name"`
+	Description         string    `json:"description"`
+	CatalogVersionID    string    `json:"catalog_version_id"`
+	CatalogVersionLabel string    `json:"catalog_version_label,omitempty"`
+	ValidationStatus    string    `json:"validation_status"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+}
+
 // === List Response ===
 
 type ListResponse struct {

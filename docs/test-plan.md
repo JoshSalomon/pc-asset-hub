@@ -143,6 +143,8 @@ Each feature area is tested at the appropriate layers:
 | Association cardinality | X | X | X | X | |
 | Edit association (COW) | X | | X | X | |
 | Association names + shared namespace | X | X | X | X | |
+| Catalog CRUD + name validation | X | X | X | X | |
+| Catalog scoping (data isolation) | X | X | X | | |
 
 ---
 
@@ -200,13 +202,14 @@ CatalogVersion CRs bridge the database and K8s for discovery. Cluster role contr
 - ≥90% on controller (excluding SetupWithManager) and CatalogVersionService promotion/demotion with CR operations
 - Documented exceptions per uncovered line
 
-### 5.5 Catalog Version Scoping
+### 5.5 Catalog Scoping
 
-Catalog version scoping is the core isolation mechanism for the operational API:
+Catalog scoping is the core isolation mechanism for the operational API. Entity instances belong to a catalog (named data collection), which is pinned to a catalog version (schema snapshot).
 
-- **API tests**: Verify that every operational API call scoped to a catalog version returns only entity types and instances consistent with that version's pinned entity type definitions.
-- **API tests**: Verify that creating or modifying entities in one catalog version does not affect another.
-- **API tests**: Verify that requests with an invalid catalog version return a clear error. Verify that requests against a demoted (no longer in production) catalog version return an appropriate error rather than stale data.
+- **API tests**: Verify that every operational API call scoped to a catalog returns only entity instances belonging to that catalog.
+- **API tests**: Verify that instances in one catalog are not visible in another catalog, even if both share the same CV.
+- **API tests**: Verify that requests with a nonexistent catalog name return 404.
+- **API tests**: Verify that the catalog's pinned CV determines which entity types are available for creating instances.
 
 ### 5.6 Edit Attribute
 
@@ -303,3 +306,12 @@ UML-like graphical diagram of entity types and their associations using `@patter
 
 - **UI tests (browser — main page)**: Verify "Model Diagram" tab exists. Verify diagram renders entity type nodes with name, version, and attributes. Verify edges rendered between associated entity types with labels (name, type, cardinality). Verify containment edges visually distinct from reference edges. Verify zoom/pan controls present.
 - **UI tests (browser — CV detail)**: Verify "Diagram" tab exists on CV detail page. Verify diagram renders only pinned entity types with attributes and associations.
+
+### 5.18 Catalog CRUD (US-33)
+
+Catalogs are named data containers pinned to a catalog version. The operational API uses the catalog name in URLs (DNS-label format). This section covers the catalog entity itself — instance management within catalogs is tested separately.
+
+- **Unit tests (service)**: Verify `CreateCatalog` validates name format (DNS-label: `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`, max 63 chars), rejects invalid names, enforces uniqueness, verifies CV exists, and sets initial validation status to `draft`. Verify `GetByName` retrieves catalog with resolved CV label. Verify `List` supports filtering by `catalog_version_id` and `validation_status`. Verify `Delete` cascades to all entity instances in the catalog.
+- **Integration tests (repository)**: Verify CRUD operations on `catalogs` table. Verify unique constraint on name. Verify FK to `catalog_versions`. Verify cascade behavior when catalog is deleted (entity instances removed). Verify `entity_instances.catalog_id` FK works correctly.
+- **API tests (handler)**: Verify `POST /api/data/v1/catalogs` returns 201 with catalog data on success. Verify 400 for invalid name format. Verify 409 for duplicate name. Verify 404 for nonexistent CV ID. Verify 403 for RO role. Verify `GET /api/data/v1/catalogs` returns list with filtering. Verify `GET /api/data/v1/catalogs/{name}` returns catalog detail with resolved CV label. Verify `DELETE /api/data/v1/catalogs/{name}` returns 204 and cascades. Verify 403 for RO on delete.
+- **UI tests (browser)**: Verify Catalogs nav item in meta UI. Verify catalog list page shows name, CV label, validation status badge, created date. Verify create modal with name input (DNS-label validation), description, CV dropdown. Verify delete with confirmation dialog. Verify RO user sees no create/delete controls.

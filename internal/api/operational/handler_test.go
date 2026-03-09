@@ -201,7 +201,7 @@ func TestT6_12_CatalogVersionIsolation(t *testing.T) {
 
 	// CV1 has one instance
 	instRepo.On("List", mock.Anything, mock.Anything, "cv1", mock.Anything).Return([]*models.EntityInstance{
-		{ID: "i1", Name: "model-1", CatalogVersionID: "cv1"},
+		{ID: "i1", Name: "model-1", CatalogID: "cv1"},
 	}, 1, nil)
 	// CV2 has none
 	instRepo.On("List", mock.Anything, mock.Anything, "cv2", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)

@@ -262,6 +262,32 @@
       "phase": 0,
       "difficulty": 0.8,
       "created_at": "2026-03-04T22:16:34.168927+00:00"
+    },
+    "mem_f1f6c181": {
+      "topic": "Catalog Foundation — implementation patterns and gotchas",
+      "tags": [
+        "catalog",
+        "architecture",
+        "implementation",
+        "operational-api",
+        "gotchas"
+      ],
+      "phase": 0,
+      "difficulty": 0.6,
+      "created_at": "2026-03-09T15:25:16.184113+00:00"
+    },
+    "mem_d9382bbb": {
+      "topic": "Fix LTM plugin SELinux permission errors on Fedora/podman",
+      "tags": [
+        "ltm",
+        "selinux",
+        "podman",
+        "permissions",
+        "debugging"
+      ],
+      "phase": 0,
+      "difficulty": 0.4,
+      "created_at": "2026-03-09T15:27:39.274775+00:00"
     }
   }
 }

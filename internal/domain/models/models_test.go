@@ -71,7 +71,7 @@ func TestEntityInstanceWithNilDeletedAt(t *testing.T) {
 	inst := EntityInstance{
 		ID:               "inst-id",
 		EntityTypeID:     "et-id",
-		CatalogVersionID: "cv-id",
+		CatalogID: "cv-id",
 		Name:             "test-instance",
 		Version:          1,
 		DeletedAt:        nil,

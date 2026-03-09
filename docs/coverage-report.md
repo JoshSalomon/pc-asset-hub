@@ -1,6 +1,6 @@
 # AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-03-02
+Last updated: 2026-03-09
 
 ---
 
@@ -8,11 +8,11 @@ Last updated: 2026-03-02
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 730 | 100% | 85.9% | — |
+| Backend (Go) | 804+ | 100% | ~87% | — |
 | UI — Unit tests | 62 | 100% | 17.9% | 20.6% |
-| UI — Browser tests (Playwright) | 243 | 100% | 80.7% | 85.3% |
+| UI — Browser tests (Playwright) | 254 | 100% | ~81% | ~86% |
 | UI — System tests (Playwright + live server) | 30 | 100% | — | — |
-| **Total** | **1065** | **100%** | — | — |
+| **Total** | **1150+** | **100%** | — | — |
 
 ---
 
@@ -23,11 +23,11 @@ Last updated: 2026-03-02
 | `internal/api/health` | 90.0% | Readyz DB-ping error path |
 | `internal/api/meta` | 88.8% | Handler bind-error branches in some handlers |
 | `internal/api/middleware` | 100.0% | |
-| `internal/api/operational` | 91.4% | Handler bind-error branches |
+| `internal/api/operational` | 94.6% | Catalog handler at 100%; legacy handler bind-error branches |
 | `internal/domain/errors` | 100.0% | |
 | `internal/infrastructure/config` | 100.0% | |
 | `internal/infrastructure/gorm/models` | 100.0% | |
-| `internal/infrastructure/gorm/repository` | 91.0% | GORM error branches on Delete/Update, `CatalogVersionGormRepo.Delete` at 0% |
+| `internal/infrastructure/gorm/repository` | 90.5% | GORM error branches on Delete/Update, `CatalogVersionGormRepo.Delete` at 0%; new `CatalogGormRepo` at 90-100% |
 | `internal/infrastructure/k8s` | 92.6% | K8s client error paths |
 | `internal/operator/api/v1alpha1` | 98.2% | `DeepCopyObject` nil-receiver guard |
 | `internal/operator/controllers` | 85.5% | `SetupWithManager`, Route reconciliation, complex controller paths |
@@ -113,7 +113,8 @@ These methods are single-line delegations to the repository layer with no branch
 | `EnumDetailPage.browser.test.tsx` | 24 | Pass |
 | `EnumListPage.browser.test.tsx` | 14 | Pass |
 | `CatalogVersionDetailPage.browser.test.tsx` | 27 | Pass |
-| **Total** | **240** | **100% pass** |
+| `CatalogListPage.browser.test.tsx` | 11 | Pass |
+| **Total** | **254** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
@@ -187,6 +188,27 @@ All new functions added in this session are at 100% coverage:
 | `components/EntityTypeDiagram.tsx` | Diagram component | 90.7% stmts, 90.1% lines |
 | `components/EditAssociationModal.tsx` | Shared edit modal | 92.4% stmts, 92.7% lines |
 | `App.tsx` | Diagram tab + edit modal | 87.6% stmts, 91.3% lines |
+
+### New Code Coverage (Session 004 — Catalog Foundation)
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/operational/catalog_service.go` | `NewCatalogService` | 100% |
+| `service/operational/catalog_service.go` | `ValidateCatalogName` | 100% |
+| `service/operational/catalog_service.go` | `CreateCatalog` | 100% |
+| `service/operational/catalog_service.go` | `GetByName` | 100% |
+| `service/operational/catalog_service.go` | `List` | 100% |
+| `service/operational/catalog_service.go` | `Delete` | 100% |
+| `api/operational/catalog_handler.go` | All 7 functions | 100% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `Create` | 100% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `GetByName` | 100% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `GetByID` | 100% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `List` | 90% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `Delete` | 100% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `UpdateValidationStatus` | 100% |
+| `infrastructure/gorm/repository/entity_instance_repo.go` | `DeleteByCatalogID` | 100% |
+
+`catalog_repo.go:List` at 90% — the `Find` error after `Count` succeeds requires the DB to fail between two queries in the same function, which cannot be triggered with the `closedDB` pattern.
 
 ### Coverage Gaps to Address
 

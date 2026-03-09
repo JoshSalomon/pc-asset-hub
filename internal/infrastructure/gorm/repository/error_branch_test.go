@@ -224,10 +224,10 @@ func TestEntityInstance_ErrorBranches(t *testing.T) {
 	_, _, err = instRepo.ListByParent(ctx, "x", models.ListParams{Limit: 10})
 	assert.Error(t, err)
 
-	err = instRepo.Create(ctx, &models.EntityInstance{ID: "x", EntityTypeID: "et1", CatalogVersionID: "cv1", Name: "n", CreatedAt: time.Now(), UpdatedAt: time.Now()})
+	err = instRepo.Create(ctx, &models.EntityInstance{ID: "x", EntityTypeID: "et1", CatalogID: "cv1", Name: "n", CreatedAt: time.Now(), UpdatedAt: time.Now()})
 	assert.Error(t, err)
 
-	err = instRepo.Update(ctx, &models.EntityInstance{ID: "x", EntityTypeID: "et1", CatalogVersionID: "cv1", Name: "n", CreatedAt: time.Now(), UpdatedAt: time.Now()})
+	err = instRepo.Update(ctx, &models.EntityInstance{ID: "x", EntityTypeID: "et1", CatalogID: "cv1", Name: "n", CreatedAt: time.Now(), UpdatedAt: time.Now()})
 	assert.Error(t, err)
 
 	err = instRepo.SoftDelete(ctx, "x")
@@ -252,5 +252,32 @@ func TestEntityInstance_ErrorBranches(t *testing.T) {
 	assert.Error(t, err)
 
 	_, err = linkRepo.GetReverseRefs(ctx, "x")
+	assert.Error(t, err)
+
+	err = instRepo.DeleteByCatalogID(ctx, "x")
+	assert.Error(t, err)
+}
+
+func TestCatalog_ErrorBranches(t *testing.T) {
+	db := closedDB(t)
+	repo := repository.NewCatalogGormRepo(db)
+	ctx := context.Background()
+
+	err := repo.Create(ctx, &models.Catalog{ID: "x", Name: "n", CatalogVersionID: "cv1", ValidationStatus: models.ValidationStatusDraft, CreatedAt: time.Now(), UpdatedAt: time.Now()})
+	assert.Error(t, err)
+
+	_, err = repo.GetByName(ctx, "x")
+	assert.Error(t, err)
+
+	_, err = repo.GetByID(ctx, "x")
+	assert.Error(t, err)
+
+	_, _, err = repo.List(ctx, models.ListParams{Limit: 10})
+	assert.Error(t, err)
+
+	err = repo.Delete(ctx, "x")
+	assert.Error(t, err)
+
+	err = repo.UpdateValidationStatus(ctx, "x", models.ValidationStatusValid)
 	assert.Error(t, err)
 }
