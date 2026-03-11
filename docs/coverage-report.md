@@ -222,6 +222,7 @@ All new functions added in this session are at 100% coverage:
 | `service/operational/instance_service.go` | `CreateInstance` | 100% |
 | `service/operational/instance_service.go` | `GetInstance` | 100% |
 | `service/operational/instance_service.go` | `ListInstances` | 100% |
+| `service/operational/instance_service.go` | `mapAttributeValues` | 100% |
 | `service/operational/instance_service.go` | `UpdateInstance` | 100% |
 | `service/operational/instance_service.go` | `DeleteInstance` | 100% |
 | `service/operational/instance_service.go` | `cascadeDelete` | 100% |
@@ -230,9 +231,11 @@ All new functions added in this session are at 100% coverage:
 | Handler package total | | **96.5%** |
 
 Remaining uncovered (5 lines):
-- `instance_service.go:173` — `default:` switch label (Go coverage instrumentation quirk; the body IS covered)
+- `instance_service.go` — `default:` switch label in `validateAndBuildAttributeValues` (Go coverage instrumentation quirk; the body IS covered)
 - `catalog_repo.go:82-84` — `Find` error after `Count` succeeds (DB internal; requires failure between sequential queries)
 - `entity_instance_repo.go:71-73,91-93,120-122` — same `Find`-after-`Count` pattern across List/ListByParent
+
+Review fixes applied: (1) `resolveEntityType` now returns errors instead of silently continuing on pin resolution failure. (2) `UpdateInstance` validates attribute values before incrementing version, preventing inconsistent state. (3) `mapAttributeValues` extracted as shared helper, eliminating duplicate resolution logic.
 
 Bug found during live testing: PostgreSQL migration — old `catalog_version_id` column on `entity_instances` table not dropped. Fixed with `InitDB` pre-migration that copies data and drops old column.
 

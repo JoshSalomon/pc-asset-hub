@@ -70,7 +70,7 @@ func (s *InstanceService) resolveEntityType(ctx context.Context, catalogName, en
 	for _, pin := range pins {
 		etv, err := s.etvRepo.GetByID(ctx, pin.EntityTypeVersionID)
 		if err != nil {
-			continue
+			return nil, nil, fmt.Errorf("failed to resolve pin %s: %w", pin.EntityTypeVersionID, err)
 		}
 		if etv.EntityTypeID == et.ID {
 			return catalog, etv, nil
@@ -93,17 +93,10 @@ type AttributeValue struct {
 	Value interface{} `json:"value"`
 }
 
-func (s *InstanceService) resolveAttributeValues(ctx context.Context, inst *models.EntityInstance, etv *models.EntityTypeVersion) ([]AttributeValue, error) {
-	attrs, err := s.attrRepo.ListByVersion(ctx, etv.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	values, err := s.iavRepo.GetCurrentValues(ctx, inst.ID)
-	if err != nil {
-		return nil, err
-	}
-
+// mapAttributeValues maps raw InstanceAttributeValues to resolved AttributeValues using schema attributes.
+// This is the single source of truth for attribute value resolution — used by both single-instance
+// and list operations.
+func mapAttributeValues(attrs []*models.Attribute, values []*models.InstanceAttributeValue) []AttributeValue {
 	valueMap := make(map[string]*models.InstanceAttributeValue)
 	for _, v := range values {
 		valueMap[v.AttributeID] = v
@@ -127,7 +120,21 @@ func (s *InstanceService) resolveAttributeValues(ctx context.Context, inst *mode
 		}
 		result = append(result, av)
 	}
-	return result, nil
+	return result
+}
+
+func (s *InstanceService) resolveAttributeValues(ctx context.Context, inst *models.EntityInstance, etv *models.EntityTypeVersion) ([]AttributeValue, error) {
+	attrs, err := s.attrRepo.ListByVersion(ctx, etv.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	values, err := s.iavRepo.GetCurrentValues(ctx, inst.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return mapAttributeValues(attrs, values), nil
 }
 
 func (s *InstanceService) validateAndBuildAttributeValues(ctx context.Context, etv *models.EntityTypeVersion, instanceID string, version int, attrInput map[string]interface{}) ([]*models.InstanceAttributeValue, error) {
@@ -286,26 +293,7 @@ func (s *InstanceService) ListInstances(ctx context.Context, catalogName, entity
 		if err != nil {
 			return nil, 0, err
 		}
-		valueMap := make(map[string]*models.InstanceAttributeValue)
-		for _, v := range values {
-			valueMap[v.AttributeID] = v
-		}
-		avs := make([]AttributeValue, 0, len(attrs))
-		for _, attr := range attrs {
-			av := AttributeValue{Name: attr.Name, Type: string(attr.Type)}
-			if val, ok := valueMap[attr.ID]; ok {
-				switch attr.Type {
-				case models.AttributeTypeString:
-					av.Value = val.ValueString
-				case models.AttributeTypeNumber:
-					av.Value = val.ValueNumber
-				case models.AttributeTypeEnum:
-					av.Value = val.ValueEnum
-				}
-			}
-			avs = append(avs, av)
-		}
-		details[i] = &InstanceDetail{Instance: inst, Attributes: avs}
+		details[i] = &InstanceDetail{Instance: inst, Attributes: mapAttributeValues(attrs, values)}
 	}
 
 	return details, total, nil
@@ -326,54 +314,51 @@ func (s *InstanceService) UpdateInstance(ctx context.Context, catalogName, entit
 		return nil, domainerrors.NewConflict("EntityInstance", fmt.Sprintf("version mismatch: expected %d but got %d", currentVersion, inst.Version))
 	}
 
+	// Validate attribute values BEFORE incrementing version to avoid inconsistent state
+	newVersion := currentVersion + 1
+	var newValues []*models.InstanceAttributeValue
+	if len(attrInput) > 0 {
+		newValues, err = s.validateAndBuildAttributeValues(ctx, etv, inst.ID, newVersion, attrInput)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Carry forward previous version's values
+	prevValues, err := s.iavRepo.GetValuesForVersion(ctx, inst.ID, currentVersion)
+	if err != nil {
+		return nil, err
+	}
+	newAttrIDs := make(map[string]bool)
+	for _, v := range newValues {
+		newAttrIDs[v.AttributeID] = true
+	}
+	for _, prev := range prevValues {
+		if !newAttrIDs[prev.AttributeID] {
+			newValues = append(newValues, &models.InstanceAttributeValue{
+				ID:              uuid.Must(uuid.NewV7()).String(),
+				InstanceID:      inst.ID,
+				InstanceVersion: newVersion,
+				AttributeID:     prev.AttributeID,
+				ValueString:     prev.ValueString,
+				ValueNumber:     prev.ValueNumber,
+				ValueEnum:       prev.ValueEnum,
+			})
+		}
+	}
+
+	// Now safe to update — validation passed
 	if name != nil {
 		inst.Name = *name
 	}
 	if description != nil {
 		inst.Description = *description
 	}
-	inst.Version++
+	inst.Version = newVersion
 	inst.UpdatedAt = time.Now()
 
 	if err := s.instRepo.Update(ctx, inst); err != nil {
 		return nil, err
-	}
-
-	// Carry forward previous version's values and merge with new values
-	prevValues, err := s.iavRepo.GetValuesForVersion(ctx, inst.ID, currentVersion)
-	if err != nil {
-		return nil, err
-	}
-
-	// Build new values from input
-	var newValues []*models.InstanceAttributeValue
-	if len(attrInput) > 0 {
-		newValues, err = s.validateAndBuildAttributeValues(ctx, etv, inst.ID, inst.Version, attrInput)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// Build set of attribute IDs that have new values
-	newAttrIDs := make(map[string]bool)
-	for _, v := range newValues {
-		newAttrIDs[v.AttributeID] = true
-	}
-
-	// Carry forward unchanged values from previous version
-	for _, prev := range prevValues {
-		if !newAttrIDs[prev.AttributeID] {
-			carried := &models.InstanceAttributeValue{
-				ID:              uuid.Must(uuid.NewV7()).String(),
-				InstanceID:      inst.ID,
-				InstanceVersion: inst.Version,
-				AttributeID:     prev.AttributeID,
-				ValueString:     prev.ValueString,
-				ValueNumber:     prev.ValueNumber,
-				ValueEnum:       prev.ValueEnum,
-			}
-			newValues = append(newValues, carried)
-		}
 	}
 
 	if len(newValues) > 0 {

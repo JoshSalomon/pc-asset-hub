@@ -370,14 +370,14 @@ func TestT11_26_InvalidAttrType(t *testing.T) {
 	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
 		ID: "inst1", Version: 1,
 	}, nil)
-	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
-	s.iavRepo.On("GetValuesForVersion", ctx, "inst1", 1).Return([]*models.InstanceAttributeValue{}, nil)
 
 	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "inst1", 1, nil, nil, map[string]interface{}{
 		"port": "not-a-number",
 	})
 	assert.Error(t, err)
 	assert.True(t, domainerrors.IsValidation(err))
+	// Verify Update was NOT called — validation failed before version increment
+	s.instRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
 }
 
 // T-11.27: Update nonexistent instance
@@ -546,6 +546,7 @@ func TestCov_UpdateInstance_RepoUpdateError(t *testing.T) {
 	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{
 		ID: "i1", Version: 1,
 	}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "i1", 1).Return([]*models.InstanceAttributeValue{}, nil)
 	s.instRepo.On("Update", ctx, mock.Anything).Return(domainerrors.NewValidation("db error"))
 
 	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "i1", 1, nil, nil, nil)
@@ -591,7 +592,7 @@ func TestCov_ResolveEntityType_ETVGetByIDError(t *testing.T) {
 	s.etvRepo.On("GetByID", ctx, "etv-bad").Return(nil, domainerrors.NewNotFound("ETV", "etv-bad"))
 
 	_, err := s.svc.CreateInstance(ctx, "cat", "model", "inst", "", nil)
-	assert.Error(t, err) // Not found because no pin matched after skipping errored one
+	assert.Error(t, err) // Error propagated from GetByID, not silently skipped
 }
 
 // Error propagation: resolveAttributeValues - attrRepo error
@@ -777,11 +778,11 @@ func TestCov_UpdateInstance_ValidateError(t *testing.T) {
 	s.mockPinResolution(ctx)
 	s.attrRepo.On("ListByVersion", ctx, "etv1").Return(nil, domainerrors.NewValidation("db error"))
 	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", Version: 1}, nil)
-	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
-	s.iavRepo.On("GetValuesForVersion", ctx, "i1", 1).Return([]*models.InstanceAttributeValue{}, nil)
 
 	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "i1", 1, nil, nil, map[string]interface{}{"x": "y"})
 	assert.Error(t, err)
+	// Update should NOT be called — validation failed before version increment
+	s.instRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
 }
 
 // Error propagation: UpdateInstance - SetValues error

@@ -182,7 +182,7 @@ export default function CatalogListPage({ role }: { role: Role }) {
                 <Td>{new Date(cat.created_at).toLocaleString()}</Td>
                 {canCreate && (
                   <Td>
-                    <Button variant="danger" size="sm" onClick={() => setDeleteTarget(cat)}>Delete</Button>
+                    <Button variant="danger" size="sm" onClick={() => { setDeleteTarget(cat); setDeleteError(null) }}>Delete</Button>
                   </Td>
                 )}
               </Tr>
