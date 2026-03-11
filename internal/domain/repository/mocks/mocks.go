@@ -87,6 +87,9 @@ func (m *MockAttributeRepo) GetByID(ctx context.Context, id string) (*models.Att
 }
 func (m *MockAttributeRepo) ListByVersion(ctx context.Context, entityTypeVersionID string) ([]*models.Attribute, error) {
 	args := m.Called(ctx, entityTypeVersionID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]*models.Attribute), args.Error(1)
 }
 func (m *MockAttributeRepo) Update(ctx context.Context, attr *models.Attribute) error {
@@ -176,6 +179,9 @@ func (m *MockEnumValueRepo) Create(ctx context.Context, ev *models.EnumValue) er
 }
 func (m *MockEnumValueRepo) ListByEnum(ctx context.Context, enumID string) ([]*models.EnumValue, error) {
 	args := m.Called(ctx, enumID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]*models.EnumValue), args.Error(1)
 }
 func (m *MockEnumValueRepo) Delete(ctx context.Context, id string) error {
@@ -224,6 +230,9 @@ func (m *MockCatalogVersionPinRepo) Create(ctx context.Context, pin *models.Cata
 }
 func (m *MockCatalogVersionPinRepo) ListByCatalogVersion(ctx context.Context, catalogVersionID string) ([]*models.CatalogVersionPin, error) {
 	args := m.Called(ctx, catalogVersionID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]*models.CatalogVersionPin), args.Error(1)
 }
 func (m *MockCatalogVersionPinRepo) ListByEntityTypeVersionIDs(ctx context.Context, etvIDs []string) ([]*models.CatalogVersionPin, error) {

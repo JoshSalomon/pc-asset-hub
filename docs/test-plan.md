@@ -145,6 +145,11 @@ Each feature area is tested at the appropriate layers:
 | Association names + shared namespace | X | X | X | X | |
 | Catalog CRUD + name validation | X | X | X | X | |
 | Catalog scoping (data isolation) | X | X | X | | |
+| Instance CRUD within catalog | X | X | X | X | |
+| Instance attribute values (set/get/validate) | X | X | X | X | |
+| Entity type pin resolution (catalog → CV → pins) | X | X | X | | |
+| Instance optimistic locking | X | X | X | | |
+| Catalog validation status reset on mutation | X | X | X | | |
 
 ---
 
@@ -315,3 +320,12 @@ Catalogs are named data containers pinned to a catalog version. The operational 
 - **Integration tests (repository)**: Verify CRUD operations on `catalogs` table. Verify unique constraint on name. Verify FK to `catalog_versions`. Verify cascade behavior when catalog is deleted (entity instances removed). Verify `entity_instances.catalog_id` FK works correctly.
 - **API tests (handler)**: Verify `POST /api/data/v1/catalogs` returns 201 with catalog data on success. Verify 400 for invalid name format. Verify 409 for duplicate name. Verify 404 for nonexistent CV ID. Verify 403 for RO role. Verify `GET /api/data/v1/catalogs` returns list with filtering. Verify `GET /api/data/v1/catalogs/{name}` returns catalog detail with resolved CV label. Verify `DELETE /api/data/v1/catalogs/{name}` returns 204 and cascades. Verify 403 for RO on delete.
 - **UI tests (browser)**: Verify Catalogs nav item in meta UI. Verify catalog list page shows name, CV label, validation status badge, created date. Verify create modal with name input (DNS-label validation), description, CV dropdown. Verify delete with confirmation dialog. Verify RO user sees no create/delete controls.
+
+### 5.19 Instance CRUD with Attributes (US-13, US-14, US-15)
+
+Entity instances are created within a catalog, scoped to an entity type that must be pinned in the catalog's CV. Attribute values are set on create, updated on PUT, and returned with resolved names in all responses. The old CV-scoped instance scaffolding is replaced with catalog-scoped routes.
+
+- **Unit tests (service)**: Verify instance creation resolves catalog name → CV → pins → entity type version. Verify entity type not pinned in CV returns error. Verify attribute value type validation (string accepted, number must be parseable, enum must be in allowed list). Verify missing optional attributes allowed. Verify name uniqueness within catalog scope. Verify optimistic locking on update (version mismatch returns conflict). Verify update increments version and stores previous attribute values. Verify cascade delete removes children. Verify catalog validation status reset to `draft` on create/update/delete.
+- **Integration tests (repository)**: Verify `InstanceAttributeValue` CRUD — set values, get current values, get values for specific version. Verify attribute values survive instance version increment (previous values retained). Verify instance creation with `catalog_id` FK. Verify pin resolution query chain (catalog → CV → pins → entity type version) against real DB with multi-table joins. Verify optimistic locking — concurrent update with stale version returns 0 rows affected. Verify catalog validation status reset — `UpdateValidationStatus` called after instance mutation updates the `updated_at` timestamp.
+- **API tests (handler)**: Verify `POST /api/data/v1/catalogs/{name}/{entity-type}` creates instance with attributes, returns 201. Verify 404 for nonexistent catalog. Verify 404 for entity type not pinned in CV. Verify 400 for invalid attribute values. Verify 403 for RO. Verify `GET /{name}/{type}` lists instances with attribute values. Verify `GET /{name}/{type}/{id}` returns instance with resolved attributes. Verify `PUT /{name}/{type}/{id}` updates attributes, increments version, returns 409 on version mismatch. Verify `DELETE /{name}/{type}/{id}` returns 204 with cascade.
+- **UI tests (browser)**: Verify catalog detail page shows tabs per entity type. Verify instance list table with dynamic columns from attributes. Verify create instance modal with dynamic attribute form (text for string, number input for number, dropdown for enum). Verify edit instance modal pre-fills current values. Verify delete with confirmation. Verify RO user sees no create/edit/delete controls.

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   PageSection,
   Title,
@@ -49,6 +50,7 @@ const statusColor = (status: string) => {
 }
 
 export default function CatalogListPage({ role }: { role: Role }) {
+  const navigate = useNavigate()
   const [catalogs, setCatalogs] = useState<Catalog[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -170,7 +172,11 @@ export default function CatalogListPage({ role }: { role: Role }) {
           <Tbody>
             {catalogs.map((cat) => (
               <Tr key={cat.id}>
-                <Td>{cat.name}</Td>
+                <Td>
+                  <Button variant="link" isInline onClick={() => navigate(`/catalogs/${cat.name}`)}>
+                    {cat.name}
+                  </Button>
+                </Td>
                 <Td>{cat.catalog_version_label || cat.catalog_version_id.slice(0, 8) + '...'}</Td>
                 <Td><Label color={statusColor(cat.validation_status)}>{cat.validation_status}</Label></Td>
                 <Td>{new Date(cat.created_at).toLocaleString()}</Td>

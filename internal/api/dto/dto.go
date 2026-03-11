@@ -266,6 +266,40 @@ type CatalogResponse struct {
 	UpdatedAt           time.Time `json:"updated_at"`
 }
 
+// === Instance DTOs ===
+
+type CreateInstanceRequest struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Attributes  map[string]interface{} `json:"attributes"`
+}
+
+type UpdateInstanceRequest struct {
+	Version     int                    `json:"version"`
+	Name        *string                `json:"name,omitempty"`
+	Description *string                `json:"description,omitempty"`
+	Attributes  map[string]interface{} `json:"attributes,omitempty"`
+}
+
+type InstanceResponse struct {
+	ID               string                   `json:"id"`
+	EntityTypeID     string                   `json:"entity_type_id"`
+	CatalogID        string                   `json:"catalog_id"`
+	ParentInstanceID string                   `json:"parent_instance_id,omitempty"`
+	Name             string                   `json:"name"`
+	Description      string                   `json:"description"`
+	Version          int                      `json:"version"`
+	Attributes       []AttributeValueResponse `json:"attributes"`
+	CreatedAt        time.Time                `json:"created_at"`
+	UpdatedAt        time.Time                `json:"updated_at"`
+}
+
+type AttributeValueResponse struct {
+	Name  string      `json:"name"`
+	Type  string      `json:"type"`
+	Value interface{} `json:"value"`
+}
+
 // === List Response ===
 
 type ListResponse struct {

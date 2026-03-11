@@ -146,6 +146,25 @@ export interface Catalog {
   updated_at: string
 }
 
+export interface EntityInstance {
+  id: string
+  entity_type_id: string
+  catalog_id: string
+  parent_instance_id?: string
+  name: string
+  description: string
+  version: number
+  attributes: AttributeValueResponse[]
+  created_at: string
+  updated_at: string
+}
+
+export interface AttributeValueResponse {
+  name: string
+  type: string
+  value: string | number | null
+}
+
 export interface ListResponse<T> {
   items: T[]
   total: number

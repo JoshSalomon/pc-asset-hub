@@ -30,10 +30,16 @@ func (m *MockEntityInstanceRepo) GetByNameAndParent(ctx context.Context, entityT
 }
 func (m *MockEntityInstanceRepo) List(ctx context.Context, entityTypeID, catalogID string, params models.ListParams) ([]*models.EntityInstance, int, error) {
 	args := m.Called(ctx, entityTypeID, catalogID, params)
+	if args.Get(0) == nil {
+		return nil, args.Int(1), args.Error(2)
+	}
 	return args.Get(0).([]*models.EntityInstance), args.Int(1), args.Error(2)
 }
 func (m *MockEntityInstanceRepo) ListByParent(ctx context.Context, parentInstanceID string, params models.ListParams) ([]*models.EntityInstance, int, error) {
 	args := m.Called(ctx, parentInstanceID, params)
+	if args.Get(0) == nil {
+		return nil, args.Int(1), args.Error(2)
+	}
 	return args.Get(0).([]*models.EntityInstance), args.Int(1), args.Error(2)
 }
 func (m *MockEntityInstanceRepo) Update(ctx context.Context, inst *models.EntityInstance) error {

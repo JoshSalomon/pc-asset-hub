@@ -720,6 +720,9 @@ Acceptance Criteria:
 - Attribute values are validated against the attribute type (string, number, enum value from allowed list), but missing optional attributes are allowed (draft mode).
 - The instance is created at version 1 with a system-calculated ID.
 - RO users cannot create instances; the API returns a 403.
+- The response includes the instance with resolved attribute values (attribute name, type, and value — not just raw IDs).
+- The API URL uses the entity type name: `POST /api/data/v1/catalogs/{catalog-name}/{entity-type-name}`.
+- Any data mutation to instances in a catalog resets the catalog's validation status to `draft`.
 
 ---
 
@@ -733,7 +736,9 @@ Acceptance Criteria:
 - The system increments the instance version automatically on each successful update.
 - The previous version state is retained in the database.
 - Attribute value changes are validated against the attribute type definition.
-- The updated instance returns the new version number in the response.
+- The updated instance returns the new version number and all current attribute values in the response.
+- Update requires the current version number for optimistic locking (409 on mismatch).
+- The update request can include name, description, and/or attribute values — all optional, only provided fields are changed.
 
 ---
 
@@ -1141,6 +1146,10 @@ Items where the current implementation diverges from the intended behavior descr
 | TD-16 | Mixed soft-delete/hard-delete on catalog deletion | Instances are soft-deleted (`deleted_at` set) but the catalog itself is hard-deleted. Soft-deleted instances with no parent catalog accumulate as dead rows. | Either hard-delete instances when the catalog is deleted (since the catalog is hard-deleted, there's no recovery path anyway), or soft-delete the catalog too. Also consider a periodic cleanup job for orphaned soft-deleted instances. |
 | TD-17 | Catalog list pagination | `ListCatalogs` handler hardcodes `Limit: 20` with no `offset`/`limit` query parameters | Accept `limit` and `offset` query parameters so clients can paginate through large catalog lists. The `total` count is already returned in the response. Apply the same fix to the instance list handler. |
 | TD-18 | UI component props style inconsistency | Minor style issue: some components use a named `interface Props { ... }` for their parameter type (e.g., `EnumListPage`), while others use inline destructured types (e.g., `CatalogListPage`: `{ role }: { role: Role }`). Both are functionally identical. | Pick one convention and apply it consistently across all page components. The named `Props` interface is more common in the codebase and scales better when props grow. Low priority — a future style alignment pass. |
+| TD-19 | N+1 query in resolveEntityType | `InstanceService.resolveEntityType` iterates all CV pins and calls `etvRepo.GetByID` for each to find the matching entity type | Replace the per-pin query loop with a batch fetch or a join query that resolves entity type ID → pinned version in one call. Acceptable for now since CVs typically have 3-5 pins; becomes a problem at 20+. |
+| TD-20 | Missing name validation on instance creation | `CreateInstanceRequest.Name` has no `validate:"required"` tag and the handler does not validate the name before passing to the service. An empty-name instance can be created. | Add explicit name validation in the service layer (`name is required`, `name must not be empty`). Also consider a codebase-wide pass to add consistent `validate` tags across all DTOs — currently only `CreateEntityTypeRequest` uses them. |
+| TD-21 | Remove catalog_version_id migration code | `InitDB` in `models.go` contains one-time migration code that detects and drops the old `catalog_version_id` column from `entity_instances`, copying data to `catalog_id`. This runs on every startup. | Once all environments (dev, staging, production) have been migrated, remove the migration block from `InitDB`. It is safe to remove after all databases have been started at least once with the current code. The migration is idempotent (no-ops if the old column doesn't exist) so there is no urgency. |
+| **TD-22** | **[CRITICAL] Common attributes as schema-level attributes** | Common attributes (Name, Description) are fields on `EntityInstance` but are NOT represented as `Attribute` records in the entity type schema. They are invisible in attribute lists, diagrams, and BOM modals. If an entity type manually creates custom attributes named `name`/`description`, the create instance modal shows duplicate fields. | **Approach A (DB-level):** Make common attributes into real `Attribute` records: (1) Auto-create them when an entity type is created, marked with a `system: true` flag. (2) Prevent deletion of system attributes. (3) Show them in all views — attribute tabs, diagrams, BOM modals, create/edit modals. (4) Remove the hardcoded Name/Description fields from the instance create/edit modals — use the schema attributes instead. (5) Design for extensibility: future common attributes like `Version` (auto-incremented) and `State` (enum lifecycle) should follow the same pattern. **Approach B (API-level merge):** Keep common attributes as hardcoded fields on `EntityInstance` (no DB schema change). The API layer merges them into the dynamic attribute list when returning responses — injecting synthetic `name`, `description`, `version` entries at the top of the attributes array with a `system: true` marker. The UI renders all attributes uniformly from this merged list and prevents editing/removing system-flagged ones. Meta API endpoints (attribute list, version snapshot, diagram data) similarly inject common attributes into their responses. Simpler to implement (no migration, no COW implications), but common attributes are never real DB records — they exist only as API-level projections. Prevents the duplicate-fields bug by having a single source of truth for what attributes exist (the merged list). |
 
 ## 12. Future Features
 

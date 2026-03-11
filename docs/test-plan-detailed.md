@@ -1269,6 +1269,115 @@ Catalogs are named data containers pinned to a catalog version. The operational 
 
 ---
 
+## Milestone 11: Instance CRUD with Attributes
+
+Entity instances are created within a catalog, scoped to an entity type pinned in the catalog's CV. Attribute values are set on create, validated by type, returned with resolved names, and versioned on update. The old CV-scoped instance scaffolding is replaced with catalog-scoped routes.
+
+### Instance Repository — Attribute Values
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.01 | SetValues stores attribute values for instance | Integration | Values persisted and retrievable |
+| T-11.02 | GetCurrentValues returns latest version's values | Integration | Returns values for highest version |
+| T-11.03 | GetValuesForVersion returns values for specific version | Integration | Returns values for requested version only |
+| T-11.04 | SetValues for new version preserves previous version's values | Integration | Both version 1 and version 2 values retrievable independently |
+| T-11.05 | Instance creation with catalog_id and attribute values end-to-end | Integration | Instance + values persisted, FK constraints satisfied |
+
+### Pin Resolution Chain
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.06 | Catalog → CV → Pin → EntityTypeVersion resolution | Integration | Given catalog with CV that pins entity type, full chain resolves to correct EntityTypeVersion |
+| T-11.07 | Pin resolution returns attributes for the pinned version | Integration | Attributes from pinned version (not latest) returned |
+| T-11.08 | Pin resolution for entity type not pinned in CV | Integration | No pin found for that entity type |
+
+### Optimistic Locking (DB level)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.09 | Update instance with matching version succeeds | Integration | Version incremented, update applied |
+| T-11.10 | Update instance with stale version returns 0 rows affected | Integration | RowsAffected=0, no data changed |
+
+### Instance Service — Create with Pin Resolution
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.11 | Create instance in catalog with pinned entity type | Unit | Instance created with correct CatalogID and EntityTypeID |
+| T-11.12 | Create instance with entity type not pinned in CV | Unit | NotFound error |
+| T-11.13 | Create instance in nonexistent catalog | Unit | NotFound error |
+| T-11.14 | Create instance with attribute values (string) | Unit | Instance created, string attribute value stored |
+| T-11.15 | Create instance with attribute values (number) | Unit | Instance created, number attribute value stored |
+| T-11.16 | Create instance with attribute values (enum — valid value) | Unit | Instance created, enum value stored |
+| T-11.17 | Create instance with attribute values (enum — invalid value) | Unit | Validation error |
+| T-11.18 | Create instance with attribute values (number — non-parseable) | Unit | Validation error |
+| T-11.19 | Create instance with missing optional attributes | Unit | Instance created, no error |
+| T-11.20 | Create instance with missing required attributes (draft mode) | Unit | Instance created, no error (validation is Phase 5) |
+| T-11.21 | Create instance with duplicate name in same catalog | Unit | Conflict error |
+| T-11.22 | Create instance with unknown attribute name | Unit | Validation error — attribute not in schema |
+
+### Instance Service — Update
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.23 | Update instance attribute values | Unit | Version incremented, new values stored, previous retained |
+| T-11.24 | Update instance with version mismatch | Unit | Conflict error |
+| T-11.25 | Update instance name and description | Unit | Fields updated, version incremented |
+| T-11.26 | Update with invalid attribute value type | Unit | Validation error, no version change |
+| T-11.27 | Update nonexistent instance | Unit | NotFound error |
+
+### Instance Service — Get and List
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.28 | Get instance returns resolved attribute values (name, type, value) | Unit | Response includes attribute name/type from schema + value |
+| T-11.29 | List instances returns instances with attribute values | Unit | Each instance includes its current attribute values |
+| T-11.30 | List instances in catalog with no instances | Unit | Empty list, total=0 |
+
+### Instance Service — Delete and Validation Status
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.31 | Delete instance cascades to children | Unit | Parent and children soft-deleted |
+| T-11.32 | Create instance resets catalog validation status to draft | Unit | Catalog status updated to draft |
+| T-11.33 | Update instance resets catalog validation status to draft | Unit | Catalog status updated to draft |
+| T-11.34 | Delete instance resets catalog validation status to draft | Unit | Catalog status updated to draft |
+
+### Instance API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.35 | POST /catalogs/{name}/{entity-type} with attributes → 201 | API | Instance created with attribute values in response |
+| T-11.36 | POST /catalogs/{name}/{entity-type} nonexistent catalog → 404 | API | Clear error message |
+| T-11.37 | POST /catalogs/{name}/{entity-type} entity type not pinned → 404 | API | Clear error message |
+| T-11.38 | POST /catalogs/{name}/{entity-type} invalid attribute value → 400 | API | Validation error |
+| T-11.39 | POST /catalogs/{name}/{entity-type} as RO → 403 | API | Forbidden |
+| T-11.40 | POST /catalogs/{name}/{entity-type} as RW → 201 | API | RW can create instances |
+| T-11.41 | GET /catalogs/{name}/{entity-type} → 200 list with attributes | API | Instances with resolved attribute values |
+| T-11.42 | GET /catalogs/{name}/{entity-type}/{id} → 200 with attributes | API | Single instance with resolved attribute values |
+| T-11.43 | GET /catalogs/{name}/{entity-type}/{id} nonexistent → 404 | API | Not found |
+| T-11.44 | PUT /catalogs/{name}/{entity-type}/{id} → 200, version incremented | API | Updated attributes, new version in response |
+| T-11.45 | PUT /catalogs/{name}/{entity-type}/{id} version mismatch → 409 | API | Conflict error |
+| T-11.46 | DELETE /catalogs/{name}/{entity-type}/{id} → 204 | API | Instance deleted |
+| T-11.47 | DELETE /catalogs/{name}/{entity-type}/{id} as RO → 403 | API | Forbidden |
+
+### Instance UI — Catalog Detail Page
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.48 | Catalog detail page shows tabs per pinned entity type | Browser | One tab per entity type in CV pins |
+| T-11.49 | Entity type tab shows instance list table | Browser | Table with Name, Description columns + dynamic attribute columns |
+| T-11.50 | Instance list shows attribute values in columns | Browser | Attribute values rendered in correct columns |
+| T-11.51 | Create instance button visible for RW+, hidden for RO | Browser | Role-aware visibility |
+| T-11.52 | Create instance modal has dynamic attribute form | Browser | String → text input, number → number input, enum → dropdown |
+| T-11.53 | Create instance modal submits with attribute values | Browser | API called with name, description, attributes; list refreshes |
+| T-11.54 | Edit instance opens modal with pre-filled values | Browser | Current name, description, attribute values shown |
+| T-11.55 | Edit instance submits updated values | Browser | API called with version + changed fields; list refreshes |
+| T-11.56 | Delete instance shows confirmation dialog | Browser | Confirmation with instance name |
+| T-11.57 | Delete instance removes from list | Browser | Instance disappears after confirm |
+| T-11.58 | Empty instance list shows empty state | Browser | "No instances" message |
+
+---
+
 ## Coverage Criteria
 
 ### Pass Rate
@@ -1305,7 +1414,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 326 test cases (T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, and T-10.01 through T-10.51) pass
+- All 384 test cases (T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, and T-11.01 through T-11.58) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

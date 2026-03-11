@@ -8,11 +8,11 @@ Last updated: 2026-03-09
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 804+ | 100% | ~87% | — |
-| UI — Unit tests | 62 | 100% | 17.9% | 20.6% |
-| UI — Browser tests (Playwright) | 254 | 100% | ~81% | ~86% |
+| Backend (Go) | 833+ | 100% | ~90% | — |
+| UI — Unit tests | 75 | 100% | 17.9% | 20.6% |
+| UI — Browser tests (Playwright) | 266 | 100% | ~81% | ~86% |
 | UI — System tests (Playwright + live server) | 30 | 100% | — | — |
-| **Total** | **1150+** | **100%** | — | — |
+| **Total** | **1204+** | **100%** | — | — |
 
 ---
 
@@ -23,7 +23,7 @@ Last updated: 2026-03-09
 | `internal/api/health` | 90.0% | Readyz DB-ping error path |
 | `internal/api/meta` | 88.8% | Handler bind-error branches in some handlers |
 | `internal/api/middleware` | 100.0% | |
-| `internal/api/operational` | 94.6% | Catalog handler at 100%; legacy handler bind-error branches |
+| `internal/api/operational` | 96.5% | Catalog + instance handlers; legacy handler bind-error branches |
 | `internal/domain/errors` | 100.0% | |
 | `internal/infrastructure/config` | 100.0% | |
 | `internal/infrastructure/gorm/models` | 100.0% | |
@@ -33,7 +33,7 @@ Last updated: 2026-03-09
 | `internal/operator/controllers` | 85.5% | `SetupWithManager`, Route reconciliation, complex controller paths |
 | `internal/operator/crdgen` | 84.2% | `GenerateCRDJSON`, `GenerateCR` error paths |
 | `internal/service/meta` | 94.6% | `ListAttributes` and `ListValues` at 0% (trivial delegators) |
-| `internal/service/operational` | 100.0% | |
+| `internal/service/operational` | 99.6% | 1 uncoverable `default:` label in switch |
 | `internal/service/validation` | 95.6% | |
 
 ### Excluded from Coverage
@@ -114,7 +114,8 @@ These methods are single-line delegations to the repository layer with no branch
 | `EnumListPage.browser.test.tsx` | 14 | Pass |
 | `CatalogVersionDetailPage.browser.test.tsx` | 27 | Pass |
 | `CatalogListPage.browser.test.tsx` | 11 | Pass |
-| **Total** | **254** | **100% pass** |
+| `CatalogDetailPage.browser.test.tsx` | 12 | Pass |
+| **Total** | **266** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
@@ -209,6 +210,31 @@ All new functions added in this session are at 100% coverage:
 | `infrastructure/gorm/repository/entity_instance_repo.go` | `DeleteByCatalogID` | 100% |
 
 `catalog_repo.go:List` at 90% — the `Find` error after `Count` succeeds requires the DB to fail between two queries in the same function, which cannot be triggered with the `closedDB` pattern.
+
+### New Code Coverage (Session 005 — Instance CRUD with Attributes)
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/operational/instance_service.go` | `NewInstanceService` | 100% |
+| `service/operational/instance_service.go` | `resolveEntityType` | 100% |
+| `service/operational/instance_service.go` | `resolveAttributeValues` | 100% |
+| `service/operational/instance_service.go` | `validateAndBuildAttributeValues` | 97% |
+| `service/operational/instance_service.go` | `CreateInstance` | 100% |
+| `service/operational/instance_service.go` | `GetInstance` | 100% |
+| `service/operational/instance_service.go` | `ListInstances` | 100% |
+| `service/operational/instance_service.go` | `UpdateInstance` | 100% |
+| `service/operational/instance_service.go` | `DeleteInstance` | 100% |
+| `service/operational/instance_service.go` | `cascadeDelete` | 100% |
+| `api/operational/instance_handler.go` | All 8 functions | 100% |
+| Service package total | | **99.6%** |
+| Handler package total | | **96.5%** |
+
+Remaining uncovered (5 lines):
+- `instance_service.go:173` — `default:` switch label (Go coverage instrumentation quirk; the body IS covered)
+- `catalog_repo.go:82-84` — `Find` error after `Count` succeeds (DB internal; requires failure between sequential queries)
+- `entity_instance_repo.go:71-73,91-93,120-122` — same `Find`-after-`Count` pattern across List/ListByParent
+
+Bug found during live testing: PostgreSQL migration — old `catalog_version_id` column on `entity_instances` table not dropped. Fixed with `InitDB` pre-migration that copies data and drops old column.
 
 ### Coverage Gaps to Address
 

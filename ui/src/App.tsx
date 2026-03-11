@@ -45,6 +45,7 @@ import EnumListPage from './pages/meta/EnumListPage'
 import EnumDetailPage from './pages/meta/EnumDetailPage'
 import CatalogVersionDetailPage from './pages/meta/CatalogVersionDetailPage'
 import CatalogListPage from './pages/operational/CatalogListPage'
+import CatalogDetailPage from './pages/operational/CatalogDetailPage'
 
 const ROLES: Role[] = ['RO', 'RW', 'Admin', 'SuperAdmin']
 
@@ -673,6 +674,7 @@ function App() {
     >
       <Routes>
         <Route path="/entity-types/:id" element={<EntityTypeDetailPage role={role} />} />
+        <Route path="/catalogs/:name" element={<CatalogDetailPage role={role} />} />
         <Route path="/catalog-versions/:id" element={<CatalogVersionDetailPage role={role} />} />
         <Route path="/enums/:id" element={<EnumDetailPage role={role} />} />
         <Route path="*" element={

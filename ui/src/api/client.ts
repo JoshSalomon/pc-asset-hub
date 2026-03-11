@@ -13,6 +13,7 @@ import type {
   VersionDiff,
   ContainmentTreeNode,
   VersionSnapshot,
+  EntityInstance,
   ListResponse,
 } from '../types'
 
@@ -203,5 +204,24 @@ export const api = {
       }),
     delete: (name: string) =>
       fetchJSON(`${DATA_BASE_URL}/catalogs/${name}`, { method: 'DELETE' }),
+  },
+
+  instances: {
+    list: (catalogName: string, entityTypeName: string) =>
+      fetchJSON<ListResponse<EntityInstance>>(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityTypeName}`),
+    get: (catalogName: string, entityTypeName: string, instanceId: string) =>
+      fetchJSON<EntityInstance>(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityTypeName}/${instanceId}`),
+    create: (catalogName: string, entityTypeName: string, data: { name: string; description?: string; attributes?: Record<string, unknown> }) =>
+      fetchJSON<EntityInstance>(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityTypeName}`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    update: (catalogName: string, entityTypeName: string, instanceId: string, data: { version: number; name?: string; description?: string; attributes?: Record<string, unknown> }) =>
+      fetchJSON<EntityInstance>(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityTypeName}/${instanceId}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    delete: (catalogName: string, entityTypeName: string, instanceId: string) =>
+      fetchJSON(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityTypeName}/${instanceId}`, { method: 'DELETE' }),
   },
 }
