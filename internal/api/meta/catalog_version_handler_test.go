@@ -345,6 +345,80 @@ func TestTE28_ListCVsWithStageFilter(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), `"testing"`)
 }
 
+// === Coverage: bind-error and service-error branches ===
+
+func TestCVCreate_BindError(t *testing.T) {
+	e := setupCVServer()
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions", "bad{json", apimw.RoleRW)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestCVCreate_ServiceError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	ltRepo := new(mocks.MockLifecycleTransitionRepo)
+	e := setupCVServerWithRepos(cvRepo, pinRepo, ltRepo, nil, nil)
+	cvRepo.On("Create", mock.Anything, mock.Anything).Return(domainerrors.NewValidation("bad label"))
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions",
+		`{"version_label":"v1.0"}`, apimw.RoleRW)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestCVList_ServiceError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+	cvRepo.On("List", mock.Anything, mock.Anything).Return(([]*models.CatalogVersion)(nil), 0, domainerrors.NewValidation("db error"))
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/catalog-versions", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestCVGetByID_ServiceError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+	cvRepo.On("GetByID", mock.Anything, "bad").Return(nil, domainerrors.NewNotFound("CatalogVersion", "bad"))
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/catalog-versions/bad", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestCVPromote_ServiceError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+	cvRepo.On("GetByID", mock.Anything, "bad").Return(nil, domainerrors.NewNotFound("CatalogVersion", "bad"))
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/bad/promote", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestCVDemote_BindError(t *testing.T) {
+	e := setupCVServer()
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/cv-test/demote", "bad{json", apimw.RoleRW)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestCVDemote_ServiceError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+	cvRepo.On("GetByID", mock.Anything, "bad").Return(nil, domainerrors.NewNotFound("CatalogVersion", "bad"))
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/bad/demote",
+		`{"target_stage":"development"}`, apimw.RoleRW)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestCVDelete_ServiceError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+	cvRepo.On("GetByID", mock.Anything, "bad").Return(nil, domainerrors.NewNotFound("CatalogVersion", "bad"))
+	rec := doRequest(e, http.MethodDelete, "/api/meta/v1/catalog-versions/bad", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestCVListTransitions_ServiceError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+	cvRepo.On("GetByID", mock.Anything, "bad").Return(nil, domainerrors.NewNotFound("CatalogVersion", "bad"))
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/catalog-versions/bad/transitions", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
 // T-E.29: GET /catalog-versions without stage returns all
 func TestTE29_ListCVsNoFilter(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)
@@ -360,4 +434,51 @@ func TestTE29_ListCVsNoFilter(t *testing.T) {
 	rec := doRequest(e, http.MethodGet, "/api/meta/v1/catalog-versions", "", apimw.RoleRO)
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), `"total":2`)
+}
+
+// Coverage: Create with pins (lines 29-31) — tests pin marshaling loop, service error after
+func TestCVCreate_WithPins(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+
+	// Service will fail trying to create but the handler's pin marshaling loop (lines 29-31) is exercised
+	cvRepo.On("Create", mock.Anything, mock.Anything).Return(domainerrors.NewValidation("db error"))
+
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions",
+		`{"version_label":"v1","pins":[{"entity_type_version_id":"etv1"}]}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// Coverage: Promote as SuperAdmin (line 87-88 switch case) — SuperAdmin triggers RoleSuperAdmin branch, service error
+func TestCVPromote_AsSuperAdmin(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(nil, domainerrors.NewNotFound("CV", "cv1"))
+
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/cv1/promote", "", apimw.RoleSuperAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// Coverage: Demote service error (line 116-118)
+func TestCVDemote_ServiceErrorPath(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(nil, domainerrors.NewNotFound("CV", "cv1"))
+
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/cv1/demote",
+		`{"target_stage":"development"}`, apimw.RoleSuperAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// Coverage: Delete service error (line 132-133)
+func TestCVDelete_ServiceErrorPath(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(nil, domainerrors.NewNotFound("CV", "cv1"))
+
+	rec := doRequest(e, http.MethodDelete, "/api/meta/v1/catalog-versions/cv1", "", apimw.RoleSuperAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
 }

@@ -113,8 +113,18 @@ type MockAssociationLinkRepo struct{ mock.Mock }
 func (m *MockAssociationLinkRepo) Create(ctx context.Context, link *models.AssociationLink) error {
 	return m.Called(ctx, link).Error(0)
 }
+func (m *MockAssociationLinkRepo) GetByID(ctx context.Context, id string) (*models.AssociationLink, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.AssociationLink), args.Error(1)
+}
 func (m *MockAssociationLinkRepo) Delete(ctx context.Context, id string) error {
 	return m.Called(ctx, id).Error(0)
+}
+func (m *MockAssociationLinkRepo) DeleteByInstance(ctx context.Context, instanceID string) error {
+	return m.Called(ctx, instanceID).Error(0)
 }
 func (m *MockAssociationLinkRepo) GetForwardRefs(ctx context.Context, sourceInstanceID string) ([]*models.AssociationLink, error) {
 	args := m.Called(ctx, sourceInstanceID)

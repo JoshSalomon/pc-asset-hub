@@ -88,7 +88,7 @@ func main() {
 	enumValRepo := gormrepo.NewEnumValueGormRepo(db)
 	instSvc := svcop.NewEntityInstanceService(instRepo, iavRepo, attrRepo, cvRepo, linkRepo)
 	catalogSvc := svcop.NewCatalogService(catalogRepo, cvRepo, instRepo)
-	instanceSvc := svcop.NewInstanceService(instRepo, iavRepo, catalogRepo, cvRepo, pinRepo, attrRepo, etvRepo, etRepo, enumValRepo)
+	instanceSvc := svcop.NewInstanceService(instRepo, iavRepo, catalogRepo, cvRepo, pinRepo, attrRepo, etvRepo, etRepo, enumValRepo, assocRepo, linkRepo)
 
 	// Handlers
 	etHandler := apimeta.NewEntityTypeHandler(etSvc)

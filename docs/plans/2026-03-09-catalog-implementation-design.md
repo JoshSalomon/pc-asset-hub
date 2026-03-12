@@ -137,6 +137,8 @@ Both UIs live in the same `ui/` codebase with two Vite entry points (`main-meta.
 - Association link management (link to existing instance, unlink)
 - References tab on instance detail
 
+**Deferred to Phase 4:** Multi-level containment URLs (e.g., `GET /{catalog}/a/{a-id}/b/{b-id}/c`) are not implemented in Phase 3. Single-level parent-child routes (`/{parent-type}/{parent-id}/{child-type}`) are sufficient for creating and navigating multi-level hierarchies — each level is addressed through its immediate parent. The deep URL path pattern is a browsing convenience that fits naturally with the Phase 4 containment tree endpoint.
+
 **User stories:** US-16, US-18, US-19, US-20
 
 ---

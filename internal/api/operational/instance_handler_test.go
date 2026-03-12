@@ -25,6 +25,7 @@ func setupInstanceServer() (*echo.Echo, *instanceMocks) {
 	svc := svcop.NewInstanceService(
 		m.instRepo, m.iavRepo, m.catalogRepo, m.cvRepo,
 		m.pinRepo, m.attrRepo, m.etvRepo, m.etRepo, m.enumValRepo,
+		m.assocRepo, m.linkRepo,
 	)
 	handler := apiop.NewInstanceHandler(svc)
 
@@ -48,6 +49,8 @@ type instanceMocks struct {
 	etvRepo     *mocks.MockEntityTypeVersionRepo
 	etRepo      *mocks.MockEntityTypeRepo
 	enumValRepo *mocks.MockEnumValueRepo
+	assocRepo   *mocks.MockAssociationRepo
+	linkRepo    *mocks.MockAssociationLinkRepo
 }
 
 func newInstanceMocks() *instanceMocks {
@@ -61,6 +64,8 @@ func newInstanceMocks() *instanceMocks {
 		etvRepo:     new(mocks.MockEntityTypeVersionRepo),
 		etRepo:      new(mocks.MockEntityTypeRepo),
 		enumValRepo: new(mocks.MockEnumValueRepo),
+		assocRepo:   new(mocks.MockAssociationRepo),
+		linkRepo:    new(mocks.MockAssociationLinkRepo),
 	}
 }
 
@@ -280,6 +285,7 @@ func TestT11_46_DeleteInstance(t *testing.T) {
 	m.mockPinResolution()
 
 	m.instRepo.On("ListByParent", mock.Anything, "i1", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
+	m.linkRepo.On("DeleteByInstance", mock.Anything, "i1").Return(nil)
 	m.instRepo.On("SoftDelete", mock.Anything, "i1").Return(nil)
 	m.catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
 
@@ -329,4 +335,313 @@ func TestCov_DeleteInstance_ServiceError(t *testing.T) {
 
 	rec := doInstanceRequest(e, http.MethodDelete, "/api/data/v1/catalogs/my-catalog/model/i1", "", apimw.RoleRW)
 	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// === SetParent Handler Tests ===
+
+func TestSetParent_Handler_Success(t *testing.T) {
+	e, m := setupInstanceServer()
+	mockTwoTypePinResolution(m)
+
+	m.instRepo.On("GetByID", mock.Anything, "c1").Return(&models.EntityInstance{
+		ID: "c1", EntityTypeID: "et2", CatalogID: "cat1", Version: 1,
+	}, nil)
+	m.instRepo.On("GetByID", mock.Anything, "p1").Return(&models.EntityInstance{
+		ID: "p1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	m.assocRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Association{
+		{ID: "a1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment},
+	}, nil)
+	m.instRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
+	m.catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	rec := doInstanceRequest(e, http.MethodPut, "/api/data/v1/catalogs/my-catalog/tool/c1/parent",
+		`{"parent_type":"server","parent_instance_id":"p1"}`, apimw.RoleRW)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestSetParent_Handler_BindError(t *testing.T) {
+	e, _ := setupInstanceServer()
+	rec := doInstanceRequest(e, http.MethodPut, "/api/data/v1/catalogs/my-catalog/tool/c1/parent", "bad{json", apimw.RoleRW)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestSetParent_Handler_ServiceError(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(nil, domainerrors.NewNotFound("Catalog", "bad"))
+	rec := doInstanceRequest(e, http.MethodPut, "/api/data/v1/catalogs/my-catalog/tool/c1/parent",
+		`{"parent_type":"server","parent_instance_id":"p1"}`, apimw.RoleRW)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestSetParent_Handler_AsRO(t *testing.T) {
+	e, _ := setupInstanceServer()
+	rec := doInstanceRequest(e, http.MethodPut, "/api/data/v1/catalogs/my-catalog/tool/c1/parent",
+		`{"parent_type":"server","parent_instance_id":"p1"}`, apimw.RoleRO)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// === Milestone 12: Handler Coverage Tests ===
+
+func TestCov_CreateContained_BindError(t *testing.T) {
+	e, _ := setupInstanceServer()
+	rec := doInstanceRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/server/p1/tool", "bad{json", apimw.RoleRW)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestCov_CreateContained_ServiceError(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(nil, domainerrors.NewNotFound("Catalog", "bad"))
+	rec := doInstanceRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/server/p1/tool", `{"name":"c"}`, apimw.RoleRW)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestCov_ListContained_ServiceError(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(nil, domainerrors.NewNotFound("Catalog", "bad"))
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/server/p1/tool", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestCov_CreateLink_BindError(t *testing.T) {
+	e, _ := setupInstanceServer()
+	rec := doInstanceRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/server/i1/links", "bad{json", apimw.RoleRW)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestCov_CreateLink_ServiceError(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(nil, domainerrors.NewNotFound("Catalog", "bad"))
+	rec := doInstanceRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/server/i1/links",
+		`{"target_instance_id":"i2","association_name":"uses"}`, apimw.RoleRW)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestCov_DeleteLink_ServiceError(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(nil, domainerrors.NewNotFound("Catalog", "bad"))
+	rec := doInstanceRequest(e, http.MethodDelete, "/api/data/v1/catalogs/my-catalog/server/i1/links/l1", "", apimw.RoleRW)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestCov_GetForwardRefs_ServiceError(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(nil, domainerrors.NewNotFound("Catalog", "bad"))
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/server/i1/references", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestCov_GetReverseRefs_ServiceError(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(nil, domainerrors.NewNotFound("Catalog", "bad"))
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/server/i1/referenced-by", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// === Milestone 12: Handler Tests ===
+
+func mockTwoTypePinResolution(m *instanceMocks) {
+	m.catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusDraft,
+	}, nil)
+	m.etRepo.On("GetByName", mock.Anything, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	m.etRepo.On("GetByName", mock.Anything, "tool").Return(&models.EntityType{ID: "et2", Name: "tool"}, nil)
+	m.pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv2"},
+	}, nil)
+	m.etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	m.etvRepo.On("GetByID", mock.Anything, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	m.attrRepo.On("ListByVersion", mock.Anything, "etv2").Return([]*models.Attribute{}, nil)
+}
+
+// T-12.37: POST /{catalog}/{parent-type}/{parent-id}/{child-type} → 201
+func TestT12_37_CreateContainedInstance(t *testing.T) {
+	e, m := setupInstanceServer()
+	mockTwoTypePinResolution(m)
+
+	m.instRepo.On("GetByID", mock.Anything, "p1").Return(&models.EntityInstance{
+		ID: "p1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	m.assocRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment, Name: "tools"},
+	}, nil)
+	m.instRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
+	m.iavRepo.On("GetCurrentValues", mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	rec := doInstanceRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/server/p1/tool",
+		`{"name":"my-tool","description":"desc"}`, apimw.RoleRW)
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, "my-tool", resp["name"])
+	assert.Equal(t, "p1", resp["parent_instance_id"])
+}
+
+// T-12.38: POST contained with nonexistent parent → 404
+func TestT12_38_ContainedNonexistentParent(t *testing.T) {
+	e, m := setupInstanceServer()
+	mockTwoTypePinResolution(m)
+
+	m.instRepo.On("GetByID", mock.Anything, "nope").Return(nil, domainerrors.NewNotFound("EntityInstance", "nope"))
+
+	rec := doInstanceRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/server/nope/tool",
+		`{"name":"child"}`, apimw.RoleRW)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// T-12.40: POST contained as RO → 403
+func TestT12_40_ContainedAsRO(t *testing.T) {
+	e, _ := setupInstanceServer()
+
+	rec := doInstanceRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/server/p1/tool",
+		`{"name":"child"}`, apimw.RoleRO)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// T-12.41: GET /{catalog}/{parent-type}/{parent-id}/{child-type} → 200
+func TestT12_41_ListContainedInstances(t *testing.T) {
+	e, m := setupInstanceServer()
+	mockTwoTypePinResolution(m)
+
+	m.instRepo.On("GetByID", mock.Anything, "p1").Return(&models.EntityInstance{
+		ID: "p1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	m.instRepo.On("ListByParent", mock.Anything, "p1", mock.Anything).Return([]*models.EntityInstance{
+		{ID: "c1", EntityTypeID: "et2", CatalogID: "cat1", ParentInstanceID: "p1", Name: "tool-a"},
+	}, 1, nil)
+	m.iavRepo.On("GetCurrentValues", mock.Anything, "c1").Return([]*models.InstanceAttributeValue{}, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/server/p1/tool", "", apimw.RoleRO)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	items := resp["items"].([]interface{})
+	assert.Len(t, items, 1)
+}
+
+// T-12.43: POST /{catalog}/{type}/{id}/links → 201
+func TestT12_43_CreateLink(t *testing.T) {
+	e, m := setupInstanceServer()
+	mockTwoTypePinResolution(m)
+
+	m.instRepo.On("GetByID", mock.Anything, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	m.instRepo.On("GetByID", mock.Anything, "inst2").Return(&models.EntityInstance{
+		ID: "inst2", EntityTypeID: "et2", CatalogID: "cat1", Version: 1,
+	}, nil)
+	m.assocRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2",
+			Type: models.AssociationTypeDirectional, Name: "uses"},
+	}, nil)
+	m.linkRepo.On("GetForwardRefs", mock.Anything, "inst1").Return([]*models.AssociationLink{}, nil)
+	m.linkRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.AssociationLink")).Return(nil)
+	m.catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	rec := doInstanceRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/server/inst1/links",
+		`{"target_instance_id":"inst2","association_name":"uses"}`, apimw.RoleRW)
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
+// T-12.47: POST link as RO → 403
+func TestT12_47_LinkAsRO(t *testing.T) {
+	e, _ := setupInstanceServer()
+
+	rec := doInstanceRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/server/inst1/links",
+		`{"target_instance_id":"inst2","association_name":"uses"}`, apimw.RoleRO)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// T-12.48: DELETE /{catalog}/{type}/{id}/links/{link-id} → 204
+func TestT12_48_DeleteLink(t *testing.T) {
+	e, m := setupInstanceServer()
+	mockTwoTypePinResolution(m)
+
+	m.linkRepo.On("GetByID", mock.Anything, "link1").Return(&models.AssociationLink{
+		ID: "link1", SourceInstanceID: "inst1",
+	}, nil)
+	m.instRepo.On("GetByID", mock.Anything, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1",
+	}, nil)
+	m.linkRepo.On("Delete", mock.Anything, "link1").Return(nil)
+	m.catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	rec := doInstanceRequest(e, http.MethodDelete, "/api/data/v1/catalogs/my-catalog/server/inst1/links/link1", "", apimw.RoleRW)
+
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+}
+
+// T-12.49: DELETE link as RO → 403
+func TestT12_49_DeleteLinkAsRO(t *testing.T) {
+	e, _ := setupInstanceServer()
+
+	rec := doInstanceRequest(e, http.MethodDelete, "/api/data/v1/catalogs/my-catalog/server/inst1/links/link1", "", apimw.RoleRO)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// T-12.51: GET /{catalog}/{type}/{id}/references → 200
+func TestT12_51_GetForwardRefs(t *testing.T) {
+	e, m := setupInstanceServer()
+	mockTwoTypePinResolution(m)
+
+	m.instRepo.On("GetByID", mock.Anything, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	m.linkRepo.On("GetForwardRefs", mock.Anything, "inst1").Return([]*models.AssociationLink{
+		{ID: "link1", AssociationID: "assoc1", SourceInstanceID: "inst1", TargetInstanceID: "inst2"},
+	}, nil)
+	m.assocRepo.On("GetByID", mock.Anything, "assoc1").Return(&models.Association{
+		ID: "assoc1", Name: "uses", Type: models.AssociationTypeDirectional, TargetEntityTypeID: "et2",
+	}, nil)
+	m.instRepo.On("GetByID", mock.Anything, "inst2").Return(&models.EntityInstance{
+		ID: "inst2", EntityTypeID: "et2", CatalogID: "cat1", Name: "my-model", Version: 1,
+	}, nil)
+	m.etRepo.On("GetByID", mock.Anything, "et2").Return(&models.EntityType{ID: "et2", Name: "model"}, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/server/inst1/references", "", apimw.RoleRO)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var refs []map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &refs))
+	assert.Len(t, refs, 1)
+	assert.Equal(t, "uses", refs[0]["association_name"])
+	assert.Equal(t, "my-model", refs[0]["instance_name"])
+}
+
+// T-12.52: GET /{catalog}/{type}/{id}/referenced-by → 200
+func TestT12_52_GetReverseRefs(t *testing.T) {
+	e, m := setupInstanceServer()
+	mockTwoTypePinResolution(m)
+
+	m.instRepo.On("GetByID", mock.Anything, "inst2").Return(&models.EntityInstance{
+		ID: "inst2", EntityTypeID: "et2", CatalogID: "cat1", Name: "my-tool", Version: 1,
+	}, nil)
+	m.linkRepo.On("GetReverseRefs", mock.Anything, "inst2").Return([]*models.AssociationLink{
+		{ID: "link1", AssociationID: "assoc1", SourceInstanceID: "inst1", TargetInstanceID: "inst2"},
+	}, nil)
+	m.assocRepo.On("GetByID", mock.Anything, "assoc1").Return(&models.Association{
+		ID: "assoc1", Name: "uses", Type: models.AssociationTypeDirectional,
+	}, nil)
+	m.instRepo.On("GetByID", mock.Anything, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Name: "my-server", Version: 1,
+	}, nil)
+	m.etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/tool/inst2/referenced-by", "", apimw.RoleRO)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var refs []map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &refs))
+	assert.Len(t, refs, 1)
+	assert.Equal(t, "my-server", refs[0]["instance_name"])
 }

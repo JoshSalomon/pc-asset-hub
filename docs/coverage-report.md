@@ -1,6 +1,6 @@
 # AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-03-09
+Last updated: 2026-03-11
 
 ---
 
@@ -8,11 +8,12 @@ Last updated: 2026-03-09
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 833+ | 100% | ~90% | — |
+| Backend (Go) | 940+ | 100% | 88.9% | — |
 | UI — Unit tests | 75 | 100% | 17.9% | 20.6% |
-| UI — Browser tests (Playwright) | 266 | 100% | ~81% | ~86% |
+| UI — Browser tests (Playwright) | 273 | 100% | ~81% | ~86% |
 | UI — System tests (Playwright + live server) | 30 | 100% | — | — |
-| **Total** | **1204+** | **100%** | — | — |
+| Live system (bash script) | 18 | 100% | — | — |
+| **Total** | **1336+** | **100%** | — | — |
 
 ---
 
@@ -21,9 +22,9 @@ Last updated: 2026-03-09
 | Package | Coverage | Notes |
 |---------|----------|-------|
 | `internal/api/health` | 90.0% | Readyz DB-ping error path |
-| `internal/api/meta` | 88.8% | Handler bind-error branches in some handlers |
+| `internal/api/meta` | 98.8% | Promote/Demote/Delete RoleRO/RW switch cases unreachable behind RBAC middleware |
 | `internal/api/middleware` | 100.0% | |
-| `internal/api/operational` | 96.5% | Catalog + instance handlers; legacy handler bind-error branches |
+| `internal/api/operational` | 97.7% | New instance_handler.go at 100%; legacy handler.go bind-error branches |
 | `internal/domain/errors` | 100.0% | |
 | `internal/infrastructure/config` | 100.0% | |
 | `internal/infrastructure/gorm/models` | 100.0% | |
@@ -33,7 +34,7 @@ Last updated: 2026-03-09
 | `internal/operator/controllers` | 85.5% | `SetupWithManager`, Route reconciliation, complex controller paths |
 | `internal/operator/crdgen` | 84.2% | `GenerateCRDJSON`, `GenerateCR` error paths |
 | `internal/service/meta` | 94.6% | `ListAttributes` and `ListValues` at 0% (trivial delegators) |
-| `internal/service/operational` | 99.6% | 1 uncoverable `default:` label in switch |
+| `internal/service/operational` | 100.0% | All new Phase 3 functions at 100% |
 | `internal/service/validation` | 95.6% | |
 
 ### Excluded from Coverage
@@ -114,8 +115,8 @@ These methods are single-line delegations to the repository layer with no branch
 | `EnumListPage.browser.test.tsx` | 14 | Pass |
 | `CatalogVersionDetailPage.browser.test.tsx` | 27 | Pass |
 | `CatalogListPage.browser.test.tsx` | 11 | Pass |
-| `CatalogDetailPage.browser.test.tsx` | 12 | Pass |
-| **Total** | **266** | **100% pass** |
+| `CatalogDetailPage.browser.test.tsx` | 19 | Pass |
+| **Total** | **273** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
@@ -238,6 +239,32 @@ Remaining uncovered (5 lines):
 Review fixes applied: (1) `resolveEntityType` now returns errors instead of silently continuing on pin resolution failure. (2) `UpdateInstance` validates attribute values before incrementing version, preventing inconsistent state. (3) `mapAttributeValues` extracted as shared helper, eliminating duplicate resolution logic.
 
 Bug found during live testing: PostgreSQL migration — old `catalog_version_id` column on `entity_instances` table not dropped. Fixed with `InitDB` pre-migration that copies data and drops old column.
+
+### New Code Coverage (Session 006 — Containment & Association Links)
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/operational/instance_service.go` | `CreateContainedInstance` | 100% |
+| `service/operational/instance_service.go` | `ListContainedInstances` | 100% |
+| `service/operational/instance_service.go` | `CreateAssociationLink` | 100% |
+| `service/operational/instance_service.go` | `DeleteAssociationLink` | 100% |
+| `service/operational/instance_service.go` | `GetForwardReferences` | 100% |
+| `service/operational/instance_service.go` | `GetReverseReferences` | 100% |
+| `service/operational/instance_service.go` | `resolveLinks` | 100% |
+| `service/operational/instance_service.go` | `cascadeDelete` | 100% |
+| `api/operational/instance_handler.go` | All 15 functions (incl. SetParent) | 100% |
+| `infrastructure/gorm/repository/association_link_repo.go` | `GetByID` | new |
+| `infrastructure/gorm/repository/association_link_repo.go` | `DeleteByInstance` | new |
+| Service package total | | **100.0%** |
+| `service/operational/instance_service.go` | `SetParent` | 100% |
+| `api/operational/instance_handler.go` | `SetParent` | 100% |
+| Handler package total | | **97.7%** (legacy handler.go has pre-existing uncovered bind-error branches)
+
+Quality review fixes applied: (H1) Route ambiguity resolved — static segments registered before parameterized. (H2) `ListContainedInstances` returns filtered count. (H3) `cascadeDelete` cleans up association links. (H4) `DeleteAssociationLink` verifies link ownership. (M2) Parent catalog validation. (M3) Same-catalog validation for links. (M6) Duplicate link prevention.
+
+UI bug fixes: Details pane closes on tab switch. Add Contained modal supports "Adopt Existing" mode. Link modal uses dropdowns for association and target instance. Set Container modal added for reparenting from child side. Buttons disabled when no applicable associations.
+
+Live system tests: `scripts/test-containment-links.sh` — 18 parameterized tests covering containment CRUD, validation, links, references, duplicate prevention, cascade delete with link cleanup.
 
 ### Coverage Gaps to Address
 

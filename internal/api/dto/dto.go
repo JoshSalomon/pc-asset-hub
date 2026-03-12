@@ -300,6 +300,37 @@ type AttributeValueResponse struct {
 	Value interface{} `json:"value"`
 }
 
+// === Association Link DTOs ===
+
+type CreateAssociationLinkRequest struct {
+	TargetInstanceID string `json:"target_instance_id" validate:"required"`
+	AssociationName  string `json:"association_name" validate:"required"`
+}
+
+type AssociationLinkResponse struct {
+	ID               string    `json:"id"`
+	AssociationID    string    `json:"association_id"`
+	SourceInstanceID string    `json:"source_instance_id"`
+	TargetInstanceID string    `json:"target_instance_id"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+type ReferenceResponse struct {
+	LinkID          string `json:"link_id"`
+	AssociationName string `json:"association_name"`
+	AssociationType string `json:"association_type"`
+	InstanceID      string `json:"instance_id"`
+	InstanceName    string `json:"instance_name"`
+	EntityTypeName  string `json:"entity_type_name"`
+}
+
+// === Set Parent DTO ===
+
+type SetParentRequest struct {
+	ParentType       string `json:"parent_type"`
+	ParentInstanceID string `json:"parent_instance_id"`
+}
+
 // === List Response ===
 
 type ListResponse struct {

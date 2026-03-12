@@ -165,6 +165,23 @@ export interface AttributeValueResponse {
   value: string | number | null
 }
 
+export interface AssociationLink {
+  id: string
+  association_id: string
+  source_instance_id: string
+  target_instance_id: string
+  created_at: string
+}
+
+export interface ReferenceDetail {
+  link_id: string
+  association_name: string
+  association_type: string
+  instance_id: string
+  instance_name: string
+  entity_type_name: string
+}
+
 export interface ListResponse<T> {
   items: T[]
   total: number

@@ -14,6 +14,8 @@ import type {
   ContainmentTreeNode,
   VersionSnapshot,
   EntityInstance,
+  AssociationLink,
+  ReferenceDetail,
   ListResponse,
 } from '../types'
 
@@ -223,5 +225,31 @@ export const api = {
       }),
     delete: (catalogName: string, entityTypeName: string, instanceId: string) =>
       fetchJSON(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityTypeName}/${instanceId}`, { method: 'DELETE' }),
+    setParent: (catalogName: string, entityType: string, instanceId: string, data: { parent_type: string; parent_instance_id: string }) =>
+      fetchJSON(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityType}/${instanceId}/parent`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    createContained: (catalogName: string, parentType: string, parentId: string, childType: string, data: { name: string; description?: string; attributes?: Record<string, unknown> }) =>
+      fetchJSON<EntityInstance>(`${DATA_BASE_URL}/catalogs/${catalogName}/${parentType}/${parentId}/${childType}`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    listContained: (catalogName: string, parentType: string, parentId: string, childType: string) =>
+      fetchJSON<ListResponse<EntityInstance>>(`${DATA_BASE_URL}/catalogs/${catalogName}/${parentType}/${parentId}/${childType}`),
+  },
+
+  links: {
+    create: (catalogName: string, entityType: string, instanceId: string, data: { target_instance_id: string; association_name: string }) =>
+      fetchJSON<AssociationLink>(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityType}/${instanceId}/links`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    delete: (catalogName: string, entityType: string, instanceId: string, linkId: string) =>
+      fetchJSON(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityType}/${instanceId}/links/${linkId}`, { method: 'DELETE' }),
+    forwardRefs: (catalogName: string, entityType: string, instanceId: string) =>
+      fetchJSON<ReferenceDetail[]>(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityType}/${instanceId}/references`),
+    reverseRefs: (catalogName: string, entityType: string, instanceId: string) =>
+      fetchJSON<ReferenceDetail[]>(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityType}/${instanceId}/referenced-by`),
   },
 }

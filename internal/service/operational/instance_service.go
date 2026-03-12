@@ -24,6 +24,8 @@ type InstanceService struct {
 	etvRepo     repository.EntityTypeVersionRepository
 	etRepo      repository.EntityTypeRepository
 	enumValRepo repository.EnumValueRepository
+	assocRepo   repository.AssociationRepository
+	linkRepo    repository.AssociationLinkRepository
 }
 
 func NewInstanceService(
@@ -36,6 +38,8 @@ func NewInstanceService(
 	etvRepo repository.EntityTypeVersionRepository,
 	etRepo repository.EntityTypeRepository,
 	enumValRepo repository.EnumValueRepository,
+	assocRepo repository.AssociationRepository,
+	linkRepo repository.AssociationLinkRepository,
 ) *InstanceService {
 	return &InstanceService{
 		instRepo:    instRepo,
@@ -47,6 +51,8 @@ func NewInstanceService(
 		etvRepo:     etvRepo,
 		etRepo:      etRepo,
 		enumValRepo: enumValRepo,
+		assocRepo:   assocRepo,
+		linkRepo:    linkRepo,
 	}
 }
 
@@ -153,6 +159,11 @@ func (s *InstanceService) validateAndBuildAttributeValues(ctx context.Context, e
 		attr, ok := attrByName[name]
 		if !ok {
 			return nil, domainerrors.NewValidation(fmt.Sprintf("unknown attribute: %s", name))
+		}
+
+		// Skip empty values (optional attributes not set in draft mode)
+		if rawVal == nil || rawVal == "" {
+			continue
 		}
 
 		iav := &models.InstanceAttributeValue{
@@ -395,6 +406,382 @@ func (s *InstanceService) DeleteInstance(ctx context.Context, catalogName, entit
 	return nil
 }
 
+func (s *InstanceService) CreateContainedInstance(ctx context.Context, catalogName, parentType, parentID, childType, name, description string, attrInput map[string]interface{}) (*InstanceDetail, error) {
+	// Resolve parent entity type
+	catalog, parentETV, err := s.resolveEntityType(ctx, catalogName, parentType)
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify parent instance exists and belongs to this catalog
+	parentInst, err := s.instRepo.GetByID(ctx, parentID)
+	if err != nil {
+		return nil, err
+	}
+	if parentInst.CatalogID != catalog.ID {
+		return nil, domainerrors.NewValidation("parent instance does not belong to this catalog")
+	}
+
+	// Resolve child entity type
+	_, childETV, err := s.resolveEntityType(ctx, catalogName, childType)
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify containment association exists between parent and child types in the CV
+	assocs, err := s.assocRepo.ListByVersion(ctx, parentETV.ID)
+	if err != nil {
+		return nil, err
+	}
+	found := false
+	for _, a := range assocs {
+		if a.Type == models.AssociationTypeContainment && a.TargetEntityTypeID == childETV.EntityTypeID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, domainerrors.NewValidation(fmt.Sprintf("no containment association from %s to %s", parentType, childType))
+	}
+
+	now := time.Now()
+	inst := &models.EntityInstance{
+		ID:               uuid.Must(uuid.NewV7()).String(),
+		EntityTypeID:     childETV.EntityTypeID,
+		CatalogID:        catalog.ID,
+		ParentInstanceID: parentID,
+		Name:             name,
+		Description:      description,
+		Version:          1,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+
+	if err := s.instRepo.Create(ctx, inst); err != nil {
+		return nil, err
+	}
+
+	if len(attrInput) > 0 {
+		values, err := s.validateAndBuildAttributeValues(ctx, childETV, inst.ID, 1, attrInput)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.iavRepo.SetValues(ctx, values); err != nil {
+			return nil, err
+		}
+	}
+
+	_ = s.catalogRepo.UpdateValidationStatus(ctx, catalog.ID, models.ValidationStatusDraft)
+
+	avs, err := s.resolveAttributeValues(ctx, inst, childETV)
+	if err != nil {
+		return nil, err
+	}
+
+	return &InstanceDetail{Instance: inst, Attributes: avs}, nil
+}
+
+func (s *InstanceService) ListContainedInstances(ctx context.Context, catalogName, parentType, parentID, childType string, params models.ListParams) ([]*InstanceDetail, int, error) {
+	// Resolve parent to validate catalog/type
+	_, _, err := s.resolveEntityType(ctx, catalogName, parentType)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Verify parent exists
+	if _, err := s.instRepo.GetByID(ctx, parentID); err != nil {
+		return nil, 0, err
+	}
+
+	// Resolve child entity type
+	_, childETV, err := s.resolveEntityType(ctx, catalogName, childType)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// List children by parent, filtered by entity type
+	children, _, err := s.instRepo.ListByParent(ctx, parentID, params)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Filter by child entity type
+	var filtered []*models.EntityInstance
+	for _, child := range children {
+		if child.EntityTypeID == childETV.EntityTypeID {
+			filtered = append(filtered, child)
+		}
+	}
+
+	// Fetch schema attributes once
+	attrs, err := s.attrRepo.ListByVersion(ctx, childETV.ID)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	details := make([]*InstanceDetail, len(filtered))
+	for i, inst := range filtered {
+		values, err := s.iavRepo.GetCurrentValues(ctx, inst.ID)
+		if err != nil {
+			return nil, 0, err
+		}
+		details[i] = &InstanceDetail{Instance: inst, Attributes: mapAttributeValues(attrs, values)}
+	}
+
+	return details, len(filtered), nil
+}
+
+// ReferenceDetail represents a resolved forward or reverse reference.
+type ReferenceDetail struct {
+	LinkID          string `json:"link_id"`
+	AssociationName string `json:"association_name"`
+	AssociationType string `json:"association_type"`
+	InstanceID      string `json:"instance_id"`
+	InstanceName    string `json:"instance_name"`
+	EntityTypeName  string `json:"entity_type_name"`
+}
+
+func (s *InstanceService) CreateAssociationLink(ctx context.Context, catalogName, entityTypeName, sourceInstanceID, targetInstanceID, associationName string) (*models.AssociationLink, error) {
+	catalog, sourceETV, err := s.resolveEntityType(ctx, catalogName, entityTypeName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify source instance exists and belongs to this catalog
+	sourceInst, err := s.instRepo.GetByID(ctx, sourceInstanceID)
+	if err != nil {
+		return nil, err
+	}
+	if sourceInst.CatalogID != catalog.ID {
+		return nil, domainerrors.NewValidation("source instance does not belong to this catalog")
+	}
+
+	// Verify target instance exists and belongs to same catalog
+	targetInst, err := s.instRepo.GetByID(ctx, targetInstanceID)
+	if err != nil {
+		return nil, err
+	}
+	if targetInst.CatalogID != catalog.ID {
+		return nil, domainerrors.NewValidation("target instance does not belong to this catalog")
+	}
+
+	// Find association definition by name in the source entity type version
+	assocs, err := s.assocRepo.ListByVersion(ctx, sourceETV.ID)
+	if err != nil {
+		return nil, err
+	}
+	var assoc *models.Association
+	for _, a := range assocs {
+		if a.Name == associationName {
+			assoc = a
+			break
+		}
+	}
+	if assoc == nil {
+		return nil, domainerrors.NewNotFound("Association", associationName)
+	}
+
+	// Validate target instance's entity type matches association's target
+	if targetInst.EntityTypeID != assoc.TargetEntityTypeID {
+		return nil, domainerrors.NewValidation(fmt.Sprintf("target instance entity type %s does not match association target %s", targetInst.EntityTypeID, assoc.TargetEntityTypeID))
+	}
+
+	// Check for duplicate link
+	existingLinks, err := s.linkRepo.GetForwardRefs(ctx, sourceInstanceID)
+	if err != nil {
+		return nil, err
+	}
+	for _, existing := range existingLinks {
+		if existing.AssociationID == assoc.ID && existing.TargetInstanceID == targetInstanceID {
+			return nil, domainerrors.NewConflict("AssociationLink", "link already exists")
+		}
+	}
+
+	link := &models.AssociationLink{
+		ID:               uuid.Must(uuid.NewV7()).String(),
+		AssociationID:    assoc.ID,
+		SourceInstanceID: sourceInstanceID,
+		TargetInstanceID: targetInstanceID,
+		CreatedAt:        time.Now(),
+	}
+
+	if err := s.linkRepo.Create(ctx, link); err != nil {
+		return nil, err
+	}
+
+	_ = s.catalogRepo.UpdateValidationStatus(ctx, catalog.ID, models.ValidationStatusDraft)
+
+	return link, nil
+}
+
+func (s *InstanceService) DeleteAssociationLink(ctx context.Context, catalogName, entityTypeName, linkID string) error {
+	catalog, _, err := s.resolveEntityType(ctx, catalogName, entityTypeName)
+	if err != nil {
+		return err
+	}
+
+	// Verify link exists and belongs to this catalog
+	link, err := s.linkRepo.GetByID(ctx, linkID)
+	if err != nil {
+		return err
+	}
+	sourceInst, err := s.instRepo.GetByID(ctx, link.SourceInstanceID)
+	if err != nil {
+		return err
+	}
+	if sourceInst.CatalogID != catalog.ID {
+		return domainerrors.NewValidation("link does not belong to this catalog")
+	}
+
+	if err := s.linkRepo.Delete(ctx, linkID); err != nil {
+		return err
+	}
+
+	_ = s.catalogRepo.UpdateValidationStatus(ctx, catalog.ID, models.ValidationStatusDraft)
+	return nil
+}
+
+func (s *InstanceService) GetForwardReferences(ctx context.Context, catalogName, entityTypeName, instanceID string) ([]ReferenceDetail, error) {
+	_, _, err := s.resolveEntityType(ctx, catalogName, entityTypeName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify instance exists
+	if _, err := s.instRepo.GetByID(ctx, instanceID); err != nil {
+		return nil, err
+	}
+
+	links, err := s.linkRepo.GetForwardRefs(ctx, instanceID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.resolveLinks(ctx, links, false)
+}
+
+func (s *InstanceService) GetReverseReferences(ctx context.Context, catalogName, entityTypeName, instanceID string) ([]ReferenceDetail, error) {
+	_, _, err := s.resolveEntityType(ctx, catalogName, entityTypeName)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := s.instRepo.GetByID(ctx, instanceID); err != nil {
+		return nil, err
+	}
+
+	links, err := s.linkRepo.GetReverseRefs(ctx, instanceID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.resolveLinks(ctx, links, true)
+}
+
+// resolveLinks resolves association links to ReferenceDetails.
+// If reverse is true, the "other" instance is the source; otherwise it's the target.
+func (s *InstanceService) resolveLinks(ctx context.Context, links []*models.AssociationLink, reverse bool) ([]ReferenceDetail, error) {
+	refs := make([]ReferenceDetail, 0, len(links))
+	for _, link := range links {
+		assoc, err := s.assocRepo.GetByID(ctx, link.AssociationID)
+		if err != nil {
+			return nil, err
+		}
+
+		otherID := link.TargetInstanceID
+		if reverse {
+			otherID = link.SourceInstanceID
+		}
+
+		otherInst, err := s.instRepo.GetByID(ctx, otherID)
+		if err != nil {
+			return nil, err
+		}
+
+		et, err := s.etRepo.GetByID(ctx, otherInst.EntityTypeID)
+		if err != nil {
+			return nil, err
+		}
+
+		refs = append(refs, ReferenceDetail{
+			LinkID:          link.ID,
+			AssociationName: assoc.Name,
+			AssociationType: string(assoc.Type),
+			InstanceID:      otherInst.ID,
+			InstanceName:    otherInst.Name,
+			EntityTypeName:  et.Name,
+		})
+	}
+	return refs, nil
+}
+
+func (s *InstanceService) SetParent(ctx context.Context, catalogName, childTypeName, childID, parentTypeName, parentID string) error {
+	catalog, _, err := s.resolveEntityType(ctx, catalogName, childTypeName)
+	if err != nil {
+		return err
+	}
+
+	// Verify child instance exists and belongs to this catalog
+	childInst, err := s.instRepo.GetByID(ctx, childID)
+	if err != nil {
+		return err
+	}
+	if childInst.CatalogID != catalog.ID {
+		return domainerrors.NewValidation("instance does not belong to this catalog")
+	}
+
+	if parentID == "" {
+		// Clear parent
+		childInst.ParentInstanceID = ""
+		childInst.UpdatedAt = time.Now()
+		if err := s.instRepo.Update(ctx, childInst); err != nil {
+			return err
+		}
+		_ = s.catalogRepo.UpdateValidationStatus(ctx, catalog.ID, models.ValidationStatusDraft)
+		return nil
+	}
+
+	// Resolve parent entity type
+	_, parentETV, err := s.resolveEntityType(ctx, catalogName, parentTypeName)
+	if err != nil {
+		return err
+	}
+
+	// Verify parent instance exists and belongs to this catalog
+	parentInst, err := s.instRepo.GetByID(ctx, parentID)
+	if err != nil {
+		return err
+	}
+	if parentInst.CatalogID != catalog.ID {
+		return domainerrors.NewValidation("parent instance does not belong to this catalog")
+	}
+
+	// Verify containment association exists from parent type to child type
+	assocs, err := s.assocRepo.ListByVersion(ctx, parentETV.ID)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, a := range assocs {
+		if a.Type == models.AssociationTypeContainment && a.TargetEntityTypeID == childInst.EntityTypeID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return domainerrors.NewValidation(fmt.Sprintf("no containment association from %s to %s", parentTypeName, childTypeName))
+	}
+
+	childInst.ParentInstanceID = parentID
+	childInst.UpdatedAt = time.Now()
+	if err := s.instRepo.Update(ctx, childInst); err != nil {
+		return err
+	}
+
+	_ = s.catalogRepo.UpdateValidationStatus(ctx, catalog.ID, models.ValidationStatusDraft)
+	return nil
+}
+
 func (s *InstanceService) cascadeDelete(ctx context.Context, id string) error {
 	children, _, err := s.instRepo.ListByParent(ctx, id, models.ListParams{Limit: 1000})
 	if err != nil {
@@ -404,6 +791,10 @@ func (s *InstanceService) cascadeDelete(ctx context.Context, id string) error {
 		if err := s.cascadeDelete(ctx, child.ID); err != nil {
 			return err
 		}
+	}
+	// Clean up association links where this instance is source or target
+	if err := s.linkRepo.DeleteByInstance(ctx, id); err != nil {
+		return err
 	}
 	return s.instRepo.SoftDelete(ctx, id)
 }

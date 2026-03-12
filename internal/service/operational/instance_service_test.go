@@ -25,6 +25,8 @@ type instanceTestSetup struct {
 	etvRepo     *mocks.MockEntityTypeVersionRepo
 	etRepo      *mocks.MockEntityTypeRepo
 	enumValRepo *mocks.MockEnumValueRepo
+	assocRepo   *mocks.MockAssociationRepo
+	linkRepo    *mocks.MockAssociationLinkRepo
 }
 
 func setupInstanceService() *instanceTestSetup {
@@ -38,10 +40,13 @@ func setupInstanceService() *instanceTestSetup {
 		etvRepo:     new(mocks.MockEntityTypeVersionRepo),
 		etRepo:      new(mocks.MockEntityTypeRepo),
 		enumValRepo: new(mocks.MockEnumValueRepo),
+		assocRepo:   new(mocks.MockAssociationRepo),
+		linkRepo:    new(mocks.MockAssociationLinkRepo),
 	}
 	s.svc = operational.NewInstanceService(
 		s.instRepo, s.iavRepo, s.catalogRepo, s.cvRepo,
 		s.pinRepo, s.attrRepo, s.etvRepo, s.etRepo, s.enumValRepo,
+		s.assocRepo, s.linkRepo,
 	)
 	return s
 }
@@ -465,7 +470,9 @@ func TestT11_31_CascadeDelete(t *testing.T) {
 		{ID: "child1"},
 	}, 1, nil)
 	s.instRepo.On("ListByParent", ctx, "child1", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
+	s.linkRepo.On("DeleteByInstance", ctx, "child1").Return(nil)
 	s.instRepo.On("SoftDelete", ctx, "child1").Return(nil)
+	s.linkRepo.On("DeleteByInstance", ctx, "parent1").Return(nil)
 	s.instRepo.On("SoftDelete", ctx, "parent1").Return(nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
@@ -529,6 +536,7 @@ func TestT11_34_DeleteResetsDraft(t *testing.T) {
 	s.mockPinResolution(ctx)
 
 	s.instRepo.On("ListByParent", ctx, "inst1", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
+	s.linkRepo.On("DeleteByInstance", ctx, "inst1").Return(nil)
 	s.instRepo.On("SoftDelete", ctx, "inst1").Return(nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
@@ -936,6 +944,681 @@ func TestCov_ListInstances_WithValues(t *testing.T) {
 	assert.Equal(t, "active", details[0].Attributes[2].Value)
 }
 
+// === Milestone 12: Containment & Association Links ===
+
+// T-12.05: CreateContainedInstance with valid parent and containment association in CV
+func TestT12_05_CreateContainedInstance(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	// Set up catalog with two pinned entity types: "server" (et1/etv1) and "tool" (et2/etv2)
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusDraft,
+	}, nil)
+	// Parent entity type "server"
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	// Child entity type "tool"
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2", Name: "tool"}, nil)
+	// Pins for both
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{
+		ID: "etv2", EntityTypeID: "et2", Version: 1,
+	}, nil)
+	// Parent instance exists
+	s.instRepo.On("GetByID", ctx, "parent1").Return(&models.EntityInstance{
+		ID: "parent1", EntityTypeID: "et1", CatalogID: "cat1", Name: "my-server", Version: 1,
+	}, nil)
+	// Containment association exists in CV (server contains tool)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2",
+			Type: models.AssociationTypeContainment, Name: "tools"},
+	}, nil)
+	// Attributes for child type
+	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	// Instance creation
+	s.instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	detail, err := s.svc.CreateContainedInstance(ctx, "my-catalog", "server", "parent1", "tool", "my-tool", "a tool", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "my-tool", detail.Instance.Name)
+	assert.Equal(t, "parent1", detail.Instance.ParentInstanceID)
+	assert.Equal(t, "et2", detail.Instance.EntityTypeID)
+	assert.Equal(t, "cat1", detail.Instance.CatalogID)
+}
+
+// T-12.06: CreateContainedInstance with nonexistent parent
+func TestT12_06_ContainedInstance_NonexistentParent(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "nope").Return(nil, domainerrors.NewNotFound("EntityInstance", "nope"))
+
+	_, err := s.svc.CreateContainedInstance(ctx, "my-catalog", "server", "nope", "tool", "my-tool", "", nil)
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// T-12.07: CreateContainedInstance with no containment relationship
+func TestT12_07_ContainedInstance_NoContainmentRelation(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.etRepo.On("GetByName", ctx, "model").Return(&models.EntityType{ID: "et3", Name: "model"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+		{ID: "pin3", CatalogVersionID: "cv1", EntityTypeVersionID: "etv3"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv3").Return(&models.EntityTypeVersion{
+		ID: "etv3", EntityTypeID: "et3", Version: 1,
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "parent1").Return(&models.EntityInstance{
+		ID: "parent1", EntityTypeID: "et1", CatalogID: "cat1", Name: "my-server", Version: 1,
+	}, nil)
+	// No containment association between server and model
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+
+	_, err := s.svc.CreateContainedInstance(ctx, "my-catalog", "server", "parent1", "model", "my-model", "", nil)
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+// T-12.08: CreateContainedInstance with child type not pinned in CV
+func TestT12_08_ContainedInstance_ChildNotPinned(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "parent1").Return(&models.EntityInstance{
+		ID: "parent1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	// "unpinned" entity type resolves but is not pinned
+	s.etRepo.On("GetByName", ctx, "unpinned").Return(&models.EntityType{ID: "et-unpinned", Name: "unpinned"}, nil)
+
+	_, err := s.svc.CreateContainedInstance(ctx, "my-catalog", "server", "parent1", "unpinned", "child", "", nil)
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// T-12.09: Same name under different parents → allowed
+func TestT12_09_ContainedInstance_SameNameDiffParents(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusDraft,
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2", Name: "tool"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment, Name: "tools"},
+	}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	s.instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	// Create under parent1
+	s.instRepo.On("GetByID", ctx, "parent1").Return(&models.EntityInstance{
+		ID: "parent1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	d1, err := s.svc.CreateContainedInstance(ctx, "my-catalog", "server", "parent1", "tool", "same-name", "", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "parent1", d1.Instance.ParentInstanceID)
+
+	// Create under parent2 with same name — should succeed
+	s.instRepo.On("GetByID", ctx, "parent2").Return(&models.EntityInstance{
+		ID: "parent2", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	d2, err := s.svc.CreateContainedInstance(ctx, "my-catalog", "server", "parent2", "tool", "same-name", "", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "parent2", d2.Instance.ParentInstanceID)
+}
+
+// T-12.10: Duplicate name under same parent → conflict
+func TestT12_10_ContainedInstance_DuplicateNameSameParent(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2", Name: "tool"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "parent1").Return(&models.EntityInstance{
+		ID: "parent1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment, Name: "tools"},
+	}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	s.instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(
+		domainerrors.NewConflict("EntityInstance", "name exists"),
+	)
+
+	_, err := s.svc.CreateContainedInstance(ctx, "my-catalog", "server", "parent1", "tool", "dup-name", "", nil)
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsConflict(err))
+}
+
+// T-12.11: ListContainedInstances returns only direct children of specified type
+func TestT12_11_ListContainedInstances(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2", Name: "tool"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "parent1").Return(&models.EntityInstance{
+		ID: "parent1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	// Return mixed children — one tool (et2), one other type (et3)
+	s.instRepo.On("ListByParent", ctx, "parent1", mock.Anything).Return([]*models.EntityInstance{
+		{ID: "child1", EntityTypeID: "et2", CatalogID: "cat1", ParentInstanceID: "parent1", Name: "tool-a"},
+		{ID: "child2", EntityTypeID: "et3", CatalogID: "cat1", ParentInstanceID: "parent1", Name: "other"},
+	}, 2, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	s.iavRepo.On("GetCurrentValues", ctx, "child1").Return([]*models.InstanceAttributeValue{}, nil)
+
+	details, _, err := s.svc.ListContainedInstances(ctx, "my-catalog", "server", "parent1", "tool", models.ListParams{Limit: 20})
+	require.NoError(t, err)
+	assert.Len(t, details, 1)
+	assert.Equal(t, "tool-a", details[0].Instance.Name)
+}
+
+// T-12.12: CreateContainedInstance resets catalog validation status to draft
+func TestT12_12_ContainedInstance_ResetsDraft(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "valid-cat").Return(&models.Catalog{
+		ID: "cat2", Name: "valid-cat", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2", Name: "tool"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "parent1").Return(&models.EntityInstance{
+		ID: "parent1", EntityTypeID: "et1", CatalogID: "cat2", Version: 1,
+	}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment, Name: "tools"},
+	}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	s.instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat2", models.ValidationStatusDraft).Return(nil)
+
+	_, err := s.svc.CreateContainedInstance(ctx, "valid-cat", "server", "parent1", "tool", "my-tool", "", nil)
+	require.NoError(t, err)
+	s.catalogRepo.AssertCalled(t, "UpdateValidationStatus", ctx, "cat2", models.ValidationStatusDraft)
+}
+
+// T-12.13: CreateContainedInstance with attribute values
+func TestT12_13_ContainedInstance_WithAttributes(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusDraft,
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2", Name: "tool"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "parent1").Return(&models.EntityInstance{
+		ID: "parent1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment, Name: "tools"},
+	}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{
+		{ID: "a1", Name: "description", Type: models.AttributeTypeString, EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		return len(vals) == 1 && vals[0].ValueString == "a useful tool"
+	})).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{
+		{AttributeID: "a1", ValueString: "a useful tool", InstanceVersion: 1},
+	}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	detail, err := s.svc.CreateContainedInstance(ctx, "my-catalog", "server", "parent1", "tool", "my-tool", "", map[string]interface{}{
+		"description": "a useful tool",
+	})
+	require.NoError(t, err)
+	assert.Len(t, detail.Attributes, 1)
+	assert.Equal(t, "a useful tool", detail.Attributes[0].Value)
+}
+
+// === Association Link Service Tests ===
+
+// T-12.19: CreateAssociationLink with valid association definition in CV
+func TestT12_19_CreateAssociationLink(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusDraft,
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	// Source instance
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	// Target instance
+	s.instRepo.On("GetByID", ctx, "inst2").Return(&models.EntityInstance{
+		ID: "inst2", EntityTypeID: "et2", CatalogID: "cat1", Version: 1,
+	}, nil)
+	// Association definition: server → model (directional)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2",
+			Type: models.AssociationTypeDirectional, Name: "uses-model"},
+	}, nil)
+	s.linkRepo.On("GetForwardRefs", ctx, "inst1").Return([]*models.AssociationLink{}, nil)
+	s.linkRepo.On("Create", ctx, mock.AnythingOfType("*models.AssociationLink")).Return(nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	link, err := s.svc.CreateAssociationLink(ctx, "my-catalog", "server", "inst1", "inst2", "uses-model")
+	require.NoError(t, err)
+	assert.Equal(t, "assoc1", link.AssociationID)
+	assert.Equal(t, "inst1", link.SourceInstanceID)
+	assert.Equal(t, "inst2", link.TargetInstanceID)
+}
+
+// T-12.20: CreateAssociationLink with nonexistent association name
+func TestT12_20_LinkNonexistentAssociation(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "inst2").Return(&models.EntityInstance{
+		ID: "inst2", EntityTypeID: "et2", CatalogID: "cat1", Version: 1,
+	}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+
+	_, err := s.svc.CreateAssociationLink(ctx, "my-catalog", "server", "inst1", "inst2", "nonexistent")
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// T-12.22: CreateAssociationLink target entity type does not match
+func TestT12_22_LinkMismatchedTargetType(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	// Target instance is et3, but association expects et2
+	s.instRepo.On("GetByID", ctx, "inst3").Return(&models.EntityInstance{
+		ID: "inst3", EntityTypeID: "et3", CatalogID: "cat1", Version: 1,
+	}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2",
+			Type: models.AssociationTypeDirectional, Name: "uses-model"},
+	}, nil)
+
+	_, err := s.svc.CreateAssociationLink(ctx, "my-catalog", "server", "inst1", "inst3", "uses-model")
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+// T-12.23: CreateAssociationLink with nonexistent target instance
+func TestT12_23_LinkNonexistentTarget(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "nope").Return(nil, domainerrors.NewNotFound("EntityInstance", "nope"))
+
+	_, err := s.svc.CreateAssociationLink(ctx, "my-catalog", "server", "inst1", "nope", "uses-model")
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// T-12.25: DeleteAssociationLink removes link
+func TestT12_25_DeleteAssociationLink(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.linkRepo.On("GetByID", ctx, "link1").Return(&models.AssociationLink{
+		ID: "link1", SourceInstanceID: "inst1",
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1",
+	}, nil)
+	s.linkRepo.On("Delete", ctx, "link1").Return(nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	err := s.svc.DeleteAssociationLink(ctx, "my-catalog", "server", "link1")
+	require.NoError(t, err)
+	s.linkRepo.AssertCalled(t, "Delete", ctx, "link1")
+}
+
+// T-12.26: DeleteAssociationLink nonexistent → NotFound
+func TestT12_26_DeleteLinkNotFound(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.linkRepo.On("GetByID", ctx, "nope").Return(nil, domainerrors.NewNotFound("AssociationLink", "nope"))
+
+	err := s.svc.DeleteAssociationLink(ctx, "my-catalog", "server", "nope")
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// T-12.27: CreateAssociationLink resets catalog validation status to draft
+func TestT12_27_LinkResetsDraft(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "valid-cat").Return(&models.Catalog{
+		ID: "cat2", Name: "valid-cat", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat2", Version: 1,
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "inst2").Return(&models.EntityInstance{
+		ID: "inst2", EntityTypeID: "et2", CatalogID: "cat2", Version: 1,
+	}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2",
+			Type: models.AssociationTypeDirectional, Name: "uses-model"},
+	}, nil)
+	s.linkRepo.On("GetForwardRefs", ctx, "inst1").Return([]*models.AssociationLink{}, nil)
+	s.linkRepo.On("Create", ctx, mock.AnythingOfType("*models.AssociationLink")).Return(nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat2", models.ValidationStatusDraft).Return(nil)
+
+	_, err := s.svc.CreateAssociationLink(ctx, "valid-cat", "server", "inst1", "inst2", "uses-model")
+	require.NoError(t, err)
+	s.catalogRepo.AssertCalled(t, "UpdateValidationStatus", ctx, "cat2", models.ValidationStatusDraft)
+}
+
+// T-12.28: DeleteAssociationLink resets catalog validation status to draft
+func TestT12_28_DeleteLinkResetsDraft(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "valid-cat").Return(&models.Catalog{
+		ID: "cat2", Name: "valid-cat", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.linkRepo.On("GetByID", ctx, "link1").Return(&models.AssociationLink{
+		ID: "link1", SourceInstanceID: "inst1",
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat2",
+	}, nil)
+	s.linkRepo.On("Delete", ctx, "link1").Return(nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat2", models.ValidationStatusDraft).Return(nil)
+
+	err := s.svc.DeleteAssociationLink(ctx, "valid-cat", "server", "link1")
+	require.NoError(t, err)
+	s.catalogRepo.AssertCalled(t, "UpdateValidationStatus", ctx, "cat2", models.ValidationStatusDraft)
+}
+
+// === Forward/Reverse Reference Service Tests ===
+
+// T-12.29: GetForwardReferences returns resolved target info
+func TestT12_29_GetForwardReferences(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	// Source instance
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	// Forward refs return links
+	s.linkRepo.On("GetForwardRefs", ctx, "inst1").Return([]*models.AssociationLink{
+		{ID: "link1", AssociationID: "assoc1", SourceInstanceID: "inst1", TargetInstanceID: "inst2"},
+	}, nil)
+	// Resolve association
+	s.assocRepo.On("GetByID", ctx, "assoc1").Return(&models.Association{
+		ID: "assoc1", Name: "uses-model", Type: models.AssociationTypeDirectional, TargetEntityTypeID: "et2",
+	}, nil)
+	// Resolve target instance
+	s.instRepo.On("GetByID", ctx, "inst2").Return(&models.EntityInstance{
+		ID: "inst2", EntityTypeID: "et2", CatalogID: "cat1", Name: "my-model", Version: 1,
+	}, nil)
+	// Resolve target entity type name
+	s.etRepo.On("GetByID", ctx, "et2").Return(&models.EntityType{ID: "et2", Name: "model"}, nil)
+
+	refs, err := s.svc.GetForwardReferences(ctx, "my-catalog", "server", "inst1")
+	require.NoError(t, err)
+	assert.Len(t, refs, 1)
+	assert.Equal(t, "link1", refs[0].LinkID)
+	assert.Equal(t, "uses-model", refs[0].AssociationName)
+	assert.Equal(t, string(models.AssociationTypeDirectional), refs[0].AssociationType)
+	assert.Equal(t, "inst2", refs[0].InstanceID)
+	assert.Equal(t, "my-model", refs[0].InstanceName)
+	assert.Equal(t, "model", refs[0].EntityTypeName)
+}
+
+// T-12.32: GetForwardReferences for instance with no links
+func TestT12_32_ForwardRefsEmpty(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	s.linkRepo.On("GetForwardRefs", ctx, "inst1").Return([]*models.AssociationLink{}, nil)
+
+	refs, err := s.svc.GetForwardReferences(ctx, "my-catalog", "server", "inst1")
+	require.NoError(t, err)
+	assert.Len(t, refs, 0)
+}
+
+// T-12.33: GetReverseReferences returns resolved source info
+func TestT12_33_GetReverseReferences(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "model").Return(&models.EntityType{ID: "et2", Name: "model"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	// Target instance (being referenced)
+	s.instRepo.On("GetByID", ctx, "inst2").Return(&models.EntityInstance{
+		ID: "inst2", EntityTypeID: "et2", CatalogID: "cat1", Name: "my-model", Version: 1,
+	}, nil)
+	// Reverse refs
+	s.linkRepo.On("GetReverseRefs", ctx, "inst2").Return([]*models.AssociationLink{
+		{ID: "link1", AssociationID: "assoc1", SourceInstanceID: "inst1", TargetInstanceID: "inst2"},
+	}, nil)
+	s.assocRepo.On("GetByID", ctx, "assoc1").Return(&models.Association{
+		ID: "assoc1", Name: "uses-model", Type: models.AssociationTypeDirectional, TargetEntityTypeID: "et2",
+	}, nil)
+	// Resolve source instance
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Name: "my-server", Version: 1,
+	}, nil)
+	s.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+
+	refs, err := s.svc.GetReverseReferences(ctx, "my-catalog", "model", "inst2")
+	require.NoError(t, err)
+	assert.Len(t, refs, 1)
+	assert.Equal(t, "link1", refs[0].LinkID)
+	assert.Equal(t, "uses-model", refs[0].AssociationName)
+	assert.Equal(t, "inst1", refs[0].InstanceID)
+	assert.Equal(t, "my-server", refs[0].InstanceName)
+	assert.Equal(t, "server", refs[0].EntityTypeName)
+}
+
+// T-12.36: GetReverseReferences for instance with no incoming links
+func TestT12_36_ReverseRefsEmpty(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "model").Return(&models.EntityType{ID: "et2", Name: "model"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "inst2").Return(&models.EntityInstance{
+		ID: "inst2", EntityTypeID: "et2", CatalogID: "cat1", Version: 1,
+	}, nil)
+	s.linkRepo.On("GetReverseRefs", ctx, "inst2").Return([]*models.AssociationLink{}, nil)
+
+	refs, err := s.svc.GetReverseReferences(ctx, "my-catalog", "model", "inst2")
+	require.NoError(t, err)
+	assert.Len(t, refs, 0)
+}
+
 // Carry-forward: update with non-empty previous values
 func TestCov_UpdateInstance_CarryForward(t *testing.T) {
 	s := setupInstanceService()
@@ -968,4 +1651,978 @@ func TestCov_UpdateInstance_CarryForward(t *testing.T) {
 	s.iavRepo.AssertCalled(t, "SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 2
 	}))
+}
+
+// === Coverage: Containment & Links error paths ===
+
+func TestCov_CreateContained_AssocRepoError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "p1").Return(&models.EntityInstance{ID: "p1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return(nil, domainerrors.NewValidation("db error"))
+	_, err := s.svc.CreateContainedInstance(ctx, "cat", "server", "p1", "tool", "child", "", nil)
+	assert.Error(t, err)
+}
+
+func TestCov_CreateContained_CreateError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "p1").Return(&models.EntityInstance{ID: "p1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "a1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment},
+	}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	s.instRepo.On("Create", ctx, mock.Anything).Return(domainerrors.NewValidation("db error"))
+	_, err := s.svc.CreateContainedInstance(ctx, "cat", "server", "p1", "tool", "child", "", nil)
+	assert.Error(t, err)
+}
+
+func TestCov_ListContained_ParentNotFound(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "nope").Return(nil, domainerrors.NewNotFound("EntityInstance", "nope"))
+	_, _, err := s.svc.ListContainedInstances(ctx, "cat", "server", "nope", "tool", models.ListParams{Limit: 20})
+	assert.Error(t, err)
+}
+
+func TestCov_ListContained_ChildResolveError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "p1").Return(&models.EntityInstance{ID: "p1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.etRepo.On("GetByName", ctx, "bad").Return(nil, domainerrors.NewNotFound("EntityType", "bad"))
+	_, _, err := s.svc.ListContainedInstances(ctx, "cat", "server", "p1", "bad", models.ListParams{Limit: 20})
+	assert.Error(t, err)
+}
+
+func TestCov_ListContained_ListByParentError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "p1").Return(&models.EntityInstance{ID: "p1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.instRepo.On("ListByParent", ctx, "p1", mock.Anything).Return(nil, 0, domainerrors.NewValidation("db error"))
+	_, _, err := s.svc.ListContainedInstances(ctx, "cat", "server", "p1", "tool", models.ListParams{Limit: 20})
+	assert.Error(t, err)
+}
+
+func TestCov_CreateLink_AssocRepoError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.instRepo.On("GetByID", ctx, "i2").Return(&models.EntityInstance{ID: "i2", EntityTypeID: "et2", CatalogID: "c1"}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return(([]*models.Association)(nil), domainerrors.NewValidation("db error"))
+	_, err := s.svc.CreateAssociationLink(ctx, "cat", "server", "i1", "i2", "uses")
+	assert.Error(t, err)
+}
+
+func TestCov_GetForwardRefs_LinkRepoError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.linkRepo.On("GetForwardRefs", ctx, "i1").Return([]*models.AssociationLink{}, domainerrors.NewValidation("db error"))
+	_, err := s.svc.GetForwardReferences(ctx, "cat", "server", "i1")
+	assert.Error(t, err)
+}
+
+func TestCov_ResolveLinks_AssocError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.linkRepo.On("GetForwardRefs", ctx, "i1").Return([]*models.AssociationLink{
+		{ID: "l1", AssociationID: "a1", SourceInstanceID: "i1", TargetInstanceID: "i2"},
+	}, nil)
+	s.assocRepo.On("GetByID", ctx, "a1").Return(nil, domainerrors.NewNotFound("Association", "a1"))
+	_, err := s.svc.GetForwardReferences(ctx, "cat", "server", "i1")
+	assert.Error(t, err)
+}
+
+func TestCov_ResolveLinks_InstanceError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.linkRepo.On("GetForwardRefs", ctx, "i1").Return([]*models.AssociationLink{
+		{ID: "l1", AssociationID: "a1", SourceInstanceID: "i1", TargetInstanceID: "i2"},
+	}, nil)
+	s.assocRepo.On("GetByID", ctx, "a1").Return(&models.Association{ID: "a1", Name: "x", Type: "directional"}, nil)
+	s.instRepo.On("GetByID", ctx, "i2").Return(nil, domainerrors.NewNotFound("EntityInstance", "i2"))
+	_, err := s.svc.GetForwardReferences(ctx, "cat", "server", "i1")
+	assert.Error(t, err)
+}
+
+func TestCov_ResolveLinks_ETError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.linkRepo.On("GetForwardRefs", ctx, "i1").Return([]*models.AssociationLink{
+		{ID: "l1", AssociationID: "a1", SourceInstanceID: "i1", TargetInstanceID: "i2"},
+	}, nil)
+	s.assocRepo.On("GetByID", ctx, "a1").Return(&models.Association{ID: "a1", Name: "x", Type: "directional"}, nil)
+	s.instRepo.On("GetByID", ctx, "i2").Return(&models.EntityInstance{ID: "i2", EntityTypeID: "et-bad"}, nil)
+	s.etRepo.On("GetByID", ctx, "et-bad").Return(nil, domainerrors.NewNotFound("EntityType", "et-bad"))
+	_, err := s.svc.GetForwardReferences(ctx, "cat", "server", "i1")
+	assert.Error(t, err)
+}
+
+func TestCov_DeleteLink_SourceInstanceError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.linkRepo.On("GetByID", ctx, "l1").Return(&models.AssociationLink{ID: "l1", SourceInstanceID: "i-gone"}, nil)
+	s.instRepo.On("GetByID", ctx, "i-gone").Return(nil, domainerrors.NewNotFound("EntityInstance", "i-gone"))
+	err := s.svc.DeleteAssociationLink(ctx, "cat", "server", "l1")
+	assert.Error(t, err)
+}
+
+func TestCov_CascadeDelete_LinkDeleteError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+	s.instRepo.On("ListByParent", ctx, "i1", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
+	s.linkRepo.On("DeleteByInstance", ctx, "i1").Return(domainerrors.NewValidation("db error"))
+	err := s.svc.DeleteInstance(ctx, "my-catalog", "model", "i1")
+	assert.Error(t, err)
+}
+
+func TestCov_CreateLink_GetForwardRefsError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.instRepo.On("GetByID", ctx, "i2").Return(&models.EntityInstance{ID: "i2", EntityTypeID: "et2", CatalogID: "c1"}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "a1", TargetEntityTypeID: "et2", Type: models.AssociationTypeDirectional, Name: "uses"},
+	}, nil)
+	s.linkRepo.On("GetForwardRefs", ctx, "i1").Return([]*models.AssociationLink{}, domainerrors.NewValidation("db error"))
+	_, err := s.svc.CreateAssociationLink(ctx, "cat", "server", "i1", "i2", "uses")
+	assert.Error(t, err)
+}
+
+// Coverage: CreateContainedInstance — resolveEntityType error (parent)
+func TestCov_CreateContained_ResolveParentError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "bad").Return(nil, domainerrors.NewNotFound("Catalog", "bad"))
+	_, err := s.svc.CreateContainedInstance(ctx, "bad", "server", "p1", "tool", "child", "", nil)
+	assert.Error(t, err)
+}
+
+// Coverage: CreateContainedInstance — attr validation error
+func TestCov_CreateContained_AttrValidationError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "p1").Return(&models.EntityInstance{ID: "p1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "a1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment},
+	}, nil)
+	// Attribute validation will fail — unknown attribute
+	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	_, err := s.svc.CreateContainedInstance(ctx, "cat", "server", "p1", "tool", "child", "", map[string]interface{}{"bad": "val"})
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+// Coverage: CreateContainedInstance — SetValues error
+func TestCov_CreateContained_SetValuesError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "p1").Return(&models.EntityInstance{ID: "p1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "a1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment},
+	}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{
+		{ID: "a1", Name: "desc", Type: models.AttributeTypeString},
+	}, nil)
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(domainerrors.NewValidation("db error"))
+	_, err := s.svc.CreateContainedInstance(ctx, "cat", "server", "p1", "tool", "child", "", map[string]interface{}{"desc": "val"})
+	assert.Error(t, err)
+}
+
+// Coverage: CreateContainedInstance — resolveAttributeValues error
+func TestCov_CreateContained_ResolveAttrsError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "p1").Return(&models.EntityInstance{ID: "p1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "a1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment},
+	}, nil)
+	// First ListByVersion call succeeds (for validateAndBuild), second fails (for resolveAttrs)
+	s.attrRepo.On("ListByVersion", ctx, "etv2").Return(([]*models.Attribute)(nil), domainerrors.NewValidation("db error")).Once()
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusDraft).Return(nil)
+	_, err := s.svc.CreateContainedInstance(ctx, "cat", "server", "p1", "tool", "child", "", nil)
+	assert.Error(t, err)
+}
+
+// Coverage: ListContainedInstances — resolveEntityType error (parent)
+func TestCov_ListContained_ResolveParentError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "bad").Return(nil, domainerrors.NewNotFound("Catalog", "bad"))
+	_, _, err := s.svc.ListContainedInstances(ctx, "bad", "server", "p1", "tool", models.ListParams{Limit: 20})
+	assert.Error(t, err)
+}
+
+// Coverage: ListContainedInstances — attrRepo error
+func TestCov_ListContained_AttrRepoError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "p1").Return(&models.EntityInstance{ID: "p1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.instRepo.On("ListByParent", ctx, "p1", mock.Anything).Return([]*models.EntityInstance{
+		{ID: "c1", EntityTypeID: "et2"},
+	}, 1, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv2").Return(([]*models.Attribute)(nil), domainerrors.NewValidation("db error"))
+	_, _, err := s.svc.ListContainedInstances(ctx, "cat", "server", "p1", "tool", models.ListParams{Limit: 20})
+	assert.Error(t, err)
+}
+
+// Coverage: ListContainedInstances — iavRepo.GetCurrentValues error
+func TestCov_ListContained_GetValuesError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "p1").Return(&models.EntityInstance{ID: "p1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.instRepo.On("ListByParent", ctx, "p1", mock.Anything).Return([]*models.EntityInstance{
+		{ID: "c1", EntityTypeID: "et2"},
+	}, 1, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	s.iavRepo.On("GetCurrentValues", ctx, "c1").Return(nil, domainerrors.NewValidation("db error"))
+	_, _, err := s.svc.ListContainedInstances(ctx, "cat", "server", "p1", "tool", models.ListParams{Limit: 20})
+	assert.Error(t, err)
+}
+
+// Coverage: CreateAssociationLink — resolveEntityType error
+func TestCov_CreateLink_ResolveError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "bad").Return(nil, domainerrors.NewNotFound("Catalog", "bad"))
+	_, err := s.svc.CreateAssociationLink(ctx, "bad", "server", "i1", "i2", "uses")
+	assert.Error(t, err)
+}
+
+// Coverage: CreateAssociationLink — source instance error
+func TestCov_CreateLink_SourceError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(nil, domainerrors.NewNotFound("EntityInstance", "i1"))
+	_, err := s.svc.CreateAssociationLink(ctx, "cat", "server", "i1", "i2", "uses")
+	assert.Error(t, err)
+}
+
+// Coverage: CreateAssociationLink — source not in catalog
+func TestCov_CreateLink_SourceWrongCatalog(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "other"}, nil)
+	_, err := s.svc.CreateAssociationLink(ctx, "cat", "server", "i1", "i2", "uses")
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+// Coverage: CreateAssociationLink — linkRepo.Create error
+func TestCov_CreateLink_LinkRepoCreateError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.instRepo.On("GetByID", ctx, "i2").Return(&models.EntityInstance{ID: "i2", EntityTypeID: "et2", CatalogID: "c1"}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "a1", TargetEntityTypeID: "et2", Type: models.AssociationTypeDirectional, Name: "uses"},
+	}, nil)
+	s.linkRepo.On("GetForwardRefs", ctx, "i1").Return([]*models.AssociationLink{}, nil)
+	s.linkRepo.On("Create", ctx, mock.Anything).Return(domainerrors.NewValidation("db error"))
+	_, err := s.svc.CreateAssociationLink(ctx, "cat", "server", "i1", "i2", "uses")
+	assert.Error(t, err)
+}
+
+// Coverage: DeleteAssociationLink — resolveEntityType error
+func TestCov_DeleteLink_ResolveError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "bad").Return(nil, domainerrors.NewNotFound("Catalog", "bad"))
+	err := s.svc.DeleteAssociationLink(ctx, "bad", "server", "l1")
+	assert.Error(t, err)
+}
+
+// Coverage: GetForwardReferences — resolveEntityType error
+func TestCov_GetForwardRefs_ResolveError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "bad").Return(nil, domainerrors.NewNotFound("Catalog", "bad"))
+	_, err := s.svc.GetForwardReferences(ctx, "bad", "server", "i1")
+	assert.Error(t, err)
+}
+
+// Coverage: GetForwardReferences — instRepo error
+func TestCov_GetForwardRefs_InstanceError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(nil, domainerrors.NewNotFound("EntityInstance", "i1"))
+	_, err := s.svc.GetForwardReferences(ctx, "cat", "server", "i1")
+	assert.Error(t, err)
+}
+
+// Coverage: GetReverseReferences — all paths (resolveEntityType, instRepo, linkRepo)
+func TestCov_GetReverseRefs_ResolveError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "bad").Return(nil, domainerrors.NewNotFound("Catalog", "bad"))
+	_, err := s.svc.GetReverseReferences(ctx, "bad", "server", "i1")
+	assert.Error(t, err)
+}
+
+func TestCov_GetReverseRefs_InstanceError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(nil, domainerrors.NewNotFound("EntityInstance", "i1"))
+	_, err := s.svc.GetReverseReferences(ctx, "cat", "server", "i1")
+	assert.Error(t, err)
+}
+
+func TestCov_GetReverseRefs_LinkRepoError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.linkRepo.On("GetReverseRefs", ctx, "i1").Return([]*models.AssociationLink{}, domainerrors.NewValidation("db error"))
+	_, err := s.svc.GetReverseReferences(ctx, "cat", "server", "i1")
+	assert.Error(t, err)
+}
+
+// Bug: empty enum value should be skipped (optional attribute not set)
+func TestBug_EmptyEnumValueSkipped(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+	s.mockAttributes(ctx)
+
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		// Empty enum should NOT be in the values list
+		for _, v := range vals {
+			if v.AttributeID == "a3" { // status (enum) attribute
+				return false // should not be present
+			}
+		}
+		return true
+	})).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	// Pass empty string for enum attribute — should succeed (skip it)
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]interface{}{
+		"hostname": "myhost",
+		"status":   "", // empty enum — should be skipped, not validated
+	})
+	require.NoError(t, err)
+}
+
+// === SetParent (reparent instance) ===
+
+// SetParent with valid containment association
+func TestSetParent_Valid(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusDraft,
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2", Name: "tool"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	// Child instance (tool, currently no parent)
+	s.instRepo.On("GetByID", ctx, "child1").Return(&models.EntityInstance{
+		ID: "child1", EntityTypeID: "et2", CatalogID: "cat1", Name: "my-tool", Version: 1,
+	}, nil)
+	// Parent instance (server)
+	s.instRepo.On("GetByID", ctx, "parent1").Return(&models.EntityInstance{
+		ID: "parent1", EntityTypeID: "et1", CatalogID: "cat1", Name: "my-server", Version: 1,
+	}, nil)
+	// Containment association: server (et1) contains tool (et2) — check on parent's ETV
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2",
+			Type: models.AssociationTypeContainment, Name: "tools"},
+	}, nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	err := s.svc.SetParent(ctx, "my-catalog", "tool", "child1", "server", "parent1")
+	require.NoError(t, err)
+	s.instRepo.AssertCalled(t, "Update", ctx, mock.MatchedBy(func(inst *models.EntityInstance) bool {
+		return inst.ID == "child1" && inst.ParentInstanceID == "parent1"
+	}))
+}
+
+// SetParent with no containment association → validation error
+func TestSetParent_NoContainment(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2", Name: "tool"}, nil)
+	s.etRepo.On("GetByName", ctx, "model").Return(&models.EntityType{ID: "et3", Name: "model"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv2"},
+		{ID: "pin3", CatalogVersionID: "cv1", EntityTypeVersionID: "etv3"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv3").Return(&models.EntityTypeVersion{ID: "etv3", EntityTypeID: "et3", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "child1").Return(&models.EntityInstance{
+		ID: "child1", EntityTypeID: "et2", CatalogID: "cat1", Version: 1,
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "parent1").Return(&models.EntityInstance{
+		ID: "parent1", EntityTypeID: "et3", CatalogID: "cat1", Version: 1,
+	}, nil)
+	// No containment from model to tool
+	s.assocRepo.On("ListByVersion", ctx, "etv3").Return([]*models.Association{}, nil)
+
+	err := s.svc.SetParent(ctx, "my-catalog", "tool", "child1", "model", "parent1")
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+// SetParent with empty parent ID → clears parent (unset)
+func TestSetParent_ClearParent(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusDraft,
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2", Name: "tool"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "child1").Return(&models.EntityInstance{
+		ID: "child1", EntityTypeID: "et2", CatalogID: "cat1", ParentInstanceID: "old-parent", Version: 1,
+	}, nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	err := s.svc.SetParent(ctx, "my-catalog", "tool", "child1", "", "")
+	require.NoError(t, err)
+	s.instRepo.AssertCalled(t, "Update", ctx, mock.MatchedBy(func(inst *models.EntityInstance) bool {
+		return inst.ID == "child1" && inst.ParentInstanceID == ""
+	}))
+}
+
+// SetParent error paths
+func TestSetParent_ResolveError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "bad").Return(nil, domainerrors.NewNotFound("Catalog", "bad"))
+	err := s.svc.SetParent(ctx, "bad", "tool", "c1", "server", "p1")
+	assert.Error(t, err)
+}
+
+func TestSetParent_ChildNotFound(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+	s.instRepo.On("GetByID", ctx, "nope").Return(nil, domainerrors.NewNotFound("EntityInstance", "nope"))
+	err := s.svc.SetParent(ctx, "my-catalog", "model", "nope", "server", "p1")
+	assert.Error(t, err)
+}
+
+func TestSetParent_ChildWrongCatalog(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "c1").Return(&models.EntityInstance{ID: "c1", CatalogID: "other"}, nil)
+	err := s.svc.SetParent(ctx, "cat", "tool", "c1", "server", "p1")
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+func TestSetParent_ClearUpdateError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "c1").Return(&models.EntityInstance{ID: "c1", CatalogID: "c1", ParentInstanceID: "old"}, nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(domainerrors.NewValidation("db error"))
+	err := s.svc.SetParent(ctx, "cat", "tool", "c1", "", "")
+	assert.Error(t, err)
+}
+
+func TestSetParent_ParentResolveError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "c1").Return(&models.EntityInstance{ID: "c1", EntityTypeID: "et2", CatalogID: "c1"}, nil)
+	s.etRepo.On("GetByName", ctx, "bad-type").Return(nil, domainerrors.NewNotFound("EntityType", "bad-type"))
+	err := s.svc.SetParent(ctx, "cat", "tool", "c1", "bad-type", "p1")
+	assert.Error(t, err)
+}
+
+func TestSetParent_ParentNotFound(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "c1").Return(&models.EntityInstance{ID: "c1", EntityTypeID: "et2", CatalogID: "c1"}, nil)
+	s.instRepo.On("GetByID", ctx, "nope").Return(nil, domainerrors.NewNotFound("EntityInstance", "nope"))
+	err := s.svc.SetParent(ctx, "cat", "tool", "c1", "server", "nope")
+	assert.Error(t, err)
+}
+
+func TestSetParent_ParentWrongCatalog(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "c1").Return(&models.EntityInstance{ID: "c1", EntityTypeID: "et2", CatalogID: "c1"}, nil)
+	s.instRepo.On("GetByID", ctx, "p1").Return(&models.EntityInstance{ID: "p1", EntityTypeID: "et1", CatalogID: "other"}, nil)
+	err := s.svc.SetParent(ctx, "cat", "tool", "c1", "server", "p1")
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+func TestSetParent_AssocRepoError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "c1").Return(&models.EntityInstance{ID: "c1", EntityTypeID: "et2", CatalogID: "c1"}, nil)
+	s.instRepo.On("GetByID", ctx, "p1").Return(&models.EntityInstance{ID: "p1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return(([]*models.Association)(nil), domainerrors.NewValidation("db error"))
+	err := s.svc.SetParent(ctx, "cat", "tool", "c1", "server", "p1")
+	assert.Error(t, err)
+}
+
+func TestSetParent_UpdateError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "c1").Return(&models.EntityInstance{ID: "c1", EntityTypeID: "et2", CatalogID: "c1"}, nil)
+	s.instRepo.On("GetByID", ctx, "p1").Return(&models.EntityInstance{ID: "p1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "a1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment},
+	}, nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(domainerrors.NewValidation("db error"))
+	err := s.svc.SetParent(ctx, "cat", "tool", "c1", "server", "p1")
+	assert.Error(t, err)
+}
+
+// Coverage: string parsed as number (success case, line 186)
+func TestCov_ValidateAttrs_StringAsNumber(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+	s.mockAttributes(ctx)
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		return len(vals) == 1 && vals[0].ValueNumber != nil && *vals[0].ValueNumber == 42.5
+	})).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]interface{}{
+		"port": "42.5", // string that parses as number
+	})
+	require.NoError(t, err)
+}
+
+// Coverage: CreateContainedInstance — assocRepo.ListByVersion error (line 428)
+func TestCov_CreateContained_AssocListError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "p1").Return(&models.EntityInstance{ID: "p1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return(([]*models.Association)(nil), domainerrors.NewValidation("db error"))
+
+	_, err := s.svc.CreateContainedInstance(ctx, "cat", "server", "p1", "tool", "child", "", nil)
+	assert.Error(t, err)
+}
+
+// Coverage: DeleteAssociationLink — linkRepo.Delete error (line 631)
+func TestCov_DeleteLink_DeleteError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.linkRepo.On("GetByID", ctx, "l1").Return(&models.AssociationLink{ID: "l1", SourceInstanceID: "i1"}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.linkRepo.On("Delete", ctx, "l1").Return(domainerrors.NewValidation("db error"))
+
+	err := s.svc.DeleteAssociationLink(ctx, "cat", "server", "l1")
+	assert.Error(t, err)
+}
+
+// === Quality Review Fixes ===
+
+// H2: ListContainedInstances returns correct total (filtered count, not unfiltered)
+func TestQR_H2_ListContainedCorrectTotal(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2", Name: "tool"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "parent1").Return(&models.EntityInstance{
+		ID: "parent1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	// Parent has 2 tools and 1 other type
+	s.instRepo.On("ListByParent", ctx, "parent1", mock.Anything).Return([]*models.EntityInstance{
+		{ID: "c1", EntityTypeID: "et2", Name: "tool-a"},
+		{ID: "c2", EntityTypeID: "et3", Name: "other"},
+		{ID: "c3", EntityTypeID: "et2", Name: "tool-b"},
+	}, 3, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+
+	details, total, err := s.svc.ListContainedInstances(ctx, "my-catalog", "server", "parent1", "tool", models.ListParams{Limit: 20})
+	require.NoError(t, err)
+	assert.Len(t, details, 2)       // Only tools
+	assert.Equal(t, 2, total)       // Total should match filtered count
+}
+
+// H3: cascadeDelete cleans up association links
+func TestQR_H3_CascadeDeleteCleansLinks(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+
+	s.instRepo.On("ListByParent", ctx, "inst1", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
+	s.linkRepo.On("DeleteByInstance", ctx, "inst1").Return(nil)
+	s.instRepo.On("SoftDelete", ctx, "inst1").Return(nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	err := s.svc.DeleteInstance(ctx, "my-catalog", "model", "inst1")
+	require.NoError(t, err)
+	s.linkRepo.AssertCalled(t, "DeleteByInstance", ctx, "inst1")
+}
+
+// H4: DeleteAssociationLink verifies link ownership
+func TestQR_H4_DeleteLinkVerifiesOwnership(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	// Link belongs to an instance in a different catalog
+	s.linkRepo.On("GetByID", ctx, "link1").Return(&models.AssociationLink{
+		ID: "link1", SourceInstanceID: "inst-other",
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "inst-other").Return(&models.EntityInstance{
+		ID: "inst-other", EntityTypeID: "et1", CatalogID: "cat-other", // different catalog!
+	}, nil)
+
+	err := s.svc.DeleteAssociationLink(ctx, "my-catalog", "server", "link1")
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+// M2: CreateContainedInstance verifies parent belongs to catalog
+func TestQR_M2_ContainedVerifiesParentCatalog(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	// Parent instance belongs to a different catalog
+	s.instRepo.On("GetByID", ctx, "parent1").Return(&models.EntityInstance{
+		ID: "parent1", EntityTypeID: "et1", CatalogID: "cat-other", Version: 1,
+	}, nil)
+
+	_, err := s.svc.CreateContainedInstance(ctx, "my-catalog", "server", "parent1", "tool", "child", "", nil)
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+// M3: CreateAssociationLink verifies source and target in same catalog
+func TestQR_M3_LinkVerifiesSameCatalog(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	// Target is in a different catalog
+	s.instRepo.On("GetByID", ctx, "inst2").Return(&models.EntityInstance{
+		ID: "inst2", EntityTypeID: "et2", CatalogID: "cat-other", Version: 1,
+	}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2",
+			Type: models.AssociationTypeDirectional, Name: "uses"},
+	}, nil)
+
+	_, err := s.svc.CreateAssociationLink(ctx, "my-catalog", "server", "inst1", "inst2", "uses")
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+// M6: No duplicate link prevention
+func TestQR_M6_DuplicateLinkPrevention(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusDraft,
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "inst2").Return(&models.EntityInstance{
+		ID: "inst2", EntityTypeID: "et2", CatalogID: "cat1", Version: 1,
+	}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2",
+			Type: models.AssociationTypeDirectional, Name: "uses"},
+	}, nil)
+	// Existing link already present
+	s.linkRepo.On("GetForwardRefs", ctx, "inst1").Return([]*models.AssociationLink{
+		{ID: "existing-link", AssociationID: "assoc1", SourceInstanceID: "inst1", TargetInstanceID: "inst2"},
+	}, nil)
+
+	_, err := s.svc.CreateAssociationLink(ctx, "my-catalog", "server", "inst1", "inst2", "uses")
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsConflict(err))
 }

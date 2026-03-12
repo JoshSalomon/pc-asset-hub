@@ -28,11 +28,11 @@ Development proceeds through three environment phases, each with increasing infr
 - Deployment on a real cluster
 - Real OpenShift RBAC (SubjectAccessReview against a live API server)
 
-**Milestones completed**: 1–9 plus CatalogVersion Discovery CRD (all code written and tested)
+**Milestones completed**: 1–12 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, and T-E.01 through T-E.146 (331 test cases), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, and T-12.01 through T-12.63 (447 test cases), using SQLite and mocked/simulated infrastructure.
 
-**Human checkpoint**: After all 331 tests pass with 100% coverage (documented exceptions). This is the first review point.
+**Human checkpoint**: After all 447 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
 ---
 
@@ -1378,6 +1378,115 @@ Entity instances are created within a catalog, scoped to an entity type pinned i
 
 ---
 
+## Milestone 12: Containment & Association Links
+
+Contained instances are created under a parent instance via sub-resource URLs. Association links connect instances based on directional or bidirectional association definitions in the pinned CV. All relationships are validated against the CV's association definitions. Single-level containment routes are supported; multi-level containment URLs are deferred to Phase 4.
+
+### Contained Instance Repository
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-12.01 | Create contained instance with parent_instance_id set | Integration | Instance persisted with correct parent_instance_id |
+| T-12.02 | Same name under different parents allowed | Integration | Both instances created, unique constraint satisfied |
+| T-12.03 | Same name under same parent rejected | Integration | Unique constraint violation |
+| T-12.04 | ListByParent returns only direct children of specified parent | Integration | Only children with matching parent_instance_id returned |
+
+### Contained Instance Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-12.05 | CreateContainedInstance with valid parent and containment association in CV | Unit | Instance created with parent_instance_id set, correct entity type |
+| T-12.06 | CreateContainedInstance with nonexistent parent | Unit | NotFound error |
+| T-12.07 | CreateContainedInstance with child type not in containment relationship with parent type | Unit | Validation error — no containment association exists |
+| T-12.08 | CreateContainedInstance with child type not pinned in CV | Unit | NotFound error |
+| T-12.09 | CreateContainedInstance same name under different parents | Unit | Both created successfully |
+| T-12.10 | CreateContainedInstance duplicate name under same parent | Unit | Conflict error |
+| T-12.11 | ListContainedInstances returns only direct children of specified type | Unit | Filtered by parent ID and entity type |
+| T-12.12 | CreateContainedInstance resets catalog validation status to draft | Unit | Catalog status updated to draft |
+| T-12.13 | CreateContainedInstance with attribute values | Unit | Instance created with validated attribute values |
+
+### Association Link Repository
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-12.14 | Create association link with valid source and target IDs | Integration | Link persisted with correct association_id, source, target |
+| T-12.15 | GetForwardRefs returns target instances for source | Integration | All links where source matches returned |
+| T-12.16 | GetReverseRefs returns source instances for target | Integration | All links where target matches returned |
+| T-12.17 | Delete association link removes it | Integration | Link no longer returned by forward/reverse queries |
+| T-12.18 | GetForwardRefs for instance with no links | Integration | Empty list returned |
+
+### Association Link Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-12.19 | CreateAssociationLink with valid association definition in CV | Unit | Link created with correct association_id |
+| T-12.20 | CreateAssociationLink with nonexistent association name | Unit | NotFound error |
+| T-12.21 | CreateAssociationLink source entity type does not match association's source type | Unit | Validation error |
+| T-12.22 | CreateAssociationLink target entity type does not match association's target type | Unit | Validation error |
+| T-12.23 | CreateAssociationLink with nonexistent target instance | Unit | NotFound error |
+| T-12.24 | CreateAssociationLink with nonexistent source instance | Unit | NotFound error |
+| T-12.25 | DeleteAssociationLink removes link | Unit | Link deleted successfully |
+| T-12.26 | DeleteAssociationLink nonexistent link | Unit | NotFound error |
+| T-12.27 | CreateAssociationLink resets catalog validation status to draft | Unit | Catalog status updated to draft |
+| T-12.28 | DeleteAssociationLink resets catalog validation status to draft | Unit | Catalog status updated to draft |
+
+### Forward/Reverse Reference Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-12.29 | GetForwardReferences returns resolved target info | Unit | Response includes link ID, association name, association type, target instance ID/name/entity type name |
+| T-12.30 | GetForwardReferences includes directional associations | Unit | Directional links included in results |
+| T-12.31 | GetForwardReferences includes bidirectional associations | Unit | Bidirectional links included in results |
+| T-12.32 | GetForwardReferences for instance with no links | Unit | Empty list, no error |
+| T-12.33 | GetReverseReferences returns resolved source info | Unit | Response includes link ID, association name, association type, source instance ID/name/entity type name |
+| T-12.34 | GetReverseReferences includes directional associations | Unit | Directional links (where this instance is target) included |
+| T-12.35 | GetReverseReferences includes bidirectional associations | Unit | Bidirectional links (where this instance is target) included |
+| T-12.36 | GetReverseReferences for instance with no incoming links | Unit | Empty list, no error |
+
+### Contained Instance API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-12.37 | POST /{catalog}/{parent-type}/{parent-id}/{child-type} with valid request | API | 201, contained instance with parent_instance_id in response |
+| T-12.38 | POST /{catalog}/{parent-type}/{parent-id}/{child-type} nonexistent parent | API | 404 |
+| T-12.39 | POST /{catalog}/{parent-type}/{parent-id}/{child-type} no containment association | API | 400, clear error message |
+| T-12.40 | POST /{catalog}/{parent-type}/{parent-id}/{child-type} as RO | API | 403 |
+| T-12.41 | GET /{catalog}/{parent-type}/{parent-id}/{child-type} lists children | API | 200, array of contained instances |
+| T-12.42 | GET /{catalog}/{parent-type}/{parent-id}/{child-type} nonexistent parent | API | 404 |
+
+### Association Link API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-12.43 | POST /{catalog}/{type}/{id}/links with valid request | API | 201, link with resolved association info |
+| T-12.44 | POST /{catalog}/{type}/{id}/links nonexistent source instance | API | 404 |
+| T-12.45 | POST /{catalog}/{type}/{id}/links invalid association name | API | 400 |
+| T-12.46 | POST /{catalog}/{type}/{id}/links mismatched entity types | API | 400, validation error |
+| T-12.47 | POST /{catalog}/{type}/{id}/links as RO | API | 403 |
+| T-12.48 | DELETE /{catalog}/{type}/{id}/links/{link-id} | API | 204 |
+| T-12.49 | DELETE /{catalog}/{type}/{id}/links/{link-id} as RO | API | 403 |
+| T-12.50 | DELETE /{catalog}/{type}/{id}/links/{link-id} nonexistent | API | 404 |
+| T-12.51 | GET /{catalog}/{type}/{id}/references returns forward refs | API | 200, array with resolved target info |
+| T-12.52 | GET /{catalog}/{type}/{id}/referenced-by returns reverse refs | API | 200, array with resolved source info |
+| T-12.53 | GET /{catalog}/{type}/{id}/references nonexistent instance | API | 404 |
+
+### Containment & Links UI (Meta UI)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-12.54 | Instance detail shows contained children section | Browser | Children listed by entity type under parent |
+| T-12.55 | Add contained instance button visible for RW+, hidden for RO | Browser | Role-aware visibility |
+| T-12.56 | Add contained instance modal creates child under parent | Browser | API called with parent context, child appears in list |
+| T-12.57 | Contained instance appears in parent's children list after creation | Browser | List refreshes with new child |
+| T-12.58 | Instance detail shows references tab | Browser | Tab with forward and reverse reference sections |
+| T-12.59 | Forward references show target instance info with association name | Browser | Association name, type, target name displayed |
+| T-12.60 | Reverse references show source instance info with association name | Browser | Association name, type, source name displayed |
+| T-12.61 | Link to instance action creates association link | Browser | Modal for selecting target instance and association, API called |
+| T-12.62 | Unlink action removes association link | Browser | Confirmation dialog, link removed from list |
+| T-12.63 | RO user sees references but no link/unlink controls | Browser | Read-only view, no action buttons |
+
+---
+
 ## Coverage Criteria
 
 ### Pass Rate
@@ -1414,7 +1523,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 384 test cases (T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, and T-11.01 through T-11.58) pass
+- All 447 test cases (T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, and T-12.01 through T-12.63) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

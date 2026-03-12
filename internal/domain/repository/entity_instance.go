@@ -25,7 +25,9 @@ type InstanceAttributeValueRepository interface {
 
 type AssociationLinkRepository interface {
 	Create(ctx context.Context, link *models.AssociationLink) error
+	GetByID(ctx context.Context, id string) (*models.AssociationLink, error)
 	Delete(ctx context.Context, id string) error
+	DeleteByInstance(ctx context.Context, instanceID string) error
 	GetForwardRefs(ctx context.Context, sourceInstanceID string) ([]*models.AssociationLink, error)
 	GetReverseRefs(ctx context.Context, targetInstanceID string) ([]*models.AssociationLink, error)
 }

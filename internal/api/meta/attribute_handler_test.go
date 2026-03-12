@@ -353,3 +353,82 @@ func TestTE15_CopyAttributesConflict(t *testing.T) {
 		`{"source_entity_type_id":"src-et","source_version":1,"attribute_names":["conflict"]}`, apimw.RoleAdmin)
 	assert.Equal(t, http.StatusConflict, rec.Code)
 }
+
+// === Coverage: bind-error and service-error branches ===
+
+func TestAttrAdd_BindError(t *testing.T) {
+	e := setupAttrServer(nil, nil, nil, nil)
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/attributes", "bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestAttrReorder_BindError(t *testing.T) {
+	e := setupAttrServer(nil, nil, nil, nil)
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/attributes/reorder", "bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestAttrReorder_EmptyIDs(t *testing.T) {
+	e := setupAttrServer(nil, nil, nil, nil)
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/attributes/reorder", `{"ordered_ids":[]}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestAttrReorder_ServiceError(t *testing.T) {
+	attrRepo := new(mocks.MockAttributeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupAttrServer(attrRepo, etvRepo, nil, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(nil, domainerrors.NewNotFound("EntityTypeVersion", "et1"))
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/attributes/reorder",
+		`{"ordered_ids":["a1","a2"]}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestAttrEdit_BindError(t *testing.T) {
+	e := setupAttrServer(nil, nil, nil, nil)
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/attributes/hostname", "bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestAttrEdit_ServiceError(t *testing.T) {
+	attrRepo := new(mocks.MockAttributeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupAttrServer(attrRepo, etvRepo, nil, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(nil, domainerrors.NewNotFound("EntityTypeVersion", "et1"))
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/attributes/hostname",
+		`{"name":"new"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestAttrCopy_BindError(t *testing.T) {
+	e := setupAttrServer(nil, nil, nil, nil)
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/attributes/copy", "bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestAttrCopy_EmptySourceEntityTypeID(t *testing.T) {
+	e := setupAttrServer(nil, nil, nil, nil)
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/attributes/copy",
+		`{"source_entity_type_id":"","source_version":1,"attribute_names":["a"]}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestAttrCopy_EmptyAttributeNames(t *testing.T) {
+	e := setupAttrServer(nil, nil, nil, nil)
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/attributes/copy",
+		`{"source_entity_type_id":"src","source_version":1,"attribute_names":[]}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// Coverage: Edit service error (lines 99-102)
+func TestAttrEdit_ServiceErrorPath(t *testing.T) {
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	e := setupAttrServer(attrRepo, etvRepo, nil, nil)
+
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(nil, domainerrors.NewNotFound("ETV", "et1"))
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/attributes/hostname",
+		`{"description":"new"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
