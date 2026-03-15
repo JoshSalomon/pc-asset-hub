@@ -1,6 +1,6 @@
 # AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-03-11
+Last updated: 2026-03-15
 
 ---
 
@@ -8,12 +8,12 @@ Last updated: 2026-03-11
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 940+ | 100% | 88.9% | — |
+| Backend (Go) | 969+ | 100% | 89.1% | — |
 | UI — Unit tests | 75 | 100% | 17.9% | 20.6% |
-| UI — Browser tests (Playwright) | 273 | 100% | ~81% | ~86% |
+| UI — Browser tests (Playwright) | 375 | 100% | 81.1% | 85.9% |
 | UI — System tests (Playwright + live server) | 30 | 100% | — | — |
-| Live system (bash script) | 18 | 100% | — | — |
-| **Total** | **1336+** | **100%** | — | — |
+| Live system (bash scripts) | 41 | 100% | — | — |
+| **Total** | **1490+** | **100%** | — | — |
 
 ---
 
@@ -265,6 +265,42 @@ Quality review fixes applied: (H1) Route ambiguity resolved — static segments 
 UI bug fixes: Details pane closes on tab switch. Add Contained modal supports "Adopt Existing" mode. Link modal uses dropdowns for association and target instance. Set Container modal added for reparenting from child side. Buttons disabled when no applicable associations.
 
 Live system tests: `scripts/test-containment-links.sh` — 18 parameterized tests covering containment CRUD, validation, links, references, duplicate prevention, cascade delete with link cleanup.
+
+### New Code Coverage (Session 007 — Catalog Data Viewer)
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/operational/instance_service.go` | `GetContainmentTree` | 96.4% |
+| `service/operational/instance_service.go` | `resolveParentChain` | 87.5% |
+| `service/operational/instance_service.go` | `ListInstances` (enhanced) | 100% |
+| `service/operational/instance_service.go` | `GetInstance` (enhanced) | 93.8% |
+| `api/operational/instance_handler.go` | `GetContainmentTree` | 100% |
+| `api/operational/instance_handler.go` | `treeNodesToDTO` | 100% |
+| `api/operational/instance_handler.go` | `ListInstances` (enhanced) | 100% |
+| `api/operational/instance_handler.go` | `instanceDetailToDTO` (enhanced) | 100% |
+| `infrastructure/gorm/repository/entity_instance_repo.go` | `ListByCatalog` | 85.7% |
+| `infrastructure/gorm/repository/entity_instance_repo.go` | `applyAttrFilters` | 94.4% |
+| `infrastructure/gorm/repository/entity_instance_repo.go` | `List` (enhanced) | 93.3% |
+
+Remaining uncovered lines:
+- `ListByCatalog:85.7%` — GORM `Find` error path (DB internal failure; same pattern as other List methods)
+- `applyAttrFilters:94.4%` — `.max` error path (symmetric to `.min` path which is tested)
+- `resolveParentChain:87.5%` — cycle guard safety net (requires circular data which can't exist in normal operation)
+- `GetContainmentTree:96.4%` — already handles ET name fallback; remaining line is branch coverage instrumentation
+
+Quality review fixes applied: (H1) BrowserRouter basename for /operational path. (H2) Deduplicated count query in List. (M1) Extracted findAndSelect to navigateToTreeNode callback. (M2) Extracted statusColor to shared utility. (M4) Removed json tags from service-layer ParentChainEntry. (M5) applyAttrFilters returns error for invalid numeric values. (L1) Display total in catalog list. (L2) Wire detailLoading spinner. (L4) Cycle guard in resolveParentChain.
+
+New UI files (operational data viewer):
+- `ui/operational.html` — separate HTML entry point
+- `ui/src/main-operational.tsx` — operational app entry with basename="/operational"
+- `ui/src/OperationalApp.tsx` — app shell (masthead, role selector, routes)
+- `ui/src/pages/operational/OperationalCatalogListPage.tsx` — catalog list with search, pagination
+- `ui/src/pages/operational/OperationalCatalogDetailPage.tsx` — tree browser + instance detail drawer
+- `ui/src/utils/statusColor.ts` — shared utility
+
+Live system tests: `scripts/test-data-viewer.sh` — 23 parameterized tests covering containment tree, pagination, sorting, filtering, parent chain, operational UI serving, combined queries, and references.
+
+Two-pane redesign: Removed the redundant middle instance list pane from the tree browser. The tree is now the sole navigation (left pane), with instance detail shown inline in the right pane. Browser tests reduced from 37 to 27 for this page (instance list tests T-13.78-85 retired). Component simplified from ~605 lines to ~300 lines.
 
 ### Coverage Gaps to Address
 

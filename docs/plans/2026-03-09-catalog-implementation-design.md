@@ -25,11 +25,11 @@ The operational UI (catalog data viewer) runs on a **separate port** from the me
 | | Meta UI | Operational UI |
 |---|---------|---------------|
 | Persona | Admin building schemas | Operator/consumer browsing assets |
-| Port | 30000 | 30001 |
+| URL | `http://host:30000/` | `http://host:30000/operational` |
 | API consumed | `/api/meta/v1/...` | `/api/data/v1/...` |
-| RBAC focus | Admin/SuperAdmin | RO-friendly, RW for edits |
+| RBAC focus | Admin/SuperAdmin | RO-friendly (read-only in v1) |
 
-Both UIs live in the same `ui/` codebase with two Vite entry points (`main-meta.tsx` and `main-operational.tsx`), producing two separate builds. Shared types, components, and API client are reused. The operator deploys them on separate ports.
+Both UIs live in the same `ui/` codebase with two Vite entry points (`main.tsx` and `main-operational.tsx`), producing two HTML entry points in a single build. Shared types, components, and API client are reused. A single nginx instance serves both UIs using path-based routing (`/` for meta, `/operational` for operational). This avoids the complexity of separate ports, extra kind port mappings, and CORS configuration.
 
 ## Phased Plan
 
@@ -169,6 +169,7 @@ Both UIs live in the same `ui/` codebase with two Vite entry points (`main-meta.
 - Vite multi-entry setup: `main-meta.tsx` (existing) and `main-operational.tsx` (new)
 - Shared components, types, and API client between the two apps
 - Operator/deploy changes to serve operational UI on port 30001
+- **Read-only** — all data editing (instance CRUD, links, containment) remains in the meta UI. The operational UI is purely for browsing and consuming catalog data.
 
 Operational UI pages:
 - **Catalog list** — browse available catalogs with name, CV label, status, instance counts
@@ -180,13 +181,55 @@ Operational UI pages:
 - **Filtering controls** — per-attribute filters on instance lists
 - **Sort controls** — column header click to sort
 - **Pagination** — page size selector, page navigation
-- **Role-aware** — RO users see everything without edit/create/delete controls; RW users get edit actions
 
 **User stories:** US-17, US-18, US-19, US-20, US-21
 
 ---
 
-### Phase 5: Catalog Validation
+### Phase 5: Catalog-Level RBAC
+
+**Goal:** Per-catalog access control so that different users/teams can only read or write specific catalogs.
+
+**Design:** K8s-native RBAC using SubjectAccessReview with `resourceNames`. No custom ACL tables — access is managed via standard OpenShift RoleBindings, consistent with US-23's principle of no RBAC duplication.
+
+**How it works:**
+
+- The RBAC middleware already performs SubjectAccessReview for each request. Phase 5 extends this to include the **catalog name** as the SAR `resourceName` field for all operational API endpoints.
+- Cluster admins grant per-catalog access via standard K8s RBAC:
+  ```yaml
+  rules:
+  - apiGroups: ["assethub.project-catalyst.io"]
+    resources: ["catalogs"]
+    resourceNames: ["prod-catalog-a", "staging-b"]
+    verbs: ["get", "list", "create", "update", "delete"]
+  ```
+- Users without a `resourceNames` restriction on their Role get access to all catalogs (backward compatible with the existing global RO/RW/Admin/SuperAdmin model).
+- The catalog list endpoint performs per-catalog SAR checks to filter the list to only catalogs the user can access. Since catalogs are bounded (typically <100), batch SAR checks are acceptable.
+
+**Backend:**
+
+- Extend `RBACMiddleware` to extract catalog name from the URL path for operational API routes
+- Pass `resourceName` to SubjectAccessReview when catalog name is available
+- Add `FilterAccessible(ctx, catalogs) []Catalog` method that batch-checks SAR for a list of catalogs
+- Header-based dev mode (`RBAC_MODE=header`): global role applies to all catalogs (no per-catalog restriction) — this preserves the existing development workflow
+
+**API:**
+
+- No new endpoints — existing operational endpoints gain per-catalog enforcement automatically through the middleware
+- `GET /api/data/v1/catalogs` returns only catalogs the user can access (filtered by SAR)
+- All `/{catalog-name}/...` routes check SAR with `resourceName` before proceeding
+
+**UI:**
+
+- Catalog list naturally shows only accessible catalogs (API already filters)
+- 403 responses on unauthorized catalog access show a clear "Access Denied" message
+- No catalog-level permission management UI — admins use `oc`/kubectl/OCP console to manage RoleBindings (per US-23)
+
+**User stories:** US-23, US-39
+
+---
+
+### Phase 6: Catalog Validation
 
 **Goal:** On-demand schema validation of catalog data.
 
@@ -216,7 +259,7 @@ Operational UI pages:
 
 ---
 
-### Phase 6: Catalog K8s CRs & Promotion Warnings
+### Phase 7: Catalog K8s CRs & Promotion Warnings
 
 **Goal:** Publish valid catalogs as K8s discovery artifacts.
 
@@ -251,13 +294,16 @@ Phase 2 (Instance CRUD)
 Phase 3 (Containment & Links)
   |
   v
-Phase 4 (Data Viewer)    -- also depends on Phase 2 for attribute display
+Phase 4 (Data Viewer)        -- also depends on Phase 2 for attribute display
   |
   v
-Phase 5 (Validation)     -- needs Phases 2-3 for complete validation
+Phase 5 (Catalog-Level RBAC) -- extends existing RBAC middleware for per-catalog SAR
   |
   v
-Phase 6 (K8s CRs)        -- needs Phase 5 for validation status
+Phase 6 (Validation)         -- needs Phases 2-3 for complete validation
+  |
+  v
+Phase 7 (K8s CRs)            -- needs Phase 6 for validation status
 ```
 
 ## Out of Scope
@@ -265,4 +311,5 @@ Phase 6 (K8s CRs)        -- needs Phase 5 for validation status
 - Catalog re-pinning (upgrading a catalog to a newer CV) — PRD TD-12, future capability
 - Entity type CRDs (full schema as K8s resources) — PRD future scope
 - Hub-and-spoke topology — PRD section 8.4, future enhancement
-- Catalog CR scoping (namespaced vs cluster-scoped) — TBD during Phase 6
+- Catalog CR scoping (namespaced vs cluster-scoped) — TBD during Phase 7
+- Operational UI editing — the operational UI (Phase 4) is read-only; adding instance CRUD, link management, and containment editing to the operational UI is a future enhancement once the read-only viewer is validated with users

@@ -16,6 +16,7 @@ import type {
   EntityInstance,
   AssociationLink,
   ReferenceDetail,
+  TreeNodeResponse,
   ListResponse,
 } from '../types'
 
@@ -209,8 +210,21 @@ export const api = {
   },
 
   instances: {
-    list: (catalogName: string, entityTypeName: string) =>
-      fetchJSON<ListResponse<EntityInstance>>(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityTypeName}`),
+    list: (catalogName: string, entityTypeName: string, params?: { limit?: number; offset?: number; sort?: string; filters?: Record<string, string> }) => {
+      const query = new URLSearchParams()
+      if (params?.limit !== undefined) query.set('limit', String(params.limit))
+      if (params?.offset !== undefined) query.set('offset', String(params.offset))
+      if (params?.sort) query.set('sort', params.sort)
+      if (params?.filters) {
+        for (const [k, v] of Object.entries(params.filters)) {
+          query.set(`filter.${k}`, v)
+        }
+      }
+      const qs = query.toString()
+      return fetchJSON<ListResponse<EntityInstance>>(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityTypeName}${qs ? `?${qs}` : ''}`)
+    },
+    tree: (catalogName: string) =>
+      fetchJSON<TreeNodeResponse[]>(`${DATA_BASE_URL}/catalogs/${catalogName}/tree`),
     get: (catalogName: string, entityTypeName: string, instanceId: string) =>
       fetchJSON<EntityInstance>(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityTypeName}/${instanceId}`),
     create: (catalogName: string, entityTypeName: string, data: { name: string; description?: string; attributes?: Record<string, unknown> }) =>

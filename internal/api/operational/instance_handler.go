@@ -2,6 +2,8 @@ package operational
 
 import (
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 
@@ -40,6 +42,42 @@ func (h *InstanceHandler) ListInstances(c echo.Context) error {
 	entityType := c.Param("entity-type")
 
 	params := models.ListParams{Limit: 20}
+
+	// Parse pagination
+	if limitStr := c.QueryParam("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			if l > 100 {
+				l = 100
+			}
+			params.Limit = l
+		}
+	}
+	if offsetStr := c.QueryParam("offset"); offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil {
+			params.Offset = o
+		}
+	}
+
+	// Parse sort: ?sort=attr:asc or ?sort=attr:desc
+	if sortStr := c.QueryParam("sort"); sortStr != "" {
+		parts := strings.SplitN(sortStr, ":", 2)
+		params.SortBy = parts[0]
+		if len(parts) == 2 && parts[1] == "desc" {
+			params.SortDesc = true
+		}
+	}
+
+	// Parse filters: ?filter.attrName=value, ?filter.attrName.min=5, ?filter.attrName.max=10
+	filters := make(map[string]string)
+	for key, values := range c.QueryParams() {
+		if strings.HasPrefix(key, "filter.") && len(values) > 0 {
+			filterKey := strings.TrimPrefix(key, "filter.")
+			filters[filterKey] = values[0]
+		}
+	}
+	if len(filters) > 0 {
+		params.Filters = filters
+	}
 
 	details, total, err := h.svc.ListInstances(c.Request().Context(), catalogName, entityType, params)
 	if err != nil {
@@ -106,7 +144,7 @@ func instanceDetailToDTO(d *svcop.InstanceDetail) dto.InstanceResponse {
 			Value: av.Value,
 		}
 	}
-	return dto.InstanceResponse{
+	resp := dto.InstanceResponse{
 		ID:               d.Instance.ID,
 		EntityTypeID:     d.Instance.EntityTypeID,
 		CatalogID:        d.Instance.CatalogID,
@@ -118,6 +156,20 @@ func instanceDetailToDTO(d *svcop.InstanceDetail) dto.InstanceResponse {
 		CreatedAt:        d.Instance.CreatedAt,
 		UpdatedAt:        d.Instance.UpdatedAt,
 	}
+
+	if len(d.ParentChain) > 0 {
+		chain := make([]dto.ParentChainEntryResponse, len(d.ParentChain))
+		for i, entry := range d.ParentChain {
+			chain[i] = dto.ParentChainEntryResponse{
+				InstanceID:     entry.InstanceID,
+				InstanceName:   entry.InstanceName,
+				EntityTypeName: entry.EntityTypeName,
+			}
+		}
+		resp.ParentChain = chain
+	}
+
+	return resp
 }
 
 func (h *InstanceHandler) CreateContainedInstance(c echo.Context) error {
@@ -263,7 +315,38 @@ func (h *InstanceHandler) SetParent(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "updated"})
 }
 
+func (h *InstanceHandler) GetContainmentTree(c echo.Context) error {
+	catalogName := c.Param("catalog-name")
+
+	tree, err := h.svc.GetContainmentTree(c.Request().Context(), catalogName)
+	if err != nil {
+		return mapError(err)
+	}
+
+	return c.JSON(http.StatusOK, treeNodesToDTO(tree))
+}
+
+func treeNodesToDTO(nodes []svcop.TreeNode) []dto.TreeNodeResponse {
+	if len(nodes) == 0 {
+		return []dto.TreeNodeResponse{}
+	}
+	result := make([]dto.TreeNodeResponse, len(nodes))
+	for i, node := range nodes {
+		result[i] = dto.TreeNodeResponse{
+			InstanceID:     node.Instance.ID,
+			InstanceName:   node.Instance.Name,
+			EntityTypeName: node.EntityTypeName,
+			Description:    node.Instance.Description,
+			Children:       treeNodesToDTO(node.Children),
+		}
+	}
+	return result
+}
+
 func RegisterInstanceRoutes(g *echo.Group, h *InstanceHandler, requireRW echo.MiddlewareFunc) {
+	// Containment tree — static path before parameterized :entity-type
+	g.GET("/tree", h.GetContainmentTree)
+
 	// Instance CRUD
 	g.POST("/:entity-type", h.CreateInstance, requireRW)
 	g.GET("/:entity-type", h.ListInstances)

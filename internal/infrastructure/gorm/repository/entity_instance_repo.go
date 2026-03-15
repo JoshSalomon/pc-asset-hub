@@ -2,6 +2,9 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -58,27 +61,76 @@ func (r *EntityInstanceGormRepo) GetByNameAndParent(ctx context.Context, entityT
 	return record.ToModel(), nil
 }
 
+// applyAttrFilters adds JOIN and WHERE clauses for attribute-based filtering.
+// Filter keys are attribute IDs (translated from names by the service layer).
+// Suffixes: .min for number minimum, .max for number maximum.
+// Plain keys: case-insensitive contains for strings, exact match for enums.
+func applyAttrFilters(query *gorm.DB, filters map[string]string) (*gorm.DB, error) {
+	joinIdx := 0
+	for key, val := range filters {
+		alias := fmt.Sprintf("iav%d", joinIdx)
+		joinIdx++
+
+		if strings.HasSuffix(key, ".min") {
+			attrID := strings.TrimSuffix(key, ".min")
+			numVal, err := strconv.ParseFloat(val, 64)
+			if err != nil {
+				return nil, domainerrors.NewValidation(fmt.Sprintf("invalid number for filter %s: %s", key, val))
+			}
+			query = query.Joins(
+				fmt.Sprintf("JOIN instance_attribute_values AS %s ON %s.instance_id = entity_instances.id AND %s.attribute_id = ?", alias, alias, alias), attrID).
+				Where(fmt.Sprintf("%s.value_number >= ?", alias), numVal)
+		} else if strings.HasSuffix(key, ".max") {
+			attrID := strings.TrimSuffix(key, ".max")
+			numVal, err := strconv.ParseFloat(val, 64)
+			if err != nil {
+				return nil, domainerrors.NewValidation(fmt.Sprintf("invalid number for filter %s: %s", key, val))
+			}
+			query = query.Joins(
+				fmt.Sprintf("JOIN instance_attribute_values AS %s ON %s.instance_id = entity_instances.id AND %s.attribute_id = ?", alias, alias, alias), attrID).
+				Where(fmt.Sprintf("%s.value_number <= ?", alias), numVal)
+		} else {
+			query = query.Joins(
+				fmt.Sprintf("JOIN instance_attribute_values AS %s ON %s.instance_id = entity_instances.id AND %s.attribute_id = ?", alias, alias, alias), key).
+				Where(fmt.Sprintf("(LOWER(%s.value_string) LIKE ? OR %s.value_enum = ?)", alias, alias), "%"+strings.ToLower(val)+"%", val)
+		}
+	}
+	return query, nil
+}
+
 func (r *EntityInstanceGormRepo) List(ctx context.Context, entityTypeID, catalogID string, params models.ListParams) ([]*models.EntityInstance, int, error) {
-	var records []gormmodels.EntityInstance
-	query := r.db.WithContext(ctx).Model(&gormmodels.EntityInstance{}).
-		Where("entity_type_id = ? AND catalog_id = ? AND deleted_at IS NULL", entityTypeID, catalogID)
+	base := r.db.WithContext(ctx).Table("entity_instances").
+		Where("entity_instances.entity_type_id = ? AND entity_instances.catalog_id = ? AND entity_instances.deleted_at IS NULL", entityTypeID, catalogID)
 
+	// Apply attribute filters
+	if len(params.Filters) > 0 {
+		var err error
+		base, err = applyAttrFilters(base, params.Filters)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
+	// Count (uses same base query with filters applied)
 	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	if err := base.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	if err := validateSortBy(params.SortBy); err != nil {
-		return nil, 0, err
-	}
+	query := base
+
+	// Sorting
 	if params.SortBy != "" {
-		order := params.SortBy
+		if err := validateSortBy(params.SortBy); err != nil {
+			return nil, 0, err
+		}
+		order := "entity_instances." + params.SortBy
 		if params.SortDesc {
 			order += " DESC"
 		}
 		query = query.Order(order)
 	} else {
-		query = query.Order("name")
+		query = query.Order("entity_instances.name")
 	}
 
 	if params.Limit > 0 {
@@ -88,6 +140,10 @@ func (r *EntityInstanceGormRepo) List(ctx context.Context, entityTypeID, catalog
 		query = query.Offset(params.Offset)
 	}
 
+	// Select only entity_instances columns to avoid JOIN columns interfering
+	query = query.Select("entity_instances.*")
+
+	var records []gormmodels.EntityInstance
 	if err := query.Find(&records).Error; err != nil {
 		return nil, 0, err
 	}
@@ -97,6 +153,21 @@ func (r *EntityInstanceGormRepo) List(ctx context.Context, entityTypeID, catalog
 		result[i] = records[i].ToModel()
 	}
 	return result, int(total), nil
+}
+
+func (r *EntityInstanceGormRepo) ListByCatalog(ctx context.Context, catalogID string) ([]*models.EntityInstance, error) {
+	var records []gormmodels.EntityInstance
+	if err := r.db.WithContext(ctx).
+		Where("catalog_id = ? AND deleted_at IS NULL", catalogID).
+		Order("name").
+		Find(&records).Error; err != nil {
+		return nil, err
+	}
+	result := make([]*models.EntityInstance, len(records))
+	for i := range records {
+		result[i] = records[i].ToModel()
+	}
+	return result, nil
 }
 
 func (r *EntityInstanceGormRepo) ListByParent(ctx context.Context, parentInstanceID string, params models.ListParams) ([]*models.EntityInstance, int, error) {

@@ -11,6 +11,7 @@ type EntityInstanceRepository interface {
 	GetByID(ctx context.Context, id string) (*models.EntityInstance, error)
 	GetByNameAndParent(ctx context.Context, entityTypeID, catalogID, parentInstanceID, name string) (*models.EntityInstance, error)
 	List(ctx context.Context, entityTypeID, catalogID string, params models.ListParams) ([]*models.EntityInstance, int, error)
+	ListByCatalog(ctx context.Context, catalogID string) ([]*models.EntityInstance, error)
 	DeleteByCatalogID(ctx context.Context, catalogID string) error
 	ListByParent(ctx context.Context, parentInstanceID string, params models.ListParams) ([]*models.EntityInstance, int, error)
 	Update(ctx context.Context, inst *models.EntityInstance) error

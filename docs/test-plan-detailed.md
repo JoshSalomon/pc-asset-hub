@@ -30,7 +30,7 @@ Development proceeds through three environment phases, each with increasing infr
 
 **Milestones completed**: 1–12 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, and T-12.01 through T-12.63 (447 test cases), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, and T-13.01 through T-13.102 (542 test cases; T-13.78 through T-13.85 retired), using SQLite and mocked/simulated infrastructure.
 
 **Human checkpoint**: After all 447 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
@@ -1485,6 +1485,210 @@ Contained instances are created under a parent instance via sub-resource URLs. A
 | T-12.62 | Unlink action removes association link | Browser | Confirmation dialog, link removed from list |
 | T-12.63 | RO user sees references but no link/unlink controls | Browser | Read-only view, no action buttons |
 
+## Milestone 13: Catalog Data Viewer
+
+Phase 4 of the catalog implementation plan. Adds a read-only operational UI for browsing catalog data, plus backend enhancements for filtering, sorting, pagination, containment tree, and parent chain resolution. User stories: US-17, US-18, US-19, US-20, US-21, US-40.
+
+### Containment Tree — Repository
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.01 | `ListByCatalog` returns all instances in a catalog | Integration | All instances across entity types returned |
+| T-13.02 | `ListByCatalog` excludes instances from other catalogs | Integration | Only instances matching catalogID returned |
+| T-13.03 | `ListByCatalog` returns empty list for empty catalog | Integration | Empty slice, no error |
+
+### Containment Tree — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.04 | `GetContainmentTree` builds tree from flat instance list | Unit | Root instances at top level, children nested |
+| T-13.05 | Root instances (no parent) appear as top-level nodes | Unit | Instances with empty ParentInstanceID at root |
+| T-13.06 | Children nested under their parent | Unit | Child nodes under correct parent |
+| T-13.07 | Multi-level nesting (grandchildren) | Unit | 3+ level hierarchy correctly built |
+| T-13.08 | Empty catalog returns empty tree | Unit | Empty slice, no error |
+| T-13.09 | Each tree node includes entity type name | Unit | Entity type name resolved via etRepo |
+| T-13.10 | Nonexistent catalog returns NotFound | Unit | 404 error |
+
+### Containment Tree — API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.11 | `GET /catalogs/{name}/tree` returns 200 with tree | API | Nested JSON tree structure |
+| T-13.12 | `GET /catalogs/{name}/tree` returns 404 for nonexistent catalog | API | 404 response |
+| T-13.13 | Tree nodes include instance name, ID, entity type name | API | All fields present in response |
+| T-13.14 | Tree structure matches containment relationships | API | Parent-child nesting correct |
+
+### Attribute-Based Filtering — Repository
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.15 | String filter applies case-insensitive contains match | Integration | `LIKE '%value%'` behavior |
+| T-13.16 | Number filter applies exact match | Integration | Exact float64 comparison |
+| T-13.17 | Number range filter with min only | Integration | `>= min` |
+| T-13.18 | Number range filter with max only | Integration | `<= max` |
+| T-13.19 | Number range filter with min and max | Integration | `>= min AND <= max` |
+| T-13.20 | Enum filter applies exact match | Integration | Exact string comparison on enum value |
+| T-13.21 | Multiple filters combine with AND logic | Integration | All conditions must match |
+| T-13.22 | Filter on attribute with no matching instances returns empty | Integration | Empty result, no error |
+| T-13.23 | Filtering works across EAV join | Integration | Correct join on instance_attribute_values |
+
+### Attribute-Based Filtering — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.24 | Filter params passed through to repository | Unit | Repository called with correct ListParams |
+| T-13.25 | Unknown attribute name in filter returns validation error | Unit | 400-level error |
+| T-13.26 | Filter params resolved from attribute name to attribute ID | Unit | Service translates name→ID before passing to repo |
+
+### Attribute-Based Filtering — API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.27 | `GET /{name}/{type}?filter.strattr=hello` returns filtered results | API | Only instances with matching string attr |
+| T-13.28 | `GET /{name}/{type}?filter.numattr=5` filters by exact number | API | Only instances with numattr=5 |
+| T-13.29 | `GET /{name}/{type}?filter.numattr.min=1&filter.numattr.max=10` range filter | API | Only instances with 1<=numattr<=10 |
+| T-13.30 | Multiple filter params combine with AND | API | Intersection of all filters |
+| T-13.31 | `filter.unknownattr=x` returns 400 | API | Bad request error |
+
+### Sorting — Repository
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.32 | Sort by string attribute ascending | Integration | Alphabetical order |
+| T-13.33 | Sort by string attribute descending | Integration | Reverse alphabetical |
+| T-13.34 | Sort by number attribute ascending | Integration | Numeric order (1, 2, 10 not 1, 10, 2) |
+| T-13.35 | Sort by number attribute descending | Integration | Reverse numeric order |
+| T-13.36 | Sort by name (built-in field) ascending | Integration | Name alphabetical |
+
+### Sorting — API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.37 | `?sort=attr:asc` sorts ascending | API | Results in ascending order |
+| T-13.38 | `?sort=attr:desc` sorts descending | API | Results in descending order |
+| T-13.39 | `?sort=name:asc` sorts by built-in name field | API | Results sorted by name |
+| T-13.40 | No sort param uses default order | API | Results in default (created) order |
+
+### Pagination — Repository
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.41 | Offset skips correct number of results | Integration | First N results excluded |
+| T-13.42 | Limit caps result count | Integration | At most N results returned |
+| T-13.43 | Total count unaffected by offset/limit | Integration | Total reflects all matching, not page |
+| T-13.44 | Offset beyond total returns empty with correct total | Integration | Empty items, total still accurate |
+
+### Pagination — API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.45 | `?limit=5&offset=10` returns correct page | API | 5 results starting from 11th |
+| T-13.46 | Response includes total count | API | `total` field in response |
+| T-13.47 | Default limit is 20 when not specified | API | 20 results max |
+| T-13.48 | Limit capped at 100 | API | `?limit=500` returns at most 100 |
+| T-13.49 | `?offset=0&limit=0` returns count only (no items) | API | Empty items array, total populated |
+
+### Parent Chain Resolution — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.50 | Parent chain resolves from instance up to root | Unit | Ordered list of ancestors |
+| T-13.51 | Root instance has empty parent chain | Unit | Empty array |
+| T-13.52 | Multi-level chain (3+ levels) resolves correctly | Unit | All ancestors in root-first order |
+| T-13.53 | Each chain entry includes instance ID, name, entity type name | Unit | All fields populated |
+
+### Parent Chain Resolution — API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.54 | `GET /{name}/{type}/{id}` includes `parent_chain` in response | API | Array field present |
+| T-13.55 | Parent chain is ordered root-first | API | First entry is root ancestor |
+| T-13.56 | Root instance has empty parent chain | API | Empty array in response |
+
+### Operational UI — Build Infrastructure
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.57 | Vite multi-entry build produces `index.html` and `operational.html` | Browser | Both HTML files exist in build output |
+| T-13.58 | Operational entry point renders OperationalApp shell | Browser | App mounts and renders |
+| T-13.59 | Operational app masthead shows "AI Asset Hub — Data Viewer" | Browser | Brand text correct |
+| T-13.60 | Role selector in masthead works | Browser | Role changes propagate to API calls |
+
+### Operational UI — Catalog List Page
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.61 | Catalog list page loads and shows catalogs | Browser | Table with catalog rows |
+| T-13.62 | Catalog columns: name, CV label, status badge, instance count | Browser | All columns rendered |
+| T-13.63 | Search input filters catalogs by name | Browser | Table filters as user types |
+| T-13.64 | Sortable column headers | Browser | Click header toggles sort |
+| T-13.65 | Pagination controls present | Browser | Page size selector and navigation |
+| T-13.66 | Clicking catalog name navigates to catalog detail | Browser | Route changes to /catalogs/{name} |
+| T-13.67 | Validation status badge colors (green=valid, blue=draft, red=invalid) | Browser | Correct label colors |
+
+### Operational UI — Catalog Detail Overview
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.68 | Catalog detail shows header with name, status badge, CV label | Browser | All header elements rendered |
+| T-13.69 | Overview tab lists entity types from pinned CV | Browser | Table with entity type rows |
+| T-13.70 | Entity type rows show name, version, instance count | Browser | All columns populated |
+| T-13.71 | "Browse Instances" button switches to tree browser for that type | Browser | Tab changes, tree loads |
+
+### Operational UI — Containment Tree Browser (Two-Pane Layout)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.72 | Tree browser tab renders two-pane layout with tree and detail | Browser | Tree on left, detail/empty state on right |
+| T-13.73 | Tree groups root instances under entity type headers with counts | Browser | "mcp-server (2)" format |
+| T-13.74 | Entity type group headers are expandable | Browser | Click expands/collapses to show instances |
+| T-13.75 | Clicking a tree instance shows detail in right panel | Browser | Detail panel populates inline (not drawer overlay) |
+| T-13.76 | Multi-level tree expands correctly (3+ levels) | Browser | Grandchildren visible after expanding |
+| T-13.77 | Empty state shown when no instance selected | Browser | "Select an instance" message in right panel |
+
+### Operational UI — Instance List (REMOVED)
+
+Instance list table with filtering, sorting, and pagination has been removed from the read-only tree browser. The tree is the primary navigation. The backend filtering/sorting/pagination API remains available and is tested at the API layer (T-13.27-49). UI for these controls is deferred to FF-6 (operational editing).
+
+Test cases T-13.78 through T-13.85 are retired.
+
+### Operational UI — Instance Detail
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.86 | Instance detail panel shows attributes table | Browser | Name, type, value columns |
+| T-13.87 | Enum values show resolved names | Browser | Enum display name, not raw value |
+| T-13.88 | Instance description displayed | Browser | Description text visible |
+| T-13.89 | Instance version and timestamps displayed | Browser | Version number, created/updated dates |
+
+### Operational UI — Breadcrumb Navigation
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.90 | Breadcrumb renders containment path | Browser | Catalog > Parent > Current |
+| T-13.91 | Breadcrumb shows entity type and instance name per level | Browser | "MCP Server: my-server" format |
+| T-13.92 | Breadcrumb links navigate to ancestor in tree | Browser | Click selects ancestor node |
+| T-13.93 | Root instance breadcrumb shows catalog only | Browser | No parent entries |
+
+### Operational UI — Reference Navigation
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.94 | References tab shows forward references | Browser | Table with assoc name, type, target |
+| T-13.95 | Referenced-by tab shows reverse references | Browser | Table with assoc name, type, source |
+| T-13.96 | Clicking referenced instance navigates to it in tree | Browser | Tree node selected, detail updates |
+| T-13.97 | No references shows empty state message | Browser | "No references" text |
+
+### Operational UI — Read-Only Enforcement
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.98 | No create buttons visible in operational UI | Browser | No "Create" buttons anywhere |
+| T-13.99 | No edit buttons visible in operational UI | Browser | No "Edit" buttons anywhere |
+| T-13.100 | No delete buttons visible in operational UI | Browser | No "Delete" buttons anywhere |
+| T-13.101 | No link/unlink actions in reference tabs | Browser | No write actions on references |
+| T-13.102 | Read-only enforcement applies regardless of role (even SuperAdmin) | Browser | SuperAdmin sees same read-only view |
+
 ---
 
 ## Coverage Criteria
@@ -1523,7 +1727,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 447 test cases (T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, and T-12.01 through T-12.63) pass
+- All 542 test cases (T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, and T-13.01 through T-13.102; T-13.78 through T-13.85 retired) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

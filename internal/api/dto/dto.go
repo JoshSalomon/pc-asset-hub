@@ -282,16 +282,17 @@ type UpdateInstanceRequest struct {
 }
 
 type InstanceResponse struct {
-	ID               string                   `json:"id"`
-	EntityTypeID     string                   `json:"entity_type_id"`
-	CatalogID        string                   `json:"catalog_id"`
-	ParentInstanceID string                   `json:"parent_instance_id,omitempty"`
-	Name             string                   `json:"name"`
-	Description      string                   `json:"description"`
-	Version          int                      `json:"version"`
-	Attributes       []AttributeValueResponse `json:"attributes"`
-	CreatedAt        time.Time                `json:"created_at"`
-	UpdatedAt        time.Time                `json:"updated_at"`
+	ID               string                     `json:"id"`
+	EntityTypeID     string                     `json:"entity_type_id"`
+	CatalogID        string                     `json:"catalog_id"`
+	ParentInstanceID string                     `json:"parent_instance_id,omitempty"`
+	Name             string                     `json:"name"`
+	Description      string                     `json:"description"`
+	Version          int                        `json:"version"`
+	Attributes       []AttributeValueResponse   `json:"attributes"`
+	ParentChain      []ParentChainEntryResponse `json:"parent_chain,omitempty"`
+	CreatedAt        time.Time                  `json:"created_at"`
+	UpdatedAt        time.Time                  `json:"updated_at"`
 }
 
 type AttributeValueResponse struct {
@@ -329,6 +330,22 @@ type ReferenceResponse struct {
 type SetParentRequest struct {
 	ParentType       string `json:"parent_type"`
 	ParentInstanceID string `json:"parent_instance_id"`
+}
+
+// === Catalog Data Viewer DTOs ===
+
+type TreeNodeResponse struct {
+	InstanceID     string             `json:"instance_id"`
+	InstanceName   string             `json:"instance_name"`
+	EntityTypeName string             `json:"entity_type_name"`
+	Description    string             `json:"description"`
+	Children       []TreeNodeResponse `json:"children"`
+}
+
+type ParentChainEntryResponse struct {
+	InstanceID     string `json:"instance_id"`
+	InstanceName   string `json:"instance_name"`
+	EntityTypeName string `json:"entity_type_name"`
 }
 
 // === List Response ===

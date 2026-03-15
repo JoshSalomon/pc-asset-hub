@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -86,10 +87,25 @@ func (s *InstanceService) resolveEntityType(ctx context.Context, catalogName, en
 	return nil, nil, domainerrors.NewNotFound("EntityType", fmt.Sprintf("%s is not pinned in catalog %s", entityTypeName, catalogName))
 }
 
+// TreeNode represents an instance in a containment tree.
+type TreeNode struct {
+	Instance       *models.EntityInstance
+	EntityTypeName string
+	Children       []TreeNode
+}
+
+// ParentChainEntry represents an ancestor in the parent chain for breadcrumb navigation.
+type ParentChainEntry struct {
+	InstanceID     string
+	InstanceName   string
+	EntityTypeName string
+}
+
 // InstanceDetail includes the instance and its resolved attribute values.
 type InstanceDetail struct {
-	Instance   *models.EntityInstance
-	Attributes []AttributeValue
+	Instance    *models.EntityInstance
+	Attributes  []AttributeValue
+	ParentChain []ParentChainEntry
 }
 
 // AttributeValue is a resolved attribute value with name and type from the schema.
@@ -278,7 +294,18 @@ func (s *InstanceService) GetInstance(ctx context.Context, catalogName, entityTy
 		return nil, err
 	}
 
-	return &InstanceDetail{Instance: inst, Attributes: avs}, nil
+	detail := &InstanceDetail{Instance: inst, Attributes: avs}
+
+	// Resolve parent chain for breadcrumb navigation
+	if inst.ParentInstanceID != "" {
+		chain, err := s.resolveParentChain(ctx, inst)
+		if err != nil {
+			return nil, err
+		}
+		detail.ParentChain = chain
+	}
+
+	return detail, nil
 }
 
 func (s *InstanceService) ListInstances(ctx context.Context, catalogName, entityTypeName string, params models.ListParams) ([]*InstanceDetail, int, error) {
@@ -287,13 +314,40 @@ func (s *InstanceService) ListInstances(ctx context.Context, catalogName, entity
 		return nil, 0, err
 	}
 
-	instances, total, err := s.instRepo.List(ctx, etv.EntityTypeID, catalog.ID, params)
+	// Fetch schema attributes for filter name→ID translation and value resolution
+	attrs, err := s.attrRepo.ListByVersion(ctx, etv.ID)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// Fetch schema attributes once (not per instance)
-	attrs, err := s.attrRepo.ListByVersion(ctx, etv.ID)
+	// Translate filter attribute names to IDs
+	if len(params.Filters) > 0 {
+		attrByName := make(map[string]*models.Attribute)
+		for _, a := range attrs {
+			attrByName[a.Name] = a
+		}
+		resolved := make(map[string]string)
+		for key, val := range params.Filters {
+			// Handle .min/.max suffixes
+			baseName := key
+			suffix := ""
+			if strings.HasSuffix(key, ".min") {
+				baseName = strings.TrimSuffix(key, ".min")
+				suffix = ".min"
+			} else if strings.HasSuffix(key, ".max") {
+				baseName = strings.TrimSuffix(key, ".max")
+				suffix = ".max"
+			}
+			attr, ok := attrByName[baseName]
+			if !ok {
+				return nil, 0, domainerrors.NewValidation(fmt.Sprintf("unknown filter attribute: %s", baseName))
+			}
+			resolved[attr.ID+suffix] = val
+		}
+		params.Filters = resolved
+	}
+
+	instances, total, err := s.instRepo.List(ctx, etv.EntityTypeID, catalog.ID, params)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -780,6 +834,108 @@ func (s *InstanceService) SetParent(ctx context.Context, catalogName, childTypeN
 
 	_ = s.catalogRepo.UpdateValidationStatus(ctx, catalog.ID, models.ValidationStatusDraft)
 	return nil
+}
+
+// GetContainmentTree builds a containment tree for all instances in a catalog.
+func (s *InstanceService) GetContainmentTree(ctx context.Context, catalogName string) ([]TreeNode, error) {
+	catalog, err := s.catalogRepo.GetByName(ctx, catalogName)
+	if err != nil {
+		return nil, err
+	}
+
+	instances, err := s.instRepo.ListByCatalog(ctx, catalog.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(instances) == 0 {
+		return []TreeNode{}, nil
+	}
+
+	// Resolve entity type names (cache by ID)
+	etNames := make(map[string]string)
+	for _, inst := range instances {
+		if _, ok := etNames[inst.EntityTypeID]; !ok {
+			et, err := s.etRepo.GetByID(ctx, inst.EntityTypeID)
+			if err != nil {
+				etNames[inst.EntityTypeID] = inst.EntityTypeID // fallback
+			} else {
+				etNames[inst.EntityTypeID] = et.Name
+			}
+		}
+	}
+
+	// Index children by parent ID
+	childrenMap := make(map[string][]*models.EntityInstance)
+	for _, inst := range instances {
+		childrenMap[inst.ParentInstanceID] = append(childrenMap[inst.ParentInstanceID], inst)
+	}
+
+	// Build nodes recursively
+	var buildNodes func(parentID string) []TreeNode
+	buildNodes = func(parentID string) []TreeNode {
+		children := childrenMap[parentID]
+		if len(children) == 0 {
+			return nil
+		}
+		nodes := make([]TreeNode, len(children))
+		for i, child := range children {
+			nodes[i] = TreeNode{
+				Instance:       child,
+				EntityTypeName: etNames[child.EntityTypeID],
+				Children:       buildNodes(child.ID),
+			}
+		}
+		return nodes
+	}
+
+	return buildNodes(""), nil
+}
+
+// resolveParentChain walks up from an instance to the root, collecting ancestors.
+// Returns entries in root-first order.
+func (s *InstanceService) resolveParentChain(ctx context.Context, inst *models.EntityInstance) ([]ParentChainEntry, error) {
+	const maxDepth = 50
+	var chain []ParentChainEntry
+	currentID := inst.ParentInstanceID
+	etNames := make(map[string]string)
+	visited := make(map[string]bool)
+
+	for currentID != "" {
+		if visited[currentID] || len(chain) >= maxDepth {
+			break
+		}
+		visited[currentID] = true
+		parent, err := s.instRepo.GetByID(ctx, currentID)
+		if err != nil {
+			return nil, err
+		}
+
+		etName := etNames[parent.EntityTypeID]
+		if etName == "" {
+			et, err := s.etRepo.GetByID(ctx, parent.EntityTypeID)
+			if err == nil {
+				etName = et.Name
+			} else {
+				etName = parent.EntityTypeID
+			}
+			etNames[parent.EntityTypeID] = etName
+		}
+
+		chain = append(chain, ParentChainEntry{
+			InstanceID:     parent.ID,
+			InstanceName:   parent.Name,
+			EntityTypeName: etName,
+		})
+		currentID = parent.ParentInstanceID
+	}
+
+	// Reverse to root-first order
+	for i, j := 0, len(chain)-1; i < j; i, j = i+1, j-1 {
+		chain[i], chain[j] = chain[j], chain[i]
+	}
+
+	return chain, nil
 }
 
 func (s *InstanceService) cascadeDelete(ctx context.Context, id string) error {

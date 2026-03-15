@@ -779,10 +779,13 @@ As an RO user, I want to list entity instances with attribute-based filtering an
 
 Acceptance Criteria:
 - RO user can list entity instances of a given type.
-- Results can be filtered by any attribute value (common or custom).
+- Results can be filtered by any attribute value (common or custom). Filter semantics are type-aware:
+  - String attributes: case-insensitive substring match (contains).
+  - Number attributes: exact match, or range filter with min/max.
+  - Enum attributes: exact match against the enum value.
 - Results can be sorted by any attribute (ascending or descending).
 - Multiple filters can be combined (AND logic).
-- The response includes pagination support.
+- The response includes pagination support (offset/limit with total count). Default page size is 20; configurable up to 100.
 - Filtering by non-existent attributes returns an error, not an empty result.
 
 ---
@@ -795,9 +798,12 @@ As an RO user, I want to access contained entities via the parent entity's URL (
 Acceptance Criteria:
 - Contained entities are accessible via `GET /{parent-type}/{parent-id}/{contained-type}`.
 - Individual contained entities are accessible via `GET /{parent-type}/{parent-id}/{contained-type}/{name}`.
-- Multi-level containment is supported (e.g., `GET /a/{id}/b/{id}/c`).
 - Filtering and sorting (from US-17) apply to contained entity listings.
 - Accessing a contained entity via a non-existent parent returns 404.
+- A containment tree endpoint (`GET /catalogs/{name}/tree`) returns the full instance hierarchy for a catalog as a nested structure, enabling tree-based browsing UIs.
+- Each instance in the tree includes its entity type name and a summary of its children.
+- Instance detail includes a parent chain (ordered list of ancestors up to root) for breadcrumb navigation.
+- Multi-level containment URLs (e.g., `GET /a/{id}/b/{id}/c`) are deferred — single-level parent-child routes and the tree endpoint are sufficient for navigating deep hierarchies.
 
 ---
 
@@ -868,6 +874,7 @@ Acceptance Criteria:
 - Authorization decisions use the OCP RBAC API (SubjectAccessReview or equivalent).
 - Adding or removing users from roles is done via standard OpenShift tooling (oc, console).
 - No custom user management UI or API exists in the hub.
+- Per-catalog access control is enforced using K8s RBAC `resourceNames` on the `catalogs` resource (see US-39).
 
 ---
 
@@ -1102,6 +1109,43 @@ Acceptance Criteria:
 - When a control is hidden due to role restrictions, no placeholder or "locked" indicator is shown — the control simply does not exist in the UI.
 - When a control is disabled due to state restrictions (e.g., entity type in production, not a role issue), the control is visible but grayed out with a tooltip explaining why.
 
+---
+
+**US-39: Catalog-level access control**
+As a platform administrator, I want to grant users read or write access to specific catalogs (not all catalogs globally), so that teams can only access the data they own or are responsible for.
+
+**Why**: In a multi-team environment, different teams manage different catalogs (e.g., "team-alpha-prod", "team-beta-staging"). A global RW role that grants write access to all catalogs violates the principle of least privilege. Catalog-level access control ensures data isolation between teams without requiring separate Asset Hub deployments.
+
+Acceptance Criteria:
+- Per-catalog access is controlled via K8s RBAC using `resourceNames` on the `catalogs` resource. No custom ACL tables or user management APIs are introduced.
+- Cluster admins can grant a user read or write access to specific catalogs by creating a RoleBinding with `resourceNames` listing the allowed catalog names.
+- Users without a `resourceNames` restriction (i.e., a Role that grants access to all `catalogs` resources) retain access to all catalogs, preserving backward compatibility.
+- The catalog list API (`GET /api/data/v1/catalogs`) returns only catalogs the requesting user is authorized to access.
+- Accessing a catalog the user is not authorized for returns 403 with a clear error message.
+- All sub-resource operations (instance CRUD, links, references) under a catalog inherit the catalog's access check — no separate per-instance authorization.
+- In development mode (`RBAC_MODE=header`), the global role header applies to all catalogs (no per-catalog restriction), preserving the existing development workflow.
+- No catalog-level permission management UI exists in the hub — admins use `oc`, `kubectl`, or the OCP console to manage RoleBindings.
+
+---
+
+**US-40: Operational data viewer UI**
+As an operator or consumer, I want a dedicated read-only UI for browsing catalog data, separate from the admin/meta UI, so that I can discover and navigate assets without being exposed to schema management concerns.
+
+**Why**: The meta UI is designed for administrators building and managing schemas and populating data. Operators and consumers need a simpler, read-optimized interface focused on browsing — finding assets, navigating containment hierarchies, following references, and filtering by attributes. Separating these concerns avoids overloading the admin UI and allows the operational viewer to be deployed independently with its own access controls.
+
+Acceptance Criteria:
+- The operational UI is a separate web application served on a dedicated port (30001), built from the same codebase as the meta UI but with its own Vite entry point.
+- The operational UI is read-only — no create, edit, or delete actions are available. All data modification is performed through the meta UI (see FF-6 for future editing support).
+- The operational UI provides a catalog list page showing catalog name, pinned CV label, validation status, and instance counts.
+- The operational UI provides a catalog detail page with an entity type overview (types with instance counts) and a containment tree browser.
+- The containment tree browser uses a two-pane layout: the left pane shows the containment tree grouped by entity type with expandable headers; the right pane shows the selected instance's detail. No separate instance list table — the tree is the primary navigation for browsing instances.
+- Instance detail shows all attribute values (with resolved enum names), description, version, and timestamps.
+- Instance detail shows forward references ("References") and reverse references ("Referenced By") with clickable links that navigate to the referenced instance in the tree.
+- Breadcrumb navigation shows the containment path from catalog root to the current instance.
+- The backend supports attribute-based filtering (US-17), column sorting, and pagination via API query parameters, available for future use by the operational editing UI (FF-6).
+- The operational UI shares types, API client, and utility code with the meta UI — no duplication of shared infrastructure.
+- Deployment: a single nginx pod serves both the meta UI (on port 30000) and the operational UI (on port 30001) via separate location blocks.
+
 ## 10. Open Design Decisions
 
 The following items are acknowledged but not yet fully specified:
@@ -1160,6 +1204,9 @@ Items where the current implementation diverges from the intended behavior descr
 | TD-32 | Diagram: overlapping edges between same entity pair | When two or more associations exist between the same pair of entity types (e.g., mcp-tool → guardrail with both "uses" and "validates"), the edges overlap into a single line with two labels stacked on top of each other. | Add edge offset or curvature so multiple edges between the same pair are visually distinct. Dagre layout doesn't natively support parallel edges — options include: (a) adding a small vertical offset per duplicate edge, (b) using quadratic bezier curves with different control points, or (c) bundling labels into a single edge with a multi-line label. |
 | TD-33 | "Contained by" flickers UUID before showing parent name | When opening instance details for a contained entity, the parent UUID briefly flashes before the async API call resolves the parent name. | Either (a) include `parent_instance_name` in the instance list API response so no extra fetch is needed, or (b) show a spinner/placeholder instead of the raw UUID while loading. Option (a) is cleaner — resolve the parent name server-side in `ListInstances`/`GetInstance`. |
 | TD-34 | `SetParentRequest.ParentType` missing `validate:"required"` | When setting a parent, `ParentType` is logically required but lacks the `validate:"required"` tag. Empty `ParentType` with non-empty `ParentInstanceID` reaches the service and fails with a confusing `EntityType not found: ""` error instead of a clear 400. | Add `validate:"required"` to `ParentType` in `SetParentRequest`, or add explicit validation in the handler/service. |
+| TD-35 | Operational catalog detail page too large | `OperationalCatalogDetailPage.tsx` manages 17+ state variables across 4 concerns (catalog metadata, tree state, instance detail/refs, instance list) in a single 500+ line component. | Extract the containment tree panel, instance detail drawer, and instance list table into separate sub-components to reduce cognitive load and improve testability. |
+| TD-37 | Reference direction unclear in tree browser detail panel | In the instance detail panel, directional associations show under "Forward References" and "Referenced By" sections with a "Type" column showing "directional". It is not clear which direction the association goes — the user cannot tell whether the selected instance depends on the target or vice versa. The association name alone may not convey direction (e.g., "uses-model" is clear, but "related-to" is not). | Show an arrow or directional indicator in the reference table: e.g., "my-server → gpt-4" for forward refs and "monitor-1 → my-server" for reverse. Alternatively, use role labels from the association definition (source_role/target_role) to clarify the relationship semantics. Consider replacing the generic "directional" type label with the actual role or a "depends on" / "depended by" phrasing. |
+| TD-36 | Review usefulness of Overview tab in operational catalog view | The Overview tab shows entity type names, pinned versions, and a "Browse Instances" button per type. With the two-pane tree browser now grouping instances under entity type headers, the Overview tab is largely redundant — the only unique information it provides is the meta entity type version number. | Options: (A) Remove the Overview tab entirely and make the tree browser the default (and only) tab. Show entity type version info in the tree group headers (e.g., "mcp-server V3 (2)"). (B) Repurpose the Overview tab as a catalog dashboard with useful aggregate info: instance counts per type, validation summary, catalog metadata, recent changes. (C) Keep as-is for users who want a quick summary before diving into the tree. |
 | TD-28 | Phase 3 code quality improvements (L1-L5, L7) | Multiple low-severity issues from quality review: (L1) duplicated forward/reverse reference handler conversion logic, (L2) dead `_ = parentInst`/`_ = sourceInst` assignments, (L3) JSON tags on service-layer `ReferenceDetail`, (L4) N+1 queries in `resolveLinks`, (L5) CatalogDetailPage now has ~30 state variables and should be decomposed, (L7) silently swallowed `UpdateValidationStatus` errors. | Extract `refsToDTO` helper in handler. Clean up dead assignments. Remove JSON tags from service types. Add batch fetch for links resolution. Decompose CatalogDetailPage into sub-components. Log validation status update failures. |
 | **TD-22** | **[CRITICAL] Common attributes as schema-level attributes** | Common attributes (Name, Description) are fields on `EntityInstance` but are NOT represented as `Attribute` records in the entity type schema. They are invisible in attribute lists, diagrams, and BOM modals. If an entity type manually creates custom attributes named `name`/`description`, the create instance modal shows duplicate fields. | **Approach A (DB-level):** Make common attributes into real `Attribute` records: (1) Auto-create them when an entity type is created, marked with a `system: true` flag. (2) Prevent deletion of system attributes. (3) Show them in all views — attribute tabs, diagrams, BOM modals, create/edit modals. (4) Remove the hardcoded Name/Description fields from the instance create/edit modals — use the schema attributes instead. (5) Design for extensibility: future common attributes like `Version` (auto-incremented) and `State` (enum lifecycle) should follow the same pattern. **Approach B (API-level merge):** Keep common attributes as hardcoded fields on `EntityInstance` (no DB schema change). The API layer merges them into the dynamic attribute list when returning responses — injecting synthetic `name`, `description`, `version` entries at the top of the attributes array with a `system: true` marker. The UI renders all attributes uniformly from this merged list and prevents editing/removing system-flagged ones. Meta API endpoints (attribute list, version snapshot, diagram data) similarly inject common attributes into their responses. Simpler to implement (no migration, no COW implications), but common attributes are never real DB records — they exist only as API-level projections. Prevents the duplicate-fields bug by having a single source of truth for what attributes exist (the merged list). |
 
@@ -1243,4 +1290,14 @@ The entity type diagram currently uses a hardcoded Dagre (hierarchical top-to-bo
 - Concentric, Grid, BreadthFirst
 
 **Decision:** Deferred. Current Dagre layout works well for the UML class diagram use case.
+
+### FF-6: Operational UI Editing
+
+The operational UI (Phase 4) is initially read-only — a data viewer for operators and consumers to browse, filter, and navigate catalog data. A future enhancement would add write capabilities to the operational UI, allowing authorized users to create, edit, and delete instances, manage containment, and create association links directly from the operational interface.
+
+**Motivation:** Some teams may prefer a single UI for both browsing and editing catalog data, rather than switching between the meta UI (editing) and operational UI (browsing). This is especially relevant when catalog-level RBAC (US-39) is in place — an operator with write access to a specific catalog should be able to edit it from the same interface they use to browse it.
+
+**Scope:** Reuse the existing create/edit/delete modals from the meta UI's `CatalogDetailPage`, adapted for the operational app shell. Role-aware rendering (RO vs RW) determines which controls are visible.
+
+**Decision:** Deferred. The read-only viewer must be validated with users first. Editing features can be added incrementally once the browsing UX is stable.
 

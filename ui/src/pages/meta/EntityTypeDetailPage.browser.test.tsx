@@ -1207,3 +1207,272 @@ test('T-E.146: Attributes table shows required indicator', async () => {
   // Required attribute should have an indicator (asterisk or "Required" text)
   await expect.element(page.getByText('hostname *')).toBeVisible()
 })
+
+// === Additional coverage tests ===
+
+// Incoming association row hides Edit/Remove buttons
+test('incoming association hides Edit/Remove buttons', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'assoc-in', entity_type_version_id: 'v-other', name: 'tools', target_entity_type_id: 'et-1', type: 'containment', source_role: 'parent', target_role: 'child', source_cardinality: '1', target_cardinality: '0..n', direction: 'incoming', source_entity_type_id: 'et-2' },
+    ],
+    total: 1,
+  })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await expect.element(page.getByText('contained by')).toBeVisible()
+  // Incoming associations should NOT have Edit or Remove buttons
+  const editBtns = page.getByRole('button', { name: 'Edit' })
+  expect(editBtns.elements().length).toBe(0)
+  const removeBtns = page.getByRole('button', { name: 'Remove' })
+  expect(removeBtns.elements().length).toBe(0)
+})
+
+// Incoming directional shows "referenced by" label
+test('incoming directional shows "referenced by" label', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'assoc-in', entity_type_version_id: 'v-other', name: 'depends', target_entity_type_id: 'et-1', type: 'directional', source_role: 'consumer', target_role: 'provider', source_cardinality: '0..n', target_cardinality: '1', direction: 'incoming', source_entity_type_id: 'et-2' },
+    ],
+    total: 1,
+  })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await expect.element(page.getByText('referenced by')).toBeVisible()
+  // Should show the source role (other entity's role) — "consumer"
+  await expect.element(page.getByRole('gridcell', { name: 'consumer' })).toBeVisible()
+})
+
+// Deep copy: "Create Copy" button calls rename with deepCopyAllowed=true
+test('deep copy Create Copy button calls rename with deepCopyAllowed=true', async () => {
+  ;(api.entityTypes.rename as Mock)
+    .mockRejectedValueOnce(new Error('409: DEEP_COPY_REQUIRED'))
+    .mockResolvedValueOnce({ entity_type: { id: 'et-new', name: 'NewName' }, was_deep_copy: true })
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByText('Rename', { exact: true }).click()
+  await page.getByRole('textbox', { name: /New Name/i }).fill('NewName')
+  await page.getByRole('dialog').getByRole('button', { name: 'Rename' }).click()
+
+  // Deep copy warning should appear
+  await expect.element(page.getByText('Deep Copy Required')).toBeVisible()
+  await page.getByRole('button', { name: 'Create Copy' }).click()
+
+  // Should call rename with deepCopyAllowed=true
+  expect(api.entityTypes.rename).toHaveBeenCalledWith('et-1', 'NewName', true)
+})
+
+// Deep copy warning cancel closes modal
+test('deep copy warning cancel closes modal', async () => {
+  ;(api.entityTypes.rename as Mock).mockRejectedValueOnce(new Error('409: DEEP_COPY_REQUIRED'))
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByText('Rename', { exact: true }).click()
+  await page.getByRole('textbox', { name: /New Name/i }).fill('NewName')
+  await page.getByRole('dialog').getByRole('button', { name: 'Rename' }).click()
+
+  await expect.element(page.getByText('Deep Copy Required')).toBeVisible()
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await expect.element(page.getByText('Deep Copy Required')).not.toBeInTheDocument()
+})
+
+// Add association with custom source cardinality validation error
+test('add association custom cardinality empty fields shows validation error', async () => {
+  // Use empty associations so "Dataset" only appears in the dropdown, not the table
+  ;(api.associations.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Add Association' }).click()
+
+  // Fill required fields: name and target
+  await page.getByRole('textbox', { name: /Name/i }).fill('test-assoc')
+  // Switch to directional for custom cardinality support
+  await page.getByRole('button', { name: 'containment' }).click()
+  await page.getByText('directional', { exact: true }).click()
+  // Select custom source cardinality
+  await userEvent.selectOptions(page.getByLabelText('Source Cardinality', { exact: true }), 'custom')
+  // Select a target
+  await page.getByRole('button', { name: 'Select target' }).click()
+  await page.getByText('Dataset', { exact: true }).click()
+  // Now click Add — should show cardinality validation error
+  await page.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
+  await expect.element(page.getByText(/Source cardinality: both min and max are required/)).toBeVisible()
+})
+
+// Add association with custom target cardinality validation error
+test('add association custom target cardinality empty fields shows validation error', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Add Association' }).click()
+
+  await page.getByRole('textbox', { name: /Name/i }).fill('test-assoc')
+  await page.getByRole('button', { name: 'containment' }).click()
+  await page.getByText('directional', { exact: true }).click()
+  // Select custom target cardinality
+  await userEvent.selectOptions(page.getByLabelText('Target Cardinality', { exact: true }), 'custom')
+  // Select a target
+  await page.getByRole('button', { name: 'Select target' }).click()
+  await page.getByText('Dataset', { exact: true }).click()
+  // Click Add — should show target cardinality validation error
+  await page.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
+  await expect.element(page.getByText(/Target cardinality: both min and max are required/)).toBeVisible()
+})
+
+// Add association error from API
+test('add association API error shown in modal', async () => {
+  ;(api.associations.create as Mock).mockRejectedValue(new Error('409: already exists'))
+  ;(api.associations.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Add Association' }).click()
+
+  await page.getByRole('textbox', { name: /Name/i }).fill('tools')
+  await page.getByRole('button', { name: 'Select target' }).click()
+  await page.getByText('Dataset', { exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
+
+  await expect.element(page.getByText('409: already exists')).toBeVisible()
+})
+
+// Rename disabled when name unchanged
+test('rename button disabled when name unchanged', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByText('Rename', { exact: true }).click()
+  // Name is pre-filled with current name "MLModel" — rename button should be disabled
+  const renameBtn = page.getByRole('dialog').getByRole('button', { name: 'Rename' })
+  await expect.element(renameBtn).toBeDisabled()
+})
+
+// Copy attributes: select source and see attributes listed
+test('copy attributes shows source attributes after selection', async () => {
+  const sourceAttrs = [
+    { id: 'sa1', name: 'region', description: 'Region', type: 'string', ordinal: 0, required: false },
+    { id: 'sa2', name: 'hostname', description: 'Host', type: 'string', ordinal: 1, required: false },
+  ]
+  ;(api.attributes.list as Mock).mockImplementation((etId: string) => {
+    if (etId === 'et-2') return Promise.resolve({ items: sourceAttrs, total: 2 })
+    return Promise.resolve({ items: mockAttributes, total: 3 })
+  })
+  ;(api.versions.list as Mock).mockResolvedValue({ items: mockVersions, total: 2 })
+
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await expect.element(page.getByText('hostname')).toBeVisible()
+  await page.getByRole('button', { name: 'Copy from...' }).click()
+  await expect.element(page.getByText('Copy Attributes from Another Type')).toBeVisible()
+
+  // Select the source entity type — click the toggle
+  await page.getByRole('dialog').getByRole('button', { name: 'Select source type' }).click()
+  await page.getByText('Dataset').first().click()
+
+  // Attributes from source should appear
+  await expect.element(page.getByText('region').first()).toBeVisible()
+  // "hostname" conflicts with existing attribute — should show Conflict label
+  await expect.element(page.getByText('Conflict')).toBeVisible()
+  // "region" is available
+  await expect.element(page.getByText('Available')).toBeVisible()
+})
+
+// Copy attributes: select and submit
+test('copy attributes submits selected attributes', async () => {
+  const sourceAttrs = [
+    { id: 'sa1', name: 'region', description: 'Region', type: 'string', ordinal: 0, required: false },
+  ]
+  ;(api.attributes.list as Mock).mockImplementation((etId: string) => {
+    if (etId === 'et-2') return Promise.resolve({ items: sourceAttrs, total: 1 })
+    return Promise.resolve({ items: mockAttributes, total: 3 })
+  })
+  ;(api.versions.list as Mock).mockResolvedValue({ items: mockVersions, total: 2 })
+
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Copy from...' }).click()
+
+  // Select source
+  await page.getByRole('dialog').getByRole('button', { name: 'Select source type' }).click()
+  await page.getByText('Dataset').first().click()
+
+  // Wait for source attrs to load
+  await expect.element(page.getByText('region').first()).toBeVisible()
+
+  // Check the "region" attribute checkbox
+  const checkbox = page.getByRole('dialog').getByRole('checkbox').first()
+  await checkbox.click()
+
+  // Click "Copy Selected"
+  await page.getByRole('dialog').getByRole('button', { name: 'Copy Selected' }).click()
+  expect(api.attributes.copyFrom).toHaveBeenCalledWith('et-1', {
+    source_entity_type_id: 'et-2',
+    source_version: 2,
+    attribute_names: ['region'],
+  })
+})
+
+// Copy attributes: error on submit
+test('copy attributes error shown in modal', async () => {
+  ;(api.attributes.copyFrom as Mock).mockRejectedValue(new Error('500: copy failed'))
+  const sourceAttrs = [
+    { id: 'sa1', name: 'region', description: 'Region', type: 'string', ordinal: 0, required: false },
+  ]
+  ;(api.attributes.list as Mock).mockImplementation((etId: string) => {
+    if (etId === 'et-2') return Promise.resolve({ items: sourceAttrs, total: 1 })
+    return Promise.resolve({ items: mockAttributes, total: 3 })
+  })
+  ;(api.versions.list as Mock).mockResolvedValue({ items: mockVersions, total: 2 })
+
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Copy from...' }).click()
+
+  // Select source
+  await page.getByRole('dialog').getByRole('button', { name: 'Select source type' }).click()
+  await page.getByText('Dataset').first().click()
+
+  await expect.element(page.getByText('region').first()).toBeVisible()
+  const checkbox = page.getByRole('dialog').getByRole('checkbox').first()
+  await checkbox.click()
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Copy Selected' }).click()
+  await expect.element(page.getByText('500: copy failed')).toBeVisible()
+})
+
+// Move up attribute
+test('reorder attributes with up button', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await expect.element(page.getByText('hostname')).toBeVisible()
+
+  // Click "Move up" on the second attribute (cpu_count)
+  const upButtons = page.getByRole('button', { name: 'Move up' })
+  // First Move up button is on the first row (disabled), second is on the second row
+  await upButtons.nth(1).click()
+  expect(api.attributes.reorder).toHaveBeenCalledWith('et-1', ['a2', 'a1', 'a3'])
+})
+
+// SuperAdmin can also edit
+test('SuperAdmin can see edit controls', async () => {
+  renderDetail('SuperAdmin')
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Copy' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Delete' })).toBeVisible()
+  await expect.element(page.getByText('Rename', { exact: true })).toBeVisible()
+})
+
+// Cardinality display for incoming association: target → source
+test('incoming association shows inverted cardinality', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'assoc-in', entity_type_version_id: 'v-other', name: 'tools', target_entity_type_id: 'et-1', type: 'containment', source_role: 'parent', target_role: 'child', source_cardinality: '1', target_cardinality: '0..n', direction: 'incoming', source_entity_type_id: 'et-2' },
+    ],
+    total: 1,
+  })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  // Incoming cardinality should show target → source: "0..n → 1"
+  await expect.element(page.getByText('0..n → 1')).toBeVisible()
+})

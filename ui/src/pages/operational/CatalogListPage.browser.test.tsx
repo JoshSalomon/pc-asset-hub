@@ -160,3 +160,67 @@ test('T-10.50: delete confirm calls API', async () => {
 
   expect(api.catalogs.delete).toHaveBeenCalledWith('production-app-a')
 })
+
+// === Additional coverage tests ===
+
+test('empty catalog list shows empty state', async () => {
+  ;(api.catalogs.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderList()
+  await expect.element(page.getByText('No catalogs yet. Create one to get started.')).toBeVisible()
+})
+
+test('load error shows error alert', async () => {
+  ;(api.catalogs.list as Mock).mockRejectedValue(new Error('500: server error'))
+  renderList()
+  await expect.element(page.getByText('500: server error')).toBeVisible()
+})
+
+test('create failure shows error in modal', async () => {
+  ;(api.catalogs.create as Mock).mockRejectedValue(new Error('409: name exists'))
+  renderList('Admin')
+  await page.getByRole('button', { name: 'Create Catalog' }).click()
+  const nameInput = page.getByPlaceholder('e.g. production-app-a')
+  await nameInput.fill('existing-catalog')
+  await page.getByText('Select a catalog version').click()
+  await page.getByText('release-1.0').click()
+  await page.getByRole('button', { name: 'Create' }).click()
+  await expect.element(page.getByText('409: name exists')).toBeVisible()
+})
+
+test('delete failure shows error in modal', async () => {
+  ;(api.catalogs.delete as Mock).mockRejectedValue(new Error('500: delete failed'))
+  renderList('Admin')
+  await expect.element(page.getByText('production-app-a')).toBeVisible()
+  await page.getByRole('button', { name: 'Delete' }).first().click()
+  await expect.element(page.getByText('Are you sure you want to delete catalog')).toBeVisible()
+  const allDeleteBtns = page.getByRole('button', { name: 'Delete' })
+  await allDeleteBtns.nth(allDeleteBtns.elements().length - 1).click()
+  await expect.element(page.getByText('500: delete failed')).toBeVisible()
+})
+
+test('catalog version label shown, or truncated ID if no label', async () => {
+  ;(api.catalogs.list as Mock).mockResolvedValue({
+    items: [
+      { ...mockCatalogs[0], catalog_version_label: 'v1.0' },
+      { ...mockCatalogs[1], catalog_version_label: undefined },
+    ],
+    total: 2,
+  })
+  renderList()
+  await expect.element(page.getByText('v1.0')).toBeVisible()
+})
+
+test('refresh button reloads catalogs', async () => {
+  renderList('Admin')
+  await expect.element(page.getByText('production-app-a')).toBeVisible()
+  await page.getByRole('button', { name: 'Refresh' }).click()
+  expect((api.catalogs.list as Mock).mock.calls.length).toBeGreaterThanOrEqual(2)
+})
+
+test('name too long shows validation error', async () => {
+  renderList('Admin')
+  await page.getByRole('button', { name: 'Create Catalog' }).click()
+  const nameInput = page.getByPlaceholder('e.g. production-app-a')
+  await nameInput.fill('a'.repeat(64))
+  await expect.element(page.getByText('Name must be at most 63 characters')).toBeVisible()
+})

@@ -112,18 +112,25 @@ beforeEach(() => {
     ;(api.entityTypes.containmentTree as Mock).mockResolvedValue(mockContainmentTree)
   }
   if (api.versions?.snapshot) {
-    ;(api.versions.snapshot as Mock).mockResolvedValue({
-      entity_type: { id: 'et-1', name: 'MLModel' },
-      version: { id: 'v1', version: 1 },
-      attributes: [
-        { id: 'a1', name: 'hostname', type: 'string', ordinal: 0, required: false },
-        { id: 'a2', name: 'status', type: 'enum', enum_name: 'server-status', ordinal: 1, required: false },
-      ],
-      associations: [],
+    ;(api.versions.snapshot as Mock).mockImplementation((etId: string) => {
+      const name = etId === 'et-1' ? 'MLModel' : 'Dataset'
+      return Promise.resolve({
+        entity_type: { id: etId, name },
+        version: { id: `v-${etId}`, version: 1 },
+        attributes: etId === 'et-1'
+          ? [
+              { id: 'a1', name: 'hostname', type: 'string', ordinal: 0, required: false },
+              { id: 'a2', name: 'status', type: 'enum', enum_name: 'server-status', ordinal: 1, required: false },
+            ]
+          : [],
+        associations: [],
+      })
     })
   }
   if (api.versions?.list) {
-    ;(api.versions.list as Mock).mockResolvedValue({ items: [{ id: 'v1', entity_type_id: 'et-1', version: 1 }], total: 1 })
+    ;(api.versions.list as Mock).mockImplementation((etId: string) =>
+      Promise.resolve({ items: [{ id: `v-${etId}`, entity_type_id: etId, version: 1 }], total: 1 })
+    )
   }
   if (api.associations?.list) {
     ;(api.associations.list as Mock).mockResolvedValue({ items: [], total: 0 })

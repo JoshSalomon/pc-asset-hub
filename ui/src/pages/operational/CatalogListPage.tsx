@@ -30,6 +30,7 @@ import {
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
 import { api, setAuthRole } from '../../api/client'
 import type { Catalog, CatalogVersion, Role } from '../../types'
+import { statusColor } from '../../utils/statusColor'
 
 const DNS_LABEL_REGEX = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
 
@@ -38,15 +39,6 @@ function validateCatalogName(name: string): string | null {
   if (name.length > 63) return 'Name must be at most 63 characters'
   if (!DNS_LABEL_REGEX.test(name)) return 'Must be lowercase alphanumeric and hyphens, starting and ending with alphanumeric'
   return null
-}
-
-const statusColor = (status: string) => {
-  switch (status) {
-    case 'draft': return 'blue'
-    case 'valid': return 'green'
-    case 'invalid': return 'red'
-    default: return 'grey'
-  }
 }
 
 export default function CatalogListPage({ role }: { role: Role }) {

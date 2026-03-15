@@ -721,6 +721,7 @@ func TestCov_ListInstances_ListError(t *testing.T) {
 	s := setupInstanceService()
 	ctx := context.Background()
 	s.mockPinResolution(ctx)
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
 	s.instRepo.On("List", ctx, "et1", "cat1", mock.Anything).Return(nil, 0, domainerrors.NewValidation("db error"))
 
 	_, _, err := s.svc.ListInstances(ctx, "my-catalog", "model", models.ListParams{Limit: 20})
@@ -2625,4 +2626,298 @@ func TestQR_M6_DuplicateLinkPrevention(t *testing.T) {
 	_, err := s.svc.CreateAssociationLink(ctx, "my-catalog", "server", "inst1", "inst2", "uses")
 	assert.Error(t, err)
 	assert.True(t, domainerrors.IsConflict(err))
+}
+
+// === Containment Tree (T-13.04 through T-13.10) ===
+
+func TestGetContainmentTree_BuildsCorrectTree(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+
+	parent := &models.EntityInstance{ID: "p1", EntityTypeID: "et1", CatalogID: "cat1", Name: "parent"}
+	child := &models.EntityInstance{ID: "c1", EntityTypeID: "et2", CatalogID: "cat1", ParentInstanceID: "p1", Name: "child"}
+
+	s.instRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.EntityInstance{parent, child}, nil)
+	s.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "Server"}, nil)
+	s.etRepo.On("GetByID", ctx, "et2").Return(&models.EntityType{ID: "et2", Name: "Tool"}, nil)
+
+	tree, err := s.svc.GetContainmentTree(ctx, "my-catalog")
+	require.NoError(t, err)
+	require.Len(t, tree, 1)
+	assert.Equal(t, "parent", tree[0].Instance.Name)
+	assert.Equal(t, "Server", tree[0].EntityTypeName)
+	require.Len(t, tree[0].Children, 1)
+	assert.Equal(t, "child", tree[0].Children[0].Instance.Name)
+	assert.Equal(t, "Tool", tree[0].Children[0].EntityTypeName)
+}
+
+func TestGetContainmentTree_EmptyCatalog(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "empty").Return(&models.Catalog{
+		ID: "cat-empty", Name: "empty", CatalogVersionID: "cv1",
+	}, nil)
+	s.instRepo.On("ListByCatalog", ctx, "cat-empty").Return([]*models.EntityInstance{}, nil)
+
+	tree, err := s.svc.GetContainmentTree(ctx, "empty")
+	require.NoError(t, err)
+	assert.Empty(t, tree)
+}
+
+func TestGetContainmentTree_NonexistentCatalog(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "nope").Return(nil, domainerrors.NewNotFound("Catalog", "nope"))
+
+	_, err := s.svc.GetContainmentTree(ctx, "nope")
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestGetContainmentTree_MultiLevelNesting(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+
+	root := &models.EntityInstance{ID: "r1", EntityTypeID: "et1", CatalogID: "cat1", Name: "root"}
+	child := &models.EntityInstance{ID: "c1", EntityTypeID: "et2", CatalogID: "cat1", ParentInstanceID: "r1", Name: "child"}
+	grandchild := &models.EntityInstance{ID: "g1", EntityTypeID: "et3", CatalogID: "cat1", ParentInstanceID: "c1", Name: "grandchild"}
+
+	s.instRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.EntityInstance{root, child, grandchild}, nil)
+	s.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "Server"}, nil)
+	s.etRepo.On("GetByID", ctx, "et2").Return(&models.EntityType{ID: "et2", Name: "Tool"}, nil)
+	s.etRepo.On("GetByID", ctx, "et3").Return(&models.EntityType{ID: "et3", Name: "Prompt"}, nil)
+
+	tree, err := s.svc.GetContainmentTree(ctx, "my-catalog")
+	require.NoError(t, err)
+	require.Len(t, tree, 1)
+	require.Len(t, tree[0].Children, 1)
+	require.Len(t, tree[0].Children[0].Children, 1)
+	assert.Equal(t, "grandchild", tree[0].Children[0].Children[0].Instance.Name)
+	assert.Equal(t, "Prompt", tree[0].Children[0].Children[0].EntityTypeName)
+}
+
+// === Parent Chain Resolution (T-13.50 through T-13.53) ===
+
+func TestGetInstance_WithParentChain(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.mockPinResolution(ctx)
+
+	childInst := &models.EntityInstance{
+		ID: "child1", EntityTypeID: "et1", CatalogID: "cat1",
+		ParentInstanceID: "parent1", Name: "child", Version: 1,
+	}
+	parentInst := &models.EntityInstance{
+		ID: "parent1", EntityTypeID: "et1", CatalogID: "cat1",
+		Name: "parent", Version: 1,
+	}
+
+	s.instRepo.On("GetByID", ctx, "child1").Return(childInst, nil)
+	s.instRepo.On("GetByID", ctx, "parent1").Return(parentInst, nil)
+	s.iavRepo.On("GetCurrentValues", ctx, "child1").Return([]*models.InstanceAttributeValue{}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	s.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "model"}, nil)
+
+	detail, err := s.svc.GetInstance(ctx, "my-catalog", "model", "child1")
+	require.NoError(t, err)
+	require.Len(t, detail.ParentChain, 1)
+	assert.Equal(t, "parent1", detail.ParentChain[0].InstanceID)
+	assert.Equal(t, "parent", detail.ParentChain[0].InstanceName)
+	assert.Equal(t, "model", detail.ParentChain[0].EntityTypeName)
+}
+
+func TestGetInstance_RootInstance_EmptyChain(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.mockPinResolution(ctx)
+
+	rootInst := &models.EntityInstance{
+		ID: "root1", EntityTypeID: "et1", CatalogID: "cat1",
+		Name: "root", Version: 1,
+	}
+
+	s.instRepo.On("GetByID", ctx, "root1").Return(rootInst, nil)
+	s.iavRepo.On("GetCurrentValues", ctx, "root1").Return([]*models.InstanceAttributeValue{}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+
+	detail, err := s.svc.GetInstance(ctx, "my-catalog", "model", "root1")
+	require.NoError(t, err)
+	assert.Nil(t, detail.ParentChain)
+}
+
+func TestGetInstance_MultiLevelChain(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.mockPinResolution(ctx)
+
+	grandchild := &models.EntityInstance{
+		ID: "gc1", EntityTypeID: "et1", CatalogID: "cat1",
+		ParentInstanceID: "c1", Name: "grandchild", Version: 1,
+	}
+	child := &models.EntityInstance{
+		ID: "c1", EntityTypeID: "et1", CatalogID: "cat1",
+		ParentInstanceID: "r1", Name: "child", Version: 1,
+	}
+	root := &models.EntityInstance{
+		ID: "r1", EntityTypeID: "et1", CatalogID: "cat1",
+		Name: "root", Version: 1,
+	}
+
+	s.instRepo.On("GetByID", ctx, "gc1").Return(grandchild, nil)
+	s.instRepo.On("GetByID", ctx, "c1").Return(child, nil)
+	s.instRepo.On("GetByID", ctx, "r1").Return(root, nil)
+	s.iavRepo.On("GetCurrentValues", ctx, "gc1").Return([]*models.InstanceAttributeValue{}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	s.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "model"}, nil)
+
+	detail, err := s.svc.GetInstance(ctx, "my-catalog", "model", "gc1")
+	require.NoError(t, err)
+	require.Len(t, detail.ParentChain, 2)
+	// Root-first order
+	assert.Equal(t, "root", detail.ParentChain[0].InstanceName)
+	assert.Equal(t, "child", detail.ParentChain[1].InstanceName)
+}
+
+// === ListInstances filter name→ID resolution ===
+
+func TestListInstances_FilterResolvesNameToID(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
+		{ID: "attr-abc", Name: "hostname", Type: models.AttributeTypeString},
+	}, nil)
+	// Expect the filter to use the attribute ID, not the name
+	s.instRepo.On("List", ctx, "et1", "cat1", mock.MatchedBy(func(p models.ListParams) bool {
+		return p.Filters["attr-abc"] == "hello"
+	})).Return([]*models.EntityInstance{}, 0, nil)
+
+	_, _, err := s.svc.ListInstances(ctx, "my-catalog", "model", models.ListParams{
+		Limit:   20,
+		Filters: map[string]string{"hostname": "hello"},
+	})
+	assert.NoError(t, err)
+}
+
+func TestListInstances_FilterUnknownAttrReturnsError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
+		{ID: "attr-abc", Name: "hostname", Type: models.AttributeTypeString},
+	}, nil)
+
+	_, _, err := s.svc.ListInstances(ctx, "my-catalog", "model", models.ListParams{
+		Limit:   20,
+		Filters: map[string]string{"nonexistent": "value"},
+	})
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+func TestListInstances_FilterMinMaxResolvesNameToID(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
+		{ID: "attr-num", Name: "score", Type: models.AttributeTypeNumber},
+	}, nil)
+	s.instRepo.On("List", ctx, "et1", "cat1", mock.MatchedBy(func(p models.ListParams) bool {
+		return p.Filters["attr-num.min"] == "5" && p.Filters["attr-num.max"] == "10"
+	})).Return([]*models.EntityInstance{}, 0, nil)
+
+	_, _, err := s.svc.ListInstances(ctx, "my-catalog", "model", models.ListParams{
+		Limit:   20,
+		Filters: map[string]string{"score.min": "5", "score.max": "10"},
+	})
+	assert.NoError(t, err)
+}
+
+// === GetContainmentTree entity type name fallback ===
+
+func TestGetContainmentTree_MultipleRootsOrdered(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+
+	root1 := &models.EntityInstance{ID: "r1", EntityTypeID: "et1", CatalogID: "cat1", Name: "root-a"}
+	root2 := &models.EntityInstance{ID: "r2", EntityTypeID: "et1", CatalogID: "cat1", Name: "root-b"}
+	child := &models.EntityInstance{ID: "c1", EntityTypeID: "et1", CatalogID: "cat1", ParentInstanceID: "r1", Name: "child-of-a"}
+
+	s.instRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.EntityInstance{root1, root2, child}, nil)
+	s.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "Server"}, nil)
+
+	tree, err := s.svc.GetContainmentTree(ctx, "my-catalog")
+	require.NoError(t, err)
+	require.Len(t, tree, 2) // Both roots present
+	assert.Equal(t, "root-a", tree[0].Instance.Name)
+	assert.Equal(t, "root-b", tree[1].Instance.Name)
+	// child is under root-a
+	require.Len(t, tree[0].Children, 1)
+	assert.Equal(t, "child-of-a", tree[0].Children[0].Instance.Name)
+	// root-b has no children
+	assert.Len(t, tree[1].Children, 0)
+}
+
+func TestGetContainmentTree_EntityTypeNameCaching(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+
+	// Two instances with the same EntityTypeID
+	inst1 := &models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Name: "inst-a"}
+	inst2 := &models.EntityInstance{ID: "i2", EntityTypeID: "et1", CatalogID: "cat1", Name: "inst-b"}
+
+	s.instRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.EntityInstance{inst1, inst2}, nil)
+	s.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "Server"}, nil)
+
+	tree, err := s.svc.GetContainmentTree(ctx, "my-catalog")
+	require.NoError(t, err)
+	require.Len(t, tree, 2)
+	assert.Equal(t, "Server", tree[0].EntityTypeName)
+	assert.Equal(t, "Server", tree[1].EntityTypeName)
+
+	// etRepo.GetByID("et1") should have been called exactly once (cached)
+	s.etRepo.AssertNumberOfCalls(t, "GetByID", 1)
+}
+
+func TestGetContainmentTree_ETNameFallback(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.instRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.EntityInstance{
+		{ID: "p1", EntityTypeID: "et-unknown", CatalogID: "cat1", Name: "orphan"},
+	}, nil)
+	s.etRepo.On("GetByID", ctx, "et-unknown").Return(nil, domainerrors.NewNotFound("EntityType", "et-unknown"))
+
+	tree, err := s.svc.GetContainmentTree(ctx, "my-catalog")
+	require.NoError(t, err)
+	require.Len(t, tree, 1)
+	// Falls back to using the entity type ID as name
+	assert.Equal(t, "et-unknown", tree[0].EntityTypeName)
 }

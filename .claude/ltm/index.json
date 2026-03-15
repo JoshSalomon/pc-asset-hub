@@ -314,6 +314,33 @@
       "phase": 0,
       "difficulty": 0.65,
       "created_at": "2026-03-11T14:40:57.227225+00:00"
+    },
+    "mem_0daf29f3": {
+      "topic": "Phase 4: Catalog Data Viewer — Implementation Patterns",
+      "tags": [
+        "vite",
+        "filtering",
+        "containment-tree",
+        "operational-ui",
+        "worktree",
+        "patterns"
+      ],
+      "phase": 0,
+      "difficulty": 0.5,
+      "created_at": "2026-03-12T16:25:31.157817+00:00"
+    },
+    "mem_4d903f84": {
+      "topic": "Phase 4 post-mortem: coverage discipline, two-pane redesign, flaky test root cause",
+      "tags": [
+        "coverage",
+        "two-pane",
+        "flaky-test",
+        "makefile",
+        "lessons-learned"
+      ],
+      "phase": 0,
+      "difficulty": 0.5,
+      "created_at": "2026-03-15T14:51:29.240852+00:00"
     }
   }
 }

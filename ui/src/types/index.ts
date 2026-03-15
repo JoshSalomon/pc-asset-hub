@@ -155,6 +155,7 @@ export interface EntityInstance {
   description: string
   version: number
   attributes: AttributeValueResponse[]
+  parent_chain?: ParentChainEntry[]
   created_at: string
   updated_at: string
 }
@@ -180,6 +181,20 @@ export interface ReferenceDetail {
   instance_id: string
   instance_name: string
   entity_type_name: string
+}
+
+export interface ParentChainEntry {
+  instance_id: string
+  instance_name: string
+  entity_type_name: string
+}
+
+export interface TreeNodeResponse {
+  instance_id: string
+  instance_name: string
+  entity_type_name: string
+  description: string
+  children: TreeNodeResponse[]
 }
 
 export interface ListResponse<T> {

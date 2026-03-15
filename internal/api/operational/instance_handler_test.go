@@ -645,3 +645,256 @@ func TestT12_52_GetReverseRefs(t *testing.T) {
 	assert.Len(t, refs, 1)
 	assert.Equal(t, "my-server", refs[0]["instance_name"])
 }
+
+// === Phase 4: Containment Tree Handler Tests ===
+
+func TestGetContainmentTree_Success(t *testing.T) {
+	e, m := setupInstanceServer()
+
+	m.catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	m.instRepo.On("ListByCatalog", mock.Anything, "cat1").Return([]*models.EntityInstance{
+		{ID: "p1", EntityTypeID: "et1", CatalogID: "cat1", Name: "parent"},
+		{ID: "c1", EntityTypeID: "et2", CatalogID: "cat1", ParentInstanceID: "p1", Name: "child"},
+	}, nil)
+	m.etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "Server"}, nil)
+	m.etRepo.On("GetByID", mock.Anything, "et2").Return(&models.EntityType{ID: "et2", Name: "Tool"}, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/tree", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var tree []map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &tree))
+	require.Len(t, tree, 1)
+	assert.Equal(t, "parent", tree[0]["instance_name"])
+	assert.Equal(t, "Server", tree[0]["entity_type_name"])
+	children := tree[0]["children"].([]interface{})
+	require.Len(t, children, 1)
+	child := children[0].(map[string]interface{})
+	assert.Equal(t, "child", child["instance_name"])
+}
+
+func TestGetContainmentTree_NotFound(t *testing.T) {
+	e, m := setupInstanceServer()
+
+	m.catalogRepo.On("GetByName", mock.Anything, "nope").Return(nil, domainerrors.NewNotFound("Catalog", "nope"))
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/nope/tree", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestGetContainmentTree_EmptyCatalog(t *testing.T) {
+	e, m := setupInstanceServer()
+
+	m.catalogRepo.On("GetByName", mock.Anything, "empty").Return(&models.Catalog{
+		ID: "cat-empty", Name: "empty", CatalogVersionID: "cv1",
+	}, nil)
+	m.instRepo.On("ListByCatalog", mock.Anything, "cat-empty").Return([]*models.EntityInstance{}, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/empty/tree", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var tree []map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &tree))
+	assert.Len(t, tree, 0)
+}
+
+// === Phase 4: ListInstances Query Params ===
+
+func TestListInstances_WithPagination(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.mockPinResolution()
+	m.instRepo.On("List", mock.Anything, "et1", "cat1", mock.MatchedBy(func(p models.ListParams) bool {
+		return p.Limit == 5 && p.Offset == 10
+	})).Return([]*models.EntityInstance{}, 0, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model?limit=5&offset=10", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestListInstances_WithSort(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.mockPinResolution()
+	m.instRepo.On("List", mock.Anything, "et1", "cat1", mock.MatchedBy(func(p models.ListParams) bool {
+		return p.SortBy == "name" && p.SortDesc == true
+	})).Return([]*models.EntityInstance{}, 0, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model?sort=name:desc", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestListInstances_WithFilter(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.mockPinResolution()
+	m.instRepo.On("List", mock.Anything, "et1", "cat1", mock.MatchedBy(func(p models.ListParams) bool {
+		return p.Filters != nil && p.Filters["a1"] == "hello"
+	})).Return([]*models.EntityInstance{}, 0, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model?filter.hostname=hello", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestListInstances_LimitCappedAt100(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.mockPinResolution()
+	m.instRepo.On("List", mock.Anything, "et1", "cat1", mock.MatchedBy(func(p models.ListParams) bool {
+		return p.Limit == 100
+	})).Return([]*models.EntityInstance{}, 0, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model?limit=500", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// === Phase 4: GetInstance with Parent Chain ===
+
+func TestListInstances_DefaultLimit20(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.mockPinResolution()
+	m.instRepo.On("List", mock.Anything, "et1", "cat1", mock.MatchedBy(func(p models.ListParams) bool {
+		return p.Limit == 20
+	})).Return([]*models.EntityInstance{}, 0, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestListInstances_SortAsc(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.mockPinResolution()
+	m.instRepo.On("List", mock.Anything, "et1", "cat1", mock.MatchedBy(func(p models.ListParams) bool {
+		return p.SortBy == "name" && p.SortDesc == false
+	})).Return([]*models.EntityInstance{}, 0, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model?sort=name:asc", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestListInstances_NoSortDefault(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.mockPinResolution()
+	m.instRepo.On("List", mock.Anything, "et1", "cat1", mock.MatchedBy(func(p models.ListParams) bool {
+		return p.SortBy == ""
+	})).Return([]*models.EntityInstance{}, 0, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestListInstances_MultipleFilters(t *testing.T) {
+	e, m := setupInstanceServer()
+	// Need two attributes in the mock
+	m.catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	m.etRepo.On("GetByName", mock.Anything, "model").Return(&models.EntityType{ID: "et1", Name: "model"}, nil)
+	m.pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	m.etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	m.attrRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Attribute{
+		{ID: "a1", Name: "hostname", Type: models.AttributeTypeString},
+		{ID: "a2", Name: "region", Type: models.AttributeTypeString},
+	}, nil)
+
+	m.instRepo.On("List", mock.Anything, "et1", "cat1", mock.MatchedBy(func(p models.ListParams) bool {
+		return p.Filters != nil && p.Filters["a1"] == "web" && p.Filters["a2"] == "us"
+	})).Return([]*models.EntityInstance{}, 0, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model?filter.hostname=web&filter.region=us", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestGetInstance_RootNoParentChain(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.mockPinResolution()
+
+	m.instRepo.On("GetByID", mock.Anything, "root1").Return(&models.EntityInstance{
+		ID: "root1", EntityTypeID: "et1", CatalogID: "cat1",
+		Name: "root-instance", Version: 1,
+	}, nil)
+	m.iavRepo.On("GetCurrentValues", mock.Anything, "root1").Return([]*models.InstanceAttributeValue{}, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model/root1", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	// parent_chain should be absent or null for root instances
+	chain, exists := resp["parent_chain"]
+	if exists {
+		assert.Nil(t, chain)
+	}
+}
+
+func TestGetContainmentTree_TreeStructure(t *testing.T) {
+	e, m := setupInstanceServer()
+
+	m.catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	m.instRepo.On("ListByCatalog", mock.Anything, "cat1").Return([]*models.EntityInstance{
+		{ID: "p1", EntityTypeID: "et1", CatalogID: "cat1", Name: "parent", Description: "parent desc"},
+		{ID: "c1", EntityTypeID: "et2", CatalogID: "cat1", ParentInstanceID: "p1", Name: "child", Description: "child desc"},
+	}, nil)
+	m.etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "Server"}, nil)
+	m.etRepo.On("GetByID", mock.Anything, "et2").Return(&models.EntityType{ID: "et2", Name: "Tool"}, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/tree", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var tree []map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &tree))
+	require.Len(t, tree, 1)
+
+	// Verify root node has all expected fields
+	root := tree[0]
+	assert.NotEmpty(t, root["instance_id"])
+	assert.Equal(t, "parent", root["instance_name"])
+	assert.Equal(t, "Server", root["entity_type_name"])
+	assert.Equal(t, "parent desc", root["description"])
+	assert.NotNil(t, root["children"])
+
+	// Verify child node structure
+	children := root["children"].([]interface{})
+	require.Len(t, children, 1)
+	child := children[0].(map[string]interface{})
+	assert.NotEmpty(t, child["instance_id"])
+	assert.Equal(t, "child", child["instance_name"])
+	assert.Equal(t, "Tool", child["entity_type_name"])
+	assert.Equal(t, "child desc", child["description"])
+	// Leaf node should have empty children
+	childChildren := child["children"].([]interface{})
+	assert.Len(t, childChildren, 0)
+}
+
+func TestGetInstance_IncludesParentChain(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.mockPinResolution()
+
+	childInst := &models.EntityInstance{
+		ID: "child1", EntityTypeID: "et1", CatalogID: "cat1",
+		ParentInstanceID: "parent1", Name: "child", Version: 1,
+	}
+	parentInst := &models.EntityInstance{
+		ID: "parent1", EntityTypeID: "et1", CatalogID: "cat1",
+		Name: "parent", Version: 1,
+	}
+	m.instRepo.On("GetByID", mock.Anything, "child1").Return(childInst, nil)
+	m.instRepo.On("GetByID", mock.Anything, "parent1").Return(parentInst, nil)
+	m.iavRepo.On("GetCurrentValues", mock.Anything, "child1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "model"}, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model/child1", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	chain, ok := resp["parent_chain"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, chain, 1)
+	entry := chain[0].(map[string]interface{})
+	assert.Equal(t, "parent", entry["instance_name"])
+}

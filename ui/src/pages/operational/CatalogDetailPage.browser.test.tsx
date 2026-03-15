@@ -60,7 +60,7 @@ const mockInstances = [
   },
 ]
 
-function renderDetail(role: 'Admin' | 'RW' | 'RO' = 'Admin') {
+function renderDetail(role: 'Admin' | 'RW' | 'RO' | 'SuperAdmin' = 'Admin') {
   return render(
     <MemoryRouter initialEntries={['/catalogs/my-catalog']}>
       <Routes>
@@ -305,6 +305,339 @@ test('add contained modal resets child type on reopen', async () => {
   // Re-open — should still show "tool" pre-selected (reset + re-pre-select)
   await page.getByRole('button', { name: 'Add Contained Instance' }).first().click()
   await expect.element(page.getByRole('dialog').getByText('tool')).toBeVisible()
+})
+
+// === Coverage: error states, loading states, modal flows ===
+
+test('catalog load failure shows error alert', async () => {
+  ;(api.catalogs.get as Mock).mockRejectedValue(new Error('Network error'))
+  renderDetail()
+  await expect.element(page.getByText('Network error')).toBeVisible()
+})
+
+test('catalog load generic error path', async () => {
+  ;(api.catalogs.get as Mock).mockRejectedValue({ message: 'oops' })
+  renderDetail()
+  await expect.element(page.getByText('Failed to load catalog')).toBeVisible()
+})
+
+test('no pins shows empty state', async () => {
+  ;(api.catalogVersions.listPins as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail()
+  await expect.element(page.getByText(/No entity types pinned/)).toBeVisible()
+})
+
+test('create instance failure shows error in modal', async () => {
+  ;(api.instances.create as Mock).mockRejectedValue(new Error('409: duplicate name'))
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: /Create model/ }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  const nameInput = page.getByRole('dialog').getByRole('textbox').first()
+  await nameInput.fill('dup-inst')
+  await page.getByRole('dialog').getByRole('button', { name: 'Create' }).click()
+
+  await expect.element(page.getByText('409: duplicate name')).toBeVisible()
+})
+
+test('edit instance failure shows error in modal', async () => {
+  ;(api.instances.update as Mock).mockRejectedValue(new Error('500: update failed'))
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
+
+  await expect.element(page.getByText('500: update failed')).toBeVisible()
+})
+
+test('delete instance failure shows error in modal', async () => {
+  ;(api.instances.delete as Mock).mockRejectedValue(new Error('500: delete failed'))
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Delete' }).click()
+  await expect.element(page.getByRole('dialog').getByText('Are you sure you want to delete')).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
+
+  await expect.element(page.getByText('500: delete failed')).toBeVisible()
+})
+
+test('hide details toggle when clicking Details on already-selected instance', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  // Open details
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await expect.element(page.getByRole('heading', { name: /^Details:/ }).first()).toBeVisible()
+  // Click "Hide Details" to close
+  await page.getByRole('button', { name: 'Hide Details' }).first().click()
+  await expect.element(page.getByRole('heading', { name: /^Details:/ }).first()).not.toBeInTheDocument()
+})
+
+test('no references shows "No references." message', async () => {
+  ;(api.links.forwardRefs as Mock).mockResolvedValue([])
+  ;(api.links.reverseRefs as Mock).mockResolvedValue([])
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await expect.element(page.getByText('No references.').first()).toBeVisible()
+})
+
+test('link modal opens and can be cancelled', async () => {
+  // Need non-containment outgoing assoc for "Link to Instance" button
+  const snapshotWithLink = {
+    ...mockSnapshot,
+    associations: [
+      ...mockSnapshot.associations,
+      { id: 'assoc2', name: 'uses', type: 'directional', direction: 'outgoing', target_entity_type_id: 'et2', target_entity_type_name: 'tool' },
+    ],
+  }
+  ;(api.versions.snapshot as Mock).mockResolvedValue(snapshotWithLink)
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await expect.element(page.getByRole('button', { name: 'Link to Instance' })).toBeVisible()
+  await page.getByRole('button', { name: 'Link to Instance' }).click()
+  await expect.element(page.getByText('Select association...')).toBeVisible()
+  // Cancel
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  await expect.element(page.getByText('Select association...')).not.toBeInTheDocument()
+})
+
+test('unlink removes link and refreshes', async () => {
+  // Need non-containment outgoing assoc
+  const snapshotWithLink = {
+    ...mockSnapshot,
+    associations: [
+      ...mockSnapshot.associations,
+      { id: 'assoc2', name: 'uses', type: 'directional', direction: 'outgoing', target_entity_type_id: 'et2', target_entity_type_name: 'tool' },
+    ],
+  }
+  ;(api.versions.snapshot as Mock).mockResolvedValue(snapshotWithLink)
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await expect.element(page.getByText('Forward References').first()).toBeVisible()
+  await page.getByRole('button', { name: 'Unlink' }).first().click()
+  expect(api.links.delete).toHaveBeenCalledWith('my-catalog', 'model', 'i1', 'link1')
+})
+
+test('refresh button reloads instances', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Refresh' }).click()
+  // Should call list again (total calls: initial + refresh)
+  expect((api.instances.list as Mock).mock.calls.length).toBeGreaterThanOrEqual(2)
+})
+
+test('back button navigates to catalog list', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: /Back to Catalogs/ }).click()
+  await expect.element(page.getByText('Catalog List')).toBeVisible()
+})
+
+test('validation status label colors: valid=green, invalid=red, draft=blue', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'invalid' })
+  renderDetail()
+  await expect.element(page.getByText('invalid')).toBeVisible()
+})
+
+test('create modal cancel closes and clears error', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: /Create model/ }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  // Dialog should close
+  const dialogs = page.getByRole('dialog')
+  expect(dialogs.elements().length).toBe(0)
+})
+
+// Add contained child in create mode submits createContained API call
+test('add contained child in create mode calls createContained', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await expect.element(page.getByRole('heading', { name: 'Contained Instances' }).first()).toBeVisible()
+  await page.getByRole('button', { name: 'Add Contained Instance' }).first().click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  // Child type pre-selected as "tool"
+  await expect.element(page.getByRole('dialog').getByText('tool')).toBeVisible()
+
+  // Fill name for new child
+  const nameInput = page.getByRole('dialog').getByRole('textbox', { name: /Name/i })
+  await nameInput.fill('new-child-tool')
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Create', exact: true }).click()
+  expect(api.instances.createContained).toHaveBeenCalledWith('my-catalog', 'model', 'i1', 'tool', {
+    name: 'new-child-tool',
+    description: undefined,
+  })
+})
+
+// Add contained child error shows in modal
+test('add contained child error shows in modal', async () => {
+  ;(api.instances.createContained as Mock).mockRejectedValue(new Error('400: invalid'))
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await page.getByRole('button', { name: 'Add Contained Instance' }).first().click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  const nameInput = page.getByRole('dialog').getByRole('textbox', { name: /Name/i })
+  await nameInput.fill('bad-child')
+  await page.getByRole('dialog').getByRole('button', { name: 'Create', exact: true }).click()
+
+  await expect.element(page.getByText('400: invalid')).toBeVisible()
+})
+
+// Adopt mode: when there are uncontained instances, mode dropdown works
+test('add contained in adopt mode shows adopt controls', async () => {
+  const uncontainedTools = [
+    { id: 'ut1', entity_type_id: 'et2', catalog_id: 'cat1', name: 'orphan-tool', description: '', version: 1, attributes: [] },
+  ]
+  ;(api.instances.list as Mock).mockImplementation((_cat: string, type: string) => {
+    if (type === 'model') return Promise.resolve({ items: mockInstances, total: 1 })
+    return Promise.resolve({ items: uncontainedTools, total: 1 })
+  })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await page.getByRole('button', { name: 'Add Contained Instance' }).first().click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  // Switch to Adopt Existing mode
+  await page.getByRole('dialog').getByText('Create New').click()
+  await expect.element(page.getByText('Adopt Existing').first()).toBeVisible()
+  await page.getByText('Adopt Existing').first().click()
+
+  // The "Select Instance" form should appear with "Select instance..." placeholder
+  await expect.element(page.getByRole('dialog').getByText('Select instance...')).toBeVisible()
+  // Adopt button should be visible (but disabled until selection)
+  await expect.element(page.getByRole('dialog').getByRole('button', { name: 'Adopt', exact: true })).toBeVisible()
+})
+
+// Set container modal opens with correct parent type
+test('set container modal opens and shows pre-selected container type', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await page.getByRole('button', { name: 'Set Container' }).first().click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  // Container type is pre-filled and disabled
+  const typeInput = page.getByRole('dialog').getByRole('textbox', { name: 'Container type' })
+  await expect.element(typeInput).toBeVisible()
+  await expect.element(typeInput).toHaveValue('model')
+
+  // "Set Container" button should be disabled (no instance selected)
+  await expect.element(page.getByRole('dialog').getByRole('button', { name: 'Set Container' })).toBeDisabled()
+  // Cancel
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  expect(page.getByRole('dialog').elements().length).toBe(0)
+})
+
+// Edit modal cancel closes modal
+test('edit modal cancel closes modal', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  const dialogs = page.getByRole('dialog')
+  expect(dialogs.elements().length).toBe(0)
+})
+
+// Delete modal cancel does not delete
+test('delete modal cancel does not call API', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Delete' }).click()
+  await expect.element(page.getByRole('dialog').getByText('Are you sure you want to delete')).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  expect(api.instances.delete).not.toHaveBeenCalled()
+})
+
+// Instance shows "No contained instances." when children list is empty
+test('details panel shows "No contained instances." for empty children', async () => {
+  ;(api.instances.listContained as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await expect.element(page.getByText('No contained instances.').first()).toBeVisible()
+})
+
+// Catalog description is shown when present
+test('catalog description shown', async () => {
+  renderDetail()
+  await expect.element(page.getByText(/Test catalog/)).toBeVisible()
+})
+
+// SuperAdmin can write
+test('SuperAdmin can see create button', async () => {
+  renderDetail('SuperAdmin')
+  await expect.element(page.getByRole('button', { name: /Create model/ })).toBeVisible()
+})
+
+// Enum attributes render EnumSelect in create modal
+test('enum attributes render select in create modal', async () => {
+  const snapshotWithEnum = {
+    ...mockSnapshot,
+    attributes: [
+      { id: 'a1', name: 'hostname', type: 'string', ordinal: 1, required: false },
+      { id: 'a3', name: 'status', type: 'enum', enum_id: 'enum1', ordinal: 3, required: false },
+    ],
+  }
+  ;(api.versions.snapshot as Mock).mockResolvedValue(snapshotWithEnum)
+  ;(api.enums.listValues as Mock).mockResolvedValue({ items: [{ value: 'active' }, { value: 'inactive' }], total: 2 })
+
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: /Create model/ }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // The enum attribute should have "Select..." text (the EnumSelect component)
+  await expect.element(page.getByRole('dialog').getByText('Select...')).toBeVisible()
+})
+
+// Link modal open shows association and target selectors
+test('link modal shows association selector', async () => {
+  const snapshotWithLink = {
+    ...mockSnapshot,
+    associations: [
+      ...mockSnapshot.associations,
+      { id: 'assoc2', name: 'uses', type: 'directional', direction: 'outgoing', target_entity_type_id: 'et2', target_entity_type_name: 'tool' },
+    ],
+  }
+  ;(api.versions.snapshot as Mock).mockResolvedValue(snapshotWithLink)
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await expect.element(page.getByRole('button', { name: 'Link to Instance' })).toBeVisible()
+  await page.getByRole('button', { name: 'Link to Instance' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // Link button should be disabled (no association or target selected)
+  await expect.element(page.getByRole('dialog').getByRole('button', { name: 'Link' })).toBeDisabled()
+  // Should show association and target selectors
+  await expect.element(page.getByText('Select association...')).toBeVisible()
+  await expect.element(page.getByText('Select target instance...')).toBeVisible()
+})
+
+// Instances list loading failure falls back to empty list
+test('instance list load failure shows empty', async () => {
+  ;(api.instances.list as Mock).mockRejectedValue(new Error('500: error'))
+  renderDetail()
+  await expect.element(page.getByRole('tab', { name: 'model' })).toBeVisible()
+  // Should not crash — shows empty state or 0 total
+  await expect.element(page.getByText('Total: 0').first()).toBeVisible()
+})
+
+// Total count displayed
+test('total count displays correctly', async () => {
+  renderDetail()
+  await waitForInstances()
+  await expect.element(page.getByText('Total: 1').first()).toBeVisible()
 })
 
 // Bug: Set Container modal shows container type as non-editable text

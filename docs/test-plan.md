@@ -153,6 +153,17 @@ Each feature area is tested at the appropriate layers:
 | Contained instance CRUD within catalog | X | X | X | X | |
 | Association link CRUD + validation against CV | X | X | X | X | |
 | Forward/reverse reference resolution (operational) | X | X | X | X | |
+| Containment tree endpoint | X | X | X | | |
+| Attribute-based filtering (string/number/enum) | X | X | X | X | |
+| Multi-field sorting | X | X | X | X | |
+| Pagination (offset/limit/total) | X | X | X | X | |
+| Parent chain resolution (breadcrumb) | X | | X | X | |
+| Operational UI — catalog list + counts | | | | X | |
+| Operational UI — containment tree browser | | | | X | |
+| Operational UI — instance detail + attributes | | | | X | |
+| Operational UI — reference navigation | | | | X | |
+| Operational UI — breadcrumb navigation | | | | X | |
+| Operational UI — Vite multi-entry build | | | | X | |
 
 ---
 
@@ -350,3 +361,48 @@ Association links connect two instances based on a directional or bidirectional 
 - **Integration tests (repository)**: Verify `AssociationLink` CRUD — create link, get forward refs, get reverse refs, delete link. Verify FK constraints on source/target instance IDs.
 - **API tests (handler)**: Verify `POST /{catalog-name}/{entity-type}/{instance-id}/links` creates link, returns 201. Verify 404 for nonexistent instance or target. Verify 400 for invalid association. Verify 403 for RO. Verify `DELETE /{catalog-name}/{entity-type}/{instance-id}/links/{link-id}` returns 204. Verify `GET /{catalog-name}/{entity-type}/{instance-id}/references` returns forward refs with resolved target info. Verify `GET /{catalog-name}/{entity-type}/{instance-id}/referenced-by` returns reverse refs with resolved source info.
 - **UI tests (browser)**: Verify instance detail shows references tab with forward and reverse references. Verify "Link to instance" action creates association link. Verify "Unlink" action removes association link. Verify RO user sees references but no link/unlink controls.
+
+### 5.22 Containment Tree Endpoint (US-18, US-40)
+
+The containment tree endpoint returns the full instance hierarchy for a catalog as a nested structure. Each node includes the instance, its entity type name, and its children. This powers the tree browser in the operational UI.
+
+- **Unit tests (service)**: Verify `GetContainmentTree` builds a correct tree from flat instance list. Verify root instances (no parent) appear as top-level nodes. Verify children are nested under their parent, grouped by entity type. Verify multi-level nesting (grandchildren). Verify empty catalog returns empty tree. Verify instances are annotated with entity type name.
+- **Integration tests (repository)**: Verify `ListByCatalog` returns all instances in a catalog regardless of entity type. Verify instances from other catalogs are excluded.
+- **API tests (handler)**: Verify `GET /api/data/v1/catalogs/{name}/tree` returns 200 with nested tree structure. Verify 404 for nonexistent catalog. Verify tree includes entity type names on each node. Verify tree structure matches containment relationships.
+
+### 5.23 Attribute-Based Filtering (US-17)
+
+Instance list endpoints accept filter query parameters that are applied server-side via SQL JOINs on the EAV attribute value table. Filter semantics are type-aware.
+
+- **Unit tests (service)**: Verify filter params are passed through to repository. Verify unknown attribute name in filter returns validation error.
+- **Integration tests (repository)**: Verify string filter applies case-insensitive contains match. Verify number filter applies exact match. Verify number range filter with min/max. Verify enum filter applies exact match. Verify multiple filters combine with AND logic. Verify filter on nonexistent attribute returns empty result (not error at repo level). Verify filtering works correctly across the EAV join (instance ↔ attribute value ↔ attribute).
+- **API tests (handler)**: Verify `GET /{name}/{type}?filter.attr=value` returns filtered results. Verify `filter.numattr=5` filters by exact number. Verify `filter.numattr.min=1&filter.numattr.max=10` filters by range. Verify multiple filter params combine. Verify 400 for filter on unknown attribute.
+
+### 5.24 Sorting and Pagination (US-17)
+
+Instance list endpoints accept sort and pagination query parameters. Sorting is applied server-side. Pagination uses offset/limit with total count in the response.
+
+- **Unit tests (service)**: Verify sort params are passed through to repository. Verify pagination params (offset, limit) are passed through.
+- **Integration tests (repository)**: Verify sorting by string attribute (alphabetical). Verify sorting by number attribute (numeric order). Verify ascending and descending sort. Verify offset skips correct number of results. Verify limit caps result count. Verify total count is unaffected by offset/limit.
+- **API tests (handler)**: Verify `?sort=attr:asc` sorts ascending. Verify `?sort=attr:desc` sorts descending. Verify `?limit=5&offset=10` returns correct page. Verify response includes total count. Verify default limit is 20 when not specified. Verify limit capped at 100.
+- **UI tests (browser)**: Sorting and pagination UI controls are deferred to FF-6 (operational editing). The backend API supports these via query parameters and is tested at the API layer.
+
+### 5.25 Parent Chain Resolution (US-18, US-40)
+
+Instance detail responses include a parent chain — an ordered list of ancestors from root to immediate parent — for breadcrumb navigation.
+
+- **Unit tests (service)**: Verify parent chain resolves from instance up to root. Verify root instance has empty parent chain. Verify multi-level chain (3+ levels). Verify each entry includes instance ID, instance name, and entity type name.
+- **API tests (handler)**: Verify `GET /{name}/{type}/{id}` includes `parent_chain` array in response. Verify chain is ordered root-first. Verify chain is empty for root instances.
+- **UI tests (browser)**: Verify breadcrumb renders containment path from catalog to current instance. Verify breadcrumb shows entity type and instance name for each level. Verify breadcrumb links are clickable and navigate to the ancestor in the tree. Verify root instance shows breadcrumb with catalog only (no parent entries).
+
+### 5.26 Operational UI — Catalog Data Viewer (US-40)
+
+The operational UI is a separate read-only web application for browsing catalog data. It shares types and API client with the meta UI but has its own Vite entry point and app shell.
+
+- **UI tests (browser — build infrastructure)**: Verify Vite multi-entry build produces both `index.html` (meta) and `operational.html` (operational). Verify operational entry point renders the operational app shell. Verify operational app masthead shows "AI Asset Hub — Data Viewer". Verify role selector in masthead works.
+- **UI tests (browser — catalog list)**: Verify catalog list page loads and shows catalogs. Verify catalog name, CV label, validation status badge, and instance count columns. Verify search input filters catalogs by name. Verify sortable columns. Verify pagination controls. Verify clicking catalog name navigates to catalog detail.
+- **UI tests (browser — catalog detail overview)**: Verify catalog detail page shows catalog header with name, status badge, and CV label. Verify overview tab lists entity types with instance counts. Verify "Browse Instances" navigates to tree browser for that type.
+- **UI tests (browser — containment tree)**: Verify tree browser tab shows two-pane layout: tree on left, detail on right. Verify tree groups root instances under entity type headers with counts. Verify clicking a tree node loads instance detail in the right panel. Verify multi-level tree expands correctly. Verify empty state when no instance selected.
+- **UI tests (browser — instance detail)**: Verify instance detail panel shows attributes table with name, type, and value. Verify enum values show resolved names. Verify description, version, and timestamps displayed. Verify breadcrumb shows containment path.
+- **UI tests (browser — reference navigation)**: Verify references tab shows forward references with association name, type, target instance, and entity type. Verify referenced-by tab shows reverse references. Verify clicking a referenced instance navigates to it in the tree.
+- **UI tests (browser — read-only)**: Verify no create, edit, or delete buttons are visible in the operational UI regardless of role. Verify no write-action modals exist.

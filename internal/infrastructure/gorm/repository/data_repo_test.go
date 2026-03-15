@@ -26,6 +26,7 @@ type testContext struct {
 	instRepo *repository.EntityInstanceGormRepo
 	iavRepo  *repository.InstanceAttributeValueGormRepo
 	linkRepo *repository.AssociationLinkGormRepo
+	attrRepo *repository.AttributeGormRepo
 }
 
 func setupTestContext(t *testing.T) (*testContext, context.Context) {
@@ -51,6 +52,7 @@ func setupTestContext(t *testing.T) (*testContext, context.Context) {
 		instRepo: repository.NewEntityInstanceGormRepo(db),
 		iavRepo:  repository.NewInstanceAttributeValueGormRepo(db),
 		linkRepo: repository.NewAssociationLinkGormRepo(db),
+		attrRepo: repository.NewAttributeGormRepo(db),
 	}, ctx
 }
 
@@ -550,4 +552,499 @@ func TestT2_22_FilterForwardRefsByAssociationType(t *testing.T) {
 	}
 	assert.Len(t, filtered, 1)
 	assert.Equal(t, tgt1ID, filtered[0].TargetInstanceID)
+}
+
+// === ListByCatalog (T-13.01 through T-13.03) ===
+
+func TestT13_01_ListByCatalog_ReturnsAllInstances(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+	catalogID := tc.cvID
+
+	for _, name := range []string{"charlie", "alpha", "bravo"} {
+		require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+			ID: id(), EntityTypeID: tc.etID, CatalogID: catalogID,
+			Name: name, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}))
+	}
+
+	results, err := tc.instRepo.ListByCatalog(ctx, catalogID)
+	require.NoError(t, err)
+	assert.Len(t, results, 3)
+	// Should be ordered by name
+	assert.Equal(t, "alpha", results[0].Name)
+	assert.Equal(t, "bravo", results[1].Name)
+	assert.Equal(t, "charlie", results[2].Name)
+}
+
+func TestT13_02_ListByCatalog_ExcludesOtherCatalogs(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+	catalog1 := tc.cvID
+	catalog2 := id()
+
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: id(), EntityTypeID: tc.etID, CatalogID: catalog1,
+		Name: "in-catalog-1", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: id(), EntityTypeID: tc.etID, CatalogID: catalog2,
+		Name: "in-catalog-2", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	results, err := tc.instRepo.ListByCatalog(ctx, catalog1)
+	require.NoError(t, err)
+	assert.Len(t, results, 1)
+	assert.Equal(t, "in-catalog-1", results[0].Name)
+}
+
+func TestT13_03_ListByCatalog_ExcludesDeleted(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	instID := id()
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: instID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
+		Name: "deleted-inst", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, tc.instRepo.SoftDelete(ctx, instID))
+
+	results, err := tc.instRepo.ListByCatalog(ctx, tc.cvID)
+	require.NoError(t, err)
+	assert.Len(t, results, 0)
+}
+
+func TestT13_04_ListByCatalog_EmptyCatalog(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	results, err := tc.instRepo.ListByCatalog(ctx, "nonexistent-catalog-id")
+	require.NoError(t, err)
+	assert.Empty(t, results)
+}
+
+// === Attribute Filtering (T-13.15 through T-13.23) ===
+
+func TestT13_15_StringFilter_CaseInsensitiveContains(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+	attrID := id()
+	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
+		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "hostname", Type: models.AttributeTypeString, Ordinal: 0,
+	}))
+
+	// Create two instances with attribute values
+	inst1ID := id()
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: inst1ID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
+		Name: "srv-alpha", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{{
+		ID: id(), InstanceID: inst1ID, InstanceVersion: 1, AttributeID: attrID, ValueString: "Alpha.Example.com",
+	}}))
+
+	inst2ID := id()
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: inst2ID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
+		Name: "srv-bravo", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{{
+		ID: id(), InstanceID: inst2ID, InstanceVersion: 1, AttributeID: attrID, ValueString: "bravo.other.com",
+	}}))
+
+	// Filter by "alpha" (case-insensitive contains)
+	results, total, err := tc.instRepo.List(ctx, tc.etID, tc.cvID, models.ListParams{
+		Limit:   20,
+		Filters: map[string]string{attrID: "alpha"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, total)
+	require.Len(t, results, 1)
+	assert.Equal(t, "srv-alpha", results[0].Name)
+}
+
+func TestT13_20_EnumFilter_ExactMatch(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+	attrID := id()
+	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
+		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "status", Type: models.AttributeTypeEnum, Ordinal: 0,
+	}))
+
+	inst1ID := id()
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: inst1ID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
+		Name: "active-srv", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{{
+		ID: id(), InstanceID: inst1ID, InstanceVersion: 1, AttributeID: attrID, ValueEnum: "active",
+	}}))
+
+	inst2ID := id()
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: inst2ID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
+		Name: "inactive-srv", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{{
+		ID: id(), InstanceID: inst2ID, InstanceVersion: 1, AttributeID: attrID, ValueEnum: "inactive",
+	}}))
+
+	results, total, err := tc.instRepo.List(ctx, tc.etID, tc.cvID, models.ListParams{
+		Limit:   20,
+		Filters: map[string]string{attrID: "active"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, total)
+	require.Len(t, results, 1)
+	assert.Equal(t, "active-srv", results[0].Name)
+}
+
+func TestT13_22_Filter_NoMatch_ReturnsEmpty(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+	attrID := id()
+	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
+		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "tag", Type: models.AttributeTypeString, Ordinal: 0,
+	}))
+
+	instID := id()
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: instID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
+		Name: "tagged", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{{
+		ID: id(), InstanceID: instID, InstanceVersion: 1, AttributeID: attrID, ValueString: "production",
+	}}))
+
+	results, total, err := tc.instRepo.List(ctx, tc.etID, tc.cvID, models.ListParams{
+		Limit:   20,
+		Filters: map[string]string{attrID: "nonexistent"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 0, total)
+	assert.Len(t, results, 0)
+}
+
+func TestT13_17_NumberRangeFilter(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	attrID := id()
+	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
+		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "score", Type: models.AttributeTypeNumber, Ordinal: 0,
+	}))
+
+	// Create instances with different numeric values
+	for _, pair := range []struct{ name string; val float64 }{
+		{"low", 2}, {"mid", 5}, {"high", 9},
+	} {
+		instID := id()
+		require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+			ID: instID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
+			Name: pair.name, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}))
+		v := pair.val
+		require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{{
+			ID: id(), InstanceID: instID, InstanceVersion: 1, AttributeID: attrID, ValueNumber: &v,
+		}}))
+	}
+
+	// Filter min=3 max=7 → should only match "mid" (5)
+	results, total, err := tc.instRepo.List(ctx, tc.etID, tc.cvID, models.ListParams{
+		Limit:   20,
+		Filters: map[string]string{attrID + ".min": "3", attrID + ".max": "7"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, total)
+	require.Len(t, results, 1)
+	assert.Equal(t, "mid", results[0].Name)
+}
+
+func TestT13_19_NumberFilter_InvalidValueReturnsError(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	attrID := id()
+	_, _, err := tc.instRepo.List(ctx, tc.etID, tc.cvID, models.ListParams{
+		Limit:   20,
+		Filters: map[string]string{attrID + ".min": "not-a-number"},
+	})
+	assert.Error(t, err)
+}
+
+func TestT13_16_NumberFilter_ExactMatch(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	attrID := id()
+	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
+		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "count", Type: models.AttributeTypeNumber, Ordinal: 0,
+	}))
+
+	for _, pair := range []struct {
+		name string
+		val  float64
+	}{
+		{"five", 5}, {"ten", 10},
+	} {
+		instID := id()
+		require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+			ID: instID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
+			Name: pair.name, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}))
+		v := pair.val
+		require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{{
+			ID: id(), InstanceID: instID, InstanceVersion: 1, AttributeID: attrID, ValueNumber: &v,
+		}}))
+	}
+
+	// Exact match using min=5 AND max=5
+	results, total, err := tc.instRepo.List(ctx, tc.etID, tc.cvID, models.ListParams{
+		Limit:   20,
+		Filters: map[string]string{attrID + ".min": "5", attrID + ".max": "5"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, total)
+	require.Len(t, results, 1)
+	assert.Equal(t, "five", results[0].Name)
+}
+
+func TestT13_18_NumberFilter_MaxOnly(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	attrID := id()
+	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
+		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "score", Type: models.AttributeTypeNumber, Ordinal: 0,
+	}))
+
+	for _, pair := range []struct {
+		name string
+		val  float64
+	}{
+		{"low", 3}, {"mid", 7}, {"high", 12},
+	} {
+		instID := id()
+		require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+			ID: instID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
+			Name: pair.name, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}))
+		v := pair.val
+		require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{{
+			ID: id(), InstanceID: instID, InstanceVersion: 1, AttributeID: attrID, ValueNumber: &v,
+		}}))
+	}
+
+	// Filter with max=7 only → returns instances with value <= 7
+	results, total, err := tc.instRepo.List(ctx, tc.etID, tc.cvID, models.ListParams{
+		Limit:   20,
+		Filters: map[string]string{attrID + ".max": "7"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, total)
+	require.Len(t, results, 2)
+	// Should be "low" and "mid" (ordered by name)
+	assert.Equal(t, "low", results[0].Name)
+	assert.Equal(t, "mid", results[1].Name)
+}
+
+func TestT13_21_MultipleFilters_ANDLogic(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	attr1ID := id()
+	attr2ID := id()
+	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
+		ID: attr1ID, EntityTypeVersionID: tc.etvID, Name: "env", Type: models.AttributeTypeString, Ordinal: 0,
+	}))
+	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
+		ID: attr2ID, EntityTypeVersionID: tc.etvID, Name: "region", Type: models.AttributeTypeString, Ordinal: 1,
+	}))
+
+	// inst1: env=prod, region=us
+	inst1ID := id()
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: inst1ID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
+		Name: "prod-us", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{
+		{ID: id(), InstanceID: inst1ID, InstanceVersion: 1, AttributeID: attr1ID, ValueString: "prod"},
+		{ID: id(), InstanceID: inst1ID, InstanceVersion: 1, AttributeID: attr2ID, ValueString: "us"},
+	}))
+
+	// inst2: env=prod, region=eu
+	inst2ID := id()
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: inst2ID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
+		Name: "prod-eu", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{
+		{ID: id(), InstanceID: inst2ID, InstanceVersion: 1, AttributeID: attr1ID, ValueString: "prod"},
+		{ID: id(), InstanceID: inst2ID, InstanceVersion: 1, AttributeID: attr2ID, ValueString: "eu"},
+	}))
+
+	// inst3: env=dev, region=us
+	inst3ID := id()
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: inst3ID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
+		Name: "dev-us", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{
+		{ID: id(), InstanceID: inst3ID, InstanceVersion: 1, AttributeID: attr1ID, ValueString: "dev"},
+		{ID: id(), InstanceID: inst3ID, InstanceVersion: 1, AttributeID: attr2ID, ValueString: "us"},
+	}))
+
+	// Filter env=prod AND region=us → only inst1
+	results, total, err := tc.instRepo.List(ctx, tc.etID, tc.cvID, models.ListParams{
+		Limit:   20,
+		Filters: map[string]string{attr1ID: "prod", attr2ID: "us"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, total)
+	require.Len(t, results, 1)
+	assert.Equal(t, "prod-us", results[0].Name)
+}
+
+func TestT13_23_FilterWorksAcrossEAVJoin(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	attrID := id()
+	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
+		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "color", Type: models.AttributeTypeString, Ordinal: 0,
+	}))
+
+	// Create 3 instances, two match the filter
+	for _, pair := range []struct{ name, color string }{
+		{"apple", "red"},
+		{"banana", "yellow"},
+		{"cherry", "red"},
+	} {
+		instID := id()
+		require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+			ID: instID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
+			Name: pair.name, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}))
+		require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{{
+			ID: id(), InstanceID: instID, InstanceVersion: 1, AttributeID: attrID, ValueString: pair.color,
+		}}))
+	}
+
+	results, total, err := tc.instRepo.List(ctx, tc.etID, tc.cvID, models.ListParams{
+		Limit:   20,
+		Filters: map[string]string{attrID: "red"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, total)
+	require.Len(t, results, 2)
+	// No duplicate instances — each should appear exactly once
+	names := map[string]bool{results[0].Name: true, results[1].Name: true}
+	assert.True(t, names["apple"])
+	assert.True(t, names["cherry"])
+}
+
+func TestT13_32_SortByNameAsc(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	for _, name := range []string{"charlie", "alpha", "bravo"} {
+		require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+			ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
+			Name: name, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}))
+	}
+
+	results, _, err := tc.instRepo.List(ctx, tc.etID, tc.cvID, models.ListParams{
+		Limit:    20,
+		SortBy:   "name",
+		SortDesc: false,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 3)
+	assert.Equal(t, "alpha", results[0].Name)
+	assert.Equal(t, "bravo", results[1].Name)
+	assert.Equal(t, "charlie", results[2].Name)
+}
+
+func TestT13_33_SortByNameDesc(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	for _, name := range []string{"charlie", "alpha", "bravo"} {
+		require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+			ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
+			Name: name, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}))
+	}
+
+	results, _, err := tc.instRepo.List(ctx, tc.etID, tc.cvID, models.ListParams{
+		Limit:    20,
+		SortBy:   "name",
+		SortDesc: true,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 3)
+	assert.Equal(t, "charlie", results[0].Name)
+	assert.Equal(t, "bravo", results[1].Name)
+	assert.Equal(t, "alpha", results[2].Name)
+}
+
+func TestT13_41_OffsetSkipsResults(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	for _, name := range []string{"a", "b", "c", "d", "e"} {
+		require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+			ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
+			Name: name, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}))
+	}
+
+	results, _, err := tc.instRepo.List(ctx, tc.etID, tc.cvID, models.ListParams{
+		Limit:  2,
+		Offset: 2,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+	// Default sort is by name: a, b, c, d, e → offset 2, limit 2 → c, d
+	assert.Equal(t, "c", results[0].Name)
+	assert.Equal(t, "d", results[1].Name)
+}
+
+func TestT13_42_LimitCapsResults(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	for _, name := range []string{"a", "b", "c", "d", "e"} {
+		require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+			ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
+			Name: name, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}))
+	}
+
+	results, _, err := tc.instRepo.List(ctx, tc.etID, tc.cvID, models.ListParams{
+		Limit: 3,
+	})
+	require.NoError(t, err)
+	assert.Len(t, results, 3)
+}
+
+func TestT13_43_TotalUnaffectedByOffsetLimit(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	for _, name := range []string{"a", "b", "c", "d", "e"} {
+		require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+			ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
+			Name: name, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}))
+	}
+
+	_, total, err := tc.instRepo.List(ctx, tc.etID, tc.cvID, models.ListParams{
+		Limit:  2,
+		Offset: 2,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 5, total)
+}
+
+func TestT13_44_OffsetBeyondTotal(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	for _, name := range []string{"a", "b", "c"} {
+		require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+			ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
+			Name: name, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}))
+	}
+
+	results, total, err := tc.instRepo.List(ctx, tc.etID, tc.cvID, models.ListParams{
+		Limit:  10,
+		Offset: 10,
+	})
+	require.NoError(t, err)
+	assert.Empty(t, results)
+	assert.Equal(t, 3, total)
 }
