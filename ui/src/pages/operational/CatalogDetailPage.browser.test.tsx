@@ -708,3 +708,16 @@ test('add contained modal mode dropdown is interactive', async () => {
   // "Adopt Existing" option should be visible in the dropdown
   await expect.element(page.getByText('Adopt Existing').first()).toBeVisible()
 })
+
+// === Open in Data Viewer link ===
+
+test('catalog detail shows Open in Data Viewer link', async () => {
+  renderDetail()
+  await waitForInstances()
+  const link = page.getByText('Open in Data Viewer')
+  await expect.element(link).toBeVisible()
+  // Link should point to the operational UI for this catalog, same tab
+  const anchor = link.element().closest('a')
+  expect(anchor?.getAttribute('href')).toBe('/operational/catalogs/my-catalog')
+  expect(anchor?.getAttribute('target')).toBeNull()
+})

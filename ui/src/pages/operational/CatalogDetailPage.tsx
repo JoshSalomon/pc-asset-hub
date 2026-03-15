@@ -437,10 +437,13 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
           {catalog.validation_status}
         </Label>
       </Title>
-      <p style={{ color: '#6a6e73', marginBottom: '1rem' }}>
+      <p style={{ color: '#6a6e73', marginBottom: '0.5rem' }}>
         Catalog Version: {catalog.catalog_version_label || catalog.catalog_version_id}
         {catalog.description && ` — ${catalog.description}`}
       </p>
+      <Button variant="link" isInline component="a" href={`/operational/catalogs/${catalog.name}`} style={{ marginBottom: '1rem' }}>
+        Open in Data Viewer →
+      </Button>
 
       {pins.length === 0 ? (
         <EmptyState><EmptyStateBody>No entity types pinned in this catalog's version.</EmptyStateBody></EmptyState>
