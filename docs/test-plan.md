@@ -164,6 +164,9 @@ Each feature area is tested at the appropriate layers:
 | Operational UI — reference navigation | | | | X | |
 | Operational UI — breadcrumb navigation | | | | X | |
 | Operational UI — Vite multi-entry build | | | | X | |
+| Catalog-level RBAC — access check + middleware | X | | X | | |
+| Catalog-level RBAC — catalog list filtering | X | | X | | |
+| Catalog-level RBAC — header mode passthrough | X | | X | | |
 
 ---
 
@@ -406,3 +409,12 @@ The operational UI is a separate read-only web application for browsing catalog 
 - **UI tests (browser — instance detail)**: Verify instance detail panel shows attributes table with name, type, and value. Verify enum values show resolved names. Verify description, version, and timestamps displayed. Verify breadcrumb shows containment path.
 - **UI tests (browser — reference navigation)**: Verify references tab shows forward references with association name, type, target instance, and entity type. Verify referenced-by tab shows reverse references. Verify clicking a referenced instance navigates to it in the tree.
 - **UI tests (browser — read-only)**: Verify no create, edit, or delete buttons are visible in the operational UI regardless of role. Verify no write-action modals exist.
+
+### 5.27 Catalog-Level RBAC (US-23, US-39)
+
+Per-catalog access control using a `CatalogAccessChecker` interface. In header-based dev mode, all catalogs are accessible (passthrough). In SAR mode (future Phase C), SubjectAccessReview checks `resourceName` against K8s RBAC. The middleware extracts the catalog name from the URL path and checks access before the handler runs.
+
+- **Unit tests (middleware)**: Verify `RequireCatalogAccess` middleware extracts catalog name from `:catalog-name` URL param. Verify middleware calls `CatalogAccessChecker.CheckAccess` with correct catalog name and verb. Verify middleware returns 403 when access is denied. Verify middleware passes through when access is allowed. Verify verb mapping: GET→get, POST→create, PUT/PATCH→update, DELETE→delete.
+- **Unit tests (HeaderCatalogAccessChecker)**: Verify always returns true (passthrough in dev mode).
+- **API tests (handler)**: Verify `GET /api/data/v1/catalogs` filters results through access checker. Verify catalog list with denied catalogs excludes them. Verify `GET /api/data/v1/catalogs/{name}/...` returns 403 when access denied. Verify all sub-resource operations (instances, tree, links, references) inherit catalog access check.
+- **Integration note**: Real SAR-based checking is deferred to Phase C (OCP cluster required). Unit tests use a mock `CatalogAccessChecker` that can be configured to allow/deny specific catalogs.

@@ -98,7 +98,8 @@ func main() {
 	vhHandler := apimeta.NewVersionHistoryHandler(vhSvc)
 	cvHandler := apimeta.NewCatalogVersionHandler(cvSvc)
 	opHandler := apiop.NewHandler(instSvc)
-	catalogHandler := apiop.NewCatalogHandler(catalogSvc)
+	catalogAccessChecker := &middleware.HeaderCatalogAccessChecker{}
+	catalogHandler := apiop.NewCatalogHandler(catalogSvc, catalogAccessChecker)
 	instanceHandler := apiop.NewInstanceHandler(instanceSvc)
 	healthHandler := apihealth.NewHandler(db)
 
@@ -133,8 +134,10 @@ func main() {
 	catalogGroup.Use(middleware.RBACMiddleware(rbacProvider))
 	apiop.RegisterCatalogRoutes(catalogGroup, catalogHandler, requireRW)
 
-	// Operational API — Instance CRUD (under catalogs)
-	apiop.RegisterInstanceRoutes(catalogGroup.Group("/:catalog-name"), instanceHandler, requireRW)
+	// Operational API — Instance CRUD (under catalogs, with per-catalog access check)
+	instanceGroup := catalogGroup.Group("/:catalog-name")
+	instanceGroup.Use(middleware.RequireCatalogAccess(catalogAccessChecker))
+	apiop.RegisterInstanceRoutes(instanceGroup, instanceHandler, requireRW)
 
 	// Operational API — legacy instance routes (to be replaced)
 	opGroup := e.Group("/api/data/v1/:catalog-version")

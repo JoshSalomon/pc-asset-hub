@@ -6,22 +6,33 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/project-catalyst/pc-asset-hub/internal/api/dto"
+	apimw "github.com/project-catalyst/pc-asset-hub/internal/api/middleware"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
 	svcop "github.com/project-catalyst/pc-asset-hub/internal/service/operational"
 )
 
 type CatalogHandler struct {
-	svc *svcop.CatalogService
+	svc           *svcop.CatalogService
+	accessChecker apimw.CatalogAccessChecker
 }
 
-func NewCatalogHandler(svc *svcop.CatalogService) *CatalogHandler {
-	return &CatalogHandler{svc: svc}
+func NewCatalogHandler(svc *svcop.CatalogService, accessChecker apimw.CatalogAccessChecker) *CatalogHandler {
+	return &CatalogHandler{svc: svc, accessChecker: accessChecker}
 }
 
 func (h *CatalogHandler) CreateCatalog(c echo.Context) error {
 	var req dto.CreateCatalogRequest
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+
+	// Check if user can create this catalog
+	allowed, err := h.accessChecker.CheckAccess(c, req.Name, "create")
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "access check failed")
+	}
+	if !allowed {
+		return echo.NewHTTPError(http.StatusForbidden, "access denied to catalog: "+req.Name)
 	}
 
 	catalog, err := h.svc.CreateCatalog(c.Request().Context(), req.Name, req.Description, req.CatalogVersionID)
@@ -45,17 +56,25 @@ func (h *CatalogHandler) ListCatalogs(c echo.Context) error {
 		params.Filters["validation_status"] = status
 	}
 
-	details, total, err := h.svc.List(c.Request().Context(), params)
+	details, _, err := h.svc.List(c.Request().Context(), params)
 	if err != nil {
 		return mapError(err)
 	}
 
-	items := make([]dto.CatalogResponse, len(details))
-	for i, d := range details {
+	// Filter by catalog-level access
+	accessible, err := apimw.FilterAccessible(c, h.accessChecker, details, func(d *svcop.CatalogDetail) string {
+		return d.Catalog.Name
+	})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "access check failed")
+	}
+
+	items := make([]dto.CatalogResponse, len(accessible))
+	for i, d := range accessible {
 		items[i] = catalogToDTO(d.Catalog, d.CatalogVersionLabel)
 	}
 
-	return c.JSON(http.StatusOK, dto.ListResponse{Items: items, Total: total})
+	return c.JSON(http.StatusOK, dto.ListResponse{Items: items, Total: len(accessible)})
 }
 
 func (h *CatalogHandler) GetCatalog(c echo.Context) error {
@@ -93,8 +112,9 @@ func catalogToDTO(cat *models.Catalog, cvLabel string) dto.CatalogResponse {
 }
 
 func RegisterCatalogRoutes(g *echo.Group, h *CatalogHandler, requireRW echo.MiddlewareFunc) {
+	requireCatalogAccess := apimw.RequireCatalogAccess(h.accessChecker)
 	g.POST("", h.CreateCatalog, requireRW)
 	g.GET("", h.ListCatalogs)
-	g.GET("/:catalog-name", h.GetCatalog)
-	g.DELETE("/:catalog-name", h.DeleteCatalog, requireRW)
+	g.GET("/:catalog-name", h.GetCatalog, requireCatalogAccess)
+	g.DELETE("/:catalog-name", h.DeleteCatalog, requireRW, requireCatalogAccess)
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/project-catalyst/pc-asset-hub/internal/api/dto"
 	apimw "github.com/project-catalyst/pc-asset-hub/internal/api/middleware"
 	apiop "github.com/project-catalyst/pc-asset-hub/internal/api/operational"
 	domainerrors "github.com/project-catalyst/pc-asset-hub/internal/domain/errors"
@@ -27,7 +28,8 @@ func setupCatalogServer() (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockCatalo
 	cvRepo := new(mocks.MockCatalogVersionRepo)
 	instRepo := new(mocks.MockEntityInstanceRepo)
 	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo)
-	handler := apiop.NewCatalogHandler(svc)
+	accessChecker := &apimw.HeaderCatalogAccessChecker{}
+	handler := apiop.NewCatalogHandler(svc, accessChecker)
 
 	e := echo.New()
 	g := e.Group("/api/data/v1/catalogs")
@@ -275,4 +277,114 @@ func TestT10_51_OldRoutesNotRegistered(t *testing.T) {
 
 	// Should get 404 or 405 since these routes aren't on this server
 	assert.NotEqual(t, http.StatusOK, rec.Code)
+}
+
+// === Phase 5: Catalog-Level RBAC API Tests ===
+
+// mockAccessChecker allows per-catalog access control in tests.
+type mockAccessChecker struct {
+	allowed map[string]bool
+}
+
+func (m *mockAccessChecker) CheckAccess(_ echo.Context, catalogName, _ string) (bool, error) {
+	if m.allowed == nil {
+		return true, nil
+	}
+	return m.allowed[catalogName], nil
+}
+
+func setupCatalogServerWithAccessChecker(checker apimw.CatalogAccessChecker) (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockCatalogVersionRepo) {
+	catRepo := new(mocks.MockCatalogRepo)
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo)
+	handler := apiop.NewCatalogHandler(svc, checker)
+
+	e := echo.New()
+	g := e.Group("/api/data/v1/catalogs")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	requireRW := apimw.RequireRole(apimw.RoleRW)
+	apiop.RegisterCatalogRoutes(g, handler, requireRW)
+
+	return e, catRepo, cvRepo
+}
+
+// T-14.15: Catalog list with mock deny returns filtered list
+func TestT14_15_CatalogListFiltersDenied(t *testing.T) {
+	checker := &mockAccessChecker{allowed: map[string]bool{
+		"allowed-cat": true, "denied-cat": false,
+	}}
+	e, catRepo, cvRepo := setupCatalogServerWithAccessChecker(checker)
+
+	now := time.Now()
+	catRepo.On("List", mock.Anything, mock.Anything).Return([]*models.Catalog{
+		{ID: "c1", Name: "allowed-cat", CatalogVersionID: "cv1", ValidationStatus: models.ValidationStatusDraft, CreatedAt: now, UpdatedAt: now},
+		{ID: "c2", Name: "denied-cat", CatalogVersionID: "cv1", ValidationStatus: models.ValidationStatusDraft, CreatedAt: now, UpdatedAt: now},
+	}, 2, nil)
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1"}, nil)
+
+	rec := doCatalogRequest(e, http.MethodGet, "/api/data/v1/catalogs", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.ListResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, 1, resp.Total)
+
+	items, _ := json.Marshal(resp.Items)
+	assert.Contains(t, string(items), "allowed-cat")
+	assert.NotContains(t, string(items), "denied-cat")
+}
+
+// T-14.16: Header mode returns all catalogs
+func TestT14_16_HeaderModeReturnsAll(t *testing.T) {
+	e, catRepo, cvRepo, _ := setupCatalogServer() // uses HeaderCatalogAccessChecker
+
+	now := time.Now()
+	catRepo.On("List", mock.Anything, mock.Anything).Return([]*models.Catalog{
+		{ID: "c1", Name: "cat-a", CatalogVersionID: "cv1", ValidationStatus: models.ValidationStatusDraft, CreatedAt: now, UpdatedAt: now},
+		{ID: "c2", Name: "cat-b", CatalogVersionID: "cv1", ValidationStatus: models.ValidationStatusDraft, CreatedAt: now, UpdatedAt: now},
+	}, 2, nil)
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1"}, nil)
+
+	rec := doCatalogRequest(e, http.MethodGet, "/api/data/v1/catalogs", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.ListResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, 2, resp.Total)
+}
+
+// T-14.17: GET catalog returns 403 when access denied
+func TestT14_17_GetCatalog_DeniedReturns403(t *testing.T) {
+	checker := &mockAccessChecker{allowed: map[string]bool{"denied-cat": false}}
+	e, catRepo, _ := setupCatalogServerWithAccessChecker(checker)
+
+	now := time.Now()
+	catRepo.On("GetByName", mock.Anything, "denied-cat").Return(&models.Catalog{
+		ID: "c1", Name: "denied-cat", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusDraft, CreatedAt: now, UpdatedAt: now,
+	}, nil)
+
+	rec := doCatalogRequest(e, http.MethodGet, "/api/data/v1/catalogs/denied-cat", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// T-14.18: DELETE catalog returns 403 when access denied
+func TestT14_18_DeleteCatalog_DeniedReturns403(t *testing.T) {
+	checker := &mockAccessChecker{allowed: map[string]bool{"denied-cat": false}}
+	e, _, _ := setupCatalogServerWithAccessChecker(checker)
+
+	rec := doCatalogRequest(e, http.MethodDelete, "/api/data/v1/catalogs/denied-cat", "", apimw.RoleRW)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// T-14.19: CreateCatalog returns 403 when access denied for that catalog name
+func TestT14_19_CreateCatalog_DeniedReturns403(t *testing.T) {
+	checker := &mockAccessChecker{allowed: map[string]bool{"forbidden-cat": false}}
+	e, _, _ := setupCatalogServerWithAccessChecker(checker)
+
+	body := `{"name":"forbidden-cat","catalog_version_id":"cv1"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
 }

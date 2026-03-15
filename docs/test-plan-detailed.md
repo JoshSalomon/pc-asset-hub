@@ -30,7 +30,7 @@ Development proceeds through three environment phases, each with increasing infr
 
 **Milestones completed**: 1–12 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, and T-13.01 through T-13.102 (542 test cases; T-13.78 through T-13.85 retired), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired), and T-14.01 through T-14.22 (564 test cases), using SQLite and mocked/simulated infrastructure.
 
 **Human checkpoint**: After all 447 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
@@ -1689,6 +1689,52 @@ Test cases T-13.78 through T-13.85 are retired.
 | T-13.101 | No link/unlink actions in reference tabs | Browser | No write actions on references |
 | T-13.102 | Read-only enforcement applies regardless of role (even SuperAdmin) | Browser | SuperAdmin sees same read-only view |
 
+## Milestone 14: Catalog-Level RBAC
+
+Phase 5 of the catalog implementation plan. Adds per-catalog access control via a `CatalogAccessChecker` interface. In header-based dev mode (RBAC_MODE=header), all catalogs are accessible. In SAR mode (Phase C), SubjectAccessReview checks resourceName against K8s RBAC. User stories: US-23, US-39.
+
+### CatalogAccessChecker Interface + HeaderCatalogAccessChecker
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-14.01 | `HeaderCatalogAccessChecker.CheckAccess` returns true for any catalog | Unit | Always allowed in dev mode |
+| T-14.02 | `HeaderCatalogAccessChecker.CheckAccess` returns true for any verb | Unit | GET, POST, PUT, DELETE all allowed |
+
+### RequireCatalogAccess Middleware
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-14.03 | Middleware extracts catalog name from `:catalog-name` param | Unit | Correct name passed to CheckAccess |
+| T-14.04 | Middleware maps GET to verb "get" | Unit | CheckAccess called with verb "get" |
+| T-14.05 | Middleware maps POST to verb "create" | Unit | CheckAccess called with verb "create" |
+| T-14.06 | Middleware maps PUT to verb "update" | Unit | CheckAccess called with verb "update" |
+| T-14.07 | Middleware maps DELETE to verb "delete" | Unit | CheckAccess called with verb "delete" |
+| T-14.08 | Middleware returns 403 when CheckAccess returns false | Unit | 403 Forbidden response |
+| T-14.09 | Middleware passes through when CheckAccess returns true | Unit | Next handler called, 200 response |
+| T-14.10 | Middleware returns 500 when CheckAccess returns error | Unit | 500 Internal Server Error |
+| T-14.11 | Middleware skips check when no catalog name in path (catalog list) | Unit | Next handler called without CheckAccess |
+
+### Catalog List Filtering
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-14.12 | Catalog list filters out denied catalogs | Unit | Only allowed catalogs returned |
+| T-14.13 | Catalog list returns all catalogs when all are allowed | Unit | Full list returned |
+| T-14.14 | Catalog list returns empty when all catalogs denied | Unit | Empty items, total=0 |
+| T-14.15 | `GET /api/data/v1/catalogs` with mock deny returns filtered list | API | Denied catalogs excluded from response |
+| T-14.16 | `GET /api/data/v1/catalogs` with header mode returns all catalogs | API | All catalogs in response |
+
+### Catalog Access Enforcement via API
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-14.17 | `GET /api/data/v1/catalogs/{name}/tree` returns 403 when denied | API | 403 response |
+| T-14.18 | `GET /api/data/v1/catalogs/{name}/{type}` returns 403 when denied | API | 403 response |
+| T-14.19 | `POST /api/data/v1/catalogs/{name}/{type}` returns 403 when denied | API | 403 response |
+| T-14.20 | `GET /api/data/v1/catalogs/{name}/{type}/{id}` returns 403 when denied | API | 403 response |
+| T-14.21 | All sub-resource operations allowed when catalog access granted | API | 200 response |
+| T-14.22 | Header mode: all catalog operations pass regardless of catalog name | API | 200 response for any catalog |
+
 ---
 
 ## Coverage Criteria
@@ -1727,7 +1773,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 542 test cases (T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, and T-13.01 through T-13.102; T-13.78 through T-13.85 retired) pass
+- All 564 test cases (T-1.01 through T-14.22; T-13.78 through T-13.85 retired) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

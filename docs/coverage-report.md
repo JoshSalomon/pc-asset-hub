@@ -8,12 +8,12 @@ Last updated: 2026-03-15
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 969+ | 100% | 89.1% | — |
+| Backend (Go) | 989+ | 100% | 89.2% | — |
 | UI — Unit tests | 75 | 100% | 17.9% | 20.6% |
 | UI — Browser tests (Playwright) | 375 | 100% | 81.1% | 85.9% |
 | UI — System tests (Playwright + live server) | 30 | 100% | — | — |
 | Live system (bash scripts) | 41 | 100% | — | — |
-| **Total** | **1490+** | **100%** | — | — |
+| **Total** | **1510+** | **100%** | — | — |
 
 ---
 

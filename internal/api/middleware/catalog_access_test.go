@@ -1,0 +1,246 @@
+package middleware
+
+import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/labstack/echo/v4"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// mockCatalogAccessChecker allows configuring per-catalog access for tests.
+type mockCatalogAccessChecker struct {
+	allowed    map[string]bool // catalogName → allowed
+	lastCatalog string
+	lastVerb    string
+	returnErr   error
+}
+
+func (m *mockCatalogAccessChecker) CheckAccess(c echo.Context, catalogName, verb string) (bool, error) {
+	m.lastCatalog = catalogName
+	m.lastVerb = verb
+	if m.returnErr != nil {
+		return false, m.returnErr
+	}
+	if m.allowed == nil {
+		return true, nil
+	}
+	return m.allowed[catalogName], nil
+}
+
+// === T-14.01, T-14.02: HeaderCatalogAccessChecker ===
+
+func TestHeaderCatalogAccessChecker_AlwaysAllows(t *testing.T) {
+	checker := &HeaderCatalogAccessChecker{}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	c := e.NewContext(req, httptest.NewRecorder())
+
+	allowed, err := checker.CheckAccess(c, "any-catalog", "get")
+	require.NoError(t, err)
+	assert.True(t, allowed)
+}
+
+func TestHeaderCatalogAccessChecker_AllowsAllVerbs(t *testing.T) {
+	checker := &HeaderCatalogAccessChecker{}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	c := e.NewContext(req, httptest.NewRecorder())
+
+	for _, verb := range []string{"get", "create", "update", "delete"} {
+		allowed, err := checker.CheckAccess(c, "test-catalog", verb)
+		require.NoError(t, err)
+		assert.True(t, allowed, "verb %s should be allowed", verb)
+	}
+}
+
+// === T-14.03 through T-14.11: RequireCatalogAccess Middleware ===
+
+func TestRequireCatalogAccess_ExtractsCatalogName(t *testing.T) {
+	mock := &mockCatalogAccessChecker{}
+	mw := RequireCatalogAccess(mock)
+	e := echo.New()
+
+	e.GET("/catalogs/:catalog-name/tree", mw(func(c echo.Context) error {
+		return c.String(http.StatusOK, "ok")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/catalogs/my-catalog/tree", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, "my-catalog", mock.lastCatalog)
+}
+
+func TestRequireCatalogAccess_MapsGETToGet(t *testing.T) {
+	mock := &mockCatalogAccessChecker{}
+	mw := RequireCatalogAccess(mock)
+	e := echo.New()
+	e.GET("/catalogs/:catalog-name", mw(func(c echo.Context) error {
+		return c.String(http.StatusOK, "ok")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/catalogs/test", nil)
+	e.ServeHTTP(httptest.NewRecorder(), req)
+	assert.Equal(t, "get", mock.lastVerb)
+}
+
+func TestRequireCatalogAccess_MapsPOSTToCreate(t *testing.T) {
+	mock := &mockCatalogAccessChecker{}
+	mw := RequireCatalogAccess(mock)
+	e := echo.New()
+	e.POST("/catalogs/:catalog-name/instances", mw(func(c echo.Context) error {
+		return c.String(http.StatusOK, "ok")
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/catalogs/test/instances", nil)
+	e.ServeHTTP(httptest.NewRecorder(), req)
+	assert.Equal(t, "create", mock.lastVerb)
+}
+
+func TestRequireCatalogAccess_MapsDELETEToDelete(t *testing.T) {
+	mock := &mockCatalogAccessChecker{}
+	mw := RequireCatalogAccess(mock)
+	e := echo.New()
+	e.DELETE("/catalogs/:catalog-name/instances", mw(func(c echo.Context) error {
+		return c.String(http.StatusOK, "ok")
+	}))
+
+	req := httptest.NewRequest(http.MethodDelete, "/catalogs/test/instances", nil)
+	e.ServeHTTP(httptest.NewRecorder(), req)
+	assert.Equal(t, "delete", mock.lastVerb)
+}
+
+func TestRequireCatalogAccess_Returns403WhenDenied(t *testing.T) {
+	mock := &mockCatalogAccessChecker{allowed: map[string]bool{"test": false}}
+	mw := RequireCatalogAccess(mock)
+	e := echo.New()
+	e.GET("/catalogs/:catalog-name", mw(func(c echo.Context) error {
+		return c.String(http.StatusOK, "ok")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/catalogs/test", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestRequireCatalogAccess_PassesThroughWhenAllowed(t *testing.T) {
+	mock := &mockCatalogAccessChecker{allowed: map[string]bool{"test": true}}
+	mw := RequireCatalogAccess(mock)
+	e := echo.New()
+	e.GET("/catalogs/:catalog-name", mw(func(c echo.Context) error {
+		return c.String(http.StatusOK, "ok")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/catalogs/test", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestRequireCatalogAccess_Returns500OnError(t *testing.T) {
+	mock := &mockCatalogAccessChecker{returnErr: fmt.Errorf("SAR failed")}
+	mw := RequireCatalogAccess(mock)
+	e := echo.New()
+	e.GET("/catalogs/:catalog-name", mw(func(c echo.Context) error {
+		return c.String(http.StatusOK, "ok")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/catalogs/test", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+func TestRequireCatalogAccess_SkipsWhenNoCatalogName(t *testing.T) {
+	mock := &mockCatalogAccessChecker{allowed: map[string]bool{}}
+	mw := RequireCatalogAccess(mock)
+	e := echo.New()
+	// Route without :catalog-name param
+	e.GET("/catalogs", mw(func(c echo.Context) error {
+		return c.String(http.StatusOK, "ok")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/catalogs", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "", mock.lastCatalog) // CheckAccess not called
+}
+
+func TestRequireCatalogAccess_MapsHEADToGet(t *testing.T) {
+	mock := &mockCatalogAccessChecker{}
+	mw := RequireCatalogAccess(mock)
+	e := echo.New()
+	e.Add(http.MethodHead, "/catalogs/:catalog-name", mw(func(c echo.Context) error {
+		return c.String(http.StatusOK, "ok")
+	}))
+
+	req := httptest.NewRequest(http.MethodHead, "/catalogs/test", nil)
+	e.ServeHTTP(httptest.NewRecorder(), req)
+	assert.Equal(t, "get", mock.lastVerb)
+}
+
+func TestHttpMethodToVerb_DefaultReturnsGet(t *testing.T) {
+	assert.Equal(t, "get", httpMethodToVerb("OPTIONS"))
+	assert.Equal(t, "get", httpMethodToVerb("UNKNOWN"))
+}
+
+// === T-14.12 through T-14.14: FilterAccessibleCatalogs ===
+
+func TestFilterAccessibleCatalogs_FiltersDenied(t *testing.T) {
+	mock := &mockCatalogAccessChecker{allowed: map[string]bool{
+		"allowed-1": true, "denied-1": false, "allowed-2": true,
+	}}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	c := e.NewContext(req, httptest.NewRecorder())
+
+	identity := func(s string) string { return s }
+
+	result, err := FilterAccessible(c, mock, []string{"allowed-1", "denied-1", "allowed-2"}, identity)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"allowed-1", "allowed-2"}, result)
+}
+
+func TestFilterAccessibleCatalogs_AllAllowed(t *testing.T) {
+	mock := &mockCatalogAccessChecker{} // nil allowed map = all allowed
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	c := e.NewContext(req, httptest.NewRecorder())
+
+	identity := func(s string) string { return s }
+	result, err := FilterAccessible(c, mock, []string{"a", "b", "c"}, identity)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a", "b", "c"}, result)
+}
+
+func TestFilterAccessibleCatalogs_AllDenied(t *testing.T) {
+	mock := &mockCatalogAccessChecker{allowed: map[string]bool{
+		"a": false, "b": false,
+	}}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	c := e.NewContext(req, httptest.NewRecorder())
+
+	identity := func(s string) string { return s }
+	result, err := FilterAccessible(c, mock, []string{"a", "b"}, identity)
+	require.NoError(t, err)
+	assert.Empty(t, result)
+}
+
+func TestFilterAccessibleCatalogs_ErrorPropagates(t *testing.T) {
+	mock := &mockCatalogAccessChecker{returnErr: fmt.Errorf("SAR failed")}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	c := e.NewContext(req, httptest.NewRecorder())
+
+	identity := func(s string) string { return s }
+	_, err := FilterAccessible(c, mock, []string{"a"}, identity)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "SAR failed")
+}
