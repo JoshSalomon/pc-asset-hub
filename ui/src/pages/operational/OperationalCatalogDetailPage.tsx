@@ -17,6 +17,8 @@ import {
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
 import { api, setAuthRole } from '../../api/client'
 import type { Catalog, CatalogVersionPin, TreeNodeResponse, EntityInstance, ReferenceDetail, Role } from '../../types'
+import { useValidation } from '../../hooks/useValidation'
+import ValidationResults from '../../components/ValidationResults'
 
 export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
   const { name } = useParams<{ name: string }>()
@@ -59,6 +61,8 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
   }, [name, role])
 
   useEffect(() => { loadCatalog() }, [loadCatalog])
+
+  const validation = useValidation(name, loadCatalog)
 
   const loadTree = useCallback(async () => {
     if (!name) return
@@ -237,10 +241,20 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
           {catalog.validation_status}
         </Label>
       </Title>
-      <p style={{ color: '#6a6e73', marginBottom: '1rem' }}>
+      <p style={{ color: '#6a6e73', marginBottom: '0.5rem' }}>
         Catalog Version: {catalog.catalog_version_label || catalog.catalog_version_id}
         {catalog.description && ` — ${catalog.description}`}
       </p>
+
+      {(role === 'RW' || role === 'Admin' || role === 'SuperAdmin') && (
+        <div style={{ marginBottom: '1rem' }}>
+          <Button variant="secondary" onClick={validation.validate} isLoading={validation.validating} isDisabled={validation.validating}>
+            Validate
+          </Button>
+        </div>
+      )}
+
+      <ValidationResults errors={validation.errors} ran={validation.ran} error={validation.error} />
 
       <Tabs activeKey={activeTab} onSelect={(_e, key) => setActiveTab(String(key))} style={{ marginTop: '1rem' }}>
         <Tab eventKey="overview" title={<TabTitleText>Overview</TabTitleText>}>

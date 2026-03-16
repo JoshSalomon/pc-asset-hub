@@ -30,7 +30,7 @@ Development proceeds through three environment phases, each with increasing infr
 
 **Milestones completed**: 1–12 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired), and T-14.01 through T-14.22 (564 test cases), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired), T-14.01 through T-14.22, and T-15.01 through T-15.81 (645 test cases), using SQLite and mocked/simulated infrastructure.
 
 **Human checkpoint**: After all 447 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
@@ -691,12 +691,12 @@ Version history endpoints are read-only — all authenticated roles can access.
 | T-7.31 | Delete blocked when referenced (shows referencing attributes) | UI | US-33: delete blocked |
 | T-7.32 | Inline creation available from attribute type dropdown | UI | US-33: inline creation |
 
-### Catalog Version Management (US-34, US-35)
+### Catalog Version Management (US-41, US-35)
 
 | ID | Test Case | Layer | Acceptance Criteria |
 |----|-----------|-------|-------------------|
-| T-7.33 | Create UI shows all types with version dropdowns, latest pre-selected | UI | US-34: version picker with defaults |
-| T-7.34 | Summary/review step shows full bill of materials | UI | US-34: review before confirm |
+| T-7.33 | Create UI shows all types with version dropdowns, latest pre-selected | UI | US-41: version picker with defaults |
+| T-7.34 | Summary/review step shows full bill of materials | UI | US-41: review before confirm |
 | T-7.35 | Detail shows identifier, lifecycle badge (color-coded), BOM | UI | US-35: detail view |
 | T-7.36 | Development stage: "Promote to Testing" visible for RW+ | UI | US-35: role-based actions |
 | T-7.37 | Testing stage: "Promote to Production" visible for Admin+, "Demote" for RW+ | UI | US-35: role-based actions |
@@ -1737,6 +1737,168 @@ Phase 5 of the catalog implementation plan. Adds per-catalog access control via 
 
 ---
 
+## Milestone 15: Catalog Validation
+
+Phase 6 of the catalog implementation plan. On-demand validation of all entity instances in a catalog against the pinned CV's schema. The `CatalogValidationService` checks required attributes, type correctness, full cardinality validation (min and max, both target and source directions), containment consistency (orphaned instances, missing parents for contained types, invalid relationships), and unpinned entity types. Returns a structured error list and updates the catalog's validation status. User story: US-34.
+
+### Validation Service — Required Attributes
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.01 | Instance missing value for required attribute produces error | Unit | Error: entity_type, instance_name, field=attr_name, violation="required attribute missing" |
+| T-15.02 | Instance with value for required attribute passes | Unit | No error for that attribute |
+| T-15.03 | Instance missing value for optional attribute passes | Unit | No error — optional attrs are not required |
+| T-15.04 | Multiple instances missing different required attrs produce separate errors | Unit | One error per missing required attr per instance |
+
+### Validation Service — Attribute Type Check
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.05 | String attribute with any value passes | Unit | No error |
+| T-15.06 | Number attribute with valid float value passes | Unit | No error |
+| T-15.07 | Required number attribute with nil value produces error | Unit | Error: violation="required attribute missing" |
+| T-15.08 | Enum attribute with value in allowed list passes | Unit | No error |
+| T-15.09 | Enum attribute with value not in allowed list produces error | Unit | Error: violation="invalid enum value" |
+
+### Validation Service — Mandatory Associations
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.10 | Association with target_cardinality "1" — source instance has one link → passes | Unit | No error |
+| T-15.11 | Association with target_cardinality "1" — source instance has no link → error | Unit | Error: violation="mandatory association unsatisfied" |
+| T-15.12 | Association with target_cardinality "1..n" — source instance has one link → passes | Unit | No error |
+| T-15.13 | Association with target_cardinality "1..n" — source instance has no link → error | Unit | Error: violation="mandatory association unsatisfied" |
+| T-15.14 | Association with target_cardinality "0..n" — source instance has no link → passes | Unit | No error — optional association |
+| T-15.15 | Association with target_cardinality "0..1" — source instance has no link → passes | Unit | No error — optional association |
+| T-15.16 | Containment associations are excluded from mandatory assoc checks | Unit | Containment validated separately |
+
+### Validation Service — Cardinality Max and Source Direction
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.49 | Target cardinality "0..1" with 2 links → max exceeded error | Unit | Error: violation="exceeds maximum" |
+| T-15.50 | Exact cardinality "1" with 2 links → max exceeded error | Unit | Error: violation="exceeds maximum" |
+| T-15.51 | Bidirectional with source_cardinality "1" — target instance has no reverse links → error | Unit | Error: violation="source cardinality" |
+| T-15.52 | Directional with source_cardinality "1" — target instance has reverse link → passes | Unit | No error |
+| T-15.53 | Source cardinality "0..1" with 2 reverse links → max exceeded error | Unit | Error: violation="exceeds maximum" |
+| T-15.54 | Bidirectional with mandatory target_cardinality — source instance has no link → error | Unit | Error: violation="mandatory association" |
+| T-15.55 | ParseCardinality parses all formats correctly | Unit | "0..n"→(0,0,true), "1"→(1,1,false), "1..n"→(1,0,true), etc. |
+| T-15.56 | ParseCardinality with invalid max returns unbounded | Unit | "1..abc"→(1,0,true) |
+
+### Validation Service — Containment Consistency
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.17 | Contained instance with valid parent (correct type, exists) passes | Unit | No error |
+| T-15.18 | Instance with ParentInstanceID pointing to non-existent instance → error | Unit | Error: violation="orphaned contained instance" |
+| T-15.19 | Instance with parent whose entity type has no containment assoc to child type → error | Unit | Error: violation="invalid containment relationship" |
+| T-15.20 | Top-level instance (no ParentInstanceID) passes containment check | Unit | No error |
+| T-15.57 | Contained entity type instance without parent → error | Unit | Error: violation="contained entity type requires a parent" |
+| T-15.58 | Contained entity type instance with valid parent → passes | Unit | No error |
+| T-15.59 | Parent entity type not pinned in CV → error | Unit | Error: violation="parent entity type not pinned" |
+
+### Validation Service — Status Update and Edge Cases
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.21 | All checks pass → catalog status set to `valid` | Unit | UpdateValidationStatus called with "valid" |
+| T-15.22 | Any check fails → catalog status set to `invalid` | Unit | UpdateValidationStatus called with "invalid" |
+| T-15.23 | Empty catalog (no instances) → passes validation, status `valid` | Unit | No errors, status "valid" |
+| T-15.24 | Nonexistent catalog returns NotFound error | Unit | NotFound error returned |
+| T-15.25 | Error list contains entity_type, instance_name, field, violation for each error | Unit | Structured error with all four fields |
+| T-15.60 | Instance of unpinned entity type produces error | Unit | Error: violation="not pinned" |
+| T-15.61 | Entity type name fallback to ID when etRepo.GetByID fails | Unit | Uses entity type ID as name |
+
+### Validation Service — Error Propagation
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.62 | ListByCatalog error propagated | Unit | Error returned |
+| T-15.63 | Empty catalog UpdateValidationStatus error propagated | Unit | Error returned |
+| T-15.64 | ListByCatalogVersion error propagated | Unit | Error returned |
+| T-15.65 | etvRepo.GetByID error during pin resolution propagated | Unit | Error returned |
+| T-15.66 | attrRepo.ListByVersion error propagated | Unit | Error returned |
+| T-15.67 | enumValRepo.ListByEnum error propagated | Unit | Error returned |
+| T-15.68 | iavRepo.GetCurrentValues error propagated | Unit | Error returned |
+| T-15.69 | linkRepo.GetForwardRefs error propagated | Unit | Error returned |
+| T-15.70 | linkRepo.GetReverseRefs error propagated | Unit | Error returned |
+| T-15.71 | Final UpdateValidationStatus error propagated | Unit | Error returned |
+| T-15.72 | assocRepo.ListByVersion error during pre-load propagated | Unit | Error returned |
+| T-15.73 | IsEmptyValue returns true for unknown attribute type | Unit | true |
+
+### Validate API Handler — Additional
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.74 | Nil validationSvc returns 501 Not Implemented | API | 501 response |
+
+### Instance Service — Clear Attribute Value
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.75 | UpdateInstance with empty string clears attribute (not carried forward) | Unit | Attribute value cleared |
+
+### useValidation Hook
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.76 | Undefined catalogName does nothing on validate | Browser | API not called |
+| T-15.77 | Works without onComplete callback | Browser | Status set to valid |
+| T-15.78 | Calls onComplete after validation | Browser | Callback invoked |
+| T-15.79 | Handles missing errors field in response | Browser | Empty errors array |
+| T-15.80 | API error resets validating state | Browser | validating=false after error |
+
+### Operational UI — Additional
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.81 | Validate button hidden for RO in operational UI | Browser | Button not rendered |
+
+### Validation Service — Integration Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.26 | Full validation with valid catalog (all attrs set, all mandatory assocs linked, containment correct) | Integration | No errors, status "valid" |
+| T-15.27 | Full validation with missing required attribute on one instance | Integration | One error for that instance/attribute |
+| T-15.28 | Full validation with invalid enum value on one instance | Integration | One error for that instance/attribute |
+| T-15.29 | Full validation with mandatory association missing link | Integration | One error for that instance/association |
+| T-15.30 | Full validation with orphaned contained instance | Integration | One error for that instance |
+| T-15.31 | Full validation with multiple violations across entity types | Integration | Multiple errors, status "invalid" |
+| T-15.32 | Validation status persisted correctly after validation | Integration | DB query confirms status updated |
+
+### Validate API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.33 | `POST /api/data/v1/catalogs/{name}/validate` returns 200 with valid catalog | API | `{status: "valid", errors: []}` |
+| T-15.34 | `POST /api/data/v1/catalogs/{name}/validate` returns 200 with invalid catalog | API | `{status: "invalid", errors: [...]}` |
+| T-15.35 | `POST /api/data/v1/catalogs/{name}/validate` with nonexistent catalog → 404 | API | 404 Not Found |
+| T-15.36 | `POST /api/data/v1/catalogs/{name}/validate` as RO → 403 | API | 403 Forbidden |
+| T-15.37 | `POST /api/data/v1/catalogs/{name}/validate` as RW → 200 | API | Allowed |
+| T-15.38 | Validate response errors include entity_type, instance_name, field, violation | API | All four fields in each error object |
+
+### Catalog Detail UI — Validate Button (Meta)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.39 | Validate button visible for RW user on catalog detail | Browser | Button rendered |
+| T-15.40 | Validate button visible for Admin user | Browser | Button rendered |
+| T-15.41 | Validate button hidden for RO user | Browser | Button not rendered |
+| T-15.42 | Clicking Validate calls POST .../validate API | Browser | API called |
+| T-15.43 | Successful validation with no errors shows "valid" status badge | Browser | Green "valid" label |
+| T-15.44 | Validation with errors shows "invalid" status badge | Browser | Red "invalid" label |
+| T-15.45 | Validation errors displayed grouped by entity type | Browser | Errors grouped under entity type headings |
+| T-15.46 | Each error shows instance name, field, and violation | Browser | Error details visible |
+
+### Operational UI — Validate Button
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.47 | Validate button visible on operational catalog detail | Browser | Button rendered |
+| T-15.48 | Validation results displayed in operational UI | Browser | Errors shown after validation |
+
+---
+
 ## Coverage Criteria
 
 ### Pass Rate
@@ -1773,7 +1935,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 564 test cases (T-1.01 through T-14.22; T-13.78 through T-13.85 retired) pass
+- All 645 test cases (T-1.01 through T-15.81; T-13.78 through T-13.85 retired) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

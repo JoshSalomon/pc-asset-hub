@@ -31,6 +31,8 @@ import {
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
 import { api, setAuthRole } from '../../api/client'
 import type { Catalog, CatalogVersionPin, EntityInstance, SnapshotAttribute, SnapshotAssociation, ReferenceDetail, Role } from '../../types'
+import { useValidation } from '../../hooks/useValidation'
+import ValidationResults from '../../components/ValidationResults'
 
 export default function CatalogDetailPage({ role }: { role: Role }) {
   const { name } = useParams<{ name: string }>()
@@ -136,6 +138,8 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
   }, [name, role])
 
   useEffect(() => { loadCatalog() }, [loadCatalog])
+
+  const validation = useValidation(name, loadCatalog)
 
   const loadInstances = useCallback(async () => {
     if (!name || !activeTab) return
@@ -441,9 +445,18 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
         Catalog Version: {catalog.catalog_version_label || catalog.catalog_version_id}
         {catalog.description && ` — ${catalog.description}`}
       </p>
-      <Button variant="link" isInline component="a" href={`/operational/catalogs/${catalog.name}`} style={{ marginBottom: '1rem' }}>
-        Open in Data Viewer →
-      </Button>
+      <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
+        <Button variant="link" isInline component="a" href={`/operational/catalogs/${catalog.name}`}>
+          Open in Data Viewer →
+        </Button>
+        {canWrite && (
+          <Button variant="secondary" onClick={validation.validate} isLoading={validation.validating} isDisabled={validation.validating}>
+            Validate
+          </Button>
+        )}
+      </div>
+
+      <ValidationResults errors={validation.errors} ran={validation.ran} error={validation.error} />
 
       {pins.length === 0 ? (
         <EmptyState><EmptyStateBody>No entity types pinned in this catalog's version.</EmptyStateBody></EmptyState>

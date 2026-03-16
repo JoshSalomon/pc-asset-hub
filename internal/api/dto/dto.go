@@ -266,6 +266,20 @@ type CatalogResponse struct {
 	UpdatedAt           time.Time `json:"updated_at"`
 }
 
+// === Validation DTOs ===
+
+type ValidationErrorResponse struct {
+	EntityType   string `json:"entity_type"`
+	InstanceName string `json:"instance_name"`
+	Field        string `json:"field"`
+	Violation    string `json:"violation"`
+}
+
+type ValidationResultResponse struct {
+	Status string                    `json:"status"`
+	Errors []ValidationErrorResponse `json:"errors"`
+}
+
 // === Instance DTOs ===
 
 type CreateInstanceRequest struct {

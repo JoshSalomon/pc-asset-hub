@@ -1,6 +1,6 @@
 # AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-03-15
+Last updated: 2026-03-16
 
 ---
 
@@ -8,12 +8,12 @@ Last updated: 2026-03-15
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 989+ | 100% | 89.2% | — |
+| Backend (Go) | 1137 | 100% | 89.8% | — |
 | UI — Unit tests | 75 | 100% | 17.9% | 20.6% |
-| UI — Browser tests (Playwright) | 375 | 100% | 81.1% | 85.9% |
+| UI — Browser tests (Playwright) | 392 | 100% | 81.6% | 86.3%  |
 | UI — System tests (Playwright + live server) | 30 | 100% | — | — |
-| Live system (bash scripts) | 41 | 100% | — | — |
-| **Total** | **1510+** | **100%** | — | — |
+| Live system (bash scripts) | 50 | 100% | — | — |
+| **Total** | **1654** | **100%** | — | — |
 
 ---
 
@@ -24,7 +24,7 @@ Last updated: 2026-03-15
 | `internal/api/health` | 90.0% | Readyz DB-ping error path |
 | `internal/api/meta` | 98.8% | Promote/Demote/Delete RoleRO/RW switch cases unreachable behind RBAC middleware |
 | `internal/api/middleware` | 100.0% | |
-| `internal/api/operational` | 97.7% | New instance_handler.go at 100%; legacy handler.go bind-error branches |
+| `internal/api/operational` | 97.1% | New instance_handler.go at 100%; catalog_handler.go ValidateCatalog at 90%; legacy handler.go bind-error branches |
 | `internal/domain/errors` | 100.0% | |
 | `internal/infrastructure/config` | 100.0% | |
 | `internal/infrastructure/gorm/models` | 100.0% | |
@@ -34,7 +34,7 @@ Last updated: 2026-03-15
 | `internal/operator/controllers` | 85.5% | `SetupWithManager`, Route reconciliation, complex controller paths |
 | `internal/operator/crdgen` | 84.2% | `GenerateCRDJSON`, `GenerateCR` error paths |
 | `internal/service/meta` | 94.6% | `ListAttributes` and `ListValues` at 0% (trivial delegators) |
-| `internal/service/operational` | 100.0% | All new Phase 3 functions at 100% |
+| `internal/service/operational` | 99.3% | All validation service functions at 100%; `instance_service.go` at 99%+ |
 | `internal/service/validation` | 95.6% | |
 
 ### Excluded from Coverage
@@ -115,8 +115,12 @@ These methods are single-line delegations to the repository layer with no branch
 | `EnumListPage.browser.test.tsx` | 14 | Pass |
 | `CatalogVersionDetailPage.browser.test.tsx` | 27 | Pass |
 | `CatalogListPage.browser.test.tsx` | 11 | Pass |
-| `CatalogDetailPage.browser.test.tsx` | 19 | Pass |
-| **Total** | **273** | **100% pass** |
+| `CatalogDetailPage.browser.test.tsx` | 60 | Pass |
+| `OperationalCatalogDetailPage.browser.test.tsx` | 36 | Pass |
+| `OperationalCatalogListPage.browser.test.tsx` | 13 | Pass |
+| `OperationalApp.browser.test.tsx` | 3 | Pass |
+| `useValidation.browser.test.tsx` | 5 | Pass |
+| **Total** | **392** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
@@ -301,6 +305,42 @@ New UI files (operational data viewer):
 Live system tests: `scripts/test-data-viewer.sh` — 23 parameterized tests covering containment tree, pagination, sorting, filtering, parent chain, operational UI serving, combined queries, and references.
 
 Two-pane redesign: Removed the redundant middle instance list pane from the tree browser. The tree is now the sole navigation (left pane), with instance detail shown inline in the right pane. Browser tests reduced from 37 to 27 for this page (instance list tests T-13.78-85 retired). Component simplified from ~605 lines to ~300 lines.
+
+### New Code Coverage (Session 008 — Catalog Validation)
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/operational/validation_service.go` | `NewCatalogValidationService` | 100% |
+| `service/operational/validation_service.go` | `Validate` | 100% |
+| `service/operational/validation_service.go` | `ParseCardinality` | 100% |
+| `service/operational/validation_service.go` | `CardinalityMinGE1` | 100% |
+| `service/operational/validation_service.go` | `IsEmptyValue` | 100% |
+| `api/operational/catalog_handler.go` | `ValidateCatalog` | 100% |
+| `api/dto/dto.go` | `ValidationResultResponse` | struct (no test files) |
+| `service/operational/instance_service.go` | `validateAndBuildAttributeValues` (updated) | 100% |
+| `components/ValidationResults.tsx` | component | 100% |
+| `hooks/useValidation.ts` | hook | 100% |
+
+All new Go and UI code at 100% coverage. Every error propagation path, edge case (empty cardinality, non-numeric cardinality, invalid max cardinality, unknown attribute types, nil validation service, max cardinality, source cardinality, contained-without-parent, unpinned entity types), and containment check path has explicit test coverage.
+
+Bug fixes included:
+- Instance service: `UpdateInstance` now respects explicitly cleared attribute values (sends empty string → value not carried forward)
+- Validation: full cardinality checks (min + max, target + source direction, directional + bidirectional)
+- Validation: contained entity type without parent flagged as error
+
+New UI files:
+- `ui/src/components/ValidationResults.tsx` — shared validation results display component
+- `ui/src/hooks/useValidation.ts` — shared validation hook
+
+Live system tests: `scripts/test-validation.sh` — 9 parameterized tests covering empty catalog, RO/RW access, 404, required attrs, error structure, status persistence, valid catalog, status reset after mutation.
+
+Quality review fixes applied: (M1) Eliminated duplicate `assocRepo.ListByVersion` calls — pre-load into `assocCache`. (M2) Added DTO layer — `ValidationResultResponse` and `ValidationErrorResponse`. (M3) Nil-guard on `validationSvc`. (L1) Unpinned entity type instances now produce validation errors. (L2) Operational UI Validate button hidden for RO. (L3) Extracted shared `useValidation` hook + `ValidationResults` component. (L6) Fixed inline import to top-level.
+
+New UI files:
+- `ui/src/components/ValidationResults.tsx` — shared validation results display component
+- `ui/src/hooks/useValidation.ts` — shared validation hook
+
+Live system tests: `scripts/test-validation.sh` — 9 parameterized tests covering empty catalog, RO/RW access, 404, required attrs, error structure, status persistence, valid catalog, status reset after mutation.
 
 ### Coverage Gaps to Address
 

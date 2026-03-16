@@ -29,7 +29,7 @@ func setupCatalogServer() (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockCatalo
 	instRepo := new(mocks.MockEntityInstanceRepo)
 	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo)
 	accessChecker := &apimw.HeaderCatalogAccessChecker{}
-	handler := apiop.NewCatalogHandler(svc, accessChecker)
+	handler := apiop.NewCatalogHandler(svc, nil, accessChecker)
 
 	e := echo.New()
 	g := e.Group("/api/data/v1/catalogs")
@@ -298,7 +298,7 @@ func setupCatalogServerWithAccessChecker(checker apimw.CatalogAccessChecker) (*e
 	cvRepo := new(mocks.MockCatalogVersionRepo)
 	instRepo := new(mocks.MockEntityInstanceRepo)
 	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo)
-	handler := apiop.NewCatalogHandler(svc, checker)
+	handler := apiop.NewCatalogHandler(svc, nil, checker)
 
 	e := echo.New()
 	g := e.Group("/api/data/v1/catalogs")

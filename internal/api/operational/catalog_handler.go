@@ -13,11 +13,12 @@ import (
 
 type CatalogHandler struct {
 	svc           *svcop.CatalogService
+	validationSvc *svcop.CatalogValidationService
 	accessChecker apimw.CatalogAccessChecker
 }
 
-func NewCatalogHandler(svc *svcop.CatalogService, accessChecker apimw.CatalogAccessChecker) *CatalogHandler {
-	return &CatalogHandler{svc: svc, accessChecker: accessChecker}
+func NewCatalogHandler(svc *svcop.CatalogService, validationSvc *svcop.CatalogValidationService, accessChecker apimw.CatalogAccessChecker) *CatalogHandler {
+	return &CatalogHandler{svc: svc, validationSvc: validationSvc, accessChecker: accessChecker}
 }
 
 func (h *CatalogHandler) CreateCatalog(c echo.Context) error {
@@ -98,6 +99,34 @@ func (h *CatalogHandler) DeleteCatalog(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+func (h *CatalogHandler) ValidateCatalog(c echo.Context) error {
+	if h.validationSvc == nil {
+		return echo.NewHTTPError(http.StatusNotImplemented, "validation service not configured")
+	}
+
+	name := c.Param("catalog-name")
+
+	result, err := h.validationSvc.Validate(c.Request().Context(), name)
+	if err != nil {
+		return mapError(err)
+	}
+
+	errors := make([]dto.ValidationErrorResponse, len(result.Errors))
+	for i, e := range result.Errors {
+		errors[i] = dto.ValidationErrorResponse{
+			EntityType:   e.EntityType,
+			InstanceName: e.InstanceName,
+			Field:        e.Field,
+			Violation:    e.Violation,
+		}
+	}
+
+	return c.JSON(http.StatusOK, dto.ValidationResultResponse{
+		Status: string(result.Status),
+		Errors: errors,
+	})
+}
+
 func catalogToDTO(cat *models.Catalog, cvLabel string) dto.CatalogResponse {
 	return dto.CatalogResponse{
 		ID:                  cat.ID,
@@ -117,4 +146,5 @@ func RegisterCatalogRoutes(g *echo.Group, h *CatalogHandler, requireRW echo.Midd
 	g.GET("", h.ListCatalogs)
 	g.GET("/:catalog-name", h.GetCatalog, requireCatalogAccess)
 	g.DELETE("/:catalog-name", h.DeleteCatalog, requireRW, requireCatalogAccess)
+	g.POST("/:catalog-name/validate", h.ValidateCatalog, requireRW, requireCatalogAccess)
 }

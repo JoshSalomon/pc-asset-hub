@@ -17,6 +17,7 @@ import type {
   AssociationLink,
   ReferenceDetail,
   TreeNodeResponse,
+  ValidationResult,
   ListResponse,
 } from '../types'
 
@@ -207,6 +208,8 @@ export const api = {
       }),
     delete: (name: string) =>
       fetchJSON(`${DATA_BASE_URL}/catalogs/${name}`, { method: 'DELETE' }),
+    validate: (name: string) =>
+      fetchJSON<ValidationResult>(`${DATA_BASE_URL}/catalogs/${name}/validate`, { method: 'POST' }),
   },
 
   instances: {

@@ -99,7 +99,8 @@ func main() {
 	cvHandler := apimeta.NewCatalogVersionHandler(cvSvc)
 	opHandler := apiop.NewHandler(instSvc)
 	catalogAccessChecker := &middleware.HeaderCatalogAccessChecker{}
-	catalogHandler := apiop.NewCatalogHandler(catalogSvc, catalogAccessChecker)
+	validationSvc := svcop.NewCatalogValidationService(catalogRepo, instRepo, iavRepo, pinRepo, etvRepo, attrRepo, assocRepo, enumValRepo, linkRepo, etRepo)
+	catalogHandler := apiop.NewCatalogHandler(catalogSvc, validationSvc, catalogAccessChecker)
 	instanceHandler := apiop.NewInstanceHandler(instanceSvc)
 	healthHandler := apihealth.NewHandler(db)
 

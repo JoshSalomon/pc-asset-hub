@@ -1031,7 +1031,7 @@ Acceptance Criteria:
 
 ---
 
-**US-34: Catalog version creation in the UI**
+**US-41: Catalog version creation in the UI**
 As an Admin, I want to create a catalog version by selecting specific entity definition versions from a list, so that I can assemble a bill of materials for deployment.
 
 **Why**: The catalog version is what gets deployed. The selection interface must make it easy to choose the right versions and review the complete snapshot before committing, to avoid deploying unintended entity definition versions.

@@ -167,6 +167,11 @@ Each feature area is tested at the appropriate layers:
 | Catalog-level RBAC — access check + middleware | X | | X | | |
 | Catalog-level RBAC — catalog list filtering | X | | X | | |
 | Catalog-level RBAC — header mode passthrough | X | | X | | |
+| Catalog validation — required attrs + type check | X | X | X | X | |
+| Catalog validation — mandatory associations | X | X | X | | |
+| Catalog validation — containment consistency | X | X | X | | |
+| Catalog validation — status update (valid/invalid) | X | X | X | X | |
+| Catalog validation — RBAC (RW+ only) | X | | X | X | |
 
 ---
 
@@ -418,3 +423,13 @@ Per-catalog access control using a `CatalogAccessChecker` interface. In header-b
 - **Unit tests (HeaderCatalogAccessChecker)**: Verify always returns true (passthrough in dev mode).
 - **API tests (handler)**: Verify `GET /api/data/v1/catalogs` filters results through access checker. Verify catalog list with denied catalogs excludes them. Verify `GET /api/data/v1/catalogs/{name}/...` returns 403 when access denied. Verify all sub-resource operations (instances, tree, links, references) inherit catalog access check.
 - **Integration note**: Real SAR-based checking is deferred to Phase C (OCP cluster required). Unit tests use a mock `CatalogAccessChecker` that can be configured to allow/deny specific catalogs.
+
+### 5.28 Catalog Validation (US-34)
+
+On-demand validation of all entity instances in a catalog against the pinned CV's schema. The `CatalogValidationService` loads all instances, resolves the schema for each entity type via the CV's pins, and checks four constraint categories. Returns a structured error list and updates the catalog's validation status.
+
+- **Unit tests (service)**: Verify required attribute check — instance missing a value for a `Required=true` attribute produces a validation error. Verify type check — number attribute with non-parseable value, enum attribute with value not in allowed list. Verify mandatory association check — association with target cardinality min >= 1 (e.g., `1` or `1..n`) requires each source instance to have at least one link; missing link produces error. Verify containment check — instance with `ParentInstanceID` pointing to a non-existent instance, or parent whose entity type has no containment association to the child's type. Verify status update — no errors sets status to `valid`; errors set status to `invalid`. Verify empty catalog (no instances) passes validation. Verify error structure includes entity type name, instance name, field name, and violation description.
+- **Integration tests (end-to-end validation against real DB)**: Set up a complete catalog with a CV, pins, entity types with required attributes, mandatory associations, and containment. Create instances with valid and invalid data. Run the full validation service against the real SQLite database and verify it detects the expected violations. Verify a fully valid catalog produces no errors. Verify status is persisted correctly after validation.
+- **API tests (handler)**: Verify `POST /api/data/v1/catalogs/{name}/validate` returns 200 with validation results. Verify response includes `status` (`valid` or `invalid`) and `errors` array. Verify 404 for nonexistent catalog. Verify 403 for RO role. Verify catalog status is updated in the database after validation.
+- **UI tests (browser — meta)**: Verify "Validate" button appears on catalog detail page for RW+ users. Verify RO users do not see the Validate button. Verify clicking Validate calls the API and displays results. Verify validation errors are displayed grouped by entity type with per-instance details. Verify status badge updates after validation.
+- **UI tests (browser — operational)**: Verify "Validate" button appears on operational catalog detail page. Verify validation results display in the operational UI.

@@ -2921,3 +2921,45 @@ func TestGetContainmentTree_ETNameFallback(t *testing.T) {
 	// Falls back to using the entity type ID as name
 	assert.Equal(t, "et-unknown", tree[0].EntityTypeName)
 }
+
+// Bug fix: Clearing a required attribute value in draft mode should work.
+// Sending an empty string for an attribute should clear it (not carry forward the old value).
+func TestUpdateInstance_ClearAttributeValue(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+	s.mockAttributes(ctx)
+
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Name: "server-1", Version: 1,
+	}, nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+	// Previous version had hostname = "web-01"
+	s.iavRepo.On("GetValuesForVersion", ctx, "inst1", 1).Return([]*models.InstanceAttributeValue{
+		{ID: "v1", InstanceID: "inst1", InstanceVersion: 1, AttributeID: "a1", ValueString: "web-01"},
+	}, nil)
+	// We expect SetValues to be called with NO hostname value (it was cleared)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		for _, v := range vals {
+			if v.AttributeID == "a1" {
+				return false // hostname should NOT be carried forward
+			}
+		}
+		return true
+	})).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	// Send empty string to clear hostname
+	detail, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "inst1", 1, nil, nil, map[string]interface{}{
+		"hostname": "",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, detail.Instance.Version)
+	// Verify hostname was NOT carried forward
+	for _, av := range detail.Attributes {
+		if av.Name == "hostname" {
+			assert.Nil(t, av.Value, "hostname should have been cleared, not carried forward")
+		}
+	}
+}

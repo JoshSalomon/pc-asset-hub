@@ -7,7 +7,7 @@ import { api } from '../../api/client'
 
 vi.mock('../../api/client', () => ({
   api: {
-    catalogs: { get: vi.fn() },
+    catalogs: { get: vi.fn(), validate: vi.fn() },
     catalogVersions: { listPins: vi.fn() },
     instances: { list: vi.fn(), get: vi.fn(), tree: vi.fn() },
     versions: { snapshot: vi.fn() },
@@ -381,5 +381,37 @@ test('valid catalog status shows green label', async () => {
     ...mockCatalog, validation_status: 'valid',
   })
   renderDetail()
-  await expect.element(page.getByText('valid')).toBeVisible()
+  await expect.element(page.getByText('valid', { exact: true })).toBeVisible()
+})
+
+// === Catalog Validation Tests ===
+
+// T-15.47: Validate button visible on operational catalog detail for RW+
+test('T-15.47: Validate button visible on operational catalog detail for RW', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByRole('button', { name: 'Validate' })).toBeVisible()
+})
+
+// L2 fix: Validate button hidden for RO in operational UI
+test('Validate button hidden for RO in operational UI', async () => {
+  renderDetail('RO')
+  // Wait for the page to load
+  await expect.element(page.getByText('test-catalog', { exact: true })).toBeVisible()
+  // RO should not see the Validate button
+  expect(document.querySelector('button')?.textContent).not.toContain('Validate')
+})
+
+// T-15.48: Validation results displayed in operational UI
+test('T-15.48: validation results displayed in operational UI', async () => {
+  ;(api.catalogs.validate as Mock).mockResolvedValue({
+    status: 'invalid',
+    errors: [
+      { entity_type: 'Server', instance_name: 'srv-1', field: 'hostname', violation: 'required attribute missing' },
+    ],
+  })
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'invalid' })
+  renderDetail('RW')
+  await page.getByRole('button', { name: 'Validate' }).click()
+  await expect.element(page.getByText('Validation failed')).toBeVisible()
+  await expect.element(page.getByText(/srv-1.*hostname.*required/)).toBeVisible()
 })

@@ -159,10 +159,14 @@ func (s *InstanceService) resolveAttributeValues(ctx context.Context, inst *mode
 	return mapAttributeValues(attrs, values), nil
 }
 
-func (s *InstanceService) validateAndBuildAttributeValues(ctx context.Context, etv *models.EntityTypeVersion, instanceID string, version int, attrInput map[string]interface{}) ([]*models.InstanceAttributeValue, error) {
+// validateAndBuildAttributeValues validates and builds attribute values from input.
+// Returns the built IAV records and a set of attribute IDs that were explicitly
+// provided in the input (even if their value was empty/nil — used by UpdateInstance
+// to avoid carrying forward cleared values).
+func (s *InstanceService) validateAndBuildAttributeValues(ctx context.Context, etv *models.EntityTypeVersion, instanceID string, version int, attrInput map[string]interface{}) ([]*models.InstanceAttributeValue, map[string]bool, error) {
 	attrs, err := s.attrRepo.ListByVersion(ctx, etv.ID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	attrByName := make(map[string]*models.Attribute)
@@ -170,14 +174,18 @@ func (s *InstanceService) validateAndBuildAttributeValues(ctx context.Context, e
 		attrByName[a.Name] = a
 	}
 
+	touchedAttrIDs := make(map[string]bool)
 	var values []*models.InstanceAttributeValue
 	for name, rawVal := range attrInput {
 		attr, ok := attrByName[name]
 		if !ok {
-			return nil, domainerrors.NewValidation(fmt.Sprintf("unknown attribute: %s", name))
+			return nil, nil, domainerrors.NewValidation(fmt.Sprintf("unknown attribute: %s", name))
 		}
 
-		// Skip empty values (optional attributes not set in draft mode)
+		// Mark as explicitly touched (even if value is empty)
+		touchedAttrIDs[attr.ID] = true
+
+		// Skip empty values (draft mode allows clearing attributes)
 		if rawVal == nil || rawVal == "" {
 			continue
 		}
@@ -202,18 +210,18 @@ func (s *InstanceService) validateAndBuildAttributeValues(ctx context.Context, e
 			case string:
 				f, err := strconv.ParseFloat(v, 64)
 				if err != nil {
-					return nil, domainerrors.NewValidation(fmt.Sprintf("attribute %s: expected number, got %q", name, v))
+					return nil, nil, domainerrors.NewValidation(fmt.Sprintf("attribute %s: expected number, got %q", name, v))
 				}
 				iav.ValueNumber = &f
 			default:
-				return nil, domainerrors.NewValidation(fmt.Sprintf("attribute %s: expected number", name))
+				return nil, nil, domainerrors.NewValidation(fmt.Sprintf("attribute %s: expected number", name))
 			}
 		case models.AttributeTypeEnum:
 			strVal := fmt.Sprintf("%v", rawVal)
 			// Validate enum value is in allowed list
 			enumValues, err := s.enumValRepo.ListByEnum(ctx, attr.EnumID)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			valid := false
 			for _, ev := range enumValues {
@@ -223,14 +231,14 @@ func (s *InstanceService) validateAndBuildAttributeValues(ctx context.Context, e
 				}
 			}
 			if !valid {
-				return nil, domainerrors.NewValidation(fmt.Sprintf("attribute %s: %q is not a valid enum value", name, strVal))
+				return nil, nil, domainerrors.NewValidation(fmt.Sprintf("attribute %s: %q is not a valid enum value", name, strVal))
 			}
 			iav.ValueEnum = strVal
 		}
 
 		values = append(values, iav)
 	}
-	return values, nil
+	return values, touchedAttrIDs, nil
 }
 
 func (s *InstanceService) CreateInstance(ctx context.Context, catalogName, entityTypeName, name, description string, attrInput map[string]interface{}) (*InstanceDetail, error) {
@@ -257,7 +265,7 @@ func (s *InstanceService) CreateInstance(ctx context.Context, catalogName, entit
 
 	// Store attribute values
 	if len(attrInput) > 0 {
-		values, err := s.validateAndBuildAttributeValues(ctx, etv, inst.ID, 1, attrInput)
+		values, _, err := s.validateAndBuildAttributeValues(ctx, etv, inst.ID, 1, attrInput)
 		if err != nil {
 			return nil, err
 		}
@@ -382,24 +390,23 @@ func (s *InstanceService) UpdateInstance(ctx context.Context, catalogName, entit
 	// Validate attribute values BEFORE incrementing version to avoid inconsistent state
 	newVersion := currentVersion + 1
 	var newValues []*models.InstanceAttributeValue
+	touchedAttrIDs := make(map[string]bool)
 	if len(attrInput) > 0 {
-		newValues, err = s.validateAndBuildAttributeValues(ctx, etv, inst.ID, newVersion, attrInput)
+		var touched map[string]bool
+		newValues, touched, err = s.validateAndBuildAttributeValues(ctx, etv, inst.ID, newVersion, attrInput)
 		if err != nil {
 			return nil, err
 		}
+		touchedAttrIDs = touched
 	}
 
-	// Carry forward previous version's values
+	// Carry forward previous version's values (skip explicitly touched attributes)
 	prevValues, err := s.iavRepo.GetValuesForVersion(ctx, inst.ID, currentVersion)
 	if err != nil {
 		return nil, err
 	}
-	newAttrIDs := make(map[string]bool)
-	for _, v := range newValues {
-		newAttrIDs[v.AttributeID] = true
-	}
 	for _, prev := range prevValues {
-		if !newAttrIDs[prev.AttributeID] {
+		if !touchedAttrIDs[prev.AttributeID] {
 			newValues = append(newValues, &models.InstanceAttributeValue{
 				ID:              uuid.Must(uuid.NewV7()).String(),
 				InstanceID:      inst.ID,
@@ -516,7 +523,7 @@ func (s *InstanceService) CreateContainedInstance(ctx context.Context, catalogNa
 	}
 
 	if len(attrInput) > 0 {
-		values, err := s.validateAndBuildAttributeValues(ctx, childETV, inst.ID, 1, attrInput)
+		values, _, err := s.validateAndBuildAttributeValues(ctx, childETV, inst.ID, 1, attrInput)
 		if err != nil {
 			return nil, err
 		}

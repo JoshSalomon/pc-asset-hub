@@ -7,7 +7,7 @@ import { api } from '../../api/client'
 
 vi.mock('../../api/client', () => ({
   api: {
-    catalogs: { get: vi.fn() },
+    catalogs: { get: vi.fn(), validate: vi.fn() },
     catalogVersions: { listPins: vi.fn() },
     versions: { snapshot: vi.fn() },
     instances: { list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), createContained: vi.fn(), listContained: vi.fn(), setParent: vi.fn() },
@@ -720,4 +720,96 @@ test('catalog detail shows Open in Data Viewer link', async () => {
   const anchor = link.element().closest('a')
   expect(anchor?.getAttribute('href')).toBe('/operational/catalogs/my-catalog')
   expect(anchor?.getAttribute('target')).toBeNull()
+})
+
+// === Catalog Validation Tests ===
+
+// T-15.39: Validate button visible for RW user
+test('T-15.39: Validate button visible for RW user', async () => {
+  renderDetail('RW')
+  await waitForInstances()
+  await expect.element(page.getByRole('button', { name: 'Validate' })).toBeVisible()
+})
+
+// T-15.40: Validate button visible for Admin
+test('T-15.40: Validate button visible for Admin', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await expect.element(page.getByRole('button', { name: 'Validate' })).toBeVisible()
+})
+
+// T-15.41: Validate button hidden for RO user
+test('T-15.41: Validate button hidden for RO user', async () => {
+  renderDetail('RO')
+  await waitForInstances()
+  // The button should not exist in the DOM for RO users
+  const buttons = page.getByRole('button', { name: 'Validate' })
+  await expect.element(buttons).not.toBeInTheDocument()
+})
+
+// T-15.42: Clicking Validate calls POST .../validate API
+test('T-15.42: clicking Validate calls API', async () => {
+  ;(api.catalogs.validate as Mock).mockResolvedValue({ status: 'valid', errors: [] })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Validate' }).click()
+  expect(api.catalogs.validate).toHaveBeenCalledWith('my-catalog')
+})
+
+// T-15.43: Successful validation with no errors shows "valid" status
+test('T-15.43: validation pass shows success alert', async () => {
+  ;(api.catalogs.validate as Mock).mockResolvedValue({ status: 'valid', errors: [] })
+  // After validation, the catalog should be refreshed with updated status
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid' })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Validate' }).click()
+  await expect.element(page.getByText('Validation passed')).toBeVisible()
+})
+
+// T-15.44: Validation with errors shows "invalid" status
+test('T-15.44: validation fail shows error alert', async () => {
+  ;(api.catalogs.validate as Mock).mockResolvedValue({
+    status: 'invalid',
+    errors: [
+      { entity_type: 'Server', instance_name: 'srv-1', field: 'hostname', violation: 'required attribute "hostname" is missing a value' },
+    ],
+  })
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'invalid' })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Validate' }).click()
+  await expect.element(page.getByText('Validation failed')).toBeVisible()
+})
+
+// T-15.45: Validation errors displayed grouped by entity type
+test('T-15.45: validation errors grouped by entity type', async () => {
+  ;(api.catalogs.validate as Mock).mockResolvedValue({
+    status: 'invalid',
+    errors: [
+      { entity_type: 'Server', instance_name: 'srv-1', field: 'hostname', violation: 'required' },
+      { entity_type: 'Server', instance_name: 'srv-2', field: 'hostname', violation: 'required' },
+    ],
+  })
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'invalid' })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Validate' }).click()
+  // Should show "Server" as a group heading
+  await expect.element(page.getByText('Server')).toBeVisible()
+})
+
+// T-15.46: Each error shows instance name, field, and violation
+test('T-15.46: error details visible', async () => {
+  ;(api.catalogs.validate as Mock).mockResolvedValue({
+    status: 'invalid',
+    errors: [
+      { entity_type: 'Server', instance_name: 'srv-1', field: 'hostname', violation: 'required attribute missing' },
+    ],
+  })
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'invalid' })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Validate' }).click()
+  await expect.element(page.getByText(/srv-1.*hostname.*required/)).toBeVisible()
 })

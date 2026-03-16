@@ -197,6 +197,18 @@ export interface TreeNodeResponse {
   children: TreeNodeResponse[]
 }
 
+export interface ValidationError {
+  entity_type: string
+  instance_name: string
+  field: string
+  violation: string
+}
+
+export interface ValidationResult {
+  status: 'valid' | 'invalid'
+  errors: ValidationError[]
+}
+
 export interface ListResponse<T> {
   items: T[]
   total: number
