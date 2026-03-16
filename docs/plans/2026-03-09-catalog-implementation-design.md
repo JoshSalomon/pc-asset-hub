@@ -259,14 +259,25 @@ Operational UI pages:
 
 ---
 
-### Phase 7: Catalog K8s CRs & Promotion Warnings
+### Phase 7: Catalog Publishing, K8s CRs & Promotion Warnings
 
-**Goal:** Publish valid catalogs as K8s discovery artifacts.
+**Goal:** Publish valid catalogs as K8s discovery artifacts. Publishing is a manual, explicit action — not automatic on validation. Published catalogs are protected from accidental edits.
 
 **Backend:**
 
-- Catalog CR type definition (catalog name, CV reference, API endpoint, catalog ID, validation status)
-- CR lifecycle: create when validation status becomes `valid`, update on status change, delete on catalog deletion
+- Add `published` boolean field to `Catalog` model (default `false`)
+- **Publish Catalog** — `POST /api/data/v1/catalogs/{catalog-name}/publish`
+  - Precondition: validation status must be `valid`; returns 400 if `draft` or `invalid`
+  - Sets `published = true` on the catalog
+  - Creates or updates the Catalog CR in K8s
+  - Requires Admin role
+- **Unpublish Catalog** — `POST /api/data/v1/catalogs/{catalog-name}/unpublish`
+  - Sets `published = false`, deletes the Catalog CR from K8s
+  - Requires Admin role
+- **Published catalog write protection** — data mutations (create/update/delete instance, link/unlink) on a published catalog require SuperAdmin role. RW users can only modify unpublished catalogs. This prevents accidental edits to production data — use the Copy & Replace workflow (Phase 8) instead.
+  - Validation status still resets to `draft` on mutation (even by SuperAdmin)
+  - `draft` does not auto-unpublish — the Catalog CR stays until explicitly unpublished
+- Catalog CR type definition (catalog name, CV reference, API endpoint, catalog ID, validation status, published timestamp)
 - CV promotion check: warn if any pinned catalogs are `draft` or `invalid`
 
 **K8s / Operator:**
@@ -276,9 +287,49 @@ Operational UI pages:
 
 **UI:**
 
+- "Publish" button on catalog detail (Admin+, only visible when `valid` and not yet published)
+- "Unpublish" button on published catalogs (Admin+)
+- Published badge on catalog list and detail pages
+- Published catalogs show a warning banner: "This catalog is published. Editing requires SuperAdmin privileges."
+- RW users see instance create/edit/delete controls disabled on published catalogs
 - CV promotion dialog shows catalog validation warnings with list of affected catalogs
 
-**User stories:** PRD section 4.2 (Catalog CRs), section 3.4 (promotion warnings)
+**User stories:** US-42 (publish catalog), US-43 (published write protection), PRD section 4.2 (Catalog CRs), section 3.4 (promotion warnings)
+
+---
+
+### Phase 8: Copy & Replace Catalog
+
+**Goal:** Enable a staging workflow for extending published catalogs without disrupting them.
+
+**Backend:**
+
+- **Copy Catalog** — deep-clones all data from a source catalog into a new catalog:
+  - Creates new catalog with same CV pin, new name, `draft` status
+  - Clones all entity instances (new UUIDs, same entity type, name, description, version reset to 1)
+  - Clones all instance attribute values (remapped to new instance IDs)
+  - Clones all association links (remapped to new source/target instance IDs)
+  - Preserves containment hierarchy (parent references remapped to new instance IDs)
+  - Must be transactional — all-or-nothing
+- **Replace Catalog** — atomically swaps a staging catalog into the name of a published one:
+  - Precondition: source catalog must be `valid`
+  - Renames target → archive name (default: `{target}-archive-{timestamp}`)
+  - Renames source → target
+  - Must be transactional — both renames succeed or neither does
+  - Catalog CR (Phase 7) continues to reference the same name — now serves new data
+
+**API:**
+
+- `POST /api/data/v1/catalogs/copy` — `{source_catalog_name, name, description?}` → 201 with new catalog
+- `POST /api/data/v1/catalogs/replace` — `{source, target, archive_name?}` → 200 with updated catalog
+
+**UI (meta UI):**
+
+- "Copy" button on catalog detail page → modal with new name input
+- "Replace" button on `valid` staging catalog → modal selecting target catalog, optional archive name
+- Archive catalogs visible in catalog list (normal catalogs, browsable, usable as rollback source)
+
+**User stories:** FF-8
 
 ---
 
@@ -304,6 +355,9 @@ Phase 6 (Validation)         -- needs Phases 2-3 for complete validation
   |
   v
 Phase 7 (K8s CRs)            -- needs Phase 6 for validation status
+  |
+  v
+Phase 8 (Copy & Replace)     -- needs Phase 7 for publish/unpublish context
 ```
 
 ## Out of Scope
@@ -311,5 +365,5 @@ Phase 7 (K8s CRs)            -- needs Phase 6 for validation status
 - Catalog re-pinning (upgrading a catalog to a newer CV) — PRD TD-12, future capability
 - Entity type CRDs (full schema as K8s resources) — PRD future scope
 - Hub-and-spoke topology — PRD section 8.4, future enhancement
-- Catalog CR scoping (namespaced vs cluster-scoped) — TBD during Phase 7
+- Multi-namespace catalog publishing — FF-9, future enhancement
 - Operational UI editing — the operational UI (Phase 4) is read-only; adding instance CRUD, link management, and containment editing to the operational UI is a future enhancement once the read-only viewer is validated with users

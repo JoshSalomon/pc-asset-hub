@@ -118,6 +118,8 @@ Validation can be triggered:
 
 A catalog's validation status is: `draft` (never validated or has unvalidated changes), `valid` (last validation passed), or `invalid` (last validation found errors).
 
+**Publishing** is a separate, explicit action (not automatic on validation). Only `valid` catalogs can be published. Published catalogs are write-protected — data mutations require SuperAdmin role. See US-42, US-43.
+
 ## 4. Persistence and Storage
 
 ### 4.1 Database as Source of Truth
@@ -145,9 +147,11 @@ Kubernetes Custom Resources are **not** the source of truth. They are generated 
 - During development, no CRs are created — all work happens via the UI/API against the database.
 
 **Catalog CRs (discovery artifacts):**
-- Lightweight CRs created only for catalogs with validation status `valid` (or possibly `invalid` — TBD). Draft catalogs are not published to K8s.
-- Contain catalog name, pinned CV reference, API endpoint, catalog ID, and validation status — enough for applications to discover available catalogs and query their data via the Operational API.
-- Scoping (namespaced vs cluster-scoped) to be determined during implementation. Note: namespaced Catalog CRs would simplify access rights management and data isolation on OpenShift — standard RBAC role bindings per namespace can control which teams/services can access which catalogs, without custom authorization logic in the API server.
+- Lightweight CRs created when an Admin explicitly **publishes** a catalog. Publishing is a manual action, not automatic on validation — a catalog must be `valid` to publish, but not all valid catalogs are published.
+- Publishing creates the Catalog CR; unpublishing deletes it. Going to `draft` (after a data mutation) does NOT auto-unpublish — the CR remains until explicitly unpublished, representing the last validated state.
+- Data mutations on published catalogs require SuperAdmin role. RW users can only modify unpublished catalogs. This protects production data — use the Copy & Replace workflow (FF-8) for safe edits.
+- Contain catalog name, pinned CV reference, API endpoint, catalog ID, validation status, and published timestamp — enough for applications to discover available catalogs and query their data via the Operational API.
+- **Scoping: namespaced**, in the same namespace as the AssetHub CR (consistent with CatalogVersion CRs). Owner reference to the AssetHub CR enables garbage collection on operator uninstall. Multi-namespace publishing (creating Catalog CRs in consumer namespaces) is a future enhancement (see FF-9).
 
 **Entity type CRDs (future scope):**
 - Full schema-as-CRD artifacts generated from entity type definitions. These would allow entity instances to be represented as native K8s resources.
@@ -702,7 +706,7 @@ Acceptance Criteria:
 - Validation returns a list of errors (entity name, field, violation) — not just pass/fail.
 - Validation status is updated to `valid` (no errors) or `invalid` (errors found).
 - Any subsequent data change resets the status to `draft`.
-- Only Admin can promote (publish) a catalog — promotion requires validation status `valid`.
+- Publishing a catalog is a separate action (see US-42) — validation is a prerequisite, not a trigger.
 
 ---
 
@@ -1148,6 +1152,40 @@ Acceptance Criteria:
 - Deployment: a single nginx pod serves both the meta UI (at `/`) and the operational UI (at `/operational`) via path-based routing.
 - Deployment: a single nginx pod serves both the meta UI (on port 30000) and the operational UI (on port 30001) via separate location blocks.
 
+---
+
+**US-42: Publish a catalog**
+As an Admin, I want to explicitly publish a validated catalog so that it becomes discoverable via a K8s Catalog CR, and I want to control when this happens rather than it being automatic.
+
+**Why**: Publishing makes catalog data visible to external consumers via K8s discovery. This should be a deliberate action — not every valid catalog should be automatically published (e.g., staging catalogs, test data). Explicit publishing gives administrators control over what is exposed to the cluster.
+
+Acceptance Criteria:
+- Admin (and above) can publish a catalog. RW and RO users cannot.
+- Publishing requires validation status `valid`. Attempting to publish a `draft` or `invalid` catalog returns 400.
+- Publishing creates a Catalog CR in K8s with catalog name, CV reference, API endpoint, catalog ID, validation status, and published timestamp.
+- A published catalog that goes to `draft` (due to data mutation) does NOT auto-unpublish. The Catalog CR remains, representing the last validated state.
+- Admin can explicitly unpublish a catalog, which deletes the Catalog CR.
+- The catalog list and detail pages show a "published" indicator.
+- A "Publish" button appears on the catalog detail page for Admin+ users when the catalog is `valid` and not yet published.
+- An "Unpublish" button appears on published catalogs for Admin+ users.
+
+---
+
+**US-43: Published catalog write protection**
+As a platform administrator, I want data mutations on published catalogs restricted to SuperAdmin only, so that production data is protected from accidental edits by regular RW users.
+
+**Why**: Published catalogs serve as the source of truth for external consumers. Accidental edits by RW users could corrupt production data. Restricting writes to SuperAdmin ensures that only deliberate, authorized changes are made. For routine catalog updates, the Copy & Replace workflow (FF-8) provides a safe staging pattern that doesn't require SuperAdmin access.
+
+Acceptance Criteria:
+- Data mutations (create/update/delete instance, create/delete link, set parent) on a published catalog require SuperAdmin role. RW and Admin users receive 403.
+- RW users see instance create/edit/delete controls disabled on published catalogs with a tooltip explaining the restriction.
+- Published catalogs show a warning banner: "This catalog is published. Editing requires SuperAdmin privileges."
+- SuperAdmin edits still reset validation status to `draft` (same behavior as unpublished catalogs).
+- Validation (POST .../validate) remains available to RW+ users on published catalogs — it is a read operation.
+- Catalog-level operations (delete catalog, unpublish) require Admin+ regardless of published state.
+
+---
+
 ## 10. Open Design Decisions
 
 The following items are acknowledged but not yet fully specified:
@@ -1155,7 +1193,7 @@ The following items are acknowledged but not yet fully specified:
 | Item | Notes |
 |------|-------|
 | ID calculation strategy | How entity IDs are generated (UUID, hash, deterministic from name+version, etc.) |
-| Exact CRD schema | Partially resolved: `CatalogVersion` CRD defined for discovery. `Catalog` CRD for data discovery (scope TBD). Entity type CRD schema (full schema-as-CRD) remains open. |
+| Exact CRD schema | Partially resolved: `CatalogVersion` CRD defined for discovery. `Catalog` CRD for data discovery — namespaced in AssetHub namespace (resolved), multi-namespace via FF-9 (future). Entity type CRD schema (full schema-as-CRD) remains open. |
 | Entity type CRDs | Full schema-as-CRD feature where entity type definitions become native K8s CRDs. Future scope — separate from CatalogVersion discovery CRs. |
 | Catalog version creation workflow | How an author assembles a catalog version from entity definition versions — manual selection vs. automatic "snapshot current state" |
 | Concurrent editing model | Optimistic locking, pessimistic locking, or merge-based conflict resolution |
@@ -1303,4 +1341,99 @@ The operational UI (Phase 4) is initially read-only — a data viewer for operat
 **Scope:** Reuse the existing create/edit/delete modals from the meta UI's `CatalogDetailPage`, adapted for the operational app shell. Role-aware rendering (RO vs RW) determines which controls are visible.
 
 **Decision:** Deferred. The read-only viewer must be validated with users first. Editing features can be added incrementally once the browsing UX is stable.
+
+### FF-7: Catalog Versioning (Snapshots)
+
+Catalogs currently have a single mutable set of instances with a validation status (`draft`/`valid`/`invalid`). Any data mutation resets the status to `draft`. This creates a problem for published catalogs: adding a new instance to a `valid` catalog resets it to `draft`, which could cause it to be unpublished (once Catalog CRs are implemented in Phase 7).
+
+**Proposed solution:** Catalog snapshots — immutable, versioned copies of a catalog's data at a point in time. Similar to how CatalogVersions snapshot entity type schemas, catalog snapshots would freeze instance data.
+
+**Workflow:**
+1. A catalog has a working copy (mutable, always `draft` after changes) and zero or more published snapshots.
+2. When validation passes, the user can "publish" the current state as a numbered snapshot (V1, V2, ...).
+3. Published snapshots are immutable and retain their `valid` status.
+4. The Catalog CR references the latest published snapshot, not the mutable working copy.
+5. Users continue editing the working copy. The published snapshot is unaffected until a new snapshot is explicitly published.
+
+**Benefits:**
+- Published catalogs are never disrupted by ongoing edits
+- Rollback to a previous snapshot is possible
+- Consumers always see a consistent, validated dataset
+- Diff between snapshots enables change tracking
+
+**Considerations:**
+- Storage cost: each snapshot duplicates instance data (or uses COW/reference counting)
+- Migration: existing catalogs would need an initial V1 snapshot created from their current state
+- UI: snapshot list, publish action, rollback, diff view
+
+**Decision:** Deferred. Phase 7 will use a simpler approach (Option A: `draft` does not unpublish — the Catalog CR represents the last validated state). Catalog versioning can be added when the need for immutable published snapshots is validated with users.
+
+### FF-8: Copy & Replace Catalog (PLANNED — see design doc Phase 8)
+
+Two operations that enable a staging workflow for extending published catalogs without disrupting them.
+
+**Problem:** Adding instances to a `valid` published catalog resets it to `draft`, temporarily removing it from K8s discovery. Users need a way to prepare changes in isolation and swap atomically.
+
+**Operation 1: Copy Catalog**
+
+Deep-clones an existing catalog into a new one, pre-populated with all its data.
+
+- `POST /api/data/v1/catalogs/copy` — `{source_catalog_name: string, name: string, description?: string}`
+- Returns the new catalog with `validation_status: "draft"`
+
+**What gets copied:**
+- Catalog metadata: description copied, same CV pin, new name
+- All entity instances (new IDs generated)
+- All instance attribute values (remapped to new instance IDs)
+- All association links (remapped to new source/target instance IDs)
+- Containment hierarchy (parent references remapped to new instance IDs)
+
+**Operation 2: Replace Catalog**
+
+Atomically swaps a new catalog into the name of an existing one, archiving the old catalog under a different name for rollback.
+
+- `POST /api/data/v1/catalogs/replace` — `{source: string, target: string, archive_name?: string}`
+- Preconditions: source catalog must be `valid`; target catalog must exist
+- Atomically: renames `target` → `archive_name` (default: `{target}-archive-{timestamp}`), then renames `source` → `target`
+- The Catalog CR (if any) continues to point to the same catalog name — it now serves the new data
+- The archived catalog retains its data and `valid` status for rollback
+
+**Staging workflow:**
+1. `prod-catalog` is `valid` and published.
+2. Copy: `prod-catalog` → `prod-catalog-next`
+3. Edit `prod-catalog-next`: add/modify/delete instances.
+4. Validate `prod-catalog-next` — must reach `valid`.
+5. Replace: `source=prod-catalog-next, target=prod-catalog` → atomically swaps them. Old data archived as `prod-catalog-archive-20260316`.
+6. The Catalog CR for `prod-catalog` now serves the updated data. Rollback: replace back from the archive.
+
+**UI:**
+- "Copy" button on catalog detail page → modal with new name input
+- "Replace" button on a `valid` staging catalog → modal selecting target catalog, optional archive name
+
+**Rollback:**
+- The archived catalog is a normal catalog — it can be browsed, validated, and used as a replace source to roll back.
+
+### FF-9: Multi-Namespace Catalog Publishing
+
+In Phase 7, Catalog CRs are created in the AssetHub's own namespace. This means all published catalogs are visible to any application with access to that namespace. FF-9 extends publishing to support target namespaces, so catalogs are discoverable only by apps in specific namespaces.
+
+**Proposed change:** The `publish` API accepts an optional `namespace` parameter. When specified, the Catalog CR is created in that namespace instead of the AssetHub's namespace. A catalog can be published to multiple namespaces simultaneously.
+
+**API:**
+- `POST /api/data/v1/catalogs/{name}/publish` — `{namespace?: string}` (default: AssetHub namespace)
+- `POST /api/data/v1/catalogs/{name}/unpublish` — `{namespace?: string}` (unpublish from specific namespace, or all if omitted)
+- `GET /api/data/v1/catalogs/{name}/publications` — list namespaces where the catalog is published
+
+**Backend changes:**
+- `CatalogPublication` table: `(catalog_id, namespace, published_at)` — tracks where each catalog is published
+- Operator needs ClusterRole to create/delete CRs in arbitrary namespaces
+- Owner references cannot cross namespaces — use finalizers on the AssetHub CR or a controller-based cleanup for GC
+- Namespace must exist; publishing to a non-existent namespace returns 404
+
+**Benefits:**
+- K8s RBAC "just works" — apps see only Catalog CRs in their own namespace
+- Multi-audience: one catalog published to many namespaces for different teams
+- Clean tenant isolation without custom cross-namespace authorization
+
+**Decision:** Deferred. Phase 7 publishes to the AssetHub's namespace only. Multi-namespace publishing can be added when multi-tenancy requirements are validated.
 
