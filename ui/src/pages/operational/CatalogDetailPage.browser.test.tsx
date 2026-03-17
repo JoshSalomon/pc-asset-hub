@@ -7,7 +7,7 @@ import { api } from '../../api/client'
 
 vi.mock('../../api/client', () => ({
   api: {
-    catalogs: { get: vi.fn(), validate: vi.fn() },
+    catalogs: { get: vi.fn(), validate: vi.fn(), publish: vi.fn(), unpublish: vi.fn() },
     catalogVersions: { listPins: vi.fn() },
     versions: { snapshot: vi.fn() },
     instances: { list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), createContained: vi.fn(), listContained: vi.fn(), setParent: vi.fn() },
@@ -812,4 +812,124 @@ test('T-15.46: error details visible', async () => {
   await waitForInstances()
   await page.getByRole('button', { name: 'Validate' }).click()
   await expect.element(page.getByText(/srv-1.*hostname.*required/)).toBeVisible()
+})
+
+// Validation API error shows warning alert
+test('validation API error shows warning', async () => {
+  ;(api.catalogs.validate as Mock).mockRejectedValue(new Error('server error'))
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Validate' }).click()
+  await expect.element(page.getByText('server error')).toBeVisible()
+})
+
+// === Catalog Publishing Tests ===
+
+// T-16.57: Publish button visible for Admin on valid unpublished catalog
+test('T-16.57: Publish button visible for Admin on valid unpublished catalog', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid', published: false })
+  renderDetail('Admin')
+  await waitForInstances()
+  await expect.element(page.getByRole('button', { name: 'Publish' })).toBeVisible()
+})
+
+// T-16.58: Publish button hidden for RW
+test('T-16.58: Publish button hidden for RW', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid', published: false })
+  renderDetail('RW')
+  await waitForInstances()
+  expect(document.querySelector('button')?.textContent).not.toContain('Publish')
+})
+
+// T-16.59: Publish button hidden when catalog is draft
+test('T-16.59: Publish button hidden when draft', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  // mockCatalog has validation_status: 'draft' by default
+  const buttons = Array.from(document.querySelectorAll('button')).map(b => b.textContent)
+  expect(buttons).not.toContain('Publish')
+})
+
+// T-16.61: Unpublish button visible on published catalog for Admin
+test('T-16.61: Unpublish button visible for Admin on published catalog', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid', published: true })
+  renderDetail('Admin')
+  await waitForInstances()
+  await expect.element(page.getByRole('button', { name: 'Unpublish' })).toBeVisible()
+})
+
+// T-16.62: Clicking Publish calls API
+test('T-16.62: clicking Publish calls API', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid', published: false })
+  ;(api.catalogs.publish as Mock).mockResolvedValue({ status: 'published' })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Publish' }).click()
+  expect(api.catalogs.publish).toHaveBeenCalledWith('my-catalog')
+})
+
+// T-16.63: Published badge shown after publish
+test('T-16.63: published badge shown on published catalog', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid', published: true })
+  renderDetail('Admin')
+  await waitForInstances()
+  await expect.element(page.getByText('published')).toBeVisible()
+})
+
+// T-16.65: Warning banner shown on published catalog for RW
+test('T-16.65: warning banner for RW on published catalog', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid', published: true })
+  renderDetail('RW')
+  await waitForInstances()
+  await expect.element(page.getByText('Editing requires SuperAdmin')).toBeVisible()
+})
+
+// Clicking Unpublish calls API
+test('clicking Unpublish calls API', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid', published: true })
+  ;(api.catalogs.unpublish as Mock).mockResolvedValue({ status: 'unpublished' })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Unpublish' }).click()
+  expect(api.catalogs.unpublish).toHaveBeenCalledWith('my-catalog')
+})
+
+// Publish error shows error message
+test('publish error shows error message', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid', published: false })
+  ;(api.catalogs.publish as Mock).mockRejectedValue(new Error('publish failed'))
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Publish' }).click()
+  await expect.element(page.getByText('publish failed')).toBeVisible()
+})
+
+// Unpublish error shows error message
+test('unpublish error shows error message', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid', published: true })
+  ;(api.catalogs.unpublish as Mock).mockRejectedValue(new Error('unpublish failed'))
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Unpublish' }).click()
+  await expect.element(page.getByText('unpublish failed')).toBeVisible()
+})
+
+// No warning banner for Admin on published catalog
+test('no warning banner for Admin on published catalog', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid', published: true })
+  renderDetail('Admin')
+  await waitForInstances()
+  // Admin should NOT see the warning banner (only RW/RO see it)
+  const alerts = document.querySelectorAll('[class*="alert"]')
+  const infoAlerts = Array.from(alerts).filter(a => a.textContent?.includes('Editing requires SuperAdmin'))
+  expect(infoAlerts.length).toBe(0)
+})
+
+// Published badge NOT shown on unpublished catalog
+test('no published badge on unpublished catalog', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  // Default mockCatalog has published: undefined/false
+  const labels = Array.from(document.querySelectorAll('span')).map(s => s.textContent)
+  expect(labels).not.toContain('published')
 })

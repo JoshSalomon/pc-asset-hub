@@ -16,6 +16,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	v1alpha1 "github.com/project-catalyst/pc-asset-hub/internal/operator/api/v1alpha1"
 )
@@ -92,6 +95,11 @@ func (r *AssetHubReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Reconcile CatalogVersion CRs: set owner references and update status
 	if err := r.reconcileCatalogVersions(ctx, &cr); err != nil {
 		return ctrl.Result{}, r.updateStatus(ctx, &cr, false, fmt.Sprintf("failed to reconcile catalog versions: %v", err))
+	}
+
+	// Reconcile Catalog CRs: set owner references, update status, increment DataVersion
+	if err := r.reconcileCatalogs(ctx, &cr); err != nil {
+		return ctrl.Result{}, r.updateStatus(ctx, &cr, false, fmt.Sprintf("failed to reconcile catalogs: %v", err))
 	}
 
 	if err := r.updateStatus(ctx, &cr, true, "all resources reconciled"); err != nil {
@@ -328,6 +336,42 @@ func (r *AssetHubReconciler) reconcileCatalogVersions(ctx context.Context, cr *v
 	return nil
 }
 
+func (r *AssetHubReconciler) reconcileCatalogs(ctx context.Context, cr *v1alpha1.AssetHub) error {
+	var catList v1alpha1.CatalogList
+	if err := r.List(ctx, &catList, client.InNamespace(cr.Namespace)); err != nil {
+		return err
+	}
+
+	for i := range catList.Items {
+		cat := &catList.Items[i]
+
+		// Set owner reference if not already set
+		if !hasOwnerRef(cat.OwnerReferences, cr.UID) {
+			if err := controllerutil.SetOwnerReference(cr, cat, r.Scheme); err != nil {
+				return fmt.Errorf("failed to set owner reference on Catalog %s: %w", cat.Name, err)
+			}
+			if err := r.Update(ctx, cat); err != nil {
+				return fmt.Errorf("failed to update Catalog %s: %w", cat.Name, err)
+			}
+		}
+
+		// Update status and increment DataVersion only when status is stale
+		// (not ready, or spec generation changed since last reconcile)
+		statusResult := ReconcileCatalogStatus(cat.Generation, cat.Status)
+		if statusResult.NeedsUpdate {
+			cat.Status.Ready = statusResult.Ready
+			cat.Status.Message = statusResult.Message
+			cat.Status.DataVersion = statusResult.DataVersion
+			cat.Status.ObservedGeneration = statusResult.ObservedGeneration
+			if err := r.Status().Update(ctx, cat); err != nil {
+				return fmt.Errorf("failed to update Catalog %s status: %w", cat.Name, err)
+			}
+		}
+	}
+
+	return nil
+}
+
 func hasOwnerRef(refs []metav1.OwnerReference, uid types.UID) bool {
 	for _, ref := range refs {
 		if ref.UID == uid {
@@ -339,11 +383,32 @@ func hasOwnerRef(refs []metav1.OwnerReference, uid types.UID) bool {
 
 // SetupWithManager registers the controller with the manager.
 func (r *AssetHubReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// mapToAssetHub maps any CR event to the AssetHub CR in the same namespace.
+	// This ensures newly created CRs (without owner refs) trigger reconciliation.
+	mapToAssetHub := handler.EnqueueRequestsFromMapFunc(
+		func(ctx context.Context, obj client.Object) []ctrl.Request {
+			var assetHubList v1alpha1.AssetHubList
+			if err := r.List(ctx, &assetHubList, client.InNamespace(obj.GetNamespace())); err != nil {
+				return nil
+			}
+			var requests []ctrl.Request
+			for _, ah := range assetHubList.Items {
+				requests = append(requests, ctrl.Request{
+					NamespacedName: types.NamespacedName{Name: ah.Name, Namespace: ah.Namespace},
+				})
+			}
+			return requests
+		},
+	)
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.AssetHub{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&v1alpha1.CatalogVersion{}).
+		Owns(&v1alpha1.Catalog{}).
+		Watches(&v1alpha1.CatalogVersion{}, mapToAssetHub, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Watches(&v1alpha1.Catalog{}, mapToAssetHub, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Complete(r)
 }

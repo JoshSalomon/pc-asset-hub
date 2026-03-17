@@ -170,7 +170,10 @@ export default function CatalogListPage({ role }: { role: Role }) {
                   </Button>
                 </Td>
                 <Td>{cat.catalog_version_label || cat.catalog_version_id.slice(0, 8) + '...'}</Td>
-                <Td><Label color={statusColor(cat.validation_status)}>{cat.validation_status}</Label></Td>
+                <Td>
+                  <Label color={statusColor(cat.validation_status)}>{cat.validation_status}</Label>
+                  {cat.published && <Label color="purple" style={{ marginLeft: '0.25rem' }}>published</Label>}
+                </Td>
                 <Td>{new Date(cat.created_at).toLocaleString()}</Td>
                 {canCreate && (
                   <Td>

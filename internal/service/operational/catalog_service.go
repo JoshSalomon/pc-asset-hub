@@ -2,10 +2,12 @@ package operational
 
 import (
 	"context"
+	"log"
 	"regexp"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/labstack/echo/v4"
 
 	domainerrors "github.com/project-catalyst/pc-asset-hub/internal/domain/errors"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
@@ -18,17 +20,23 @@ type CatalogService struct {
 	catalogRepo repository.CatalogRepository
 	cvRepo      repository.CatalogVersionRepository
 	instRepo    repository.EntityInstanceRepository
+	crManager   CatalogCRManager
+	namespace   string
 }
 
 func NewCatalogService(
 	catalogRepo repository.CatalogRepository,
 	cvRepo repository.CatalogVersionRepository,
 	instRepo repository.EntityInstanceRepository,
+	crManager CatalogCRManager,
+	namespace string,
 ) *CatalogService {
 	return &CatalogService{
 		catalogRepo: catalogRepo,
 		cvRepo:      cvRepo,
 		instRepo:    instRepo,
+		crManager:   crManager,
+		namespace:   namespace,
 	}
 }
 
@@ -134,10 +142,117 @@ func (s *CatalogService) Delete(ctx context.Context, name string) error {
 		return err
 	}
 
+	// Clean up Catalog CR if published
+	if catalog.Published && s.crManager != nil {
+		if err := s.crManager.Delete(ctx, catalog.Name, s.namespace); err != nil {
+			return err
+		}
+	}
+
 	// Cascade delete all instances in this catalog
 	if err := s.instRepo.DeleteByCatalogID(ctx, catalog.ID); err != nil {
 		return err
 	}
 
 	return s.catalogRepo.Delete(ctx, catalog.ID)
+}
+
+// IsPublished checks if a catalog is published (implements CatalogPublishChecker for middleware).
+func (s *CatalogService) IsPublished(c echo.Context, catalogName string) (bool, error) {
+	catalog, err := s.catalogRepo.GetByName(c.Request().Context(), catalogName)
+	if err != nil {
+		return false, err
+	}
+	return catalog.Published, nil
+}
+
+// SyncCR updates the Catalog CR if the catalog is published.
+// Called after data mutations to keep the CR spec in sync with DB state.
+func (s *CatalogService) SyncCR(ctx context.Context, catalogName string) {
+	if s.crManager == nil {
+		return
+	}
+	catalog, err := s.catalogRepo.GetByName(ctx, catalogName)
+	if err != nil || !catalog.Published {
+		return
+	}
+	cvLabel := ""
+	cv, err := s.cvRepo.GetByID(ctx, catalog.CatalogVersionID)
+	if err == nil {
+		cvLabel = cv.VersionLabel
+	}
+	if err := s.crManager.CreateOrUpdate(ctx, CatalogCRSpec{
+		Name:                catalog.Name,
+		Namespace:           s.namespace,
+		CatalogVersionLabel: cvLabel,
+		ValidationStatus:    string(catalog.ValidationStatus),
+		APIEndpoint:         "/api/data/v1/catalogs/" + catalog.Name,
+		SourceDBID:          catalog.ID,
+	}); err != nil {
+		log.Printf("warning: failed to sync Catalog CR %s: %v", catalog.Name, err)
+	}
+}
+
+func (s *CatalogService) Publish(ctx context.Context, name string) error {
+	catalog, err := s.catalogRepo.GetByName(ctx, name)
+	if err != nil {
+		return err
+	}
+
+	if catalog.ValidationStatus != models.ValidationStatusValid {
+		return domainerrors.NewValidation("catalog must be valid to publish (current status: " + string(catalog.ValidationStatus) + ")")
+	}
+
+	now := time.Now()
+	if err := s.catalogRepo.UpdatePublished(ctx, catalog.ID, true, &now); err != nil {
+		return err
+	}
+
+	// Resolve CV label for CR spec
+	cvLabel := ""
+	cv, err := s.cvRepo.GetByID(ctx, catalog.CatalogVersionID)
+	if err == nil {
+		cvLabel = cv.VersionLabel
+	}
+
+	if s.crManager != nil {
+		if err := s.crManager.CreateOrUpdate(ctx, CatalogCRSpec{
+			Name:                catalog.Name,
+			Namespace:           s.namespace,
+			CatalogVersionLabel: cvLabel,
+			ValidationStatus:    string(catalog.ValidationStatus),
+			APIEndpoint:         "/api/data/v1/catalogs/" + catalog.Name,
+			SourceDBID:          catalog.ID,
+			PublishedAt:         now.Format(time.RFC3339),
+		}); err != nil {
+			// Rollback DB state on CR creation failure
+			_ = s.catalogRepo.UpdatePublished(ctx, catalog.ID, false, nil)
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *CatalogService) Unpublish(ctx context.Context, name string) error {
+	catalog, err := s.catalogRepo.GetByName(ctx, name)
+	if err != nil {
+		return err
+	}
+
+	if !catalog.Published {
+		return nil // already unpublished — idempotent
+	}
+
+	if err := s.catalogRepo.UpdatePublished(ctx, catalog.ID, false, nil); err != nil {
+		return err
+	}
+
+	if s.crManager != nil {
+		if err := s.crManager.Delete(ctx, catalog.Name, s.namespace); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

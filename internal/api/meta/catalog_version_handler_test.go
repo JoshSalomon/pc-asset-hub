@@ -20,7 +20,7 @@ func setupCVServer() *echo.Echo {
 	cvRepo := new(mocks.MockCatalogVersionRepo)
 	pinRepo := new(mocks.MockCatalogVersionPinRepo)
 	ltRepo := new(mocks.MockLifecycleTransitionRepo)
-	svc := svcmeta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, nil, "", nil, nil, nil)
+	svc := svcmeta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, nil, "", nil, nil, nil, nil)
 	handler := apimeta.NewCatalogVersionHandler(svc)
 
 	e := echo.New()
@@ -259,7 +259,7 @@ func TestDeleteCatalogVersionAsRO(t *testing.T) {
 // === Pins and Transitions Handler Tests (T-E.25 through T-E.29) ===
 
 func setupCVServerWithRepos(cvRepo *mocks.MockCatalogVersionRepo, pinRepo *mocks.MockCatalogVersionPinRepo, ltRepo *mocks.MockLifecycleTransitionRepo, etRepo *mocks.MockEntityTypeRepo, etvRepo *mocks.MockEntityTypeVersionRepo) *echo.Echo {
-	svc := svcmeta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, nil, "", nil, etRepo, etvRepo)
+	svc := svcmeta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, nil, "", nil, etRepo, etvRepo, nil)
 	handler := apimeta.NewCatalogVersionHandler(svc)
 
 	e := echo.New()

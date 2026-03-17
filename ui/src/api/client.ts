@@ -210,6 +210,10 @@ export const api = {
       fetchJSON(`${DATA_BASE_URL}/catalogs/${name}`, { method: 'DELETE' }),
     validate: (name: string) =>
       fetchJSON<ValidationResult>(`${DATA_BASE_URL}/catalogs/${name}/validate`, { method: 'POST' }),
+    publish: (name: string) =>
+      fetchJSON(`${DATA_BASE_URL}/catalogs/${name}/publish`, { method: 'POST' }),
+    unpublish: (name: string) =>
+      fetchJSON(`${DATA_BASE_URL}/catalogs/${name}/unpublish`, { method: 'POST' }),
   },
 
   instances: {

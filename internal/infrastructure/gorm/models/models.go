@@ -285,11 +285,13 @@ func LifecycleTransitionFromModel(m *domain.LifecycleTransition) *LifecycleTrans
 // === Data Table Models ===
 
 type Catalog struct {
-	ID               string `gorm:"primaryKey;size:36"`
-	Name             string `gorm:"uniqueIndex;not null;size:63"`
-	Description      string `gorm:"size:1024"`
-	CatalogVersionID string `gorm:"not null;size:36"`
-	ValidationStatus string `gorm:"not null;size:20;default:draft"`
+	ID               string     `gorm:"primaryKey;size:36"`
+	Name             string     `gorm:"uniqueIndex;not null;size:63"`
+	Description      string     `gorm:"size:1024"`
+	CatalogVersionID string     `gorm:"not null;size:36"`
+	ValidationStatus string     `gorm:"not null;size:20;default:draft"`
+	Published        bool       `gorm:"not null;default:false"`
+	PublishedAt      *time.Time `gorm:"default:null"`
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
@@ -301,6 +303,8 @@ func (c *Catalog) ToModel() *domain.Catalog {
 		Description:      c.Description,
 		CatalogVersionID: c.CatalogVersionID,
 		ValidationStatus: domain.ValidationStatus(c.ValidationStatus),
+		Published:        c.Published,
+		PublishedAt:      c.PublishedAt,
 		CreatedAt:        c.CreatedAt,
 		UpdatedAt:        c.UpdatedAt,
 	}
@@ -313,6 +317,8 @@ func CatalogFromModel(m *domain.Catalog) *Catalog {
 		Description:      m.Description,
 		CatalogVersionID: m.CatalogVersionID,
 		ValidationStatus: string(m.ValidationStatus),
+		Published:        m.Published,
+		PublishedAt:      m.PublishedAt,
 		CreatedAt:        m.CreatedAt,
 		UpdatedAt:        m.UpdatedAt,
 	}

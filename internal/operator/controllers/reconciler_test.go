@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
+	v1alpha1 "github.com/project-catalyst/pc-asset-hub/internal/operator/api/v1alpha1"
 	"github.com/project-catalyst/pc-asset-hub/internal/operator/controllers"
 )
 
@@ -356,4 +357,42 @@ func TestTCV11_CatalogVersionStatusProduction(t *testing.T) {
 	status := controllers.ReconcileCatalogVersionStatus("production")
 	assert.True(t, status.Ready)
 	assert.Contains(t, status.Message, "production")
+}
+
+// === Catalog CR Status Tests ===
+
+// T-16.55: First reconciliation of new Catalog CR
+func TestT16_55_CatalogStatus_FirstReconcile(t *testing.T) {
+	status := controllers.ReconcileCatalogStatus(1, v1alpha1.CatalogStatus{
+		Ready:       false,
+		DataVersion: 0,
+	})
+	assert.True(t, status.NeedsUpdate)
+	assert.True(t, status.Ready)
+	assert.Equal(t, "catalog published", status.Message)
+	assert.Equal(t, 1, status.DataVersion)
+}
+
+// T-16.56: Already reconciled, same generation — no update needed
+func TestT16_56_CatalogStatus_NoUpdate(t *testing.T) {
+	status := controllers.ReconcileCatalogStatus(1, v1alpha1.CatalogStatus{
+		Ready:              true,
+		Message:            "catalog published",
+		DataVersion:        1,
+		ObservedGeneration: 1,
+	})
+	assert.False(t, status.NeedsUpdate)
+}
+
+// Spec changed (generation bumped) — DataVersion should increment
+func TestCatalogStatus_SpecChanged_BumpsDataVersion(t *testing.T) {
+	status := controllers.ReconcileCatalogStatus(2, v1alpha1.CatalogStatus{
+		Ready:              true,
+		Message:            "catalog published",
+		DataVersion:        1,
+		ObservedGeneration: 1,
+	})
+	assert.True(t, status.NeedsUpdate)
+	assert.Equal(t, 2, status.DataVersion)
+	assert.Equal(t, int64(2), status.ObservedGeneration)
 }

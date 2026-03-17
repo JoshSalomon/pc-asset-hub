@@ -25,6 +25,8 @@ func httpMethodToVerb(method string) string {
 		return "get"
 	case http.MethodPost:
 		return "create"
+	case http.MethodPut, http.MethodPatch:
+		return "update"
 	case http.MethodDelete:
 		return "delete"
 	default:
@@ -53,6 +55,38 @@ func RequireCatalogAccess(checker CatalogAccessChecker) echo.MiddlewareFunc {
 				return echo.NewHTTPError(http.StatusForbidden, "access denied to catalog: "+catalogName)
 			}
 
+			return next(c)
+		}
+	}
+}
+
+// CatalogPublishChecker determines if a catalog is published.
+type CatalogPublishChecker interface {
+	IsPublished(c echo.Context, catalogName string) (bool, error)
+}
+
+// RequireWriteAccess returns middleware that blocks non-SuperAdmin mutations on published catalogs.
+// This should be applied to write routes (POST, PUT, DELETE) under /:catalog-name.
+func RequireWriteAccess(checker CatalogPublishChecker) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			catalogName := c.Param("catalog-name")
+			if catalogName == "" {
+				return next(c)
+			}
+
+			published, err := checker.IsPublished(c, catalogName)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "publish check failed")
+			}
+			if !published {
+				return next(c) // unpublished — normal RW access
+			}
+
+			role := GetRoleFromContext(c)
+			if role != RoleSuperAdmin {
+				return echo.NewHTTPError(http.StatusForbidden, "published catalog requires SuperAdmin for data mutations")
+			}
 			return next(c)
 		}
 	}

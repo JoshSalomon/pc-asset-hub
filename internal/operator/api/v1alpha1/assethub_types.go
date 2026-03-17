@@ -20,6 +20,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&AssetHubList{},
 		&CatalogVersion{},
 		&CatalogVersionList{},
+		&Catalog{},
+		&CatalogList{},
 	)
 	metav1.AddToGroupVersion(scheme, GroupVersion)
 	return nil

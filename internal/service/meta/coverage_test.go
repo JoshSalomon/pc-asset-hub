@@ -31,7 +31,7 @@ func TestGetEntityType(t *testing.T) {
 
 func TestGetCatalogVersion(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)
-	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
 
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
 		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageDevelopment,
@@ -44,7 +44,7 @@ func TestGetCatalogVersion(t *testing.T) {
 
 func TestListCatalogVersions(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)
-	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
 
 	cvRepo.On("List", mock.Anything, mock.Anything).Return([]*models.CatalogVersion{
 		{ID: "cv1", VersionLabel: "v1.0"},
@@ -59,43 +59,43 @@ func TestListCatalogVersions(t *testing.T) {
 
 func TestPromote_ProductionFails(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)
-	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
 
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
 		ID: "cv1", LifecycleStage: models.LifecycleStageProduction,
 	}, nil)
 
-	err := svc.Promote(context.Background(), "cv1", meta.RoleAdmin, "admin")
+	_, err := svc.Promote(context.Background(), "cv1", meta.RoleAdmin, "admin")
 	assert.Error(t, err)
 }
 
 func TestPromote_InvalidStage(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)
-	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
 
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
 		ID: "cv1", LifecycleStage: models.LifecycleStage("invalid"),
 	}, nil)
 
-	err := svc.Promote(context.Background(), "cv1", meta.RoleAdmin, "admin")
+	_, err := svc.Promote(context.Background(), "cv1", meta.RoleAdmin, "admin")
 	assert.Error(t, err)
 }
 
 func TestPromote_ROForbidden(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)
-	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
 
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
 		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
 	}, nil)
 
-	err := svc.Promote(context.Background(), "cv1", meta.RoleRO, "ro")
+	_, err := svc.Promote(context.Background(), "cv1", meta.RoleRO, "ro")
 	assert.Error(t, err)
 }
 
 func TestDemote_DevelopmentFails(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)
-	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
 
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
 		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
@@ -107,7 +107,7 @@ func TestDemote_DevelopmentFails(t *testing.T) {
 
 func TestDemote_TestingInvalidTarget(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)
-	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
 
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
 		ID: "cv1", LifecycleStage: models.LifecycleStageTesting,
@@ -119,7 +119,7 @@ func TestDemote_TestingInvalidTarget(t *testing.T) {
 
 func TestDemote_TestingROForbidden(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)
-	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
 
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
 		ID: "cv1", LifecycleStage: models.LifecycleStageTesting,
@@ -131,7 +131,7 @@ func TestDemote_TestingROForbidden(t *testing.T) {
 
 func TestDemote_ProductionInvalidTarget(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)
-	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
 
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
 		ID: "cv1", LifecycleStage: models.LifecycleStageProduction,
@@ -143,7 +143,7 @@ func TestDemote_ProductionInvalidTarget(t *testing.T) {
 
 func TestDemote_InvalidStage(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)
-	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
 
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
 		ID: "cv1", LifecycleStage: models.LifecycleStage("unknown"),
@@ -173,7 +173,7 @@ func TestTCV23_PromoteDevToTestingCallsCreateOrUpdate(t *testing.T) {
 	etvRepo := new(mocks.MockEntityTypeVersionRepo)
 	crMgr := new(mockCRManager)
 
-	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, crMgr, "assethub", nil, etRepo, etvRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, crMgr, "assethub", nil, etRepo, etvRepo, nil)
 
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
 		ID: "cv1", VersionLabel: "Release 1", LifecycleStage: models.LifecycleStageDevelopment,
@@ -191,7 +191,7 @@ func TestTCV23_PromoteDevToTestingCallsCreateOrUpdate(t *testing.T) {
 		return spec.LifecycleStage == "testing" && spec.Name == "release-1"
 	})).Return(nil)
 
-	err := svc.Promote(context.Background(), "cv1", meta.RoleRW, "admin")
+	_, err := svc.Promote(context.Background(), "cv1", meta.RoleRW, "admin")
 	require.NoError(t, err)
 	crMgr.AssertCalled(t, "CreateOrUpdate", mock.Anything, mock.Anything)
 }
@@ -205,7 +205,7 @@ func TestTCV24_PromoteTestingToProductionCallsCreateOrUpdate(t *testing.T) {
 	etvRepo := new(mocks.MockEntityTypeVersionRepo)
 	crMgr := new(mockCRManager)
 
-	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, crMgr, "assethub", nil, etRepo, etvRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, crMgr, "assethub", nil, etRepo, etvRepo, nil)
 
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
 		ID: "cv1", VersionLabel: "Release 1", LifecycleStage: models.LifecycleStageTesting,
@@ -217,7 +217,7 @@ func TestTCV24_PromoteTestingToProductionCallsCreateOrUpdate(t *testing.T) {
 		return spec.LifecycleStage == "production"
 	})).Return(nil)
 
-	err := svc.Promote(context.Background(), "cv1", meta.RoleAdmin, "admin")
+	_, err := svc.Promote(context.Background(), "cv1", meta.RoleAdmin, "admin")
 	require.NoError(t, err)
 	crMgr.AssertCalled(t, "CreateOrUpdate", mock.Anything, mock.Anything)
 }
@@ -228,7 +228,7 @@ func TestTCV25_DemoteTestingToDevCallsDelete(t *testing.T) {
 	ltRepo := new(mocks.MockLifecycleTransitionRepo)
 	crMgr := new(mockCRManager)
 
-	svc := meta.NewCatalogVersionService(cvRepo, nil, ltRepo, crMgr, "assethub", nil, nil, nil)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, ltRepo, crMgr, "assethub", nil, nil, nil, nil)
 
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
 		ID: "cv1", VersionLabel: "Release 1", LifecycleStage: models.LifecycleStageTesting,
@@ -251,7 +251,7 @@ func TestTCV26_DemoteProdToTestingCallsCreateOrUpdate(t *testing.T) {
 	etvRepo := new(mocks.MockEntityTypeVersionRepo)
 	crMgr := new(mockCRManager)
 
-	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, crMgr, "assethub", nil, etRepo, etvRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, crMgr, "assethub", nil, etRepo, etvRepo, nil)
 
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
 		ID: "cv1", VersionLabel: "Release 1", LifecycleStage: models.LifecycleStageProduction,
@@ -274,7 +274,7 @@ func TestTCV27_PromoteNilCRManagerNoPanic(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)
 	ltRepo := new(mocks.MockLifecycleTransitionRepo)
 
-	svc := meta.NewCatalogVersionService(cvRepo, nil, ltRepo, nil, "", nil, nil, nil)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, ltRepo, nil, "", nil, nil, nil, nil)
 
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
 		ID: "cv1", VersionLabel: "v1", LifecycleStage: models.LifecycleStageDevelopment,
@@ -282,7 +282,7 @@ func TestTCV27_PromoteNilCRManagerNoPanic(t *testing.T) {
 	cvRepo.On("UpdateLifecycle", mock.Anything, "cv1", models.LifecycleStageTesting).Return(nil)
 	ltRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 
-	err := svc.Promote(context.Background(), "cv1", meta.RoleRW, "admin")
+	_, err := svc.Promote(context.Background(), "cv1", meta.RoleRW, "admin")
 	require.NoError(t, err)
 	cvRepo.AssertCalled(t, "UpdateLifecycle", mock.Anything, "cv1", models.LifecycleStageTesting)
 }
@@ -291,7 +291,7 @@ func TestTCV27_PromoteNilCRManagerNoPanic(t *testing.T) {
 func TestTCV28_ListFilteredByAllowedStages(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)
 
-	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", []string{"production"}, nil, nil)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", []string{"production"}, nil, nil, nil)
 
 	cvRepo.On("List", mock.Anything, mock.Anything).Return([]*models.CatalogVersion{
 		{ID: "cv1", VersionLabel: "v1", LifecycleStage: models.LifecycleStageDevelopment},
@@ -310,7 +310,7 @@ func TestTCV28_ListFilteredByAllowedStages(t *testing.T) {
 func TestTCV29_GetForbiddenWhenStageNotAllowed(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)
 
-	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", []string{"production"}, nil, nil)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", []string{"production"}, nil, nil, nil)
 
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
 		ID: "cv1", VersionLabel: "v1", LifecycleStage: models.LifecycleStageDevelopment,

@@ -114,6 +114,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
   const [parentInstSelectOpen, setParentInstSelectOpen] = useState(false)
 
   const canWrite = role === 'RW' || role === 'Admin' || role === 'SuperAdmin'
+  const isAdmin = role === 'Admin' || role === 'SuperAdmin'
 
   const loadCatalog = useCallback(async () => {
     if (!name) return
@@ -440,11 +441,19 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
         <Label color={catalog.validation_status === 'valid' ? 'green' : catalog.validation_status === 'invalid' ? 'red' : 'blue'}>
           {catalog.validation_status}
         </Label>
+        {catalog.published && (
+          <Label color="purple" style={{ marginLeft: '0.5rem' }}>published</Label>
+        )}
       </Title>
       <p style={{ color: '#6a6e73', marginBottom: '0.5rem' }}>
         Catalog Version: {catalog.catalog_version_label || catalog.catalog_version_id}
         {catalog.description && ` — ${catalog.description}`}
       </p>
+
+      {catalog.published && !isAdmin && (
+        <Alert variant="info" title="This catalog is published. Editing requires SuperAdmin privileges." isInline style={{ marginBottom: '1rem' }} />
+      )}
+
       <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
         <Button variant="link" isInline component="a" href={`/operational/catalogs/${catalog.name}`}>
           Open in Data Viewer →
@@ -452,6 +461,22 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
         {canWrite && (
           <Button variant="secondary" onClick={validation.validate} isLoading={validation.validating} isDisabled={validation.validating}>
             Validate
+          </Button>
+        )}
+        {isAdmin && !catalog.published && catalog.validation_status === 'valid' && (
+          <Button variant="primary" onClick={async () => {
+            try { await api.catalogs.publish(catalog.name); await loadCatalog() }
+            catch (e) { setError(e instanceof Error ? e.message : 'Failed to publish') }
+          }}>
+            Publish
+          </Button>
+        )}
+        {isAdmin && catalog.published && (
+          <Button variant="warning" onClick={async () => {
+            try { await api.catalogs.unpublish(catalog.name); await loadCatalog() }
+            catch (e) { setError(e instanceof Error ? e.message : 'Failed to unpublish') }
+          }}>
+            Unpublish
           </Button>
         )}
       </div>

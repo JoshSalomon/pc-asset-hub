@@ -8,12 +8,12 @@ Last updated: 2026-03-16
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1137 | 100% | 89.8% | — |
+| Backend (Go) | 1191 | 100% | 89.6% | — |
 | UI — Unit tests | 75 | 100% | 17.9% | 20.6% |
-| UI — Browser tests (Playwright) | 392 | 100% | 81.6% | 86.3%  |
+| UI — Browser tests (Playwright) | 429 | 100% | 83.4% | 88.0% |
 | UI — System tests (Playwright + live server) | 30 | 100% | — | — |
-| Live system (bash scripts) | 50 | 100% | — | — |
-| **Total** | **1654** | **100%** | — | — |
+| Live system (bash scripts) | 64 | 100% | — | — |
+| **Total** | **1789** | **100%** | — | — |
 
 ---
 
@@ -24,17 +24,17 @@ Last updated: 2026-03-16
 | `internal/api/health` | 90.0% | Readyz DB-ping error path |
 | `internal/api/meta` | 98.8% | Promote/Demote/Delete RoleRO/RW switch cases unreachable behind RBAC middleware |
 | `internal/api/middleware` | 100.0% | |
-| `internal/api/operational` | 97.1% | New instance_handler.go at 100%; catalog_handler.go ValidateCatalog at 90%; legacy handler.go bind-error branches |
+| `internal/api/operational` | 97.3% | All Phase 7 handlers (Publish, Unpublish) at 100%; legacy handler.go bind-error branches |
 | `internal/domain/errors` | 100.0% | |
 | `internal/infrastructure/config` | 100.0% | |
 | `internal/infrastructure/gorm/models` | 100.0% | |
 | `internal/infrastructure/gorm/repository` | 90.5% | GORM error branches on Delete/Update, `CatalogVersionGormRepo.Delete` at 0%; new `CatalogGormRepo` at 90-100% |
 | `internal/infrastructure/k8s` | 92.6% | K8s client error paths |
 | `internal/operator/api/v1alpha1` | 98.2% | `DeepCopyObject` nil-receiver guard |
-| `internal/operator/controllers` | 85.5% | `SetupWithManager`, Route reconciliation, complex controller paths |
+| `internal/operator/controllers` | 78.8% | `SetupWithManager`, Route reconciliation, K8s client error paths in `reconcileCatalogVersions` and `reconcileCatalogs` (SetOwnerReference, Update, Status().Update failures) |
 | `internal/operator/crdgen` | 84.2% | `GenerateCRDJSON`, `GenerateCR` error paths |
 | `internal/service/meta` | 94.6% | `ListAttributes` and `ListValues` at 0% (trivial delegators) |
-| `internal/service/operational` | 99.3% | All validation service functions at 100%; `instance_service.go` at 99%+ |
+| `internal/service/operational` | 99.3% | All validation and publishing functions at 100%; `instance_service.go` at 99%+ |
 | `internal/service/validation` | 95.6% | |
 
 ### Excluded from Coverage
@@ -108,19 +108,19 @@ These methods are single-line delegations to the repository layer with no branch
 | Test File | Tests | Status |
 |-----------|-------|--------|
 | `App.browser.test.tsx` | 51 | Pass |
-| `client.browser.test.ts` | 36 | Pass |
+| `client.browser.test.ts` | 59 | Pass |
 | `EntityTypeDetailPage.browser.test.tsx` | 77 | Pass |
 | `EntityTypeListPage.browser.test.tsx` | 12 | Pass |
 | `EnumDetailPage.browser.test.tsx` | 24 | Pass |
 | `EnumListPage.browser.test.tsx` | 14 | Pass |
 | `CatalogVersionDetailPage.browser.test.tsx` | 27 | Pass |
-| `CatalogListPage.browser.test.tsx` | 11 | Pass |
-| `CatalogDetailPage.browser.test.tsx` | 60 | Pass |
+| `CatalogListPage.browser.test.tsx` | 19 | Pass |
+| `CatalogDetailPage.browser.test.tsx` | 78 | Pass |
 | `OperationalCatalogDetailPage.browser.test.tsx` | 36 | Pass |
 | `OperationalCatalogListPage.browser.test.tsx` | 13 | Pass |
 | `OperationalApp.browser.test.tsx` | 3 | Pass |
-| `useValidation.browser.test.tsx` | 5 | Pass |
-| **Total** | **392** | **100% pass** |
+| `useValidation.browser.test.tsx` | 6 | Pass |
+| **Total** | **429** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
@@ -341,6 +341,41 @@ New UI files:
 - `ui/src/hooks/useValidation.ts` — shared validation hook
 
 Live system tests: `scripts/test-validation.sh` — 9 parameterized tests covering empty catalog, RO/RW access, 404, required attrs, error structure, status persistence, valid catalog, status reset after mutation.
+
+### New Code Coverage (Session 009 — Catalog Publishing)
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/operational/catalog_service.go` | `Publish` | 100% |
+| `service/operational/catalog_service.go` | `Unpublish` | 100% |
+| `service/operational/catalog_service.go` | `IsPublished` | 100% |
+| `service/operational/catalog_service.go` | `Delete` (enhanced with CR cleanup) | 100% |
+| `api/operational/catalog_handler.go` | `PublishCatalog` | 100% |
+| `api/operational/catalog_handler.go` | `UnpublishCatalog` | 100% |
+| `api/middleware/catalog_access.go` | `RequireWriteAccess` | 100% |
+| `api/middleware/catalog_access.go` | `httpMethodToVerb` (with PUT/PATCH) | 100% |
+| `operator/controllers/reconciler.go` | `ReconcileCatalogStatus` | 100% |
+| `operator/api/v1alpha1/catalog_types.go` | All DeepCopy functions | 100% |
+| `infrastructure/k8s/cr_manager.go` | `K8sCatalogCRManager.CreateOrUpdate` | 100% |
+| `infrastructure/k8s/cr_manager.go` | `K8sCatalogCRManager.Delete` | 100% |
+| `service/meta/catalog_version_service.go` | `Promote` (with warnings) | 100% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `UpdatePublished` | 66.7% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `ListByCatalogVersionID` | 85.7% |
+| `operator/controllers/controller.go` | `reconcileCatalogs` | 77.8% |
+
+Uncovered lines with justification:
+- `UpdatePublished:66.7%` — GORM `RowsAffected==0` error path after successful Update (same pre-existing pattern as other repo Update methods — requires DB to fail between two sequential operations)
+- `ListByCatalogVersionID:85.7%` — GORM `Find` error path (same pre-existing pattern as other repo List methods)
+- `reconcileCatalogs:77.8%` — K8s client error paths for `SetOwnerReference`, `Update`, and `Status().Update` failures (same pre-existing pattern as `reconcileCatalogVersions` — fake K8s client doesn't simulate partial failures in these operations)
+
+Quality review fixes applied: (C1) Fixed infinite DataVersion loop — extracted `ReconcileCatalogStatus` pure function, only updates when status is stale. (C2) Created separate `K8sCatalogCRManager` type satisfying `CatalogCRManager` interface. (I1) Publish rolls back DB on CR creation failure. (I2) Added PUT/PATCH → "update" verb mapping. (I3) Delete cleans up Catalog CR for published catalogs. (I4) `IsPublished` uses request context via `echo.Context`. (I5) UI error handling on publish/unpublish clicks. (I6) Removed redundant `CatalogName` from `CatalogCRSpec`. (I8) Unpublish checks `catalog.Published` for early return. (S2) Added `StatusResponse` DTO. (S3) Extracted `ReconcileCatalogStatus` pure function.
+
+New files:
+- `internal/service/operational/cr_manager.go` — CatalogCRManager interface + CatalogCRSpec
+- `internal/operator/api/v1alpha1/catalog_types.go` — Catalog CR CRD type with DataVersion
+- `scripts/test-publishing.sh` — 14 live system tests
+
+Live system tests: `scripts/test-publishing.sh` — 14 tests covering publish/unpublish RBAC, draft/valid validation gate, write protection (RW blocked, SuperAdmin allowed), status persistence, CR cleanup, CV promotion warnings.
 
 ### Coverage Gaps to Address
 

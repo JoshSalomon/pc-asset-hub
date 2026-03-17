@@ -13,11 +13,19 @@ import (
 )
 
 type InstanceHandler struct {
-	svc *svcop.InstanceService
+	svc        *svcop.InstanceService
+	catalogSvc *svcop.CatalogService
 }
 
-func NewInstanceHandler(svc *svcop.InstanceService) *InstanceHandler {
-	return &InstanceHandler{svc: svc}
+func NewInstanceHandler(svc *svcop.InstanceService, catalogSvc *svcop.CatalogService) *InstanceHandler {
+	return &InstanceHandler{svc: svc, catalogSvc: catalogSvc}
+}
+
+// syncCR updates the Catalog CR if the catalog is published (best-effort, fire-and-forget).
+func (h *InstanceHandler) syncCR(c echo.Context) {
+	if h.catalogSvc != nil {
+		h.catalogSvc.SyncCR(c.Request().Context(), c.Param("catalog-name"))
+	}
 }
 
 func (h *InstanceHandler) CreateInstance(c echo.Context) error {
@@ -34,6 +42,7 @@ func (h *InstanceHandler) CreateInstance(c echo.Context) error {
 		return mapError(err)
 	}
 
+	h.syncCR(c)
 	return c.JSON(http.StatusCreated, instanceDetailToDTO(detail))
 }
 
@@ -120,6 +129,7 @@ func (h *InstanceHandler) UpdateInstance(c echo.Context) error {
 		return mapError(err)
 	}
 
+	h.syncCR(c)
 	return c.JSON(http.StatusOK, instanceDetailToDTO(detail))
 }
 
@@ -132,6 +142,7 @@ func (h *InstanceHandler) DeleteInstance(c echo.Context) error {
 		return mapError(err)
 	}
 
+	h.syncCR(c)
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -188,6 +199,7 @@ func (h *InstanceHandler) CreateContainedInstance(c echo.Context) error {
 		return mapError(err)
 	}
 
+	h.syncCR(c)
 	return c.JSON(http.StatusCreated, instanceDetailToDTO(detail))
 }
 
@@ -227,6 +239,7 @@ func (h *InstanceHandler) CreateLink(c echo.Context) error {
 		return mapError(err)
 	}
 
+	h.syncCR(c)
 	return c.JSON(http.StatusCreated, dto.AssociationLinkResponse{
 		ID:               link.ID,
 		AssociationID:    link.AssociationID,
@@ -245,6 +258,7 @@ func (h *InstanceHandler) DeleteLink(c echo.Context) error {
 		return mapError(err)
 	}
 
+	h.syncCR(c)
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -312,6 +326,7 @@ func (h *InstanceHandler) SetParent(c echo.Context) error {
 		return mapError(err)
 	}
 
+	h.syncCR(c)
 	return c.JSON(http.StatusOK, map[string]string{"status": "updated"})
 }
 
@@ -343,29 +358,32 @@ func treeNodesToDTO(nodes []svcop.TreeNode) []dto.TreeNodeResponse {
 	return result
 }
 
-func RegisterInstanceRoutes(g *echo.Group, h *InstanceHandler, requireRW echo.MiddlewareFunc) {
+func RegisterInstanceRoutes(g *echo.Group, h *InstanceHandler, requireRW echo.MiddlewareFunc, writeGuards ...echo.MiddlewareFunc) {
+	// writeMiddleware combines requireRW with any additional write guards (e.g., published catalog protection)
+	writeMiddleware := append([]echo.MiddlewareFunc{requireRW}, writeGuards...)
+
 	// Containment tree — static path before parameterized :entity-type
 	g.GET("/tree", h.GetContainmentTree)
 
 	// Instance CRUD
-	g.POST("/:entity-type", h.CreateInstance, requireRW)
+	g.POST("/:entity-type", h.CreateInstance, writeMiddleware...)
 	g.GET("/:entity-type", h.ListInstances)
 	g.GET("/:entity-type/:instance-id", h.GetInstance)
-	g.PUT("/:entity-type/:instance-id", h.UpdateInstance, requireRW)
-	g.DELETE("/:entity-type/:instance-id", h.DeleteInstance, requireRW)
+	g.PUT("/:entity-type/:instance-id", h.UpdateInstance, writeMiddleware...)
+	g.DELETE("/:entity-type/:instance-id", h.DeleteInstance, writeMiddleware...)
 
 	// Parent management
-	g.PUT("/:entity-type/:instance-id/parent", h.SetParent, requireRW)
+	g.PUT("/:entity-type/:instance-id/parent", h.SetParent, writeMiddleware...)
 
 	// Association links and references — static path segments registered before
 	// the parameterized containment routes so Echo matches them first.
 	// Entity types named "links", "references", or "referenced-by" are reserved.
-	g.POST("/:entity-type/:instance-id/links", h.CreateLink, requireRW)
-	g.DELETE("/:entity-type/:instance-id/links/:link-id", h.DeleteLink, requireRW)
+	g.POST("/:entity-type/:instance-id/links", h.CreateLink, writeMiddleware...)
+	g.DELETE("/:entity-type/:instance-id/links/:link-id", h.DeleteLink, writeMiddleware...)
 	g.GET("/:entity-type/:instance-id/references", h.GetForwardReferences)
 	g.GET("/:entity-type/:instance-id/referenced-by", h.GetReverseReferences)
 
 	// Containment — parameterized :child-type after static segments above
-	g.POST("/:entity-type/:instance-id/:child-type", h.CreateContainedInstance, requireRW)
+	g.POST("/:entity-type/:instance-id/:child-type", h.CreateContainedInstance, writeMiddleware...)
 	g.GET("/:entity-type/:instance-id/:child-type", h.ListContainedInstances)
 }

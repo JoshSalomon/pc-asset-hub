@@ -407,3 +407,79 @@ func TestCatalogRepo_ListEmpty(t *testing.T) {
 	assert.Len(t, catalogs, 0)
 }
 
+// T-16.01/02: Published fields persist correctly
+func TestT16_01_UpdatePublished(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	catalogRepo := repository.NewCatalogGormRepo(db)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	ctx := context.Background()
+
+	cvID := newCatalogID()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{
+		ID: cvID, VersionLabel: "v1", LifecycleStage: "development",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	catID := newCatalogID()
+	require.NoError(t, catalogRepo.Create(ctx, &models.Catalog{
+		ID: catID, Name: "pub-test", CatalogVersionID: cvID,
+		ValidationStatus: models.ValidationStatusValid,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	// Verify default: published=false
+	cat, err := catalogRepo.GetByName(ctx, "pub-test")
+	require.NoError(t, err)
+	assert.False(t, cat.Published)
+	assert.Nil(t, cat.PublishedAt)
+
+	// Publish
+	now := time.Now()
+	require.NoError(t, catalogRepo.UpdatePublished(ctx, catID, true, &now))
+
+	cat, err = catalogRepo.GetByName(ctx, "pub-test")
+	require.NoError(t, err)
+	assert.True(t, cat.Published)
+	assert.NotNil(t, cat.PublishedAt)
+
+	// Unpublish
+	require.NoError(t, catalogRepo.UpdatePublished(ctx, catID, false, nil))
+
+	cat, err = catalogRepo.GetByName(ctx, "pub-test")
+	require.NoError(t, err)
+	assert.False(t, cat.Published)
+}
+
+// T-16.44 (partial): ListByCatalogVersionID
+func TestListByCatalogVersionID(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	catalogRepo := repository.NewCatalogGormRepo(db)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	ctx := context.Background()
+
+	cv1ID := newCatalogID()
+	cv2ID := newCatalogID()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{ID: cv1ID, VersionLabel: "v1", LifecycleStage: "development", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{ID: cv2ID, VersionLabel: "v2", LifecycleStage: "development", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+
+	require.NoError(t, catalogRepo.Create(ctx, &models.Catalog{ID: newCatalogID(), Name: "cat-a", CatalogVersionID: cv1ID, ValidationStatus: models.ValidationStatusDraft, CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, catalogRepo.Create(ctx, &models.Catalog{ID: newCatalogID(), Name: "cat-b", CatalogVersionID: cv1ID, ValidationStatus: models.ValidationStatusValid, CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, catalogRepo.Create(ctx, &models.Catalog{ID: newCatalogID(), Name: "cat-c", CatalogVersionID: cv2ID, ValidationStatus: models.ValidationStatusValid, CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+
+	// Only catalogs pinned to cv1
+	cats, err := catalogRepo.ListByCatalogVersionID(ctx, cv1ID)
+	require.NoError(t, err)
+	assert.Len(t, cats, 2)
+
+	// cv2 has one catalog
+	cats, err = catalogRepo.ListByCatalogVersionID(ctx, cv2ID)
+	require.NoError(t, err)
+	assert.Len(t, cats, 1)
+	assert.Equal(t, "cat-c", cats[0].Name)
+
+	// Nonexistent CV — empty result
+	cats, err = catalogRepo.ListByCatalogVersionID(ctx, "no-such-cv")
+	require.NoError(t, err)
+	assert.Len(t, cats, 0)
+}
+

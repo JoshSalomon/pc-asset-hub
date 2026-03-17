@@ -27,7 +27,7 @@ func setupInstanceServer() (*echo.Echo, *instanceMocks) {
 		m.pinRepo, m.attrRepo, m.etvRepo, m.etRepo, m.enumValRepo,
 		m.assocRepo, m.linkRepo,
 	)
-	handler := apiop.NewInstanceHandler(svc)
+	handler := apiop.NewInstanceHandler(svc, nil)
 
 	e := echo.New()
 	g := e.Group("/api/data/v1/catalogs/:catalog-name")

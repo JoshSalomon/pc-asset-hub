@@ -116,3 +116,32 @@ func (r *CatalogGormRepo) UpdateValidationStatus(ctx context.Context, id string,
 	}
 	return nil
 }
+
+func (r *CatalogGormRepo) UpdatePublished(ctx context.Context, id string, published bool, publishedAt *time.Time) error {
+	result := r.db.WithContext(ctx).Model(&gormmodels.Catalog{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"published":    published,
+			"published_at": publishedAt,
+			"updated_at":   time.Now(),
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domainerrors.NewNotFound("Catalog", id)
+	}
+	return nil
+}
+
+func (r *CatalogGormRepo) ListByCatalogVersionID(ctx context.Context, catalogVersionID string) ([]*models.Catalog, error) {
+	var records []gormmodels.Catalog
+	if err := r.db.WithContext(ctx).Where("catalog_version_id = ?", catalogVersionID).Find(&records).Error; err != nil {
+		return nil, err
+	}
+	result := make([]*models.Catalog, len(records))
+	for i := range records {
+		result[i] = records[i].ToModel()
+	}
+	return result, nil
+}

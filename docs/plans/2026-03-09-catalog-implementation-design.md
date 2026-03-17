@@ -277,13 +277,29 @@ Operational UI pages:
 - **Published catalog write protection** — data mutations (create/update/delete instance, link/unlink) on a published catalog require SuperAdmin role. RW users can only modify unpublished catalogs. This prevents accidental edits to production data — use the Copy & Replace workflow (Phase 8) instead.
   - Validation status still resets to `draft` on mutation (even by SuperAdmin)
   - `draft` does not auto-unpublish — the Catalog CR stays until explicitly unpublished
-- Catalog CR type definition (catalog name, CV reference, API endpoint, catalog ID, validation status, published timestamp)
+- Catalog CR type definition:
+  ```
+  CatalogSpec:
+    CatalogName:          string   // catalog name (matches DB)
+    CatalogVersionLabel:  string   // pinned CV label
+    ValidationStatus:     string   // draft | valid | invalid
+    APIEndpoint:          string   // e.g., /api/data/v1/catalogs/{name}
+    SourceDBID:           string   // database catalog ID (annotation)
+    PublishedAt:          string   // RFC3339 timestamp (annotation)
+
+  CatalogStatus:
+    Ready:       bool
+    Message:     string
+    DataVersion: int              // incremented by operator on each reconciliation
+    Conditions:  []metav1.Condition
+  ```
+- `status.DataVersion` enables consumer cache invalidation — consumers watch the CR, see the version bump, and know to refresh. The operator increments it on every reconcile (no DB access needed — every reconcile means the CR was created or updated, so the data may have changed). A newly created Catalog CR starts with `DataVersion: 0` (zero value); the first reconciliation sets it to `1`. Consumers should treat any version change (including 0 → 1) as a cache invalidation signal.
 - CV promotion check: warn if any pinned catalogs are `draft` or `invalid`
 
 **K8s / Operator:**
 
-- Operator watches Catalog CRs, sets owner references to AssetHub CR
-- Reconciler updates status conditions
+- Operator watches Catalog CRs (`.Owns(&v1alpha1.Catalog{})`), sets owner references to AssetHub CR
+- Reconciler updates status conditions and increments `status.DataVersion` on each reconciliation
 
 **UI:**
 

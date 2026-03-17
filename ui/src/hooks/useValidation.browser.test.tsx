@@ -65,6 +65,14 @@ test('useValidation: handles missing errors field in response', async () => {
   await expect.element(page.getByTestId('error-count')).toHaveTextContent('0')
 })
 
+// Cover: API throws non-Error value — fallback message used
+test('useValidation: non-Error rejection uses fallback message', async () => {
+  ;(api.catalogs.validate as Mock).mockRejectedValue('string error')
+  render(<TestComponent catalogName="test-catalog" />)
+  await page.getByRole('button', { name: 'Validate' }).click()
+  await expect.element(page.getByTestId('error')).toHaveTextContent('Validation failed')
+})
+
 // Cover: validate API throws error — error state is set, validating resets
 test('useValidation: API error sets error state', async () => {
   ;(api.catalogs.validate as Mock).mockRejectedValue(new Error('network error'))

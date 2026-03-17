@@ -127,6 +127,22 @@ func (h *CatalogHandler) ValidateCatalog(c echo.Context) error {
 	})
 }
 
+func (h *CatalogHandler) PublishCatalog(c echo.Context) error {
+	name := c.Param("catalog-name")
+	if err := h.svc.Publish(c.Request().Context(), name); err != nil {
+		return mapError(err)
+	}
+	return c.JSON(http.StatusOK, dto.StatusResponse{Status: "published"})
+}
+
+func (h *CatalogHandler) UnpublishCatalog(c echo.Context) error {
+	name := c.Param("catalog-name")
+	if err := h.svc.Unpublish(c.Request().Context(), name); err != nil {
+		return mapError(err)
+	}
+	return c.JSON(http.StatusOK, dto.StatusResponse{Status: "unpublished"})
+}
+
 func catalogToDTO(cat *models.Catalog, cvLabel string) dto.CatalogResponse {
 	return dto.CatalogResponse{
 		ID:                  cat.ID,
@@ -135,16 +151,20 @@ func catalogToDTO(cat *models.Catalog, cvLabel string) dto.CatalogResponse {
 		CatalogVersionID:    cat.CatalogVersionID,
 		CatalogVersionLabel: cvLabel,
 		ValidationStatus:    string(cat.ValidationStatus),
+		Published:           cat.Published,
+		PublishedAt:         cat.PublishedAt,
 		CreatedAt:           cat.CreatedAt,
 		UpdatedAt:           cat.UpdatedAt,
 	}
 }
 
-func RegisterCatalogRoutes(g *echo.Group, h *CatalogHandler, requireRW echo.MiddlewareFunc) {
+func RegisterCatalogRoutes(g *echo.Group, h *CatalogHandler, requireRW, requireAdmin echo.MiddlewareFunc) {
 	requireCatalogAccess := apimw.RequireCatalogAccess(h.accessChecker)
 	g.POST("", h.CreateCatalog, requireRW)
 	g.GET("", h.ListCatalogs)
 	g.GET("/:catalog-name", h.GetCatalog, requireCatalogAccess)
 	g.DELETE("/:catalog-name", h.DeleteCatalog, requireRW, requireCatalogAccess)
 	g.POST("/:catalog-name/validate", h.ValidateCatalog, requireRW, requireCatalogAccess)
+	g.POST("/:catalog-name/publish", h.PublishCatalog, requireAdmin, requireCatalogAccess)
+	g.POST("/:catalog-name/unpublish", h.UnpublishCatalog, requireAdmin, requireCatalogAccess)
 }

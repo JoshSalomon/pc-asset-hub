@@ -256,14 +256,30 @@ type CreateCatalogRequest struct {
 }
 
 type CatalogResponse struct {
-	ID                  string    `json:"id"`
-	Name                string    `json:"name"`
-	Description         string    `json:"description"`
-	CatalogVersionID    string    `json:"catalog_version_id"`
-	CatalogVersionLabel string    `json:"catalog_version_label,omitempty"`
-	ValidationStatus    string    `json:"validation_status"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	ID                  string     `json:"id"`
+	Name                string     `json:"name"`
+	Description         string     `json:"description"`
+	CatalogVersionID    string     `json:"catalog_version_id"`
+	CatalogVersionLabel string     `json:"catalog_version_label,omitempty"`
+	ValidationStatus    string     `json:"validation_status"`
+	Published           bool       `json:"published"`
+	PublishedAt         *time.Time `json:"published_at,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
+}
+
+type StatusResponse struct {
+	Status string `json:"status"`
+}
+
+type CatalogWarningResponse struct {
+	CatalogName      string `json:"catalog_name"`
+	ValidationStatus string `json:"validation_status"`
+}
+
+type PromoteResponse struct {
+	Status   string                   `json:"status"`
+	Warnings []CatalogWarningResponse `json:"warnings"`
 }
 
 // === Validation DTOs ===

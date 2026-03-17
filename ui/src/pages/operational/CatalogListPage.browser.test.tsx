@@ -22,12 +22,12 @@ vi.mock('../../api/client', () => ({
 const mockCatalogs = [
   {
     id: 'c1', name: 'production-app-a', description: 'Prod A',
-    catalog_version_id: 'cv1', validation_status: 'draft',
+    catalog_version_id: 'cv1', validation_status: 'draft', published: false,
     created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
   },
   {
     id: 'c2', name: 'staging-app-b', description: '',
-    catalog_version_id: 'cv2', validation_status: 'valid',
+    catalog_version_id: 'cv2', validation_status: 'valid', published: true,
     created_at: '2026-01-02T00:00:00Z', updated_at: '2026-01-02T00:00:00Z',
   },
 ]
@@ -223,4 +223,12 @@ test('name too long shows validation error', async () => {
   const nameInput = page.getByPlaceholder('e.g. production-app-a')
   await nameInput.fill('a'.repeat(64))
   await expect.element(page.getByText('Name must be at most 63 characters')).toBeVisible()
+})
+
+// T-16.64: Published badge shown in catalog list
+test('T-16.64: published badge shown in catalog list', async () => {
+  renderList()
+  await expect.element(page.getByText('production-app-a')).toBeVisible()
+  // staging-app-b has published: true
+  await expect.element(page.getByText('published')).toBeVisible()
 })

@@ -30,9 +30,9 @@ Development proceeds through three environment phases, each with increasing infr
 
 **Milestones completed**: 1–12 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired), T-14.01 through T-14.22, and T-15.01 through T-15.81 (645 test cases), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired), T-14.01 through T-14.22, T-15.01 through T-15.81, and T-16.01 through T-16.69 (714 test cases), using SQLite and mocked/simulated infrastructure.
 
-**Human checkpoint**: After all 447 tests pass with 100% coverage (documented exceptions). This is the first review point.
+**Human checkpoint**: After all 714 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
 ---
 
@@ -1899,6 +1899,146 @@ Phase 6 of the catalog implementation plan. On-demand validation of all entity i
 
 ---
 
+## Milestone 16: Catalog Publishing, K8s CRs & Promotion Warnings
+
+Phase 7 of the catalog implementation plan. Explicit publish/unpublish operations for catalogs. Publishing creates a namespaced Catalog CR in K8s for discovery. Published catalogs are write-protected — data mutations require SuperAdmin role. The operator reconciles Catalog CRs, sets owner references, and increments `status.DataVersion` for consumer cache invalidation. CV promotion warns about draft/invalid catalogs. User stories: US-42, US-43.
+
+### Catalog Model — Published Field
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.01 | Catalog model has `published` boolean field (default false) | Integration | New catalog has published=false |
+| T-16.02 | Catalog model has `published_at` timestamp field (default nil) | Integration | New catalog has published_at=nil |
+
+### Publish Catalog — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.03 | Publish a `valid` catalog sets published=true and published_at | Unit | Catalog updated |
+| T-16.04 | Publish a `draft` catalog returns error | Unit | Validation error |
+| T-16.05 | Publish an `invalid` catalog returns error | Unit | Validation error |
+| T-16.06 | Publish nonexistent catalog returns NotFound | Unit | NotFound error |
+| T-16.07 | Publish calls CatalogCRManager.CreateOrUpdate with correct spec | Unit | CR created with catalog name, CV label, validation status |
+| T-16.08 | Publish with nil crManager skips CR operation (DB-only) | Unit | No panic, published=true in DB |
+| T-16.09 | Publish already-published catalog is idempotent | Unit | No error, published stays true |
+| T-16.10 | Publish persists published=true and published_at in database | Integration | DB query confirms fields |
+
+### Unpublish Catalog — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.11 | Unpublish sets published=false | Unit | Catalog updated |
+| T-16.12 | Unpublish calls CatalogCRManager.Delete | Unit | CR deleted |
+| T-16.13 | Unpublish with nil crManager skips CR operation (DB-only) | Unit | No panic, published=false in DB |
+| T-16.14 | Unpublish already-unpublished catalog is idempotent | Unit | No error |
+| T-16.15 | Unpublish nonexistent catalog returns NotFound | Unit | NotFound error |
+| T-16.16 | Unpublish persists published=false in database | Integration | DB query confirms field |
+
+### Published Catalog Write Protection — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.17 | CreateInstance on published catalog as RW → 403 | Unit | Forbidden error |
+| T-16.18 | CreateInstance on published catalog as SuperAdmin → succeeds | Unit | Instance created |
+| T-16.19 | UpdateInstance on published catalog as RW → 403 | Unit | Forbidden error |
+| T-16.20 | DeleteInstance on published catalog as RW → 403 | Unit | Forbidden error |
+| T-16.21 | CreateContainedInstance on published catalog as RW → 403 | Unit | Forbidden error |
+| T-16.22 | CreateAssociationLink on published catalog as RW → 403 | Unit | Forbidden error |
+| T-16.23 | DeleteAssociationLink on published catalog as RW → 403 | Unit | Forbidden error |
+| T-16.24 | SetParent on published catalog as RW → 403 | Unit | Forbidden error |
+| T-16.25 | SuperAdmin mutation on published catalog resets status to draft | Unit | Status=draft, published=true |
+| T-16.26 | Draft does not auto-unpublish — published stays true after mutation | Unit | published=true after mutation |
+
+### Published Catalog Write Protection — Integration
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.27 | Publish catalog, create instance as SuperAdmin, verify published=true and status=draft | Integration | Full round-trip in DB |
+| T-16.28 | Published field survives create→publish→mutate→query round-trip | Integration | published=true persisted through mutations |
+
+### Publish/Unpublish API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.29 | `POST /catalogs/{name}/publish` as Admin → 200 | API | Published successfully |
+| T-16.30 | `POST /catalogs/{name}/publish` as RW → 403 | API | Forbidden |
+| T-16.31 | `POST /catalogs/{name}/publish` as RO → 403 | API | Forbidden |
+| T-16.32 | `POST /catalogs/{name}/publish` on draft catalog → 400 | API | Bad request |
+| T-16.33 | `POST /catalogs/{name}/publish` on nonexistent → 404 | API | Not found |
+| T-16.34 | `POST /catalogs/{name}/unpublish` as Admin → 200 | API | Unpublished successfully |
+| T-16.35 | `POST /catalogs/{name}/unpublish` as RW → 403 | API | Forbidden |
+| T-16.36 | Instance create on published catalog as RW → 403 | API | Forbidden |
+| T-16.37 | Instance create on published catalog as SuperAdmin → 201 | API | Instance created |
+| T-16.38 | Catalog response includes `published` and `published_at` fields | API | Fields in JSON response |
+
+### CV Promotion Warnings — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.39 | Promote CV with draft catalog pinned → warning in response | Unit | Warning includes catalog name and status |
+| T-16.40 | Promote CV with invalid catalog pinned → warning in response | Unit | Warning includes catalog name and status |
+| T-16.41 | Promote CV with all valid catalogs → no warnings | Unit | Empty warnings list |
+| T-16.42 | Promote CV with no catalogs pinned → no warnings | Unit | Empty warnings list |
+| T-16.43 | Promotion proceeds despite warnings (not blocked) | Unit | Lifecycle stage updated |
+
+### CV Promotion Warnings — Integration
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.44 | Create CV, pin catalogs with draft/valid/invalid statuses, promote → correct warnings | Integration | Warnings for draft and invalid only |
+
+### CV Promotion Warnings — API
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.45 | `POST /catalog-versions/{id}/promote` response includes `warnings` array | API | Warnings in JSON response |
+| T-16.46 | Promotion response with no warnings has empty array | API | `warnings: []` |
+
+### Catalog CR Manager
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.47 | CatalogCRManager.CreateOrUpdate creates Catalog CR with correct spec | Unit | CR has catalog name, CV label, status |
+| T-16.48 | CatalogCRManager.CreateOrUpdate sets annotations (source-db-id, published-at) | Unit | Annotations present |
+| T-16.49 | CatalogCRManager.CreateOrUpdate updates existing CR idempotently | Unit | Spec updated, no duplicate |
+| T-16.50 | CatalogCRManager.Delete removes Catalog CR | Unit | CR deleted |
+| T-16.51 | CatalogCRManager.Delete on nonexistent CR returns nil (idempotent) | Unit | No error |
+
+### Operator — Catalog CR Reconciliation
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.52 | Reconciler sets owner reference on Catalog CR to AssetHub CR | Operator | OwnerReference set |
+| T-16.53 | Reconciler updates Catalog CR status.Ready=true | Operator | Status updated |
+| T-16.54 | New Catalog CR has DataVersion=0 before reconciliation | Operator | DataVersion is zero value |
+| T-16.55 | First reconciliation sets DataVersion=1 | Operator | DataVersion incremented from 0 to 1 |
+| T-16.56 | Subsequent reconciliation increments DataVersion | Operator | DataVersion incremented from existing value |
+
+### Catalog Detail UI — Publish Button (Meta)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.57 | Publish button visible for Admin on valid unpublished catalog | Browser | Button rendered |
+| T-16.58 | Publish button hidden for RW user | Browser | Button not rendered |
+| T-16.59 | Publish button hidden when catalog is draft | Browser | Button not rendered |
+| T-16.60 | Publish button hidden when catalog is invalid | Browser | Button not rendered |
+| T-16.61 | Unpublish button visible on published catalog for Admin | Browser | Button rendered |
+| T-16.62 | Clicking Publish calls POST .../publish API | Browser | API called |
+| T-16.63 | Published badge shown on catalog detail after publish | Browser | "published" indicator visible |
+| T-16.64 | Published badge shown in catalog list | Browser | "published" indicator in list |
+| T-16.65 | Warning banner shown on published catalog for RW user | Browser | Banner visible |
+| T-16.66 | Instance create/edit/delete controls disabled for RW on published catalog | Browser | Controls disabled |
+| T-16.67 | Instance controls enabled for SuperAdmin on published catalog | Browser | Controls enabled |
+
+### CV Promotion UI — Warnings
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.68 | Promote dialog shows warnings for draft/invalid catalogs | Browser | Warning text visible |
+| T-16.69 | Promote dialog shows no warnings when all catalogs valid | Browser | No warning shown |
+
+---
+
 ## Coverage Criteria
 
 ### Pass Rate
@@ -1935,7 +2075,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 645 test cases (T-1.01 through T-15.81; T-13.78 through T-13.85 retired) pass
+- All 714 test cases (T-1.01 through T-16.69; T-13.78 through T-13.85 retired) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

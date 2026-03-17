@@ -117,6 +117,8 @@ type Catalog struct {
 	Description      string
 	CatalogVersionID string
 	ValidationStatus ValidationStatus
+	Published        bool
+	PublishedAt      *time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }

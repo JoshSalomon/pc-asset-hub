@@ -27,7 +27,7 @@ func setupCatalogServer() (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockCatalo
 	catRepo := new(mocks.MockCatalogRepo)
 	cvRepo := new(mocks.MockCatalogVersionRepo)
 	instRepo := new(mocks.MockEntityInstanceRepo)
-	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo)
+	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo, nil, "")
 	accessChecker := &apimw.HeaderCatalogAccessChecker{}
 	handler := apiop.NewCatalogHandler(svc, nil, accessChecker)
 
@@ -36,7 +36,7 @@ func setupCatalogServer() (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockCatalo
 	rbac := &apimw.HeaderRBACProvider{}
 	g.Use(apimw.RBACMiddleware(rbac))
 	requireRW := apimw.RequireRole(apimw.RoleRW)
-	apiop.RegisterCatalogRoutes(g, handler, requireRW)
+	apiop.RegisterCatalogRoutes(g, handler, requireRW, apimw.RequireRole(apimw.RoleAdmin))
 
 	return e, catRepo, cvRepo, instRepo
 }
@@ -297,7 +297,7 @@ func setupCatalogServerWithAccessChecker(checker apimw.CatalogAccessChecker) (*e
 	catRepo := new(mocks.MockCatalogRepo)
 	cvRepo := new(mocks.MockCatalogVersionRepo)
 	instRepo := new(mocks.MockEntityInstanceRepo)
-	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo)
+	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo, nil, "")
 	handler := apiop.NewCatalogHandler(svc, nil, checker)
 
 	e := echo.New()
@@ -305,7 +305,7 @@ func setupCatalogServerWithAccessChecker(checker apimw.CatalogAccessChecker) (*e
 	rbac := &apimw.HeaderRBACProvider{}
 	g.Use(apimw.RBACMiddleware(rbac))
 	requireRW := apimw.RequireRole(apimw.RoleRW)
-	apiop.RegisterCatalogRoutes(g, handler, requireRW)
+	apiop.RegisterCatalogRoutes(g, handler, requireRW, apimw.RequireRole(apimw.RoleAdmin))
 
 	return e, catRepo, cvRepo
 }
@@ -387,4 +387,102 @@ func TestT14_19_CreateCatalog_DeniedReturns403(t *testing.T) {
 	body := `{"name":"forbidden-cat","catalog_version_id":"cv1"}`
 	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs", body, apimw.RoleRW)
 	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// === Publish/Unpublish Handler Tests ===
+
+// T-16.29: Publish as Admin → 200
+func TestT16_29_PublishAdmin(t *testing.T) {
+	e, catRepo, cvRepo, _ := setupCatalogServer()
+	catRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	catRepo.On("UpdatePublished", mock.Anything, "c1", true, mock.AnythingOfType("*time.Time")).Return(nil)
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1"}, nil)
+
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/publish", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// T-16.30: Publish as RW → 403
+func TestT16_30_PublishRW(t *testing.T) {
+	e, _, _, _ := setupCatalogServer()
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/publish", "", apimw.RoleRW)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// T-16.31: Publish as RO → 403
+func TestT16_31_PublishRO(t *testing.T) {
+	e, _, _, _ := setupCatalogServer()
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/publish", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// T-16.32: Publish draft catalog → 400
+func TestT16_32_PublishDraft(t *testing.T) {
+	e, catRepo, _, _ := setupCatalogServer()
+	catRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", ValidationStatus: models.ValidationStatusDraft,
+	}, nil)
+
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/publish", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// T-16.33: Publish nonexistent → 404
+func TestT16_33_PublishNotFound(t *testing.T) {
+	e, catRepo, _, _ := setupCatalogServer()
+	catRepo.On("GetByName", mock.Anything, "nonexistent").Return(nil, domainerrors.NewNotFound("Catalog", "nonexistent"))
+
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/nonexistent/publish", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// T-16.34: Unpublish as Admin → 200
+func TestT16_34_UnpublishAdmin(t *testing.T) {
+	e, catRepo, _, _ := setupCatalogServer()
+	catRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", Published: true,
+	}, nil)
+	catRepo.On("UpdatePublished", mock.Anything, "c1", false, (*time.Time)(nil)).Return(nil)
+
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/unpublish", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// Unpublish nonexistent → 404
+func TestUnpublish_NotFound(t *testing.T) {
+	e, catRepo, _, _ := setupCatalogServer()
+	catRepo.On("GetByName", mock.Anything, "nonexistent").Return(nil, domainerrors.NewNotFound("Catalog", "nonexistent"))
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/nonexistent/unpublish", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// T-16.35: Unpublish as RW → 403
+func TestT16_35_UnpublishRW(t *testing.T) {
+	e, _, _, _ := setupCatalogServer()
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/unpublish", "", apimw.RoleRW)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// T-16.38: Catalog response includes published fields
+func TestT16_38_CatalogResponseHasPublishedFields(t *testing.T) {
+	e, catRepo, cvRepo, _ := setupCatalogServer()
+	now := time.Now()
+	catRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+		Published: true, PublishedAt: &now,
+		CreatedAt: now, UpdatedAt: now,
+	}, nil)
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1"}, nil)
+
+	rec := doCatalogRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, true, resp["published"])
+	assert.NotNil(t, resp["published_at"])
 }

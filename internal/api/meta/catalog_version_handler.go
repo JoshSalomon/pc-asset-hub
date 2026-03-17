@@ -88,10 +88,21 @@ func (h *CatalogVersionHandler) Promote(c echo.Context) error {
 		svcRole = svcmeta.RoleSuperAdmin
 	}
 
-	if err := h.svc.Promote(c.Request().Context(), id, svcRole, string(role)); err != nil {
+	result, err := h.svc.Promote(c.Request().Context(), id, svcRole, string(role))
+	if err != nil {
 		return mapError(err)
 	}
-	return c.JSON(http.StatusOK, map[string]string{"status": "promoted"})
+	warnings := make([]dto.CatalogWarningResponse, len(result.Warnings))
+	for i, w := range result.Warnings {
+		warnings[i] = dto.CatalogWarningResponse{
+			CatalogName:      w.CatalogName,
+			ValidationStatus: w.ValidationStatus,
+		}
+	}
+	return c.JSON(http.StatusOK, dto.PromoteResponse{
+		Status:   "promoted",
+		Warnings: warnings,
+	})
 }
 
 func (h *CatalogVersionHandler) Demote(c echo.Context) error {

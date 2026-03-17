@@ -38,7 +38,7 @@ func setupValidationServer() (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockEnt
 	etRepo := new(mocks.MockEntityTypeRepo)
 	cvRepo := new(mocks.MockCatalogVersionRepo)
 
-	catalogSvc := svcop.NewCatalogService(catRepo, cvRepo, instRepo)
+	catalogSvc := svcop.NewCatalogService(catRepo, cvRepo, instRepo, nil, "")
 	validationSvc := svcop.NewCatalogValidationService(
 		catRepo, instRepo, iavRepo, pinRepo, etvRepo,
 		attrRepo, assocRepo, enumValRepo, linkRepo, etRepo,
@@ -51,7 +51,7 @@ func setupValidationServer() (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockEnt
 	rbac := &apimw.HeaderRBACProvider{}
 	g.Use(apimw.RBACMiddleware(rbac))
 	requireRW := apimw.RequireRole(apimw.RoleRW)
-	apiop.RegisterCatalogRoutes(g, handler, requireRW)
+	apiop.RegisterCatalogRoutes(g, handler, requireRW, apimw.RequireRole(apimw.RoleAdmin))
 
 	return e, catRepo, instRepo, pinRepo, etvRepo, attrRepo, assocRepo, enumValRepo, linkRepo, etRepo, iavRepo
 }
@@ -208,7 +208,7 @@ func TestValidateCatalog_NilService(t *testing.T) {
 	catRepo := new(mocks.MockCatalogRepo)
 	cvRepo := new(mocks.MockCatalogVersionRepo)
 	instRepo := new(mocks.MockEntityInstanceRepo)
-	catalogSvc := svcop.NewCatalogService(catRepo, cvRepo, instRepo)
+	catalogSvc := svcop.NewCatalogService(catRepo, cvRepo, instRepo, nil, "")
 	accessChecker := &apimw.HeaderCatalogAccessChecker{}
 	handler := apiop.NewCatalogHandler(catalogSvc, nil, accessChecker)
 
@@ -217,7 +217,7 @@ func TestValidateCatalog_NilService(t *testing.T) {
 	rbac := &apimw.HeaderRBACProvider{}
 	g.Use(apimw.RBACMiddleware(rbac))
 	requireRW := apimw.RequireRole(apimw.RoleRW)
-	apiop.RegisterCatalogRoutes(g, handler, requireRW)
+	apiop.RegisterCatalogRoutes(g, handler, requireRW, apimw.RequireRole(apimw.RoleAdmin))
 
 	rec := doValidateRequest(e, "test-catalog", apimw.RoleRW)
 	assert.Equal(t, http.StatusNotImplemented, rec.Code)

@@ -366,6 +366,32 @@
       "phase": 0,
       "difficulty": 0.5,
       "created_at": "2026-03-15T23:16:40.548454+00:00"
+    },
+    "mem_a6da2da9": {
+      "topic": "Catalog Publishing (Phase 7) implementation patterns",
+      "tags": [
+        "catalog",
+        "publishing",
+        "phase-7",
+        "k8s",
+        "operator",
+        "architecture"
+      ],
+      "phase": 0,
+      "difficulty": 0.5,
+      "created_at": "2026-03-16T17:25:02.992236+00:00"
+    },
+    "mem_3c8faa5c": {
+      "topic": "Browser test coverage strategy — how to maximize coverage on every feature",
+      "tags": [
+        "testing",
+        "coverage",
+        "browser-tests",
+        "best-practices"
+      ],
+      "phase": 0,
+      "difficulty": 0.7,
+      "created_at": "2026-03-16T17:25:32.656628+00:00"
     }
   }
 }

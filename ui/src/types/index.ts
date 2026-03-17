@@ -142,6 +142,8 @@ export interface Catalog {
   catalog_version_id: string
   catalog_version_label?: string
   validation_status: 'draft' | 'valid' | 'invalid'
+  published: boolean
+  published_at?: string
   created_at: string
   updated_at: string
 }

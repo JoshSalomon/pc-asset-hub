@@ -261,9 +261,13 @@ header "Cleanup (only removing test data created by this script)"
 api DELETE "$DATA_API/catalogs/$CATALOG_NAME" Admin > /dev/null 2>&1 || true
 echo "  Deleted test catalog: $CATALOG_NAME"
 
-# Note: entity types and CVs are left behind since delete might fail
-# if they're referenced. They use unique timestamp-based names so they
-# won't collide with future runs.
+# Delete CV (must happen before entity type deletion since CV pins reference ETVs)
+api DELETE "$META_API/catalog-versions/$CV_ID" Admin > /dev/null 2>&1 || true
+echo "  Deleted test CV: $CV_ID"
+
+# Delete entity type
+api DELETE "$META_API/entity-types/$SERVER_ET_ID" Admin > /dev/null 2>&1 || true
+echo "  Deleted test entity type: $SERVER_ET_ID"
 
 header "Results"
 

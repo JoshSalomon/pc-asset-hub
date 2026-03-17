@@ -13,6 +13,7 @@ import (
 
 	v1alpha1 "github.com/project-catalyst/pc-asset-hub/internal/operator/api/v1alpha1"
 	"github.com/project-catalyst/pc-asset-hub/internal/service/meta"
+	"github.com/project-catalyst/pc-asset-hub/internal/service/operational"
 )
 
 func testScheme() *runtime.Scheme {
@@ -144,4 +145,116 @@ func TestTCV20_CreateOrUpdateSetsAnnotations(t *testing.T) {
 	assert.Equal(t, "db-uuid-456", cv.Annotations["assethub.project-catalyst.io/source-db-id"])
 	assert.Equal(t, "admin-user", cv.Annotations["assethub.project-catalyst.io/promoted-by"])
 	assert.Equal(t, "2026-02-17T15:30:00Z", cv.Annotations["assethub.project-catalyst.io/promoted-at"])
+}
+
+// === Catalog CR Manager Tests ===
+
+// T-16.47: CatalogCRManager.CreateOrUpdate creates Catalog CR with correct spec
+func TestT16_47_CatalogCreateOrUpdateNew(t *testing.T) {
+	s := testScheme()
+	cl := fake.NewClientBuilder().WithScheme(s).Build()
+	mgr := NewK8sCatalogCRManager(cl)
+
+	spec := operational.CatalogCRSpec{
+		Name:                "prod-catalog",
+		Namespace:           "assethub",
+		CatalogVersionLabel: "v1.0",
+		ValidationStatus:    "valid",
+		APIEndpoint:         "/api/data/v1/catalogs/prod-catalog",
+		SourceDBID:          "db-uuid-123",
+		PublishedAt:         "2026-03-16T10:00:00Z",
+	}
+
+	err := mgr.CreateOrUpdate(context.Background(), spec)
+	require.NoError(t, err)
+
+	cat := &v1alpha1.Catalog{}
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "prod-catalog", Namespace: "assethub"}, cat)
+	require.NoError(t, err)
+	assert.Equal(t, "prod-catalog", cat.Spec.CatalogName)
+	assert.Equal(t, "v1.0", cat.Spec.CatalogVersionLabel)
+	assert.Equal(t, "valid", cat.Spec.ValidationStatus)
+	assert.Equal(t, "/api/data/v1/catalogs/prod-catalog", cat.Spec.APIEndpoint)
+}
+
+// T-16.48: CatalogCRManager.CreateOrUpdate sets annotations
+func TestT16_48_CatalogAnnotations(t *testing.T) {
+	s := testScheme()
+	cl := fake.NewClientBuilder().WithScheme(s).Build()
+	mgr := NewK8sCatalogCRManager(cl)
+
+	spec := operational.CatalogCRSpec{
+		Name:      "prod-catalog",
+		Namespace: "assethub",
+		SourceDBID:  "db-uuid-123",
+		PublishedAt: "2026-03-16T10:00:00Z",
+	}
+
+	err := mgr.CreateOrUpdate(context.Background(), spec)
+	require.NoError(t, err)
+
+	cat := &v1alpha1.Catalog{}
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "prod-catalog", Namespace: "assethub"}, cat)
+	require.NoError(t, err)
+	assert.Equal(t, "db-uuid-123", cat.Annotations["assethub.project-catalyst.io/source-db-id"])
+	assert.Equal(t, "2026-03-16T10:00:00Z", cat.Annotations["assethub.project-catalyst.io/published-at"])
+}
+
+// T-16.49: CatalogCRManager.CreateOrUpdate updates existing CR
+func TestT16_49_CatalogUpdateExisting(t *testing.T) {
+	s := testScheme()
+	existing := &v1alpha1.Catalog{
+		ObjectMeta: metav1.ObjectMeta{Name: "prod-catalog", Namespace: "assethub"},
+		Spec: v1alpha1.CatalogSpec{
+			CatalogName:      "prod-catalog",
+			ValidationStatus: "valid",
+		},
+	}
+	cl := fake.NewClientBuilder().WithScheme(s).WithObjects(existing).Build()
+	mgr := NewK8sCatalogCRManager(cl)
+
+	spec := operational.CatalogCRSpec{
+		Name:                "prod-catalog",
+		Namespace:           "assethub",
+		CatalogVersionLabel: "v2.0",
+		ValidationStatus:    "draft",
+		SourceDBID:          "updated-id",
+		PublishedAt:         "2026-03-16T12:00:00Z",
+	}
+
+	err := mgr.CreateOrUpdate(context.Background(), spec)
+	require.NoError(t, err)
+
+	cat := &v1alpha1.Catalog{}
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "prod-catalog", Namespace: "assethub"}, cat)
+	require.NoError(t, err)
+	assert.Equal(t, "v2.0", cat.Spec.CatalogVersionLabel)
+	assert.Equal(t, "draft", cat.Spec.ValidationStatus)
+}
+
+// T-16.50: CatalogCRManager.Delete removes Catalog CR
+func TestT16_50_CatalogDelete(t *testing.T) {
+	s := testScheme()
+	existing := &v1alpha1.Catalog{
+		ObjectMeta: metav1.ObjectMeta{Name: "prod-catalog", Namespace: "assethub"},
+	}
+	cl := fake.NewClientBuilder().WithScheme(s).WithObjects(existing).Build()
+	mgr := NewK8sCatalogCRManager(cl)
+
+	err := mgr.Delete(context.Background(), "prod-catalog", "assethub")
+	require.NoError(t, err)
+
+	cat := &v1alpha1.Catalog{}
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "prod-catalog", Namespace: "assethub"}, cat)
+	assert.Error(t, err) // not found
+}
+
+// T-16.51: CatalogCRManager.Delete on nonexistent is idempotent
+func TestT16_51_CatalogDeleteNonexistent(t *testing.T) {
+	s := testScheme()
+	cl := fake.NewClientBuilder().WithScheme(s).Build()
+	mgr := NewK8sCatalogCRManager(cl)
+
+	err := mgr.Delete(context.Background(), "nonexistent", "assethub")
+	require.NoError(t, err) // no error
 }

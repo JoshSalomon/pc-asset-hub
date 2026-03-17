@@ -172,6 +172,12 @@ Each feature area is tested at the appropriate layers:
 | Catalog validation — containment consistency | X | X | X | | |
 | Catalog validation — status update (valid/invalid) | X | X | X | X | |
 | Catalog validation — RBAC (RW+ only) | X | | X | X | |
+| Catalog publish/unpublish — service + status | X | X | X | X | |
+| Catalog publish — RBAC (Admin+ only) | X | | X | X | |
+| Published catalog write protection (SuperAdmin) | X | X | X | X | |
+| Catalog CR lifecycle (create/delete on publish) | X | | | | X |
+| Catalog CR status.DataVersion (operator bump) | | | | | X |
+| CV promotion warnings (draft/invalid catalogs) | X | X | X | X | |
 
 ---
 
@@ -433,3 +439,19 @@ On-demand validation of all entity instances in a catalog against the pinned CV'
 - **API tests (handler)**: Verify `POST /api/data/v1/catalogs/{name}/validate` returns 200 with validation results. Verify response includes `status` (`valid` or `invalid`) and `errors` array. Verify 404 for nonexistent catalog. Verify 403 for RO role. Verify catalog status is updated in the database after validation.
 - **UI tests (browser — meta)**: Verify "Validate" button appears on catalog detail page for RW+ users. Verify RO users do not see the Validate button. Verify clicking Validate calls the API and displays results. Verify validation errors are displayed grouped by entity type with per-instance details. Verify status badge updates after validation.
 - **UI tests (browser — operational)**: Verify "Validate" button appears on operational catalog detail page. Verify validation results display in the operational UI.
+
+### 5.29 Catalog Publishing (US-42, US-43)
+
+Explicit publish/unpublish operations for catalogs. Publishing creates a namespaced Catalog CR in K8s for discovery. Published catalogs are write-protected — data mutations require SuperAdmin role. CV promotion warns about draft/invalid catalogs.
+
+- **Unit tests (service — publish/unpublish)**: Verify `Publish` requires validation status `valid` — returns error for `draft` or `invalid`. Verify `Publish` sets `published=true` and `published_at` timestamp. Verify `Publish` calls CatalogCRManager.CreateOrUpdate with correct spec. Verify `Unpublish` sets `published=false` and calls CatalogCRManager.Delete. Verify `Publish` on already-published catalog is idempotent. Verify `Unpublish` on unpublished catalog is idempotent. Verify `Publish`/`Unpublish` with nil crManager skips CR operations (DB-only mode).
+- **Unit tests (service — write protection)**: Verify data mutations (CreateInstance, UpdateInstance, DeleteInstance, CreateContainedInstance, CreateAssociationLink, DeleteAssociationLink, SetParent) on a published catalog return 403 for RW role. Verify same mutations succeed for SuperAdmin. Verify mutations still reset validation status to `draft` even on published catalogs. Verify `draft` does not auto-unpublish — `published` stays `true`.
+- **Unit tests (service — CV promotion warnings)**: Verify `Promote` returns warnings for catalogs pinned to the CV with `draft` or `invalid` status. Verify promotion proceeds despite warnings. Verify no warnings when all pinned catalogs are `valid`. Verify no warnings when no catalogs are pinned.
+- **Integration tests (publish/unpublish)**: Verify publish persists `published=true` and `published_at` in the database. Verify unpublish persists `published=false`. Verify data mutation on published catalog by SuperAdmin resets status to `draft` but keeps `published=true`.
+- **Integration tests (write protection)**: Set up a published catalog with instances in real SQLite. Verify instance creation on published catalog fails for non-SuperAdmin. Verify instance creation succeeds for SuperAdmin. Verify the `published` field survives the full create→publish→mutate→query round-trip.
+- **Integration tests (CV promotion warnings)**: Create a CV with multiple pinned catalogs at different validation statuses (draft, valid, invalid) in real SQLite. Promote the CV and verify the response includes warnings for draft/invalid catalogs. Verify no warnings when all catalogs are valid.
+- **API tests (handler)**: Verify `POST /catalogs/{name}/publish` returns 200 for Admin. Verify 403 for RW and RO. Verify 400 for `draft` or `invalid` catalog. Verify 404 for nonexistent catalog. Verify `POST /catalogs/{name}/unpublish` returns 200 for Admin, 403 for RW/RO. Verify instance create/update/delete on published catalog returns 403 for RW, 200 for SuperAdmin.
+- **Unit tests (K8s CR manager)**: Verify `CatalogCRManager.CreateOrUpdate` creates Catalog CR with correct spec, annotations, and namespace. Verify `CatalogCRManager.Delete` removes Catalog CR. Verify Delete is idempotent (nonexistent CR returns nil).
+- **Operator tests**: Verify reconciler sets owner reference on Catalog CRs. Verify reconciler updates Catalog CR status. Verify `status.DataVersion` is incremented on each reconciliation. Verify new Catalog CR has `DataVersion: 0` before first reconciliation. Verify `DataVersion` becomes 1 after first reconciliation. Verify `DataVersion` increments from existing value on subsequent reconciliations.
+- **UI tests (browser — meta)**: Verify "Publish" button visible for Admin on `valid` unpublished catalog. Verify "Publish" button hidden for RW. Verify "Publish" button hidden when catalog is `draft` or `invalid`. Verify "Unpublish" button visible on published catalog for Admin. Verify published badge on catalog list and detail. Verify warning banner on published catalog for RW users. Verify instance create/edit/delete controls disabled on published catalogs for RW. Verify controls enabled for SuperAdmin on published catalogs.
+- **UI tests (browser — CV promotion)**: Verify promotion dialog shows warnings for draft/invalid catalogs pinned to the CV being promoted.

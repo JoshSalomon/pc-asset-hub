@@ -57,6 +57,23 @@ func TestHeaderCatalogAccessChecker_AllowsAllVerbs(t *testing.T) {
 	}
 }
 
+// httpMethodToVerb: PUT maps to "update"
+func TestHttpMethodToVerb_PutMapsToUpdate(t *testing.T) {
+	mock := &mockCatalogAccessChecker{}
+	mw := RequireCatalogAccess(mock)
+	e := echo.New()
+
+	e.PUT("/catalogs/:catalog-name/items/:id", mw(func(c echo.Context) error {
+		return c.String(http.StatusOK, "ok")
+	}))
+
+	req := httptest.NewRequest(http.MethodPut, "/catalogs/test/items/123", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, "update", mock.lastVerb)
+}
+
 // === T-14.03 through T-14.11: RequireCatalogAccess Middleware ===
 
 func TestRequireCatalogAccess_ExtractsCatalogName(t *testing.T) {
@@ -243,4 +260,102 @@ func TestFilterAccessibleCatalogs_ErrorPropagates(t *testing.T) {
 	_, err := FilterAccessible(c, mock, []string{"a"}, identity)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "SAR failed")
+}
+
+// === RequireWriteAccess Middleware Tests ===
+
+type mockPublishChecker struct {
+	published map[string]bool
+	returnErr error
+}
+
+func (m *mockPublishChecker) IsPublished(_ echo.Context, catalogName string) (bool, error) {
+	if m.returnErr != nil {
+		return false, m.returnErr
+	}
+	return m.published[catalogName], nil
+}
+
+// T-16.17: RW blocked on published catalog
+func TestT16_17_WriteProtection_RWBlocked(t *testing.T) {
+	checker := &mockPublishChecker{published: map[string]bool{"prod-catalog": true}}
+	e := echo.New()
+	e.Use(RBACMiddleware(&HeaderRBACProvider{}))
+	g := e.Group("/catalogs/:catalog-name")
+	g.POST("/items", func(c echo.Context) error {
+		return c.String(http.StatusCreated, "created")
+	}, RequireRole(RoleRW), RequireWriteAccess(checker))
+
+	req := httptest.NewRequest(http.MethodPost, "/catalogs/prod-catalog/items", nil)
+	req.Header.Set("X-User-Role", "RW")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// T-16.18: SuperAdmin allowed on published catalog
+func TestT16_18_WriteProtection_SuperAdminAllowed(t *testing.T) {
+	checker := &mockPublishChecker{published: map[string]bool{"prod-catalog": true}}
+	e := echo.New()
+	e.Use(RBACMiddleware(&HeaderRBACProvider{}))
+	g := e.Group("/catalogs/:catalog-name")
+	g.POST("/items", func(c echo.Context) error {
+		return c.String(http.StatusCreated, "created")
+	}, RequireRole(RoleRW), RequireWriteAccess(checker))
+
+	req := httptest.NewRequest(http.MethodPost, "/catalogs/prod-catalog/items", nil)
+	req.Header.Set("X-User-Role", "SuperAdmin")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
+// T-16.26: Unpublished catalog — RW allowed
+func TestT16_26_WriteProtection_UnpublishedRWAllowed(t *testing.T) {
+	checker := &mockPublishChecker{published: map[string]bool{"dev-catalog": false}}
+	e := echo.New()
+	e.Use(RBACMiddleware(&HeaderRBACProvider{}))
+	g := e.Group("/catalogs/:catalog-name")
+	g.POST("/items", func(c echo.Context) error {
+		return c.String(http.StatusCreated, "created")
+	}, RequireRole(RoleRW), RequireWriteAccess(checker))
+
+	req := httptest.NewRequest(http.MethodPost, "/catalogs/dev-catalog/items", nil)
+	req.Header.Set("X-User-Role", "RW")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
+// Write protection: no catalog name → passthrough
+func TestWriteProtection_NoCatalogName(t *testing.T) {
+	checker := &mockPublishChecker{}
+	e := echo.New()
+	e.Use(RBACMiddleware(&HeaderRBACProvider{}))
+	e.POST("/items", func(c echo.Context) error {
+		return c.String(http.StatusCreated, "created")
+	}, RequireRole(RoleRW), RequireWriteAccess(checker))
+
+	req := httptest.NewRequest(http.MethodPost, "/items", nil)
+	req.Header.Set("X-User-Role", "RW")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
+// Write protection: checker error → 500
+func TestWriteProtection_CheckerError(t *testing.T) {
+	checker := &mockPublishChecker{returnErr: fmt.Errorf("db error")}
+	e := echo.New()
+	e.Use(RBACMiddleware(&HeaderRBACProvider{}))
+	g := e.Group("/catalogs/:catalog-name")
+	g.POST("/items", func(c echo.Context) error {
+		return c.String(http.StatusCreated, "created")
+	}, RequireRole(RoleRW), RequireWriteAccess(checker))
+
+	req := httptest.NewRequest(http.MethodPost, "/catalogs/prod-catalog/items", nil)
+	req.Header.Set("X-User-Role", "RW")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }

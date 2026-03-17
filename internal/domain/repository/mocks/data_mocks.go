@@ -2,6 +2,7 @@ package mocks
 
 import (
 	"context"
+	"time"
 
 	"github.com/stretchr/testify/mock"
 
@@ -91,6 +92,16 @@ func (m *MockCatalogRepo) Delete(ctx context.Context, id string) error {
 }
 func (m *MockCatalogRepo) UpdateValidationStatus(ctx context.Context, id string, status models.ValidationStatus) error {
 	return m.Called(ctx, id, status).Error(0)
+}
+func (m *MockCatalogRepo) UpdatePublished(ctx context.Context, id string, published bool, publishedAt *time.Time) error {
+	return m.Called(ctx, id, published, publishedAt).Error(0)
+}
+func (m *MockCatalogRepo) ListByCatalogVersionID(ctx context.Context, catalogVersionID string) ([]*models.Catalog, error) {
+	args := m.Called(ctx, catalogVersionID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Catalog), args.Error(1)
 }
 
 // MockInstanceAttributeValueRepo mocks InstanceAttributeValueRepository.
