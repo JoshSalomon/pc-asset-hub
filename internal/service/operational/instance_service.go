@@ -110,9 +110,10 @@ type InstanceDetail struct {
 
 // AttributeValue is a resolved attribute value with name and type from the schema.
 type AttributeValue struct {
-	Name  string      `json:"name"`
-	Type  string      `json:"type"`
-	Value any `json:"value"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Value    any    `json:"value"`
+	Required bool   `json:"required"`
 }
 
 // mapAttributeValues maps raw InstanceAttributeValues to resolved AttributeValues using schema attributes.
@@ -127,8 +128,9 @@ func mapAttributeValues(attrs []*models.Attribute, values []*models.InstanceAttr
 	result := make([]AttributeValue, 0, len(attrs))
 	for _, attr := range attrs {
 		av := AttributeValue{
-			Name: attr.Name,
-			Type: string(attr.Type),
+			Name:     attr.Name,
+			Type:     string(attr.Type),
+			Required: attr.Required,
 		}
 		if val, ok := valueMap[attr.ID]; ok {
 			switch attr.Type {

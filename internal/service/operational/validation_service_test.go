@@ -886,7 +886,7 @@ func TestValidation_FinalUpdateStatusError(t *testing.T) {
 	svc, m := setupValidationService()
 	ctx := context.Background()
 	m.setupSingleEntityType(ctx)
-	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{{ID: "i1", EntityTypeID: "et1"}}, nil)
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{{ID: "i1", EntityTypeID: "et1", Name: "server-1"}}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
 	m.iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
@@ -1191,6 +1191,112 @@ func TestValidation_ContainedTypeWithoutParent(t *testing.T) {
 	assert.Equal(t, "orphan-tool", result.Errors[0].InstanceName)
 	assert.Equal(t, "parent", result.Errors[0].Field)
 	assert.Contains(t, result.Errors[0].Violation, "contained entity type")
+}
+
+// === TD-22: System Attributes — Name Non-Empty Validation ===
+
+// T-18.22: Validate returns error for instance with empty Name
+func TestT18_22_ValidateEmptyName(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: ""},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusInvalid, result.Status)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, "name", result.Errors[0].Field)
+	assert.Contains(t, result.Errors[0].Violation, "required")
+}
+
+// T-18.23: Validate returns error for instance with whitespace-only Name
+func TestT18_23_ValidateWhitespaceName(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "   "},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusInvalid, result.Status)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, "name", result.Errors[0].Field)
+}
+
+// T-18.24: Validate passes for instance with non-empty Name
+func TestT18_24_ValidateNonEmptyName(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusValid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusValid, result.Status)
+	assert.Empty(t, result.Errors)
+}
+
+// S2: Validation error for empty name uses instance ID as fallback
+func TestValidation_EmptyNameUsesIDFallback(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst-abc", EntityTypeID: "et1", CatalogID: "c1", Name: ""},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetCurrentValues", ctx, "inst-abc").Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	require.Len(t, result.Errors, 1)
+	// InstanceName should contain the ID as fallback when name is empty
+	assert.Contains(t, result.Errors[0].InstanceName, "inst-abc")
+}
+
+// T-18.25: Validation error includes correct entity type name
+func TestT18_25_ValidateEmptyNameEntityType(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: ""},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, "Server", result.Errors[0].EntityType)
 }
 
 // Verify: contained type WITH a parent does NOT produce this error

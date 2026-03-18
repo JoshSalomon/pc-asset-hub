@@ -32,6 +32,8 @@ const mockSnapshot = {
   entity_type: { id: 'et1', name: 'model' },
   version: { id: 'etv1', version: 1 },
   attributes: [
+    { id: 'sys-name', name: 'name', type: 'string', ordinal: -2, required: true, system: true },
+    { id: 'sys-desc', name: 'description', type: 'string', ordinal: -1, required: false, system: true },
     { id: 'a1', name: 'hostname', type: 'string', ordinal: 1, required: false },
     { id: 'a2', name: 'port', type: 'number', ordinal: 2, required: true },
   ],
@@ -53,6 +55,8 @@ const mockInstances = [
   {
     id: 'i1', entity_type_id: 'et1', catalog_id: 'cat1', name: 'inst-a', description: 'First',
     version: 1, attributes: [
+      { name: 'name', type: 'string', value: 'inst-a', system: true },
+      { name: 'description', type: 'string', value: 'First', system: true },
       { name: 'hostname', type: 'string', value: 'host-a' },
       { name: 'port', type: 'number', value: 8080 },
     ],
@@ -1221,4 +1225,105 @@ test('replace modal cancel closes modal', async () => {
   await expect.element(page.getByText('Replace Catalog')).toBeVisible()
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
   await expect.element(page.getByText('Replace Catalog')).not.toBeInTheDocument()
+})
+
+// === System Attributes in Create/Edit Modals ===
+
+// T-18.39: Create modal renders Name field from schema attrs (not hardcoded)
+test('T-18.39: create modal renders Name from schema attrs', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: /Create model/ }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // Name field should be present with required indicator
+  await expect.element(page.getByRole('dialog').getByText('Name *')).toBeVisible()
+})
+
+// T-18.40: Create modal renders Description field from schema attrs
+test('T-18.40: create modal renders Description from schema attrs', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: /Create model/ }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // Description field should be present (optional, no *)
+  await expect.element(page.getByRole('dialog').getByText('Description', { exact: true })).toBeVisible()
+})
+
+// T-18.41: Create modal renders custom attributes after system attributes
+test('T-18.41: create modal renders custom attrs after system attrs', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: /Create model/ }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // System attrs first, then custom
+  await expect.element(page.getByRole('dialog').getByText('Name *')).toBeVisible()
+  await expect.element(page.getByRole('dialog').getByText('hostname')).toBeVisible()
+  await expect.element(page.getByRole('dialog').getByText('port *')).toBeVisible()
+})
+
+// T-18.42: Create submits name/description as top-level request fields
+test('T-18.42: create submits name/description as top-level fields', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: /Create model/ }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  // Fill Name (first textbox) and Description (second textbox)
+  const textboxes = page.getByRole('dialog').getByRole('textbox')
+  await textboxes.nth(0).fill('my-instance')
+  await textboxes.nth(1).fill('a description')
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Create' }).click()
+
+  expect(api.instances.create).toHaveBeenCalledWith('my-catalog', 'model', expect.objectContaining({
+    name: 'my-instance',
+    description: 'a description',
+  }))
+})
+
+// T-18.43: Edit modal shows Name and Description from schema attrs
+test('T-18.43: edit modal shows Name and Description from schema attrs', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // Name and Description should be present
+  await expect.element(page.getByRole('dialog').getByText('Name *')).toBeVisible()
+  await expect.element(page.getByRole('dialog').getByText('Description', { exact: true })).toBeVisible()
+})
+
+// T-18.44: Edit submits updated name/description as top-level request fields
+test('T-18.44: edit submits name/description as top-level fields', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  // Name textbox is first, change it
+  const textboxes = page.getByRole('dialog').getByRole('textbox')
+  await textboxes.nth(0).fill('renamed-inst')
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
+
+  expect(api.instances.update).toHaveBeenCalledWith('my-catalog', 'model', 'i1', expect.objectContaining({
+    name: 'renamed-inst',
+  }))
+})
+
+// Bug fix: Name label should not show double asterisk ("Name * *")
+test('create modal Name label has no duplicate required indicator', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: /Create model/ }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // "Name * *" should NOT appear — only a single required indicator
+  await expect.element(page.getByRole('dialog').getByText('Name * *')).not.toBeInTheDocument()
+})
+
+test('edit modal Name label has no duplicate required indicator', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  await expect.element(page.getByRole('dialog').getByText('Name * *')).not.toBeInTheDocument()
 })

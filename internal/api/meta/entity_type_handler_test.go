@@ -581,8 +581,10 @@ func TestTE62_VersionSnapshot(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, "Server", resp.EntityType.Name)
 	assert.Equal(t, 2, resp.Version.Version)
-	assert.Len(t, resp.Attributes, 1)
-	assert.Equal(t, "hostname", resp.Attributes[0].Name)
+	assert.Len(t, resp.Attributes, 3) // 2 system + 1 custom
+	assert.Equal(t, "name", resp.Attributes[0].Name)
+	assert.Equal(t, "description", resp.Attributes[1].Name)
+	assert.Equal(t, "hostname", resp.Attributes[2].Name)
 	assert.Len(t, resp.Associations, 1)
 	assert.Equal(t, "containment", resp.Associations[0].Type)
 	assert.Equal(t, "Tool", resp.Associations[0].TargetEntityTypeName)
@@ -739,4 +741,98 @@ func TestTE83_VersionSnapshotIncludesCardinality(t *testing.T) {
 	require.Len(t, resp.Associations, 1)
 	assert.Equal(t, "1", resp.Associations[0].SourceCardinality)
 	assert.Equal(t, "0..n", resp.Associations[0].TargetCardinality)
+}
+
+// === TD-22: System Attributes in Version Snapshot ===
+
+// T-18.07: Version snapshot prepends Name system attr
+func TestT18_07_SnapshotSystemAttrName(t *testing.T) {
+	etRepo := new(mocks.MockEntityTypeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	assocRepo := new(mocks.MockAssociationRepo)
+	e := setupTestServer(etRepo, etvRepo, attrRepo, assocRepo)
+
+	now := time.Now()
+	etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "Server", CreatedAt: now, UpdatedAt: now}, nil)
+	etvRepo.On("GetByEntityTypeAndVersion", mock.Anything, "et1", 1).Return(&models.EntityTypeVersion{
+		ID: "v1", EntityTypeID: "et1", Version: 1, CreatedAt: now,
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "a1", Name: "hostname", Type: "string", Ordinal: 0},
+	}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
+	assocRepo.On("ListByTargetEntityType", mock.Anything, "et1").Return([]*models.Association{}, nil)
+
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types/et1/versions/1/snapshot", "", apimw.RoleRO)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.VersionSnapshotResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Len(t, resp.Attributes, 3) // 2 system + 1 custom
+	assert.Equal(t, "name", resp.Attributes[0].Name)
+	assert.Equal(t, "string", resp.Attributes[0].Type)
+	assert.Equal(t, true, resp.Attributes[0].System)
+	assert.Equal(t, true, resp.Attributes[0].Required)
+	assert.Equal(t, -2, resp.Attributes[0].Ordinal)
+}
+
+// T-18.08: Version snapshot prepends Description system attr
+func TestT18_08_SnapshotSystemAttrDescription(t *testing.T) {
+	etRepo := new(mocks.MockEntityTypeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	assocRepo := new(mocks.MockAssociationRepo)
+	e := setupTestServer(etRepo, etvRepo, attrRepo, assocRepo)
+
+	now := time.Now()
+	etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "Server", CreatedAt: now, UpdatedAt: now}, nil)
+	etvRepo.On("GetByEntityTypeAndVersion", mock.Anything, "et1", 1).Return(&models.EntityTypeVersion{
+		ID: "v1", EntityTypeID: "et1", Version: 1, CreatedAt: now,
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
+	assocRepo.On("ListByTargetEntityType", mock.Anything, "et1").Return([]*models.Association{}, nil)
+
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types/et1/versions/1/snapshot", "", apimw.RoleRO)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.VersionSnapshotResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Len(t, resp.Attributes, 2) // only system attrs
+	assert.Equal(t, "description", resp.Attributes[1].Name)
+	assert.Equal(t, false, resp.Attributes[1].Required)
+	assert.Equal(t, true, resp.Attributes[1].System)
+	assert.Equal(t, -1, resp.Attributes[1].Ordinal)
+}
+
+// T-18.09: Custom attrs in snapshot retain original ordinals
+func TestT18_09_SnapshotCustomOrdinals(t *testing.T) {
+	etRepo := new(mocks.MockEntityTypeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	assocRepo := new(mocks.MockAssociationRepo)
+	e := setupTestServer(etRepo, etvRepo, attrRepo, assocRepo)
+
+	now := time.Now()
+	etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "Server", CreatedAt: now, UpdatedAt: now}, nil)
+	etvRepo.On("GetByEntityTypeAndVersion", mock.Anything, "et1", 1).Return(&models.EntityTypeVersion{
+		ID: "v1", EntityTypeID: "et1", Version: 1, CreatedAt: now,
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "a1", Name: "hostname", Type: "string", Ordinal: 0},
+		{ID: "a2", Name: "port", Type: "number", Ordinal: 1},
+	}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
+	assocRepo.On("ListByTargetEntityType", mock.Anything, "et1").Return([]*models.Association{}, nil)
+
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types/et1/versions/1/snapshot", "", apimw.RoleRO)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.VersionSnapshotResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Len(t, resp.Attributes, 4)
+	assert.Equal(t, 0, resp.Attributes[2].Ordinal) // hostname
+	assert.Equal(t, 1, resp.Attributes[3].Ordinal) // port
+	assert.Equal(t, false, resp.Attributes[2].System)
 }

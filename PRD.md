@@ -58,9 +58,11 @@ All entities share a set of **common attributes**:
 | Attribute   | Description |
 |-------------|-------------|
 | ID          | System-calculated unique identifier |
-| Name        | Unique within scope (global for top-level entities, within parent for contained entities) |
-| Description | Free-text description |
+| Name        | **Required.** Unique within scope (global for top-level entities, within parent for contained entities) |
+| Description | **Optional.** Free-text description |
 | Version     | Auto-incremented on mutation |
+
+**System attributes in API responses:** The common attributes Name (required) and Description (optional) are surfaced as **system attributes** in all API responses — attribute lists, version snapshots, instance responses, and UML diagrams. They carry a `system: true` marker that distinguishes them from user-defined custom attributes. Name is marked as required; Description is optional. System attributes are always present, always appear first in attribute lists, and cannot be created, renamed, or deleted by users. Custom attribute names "name" and "description" are reserved and rejected on creation to prevent conflicts. This is implemented via API-level merge (Approach B from TD-22): common attributes remain as fields on `EntityInstance` in the database, and the API layer injects synthetic attribute entries into responses.
 
 Each entity type defines additional **custom attributes** via the meta configuration. Each custom attribute has:
 
@@ -239,7 +241,7 @@ The meta operations UI is the primary workspace for Admins to define and manage 
 **Entity type detail/edit view**
 - Shows the full definition of an entity type: name, description, version, all custom attributes, and all associations.
 - Admin can edit name and description. Changes auto-save to the database.
-- Shows a read-only list of common attributes (ID, Name, Description, Version) for reference.
+- System attributes (Name, Description) appear inline in the attribute list with a "System" badge. They cannot be edited, renamed, or deleted.
 - Provides a version history panel showing all previous versions of this entity type, with the ability to view (read-only) any past version.
 - When viewing a past version, the Admin can use it as the source for a copy operation.
 
@@ -256,14 +258,15 @@ The meta operations UI is the primary workspace for Admins to define and manage 
 #### 6.1.2 Attribute Management
 
 **Attribute list within entity type**
-- The entity type detail view shows all custom attributes in an ordered list.
+- The entity type detail view shows all attributes (system and custom) in an ordered list.
+- System attributes (Name, Description) appear first with a "System" badge and cannot be edited, removed, or reordered.
 - Each attribute displays: name, description, type (string/number/enum name), and whether it is required.
-- Attributes can be reordered (drag-and-drop or move up/down controls).
+- Custom attributes can be reordered (drag-and-drop or move up/down controls).
 
 **Add attribute**
 - Inline form or dialog to add a new attribute: name (required), description (optional), type (required — dropdown of string, number, or existing enums).
 - For enum types, the dropdown lists all centrally-defined enums by name. The Admin can also create a new enum inline (see 6.1.4).
-- Validation: attribute name must be unique within the entity type.
+- Validation: attribute name must be unique within the entity type. Names "name" and "description" are reserved for system attributes and rejected.
 
 **Edit attribute**
 - Admin can modify an attribute's name, description, or type.
@@ -508,6 +511,7 @@ Acceptance Criteria:
 - Admin can create a new entity type via the Meta API or UI by specifying a name, description, and zero or more custom attributes.
 - The entity type name must be unique within the catalog.
 - Each custom attribute must have a name, description, and type (string, number, or enum).
+- Every entity type automatically includes system attributes: Name (required) and Description (optional). These are visible in all views (attribute lists, diagrams, instance modals). Custom attributes named "name" or "description" are rejected to prevent conflicts with system attributes.
 - The new entity type is created at version 1.
 - After creation, entity instances of the new type can be created via the Operational API.
 - RO and RW users cannot create entity types; the API returns a 403.
@@ -702,7 +706,7 @@ As an RW user, I want to validate all entity instances in a catalog against the 
 
 Acceptance Criteria:
 - RW (and above) users can trigger validation. RO users cannot.
-- Validation checks: required attributes have values, attribute values match their type, mandatory associations are satisfied (cardinality `1` or `1..n`), containment hierarchy is consistent.
+- Validation checks: required attributes have values, attribute values match their type, mandatory associations are satisfied (cardinality `1` or `1..n`), containment hierarchy is consistent, and the Name system attribute is non-empty for all instances.
 - Validation returns a list of errors (entity name, field, violation) — not just pass/fail.
 - Validation status is updated to `valid` (no errors) or `invalid` (errors found).
 - Any subsequent data change resets the status to `draft`.
@@ -724,7 +728,7 @@ Acceptance Criteria:
 - Attribute values are validated against the attribute type (string, number, enum value from allowed list), but missing optional attributes are allowed (draft mode).
 - The instance is created at version 1 with a system-calculated ID.
 - RO users cannot create instances; the API returns a 403.
-- The response includes the instance with resolved attribute values (attribute name, type, and value — not just raw IDs).
+- The response includes the instance with resolved attribute values (attribute name, type, and value — not just raw IDs). System attributes — Name (required) and Description (optional) — are included in the attribute list with `system: true`, alongside custom attributes.
 - The API URL uses the entity type name: `POST /api/data/v1/catalogs/{catalog-name}/{entity-type-name}`.
 - Any data mutation to instances in a catalog resets the catalog's validation status to `draft`.
 
@@ -933,7 +937,7 @@ As an Admin, I want a detail view for each entity type where I can see and edit 
 
 Acceptance Criteria:
 - The detail view shows: entity type name, description, current version, all custom attributes (with type and description), and all associations (with type and direction).
-- Common attributes (ID, Name, Description, Version) are shown in a read-only section for reference.
+- System attributes (Name, Description) appear inline in the attribute list with a `system` indicator. They cannot be deleted or renamed by users.
 - Admin can edit the name and description inline. Changes are saved to the database on explicit save.
 - The view provides entry points for adding/editing/removing attributes and associations (see US-28, US-31).
 - If the entity type is part of a production catalog version and the user is not Super Admin, all edit controls are disabled with a message explaining the restriction.
@@ -948,10 +952,11 @@ As an Admin, I want to add, edit, and remove attributes on an entity type throug
 
 Acceptance Criteria:
 - Admin can add a new attribute via an inline form or dialog, specifying: name (required), description (optional), and type (string, number, or enum — selected from a dropdown of existing enums).
-- Attribute names are validated for uniqueness within the entity type before submission. Duplicate names show an inline error.
+- Attribute names are validated for uniqueness within the entity type before submission. Duplicate names show an inline error. Names "name" and "description" are reserved for system attributes and rejected.
 - Admin can edit an existing attribute's name, description, or type.
 - Admin can remove an attribute. A confirmation dialog warns that this will increment the entity type version.
-- Attributes can be reordered (drag-and-drop or move up/down controls).
+- System attributes (Name, Description) cannot be edited, removed, or reordered. The UI disables these controls for system attributes.
+- Custom attributes can be reordered (drag-and-drop or move up/down controls).
 - When selecting enum as the type, the Admin can create a new enum inline without leaving the page (links to US-33).
 
 ---
@@ -964,7 +969,8 @@ As an Admin, I want to browse other entity types and copy selected attributes to
 Acceptance Criteria:
 - A picker/dialog allows the Admin to browse all entity types and their attributes.
 - The picker shows each attribute's name, description, and type for informed selection.
-- Admin can select one or more attributes to copy.
+- System attributes (Name, Description) are excluded from the copy picker since they already exist on all entity types.
+- Admin can select one or more custom attributes to copy.
 - Attributes that conflict with existing attributes on the target (same name) are shown as disabled with a conflict indicator.
 - On confirmation, selected attributes are added to the current entity type.
 - The target entity type version is incremented.
@@ -1327,7 +1333,8 @@ Items where the current implementation diverges from the intended behavior descr
 | TD-39 | CopyCatalog sequential instance creation doesn't scale | `CopyCatalog` creates instances one at a time via N individual `instRepo.Create` calls, plus N `GetCurrentValues` and N `GetForwardRefs` calls. For catalogs with 1000+ instances this is slow. | Add `CreateBatch` method to `EntityInstanceRepository` that inserts multiple instances in a single query. Similarly batch `SetValues` and link creation. Low priority — catalogs currently have <100 instances. |
 | TD-40 | `SyncCR` uses unstructured logging | `SyncCR` in `catalog_service.go` uses `log.Printf("warning: ...")` (Go's default logger). In production this produces unstructured text logs that are hard to filter and correlate in centralized logging systems. | Replace `log.Printf` with structured logging (e.g., `slog.Warn` or a project-standard logger) that includes catalog name, error, and operation context as structured fields. Apply the same fix to any other `log.Printf` calls in the codebase. |
 | TD-41 | Show entity description in table views | The entity type list, catalog list, and BOM (catalog version pins) tables do not show the description column. Users must click into the detail page to see what an entity type, catalog, or pinned entity type is for. | Add a "Description" column to: (1) Entity type list page table, (2) Catalog list page table, (3) Catalog version detail BOM tab pins table. The description should be truncated with ellipsis if too long (e.g., max 80 chars in the cell). |
-| **TD-22** | **[CRITICAL] Common attributes as schema-level attributes** | Common attributes (Name, Description) are fields on `EntityInstance` but are NOT represented as `Attribute` records in the entity type schema. They are invisible in attribute lists, diagrams, and BOM modals. If an entity type manually creates custom attributes named `name`/`description`, the create instance modal shows duplicate fields. Additionally, catalog validation does not check that the `Name` common field is non-empty — a catalog with an empty-named instance passes validation as `valid`, which violates the Name field's required semantics. | **Approach A (DB-level):** Make common attributes into real `Attribute` records: (1) Auto-create them when an entity type is created, marked with a `system: true` flag. (2) Prevent deletion of system attributes. (3) Show them in all views — attribute tabs, diagrams, BOM modals, create/edit modals. (4) Remove the hardcoded Name/Description fields from the instance create/edit modals — use the schema attributes instead. (5) Design for extensibility: future common attributes like `Version` (auto-incremented) and `State` (enum lifecycle) should follow the same pattern. **Approach B (API-level merge):** Keep common attributes as hardcoded fields on `EntityInstance` (no DB schema change). The API layer merges them into the dynamic attribute list when returning responses — injecting synthetic `name`, `description`, `version` entries at the top of the attributes array with a `system: true` marker. The UI renders all attributes uniformly from this merged list and prevents editing/removing system-flagged ones. Meta API endpoints (attribute list, version snapshot, diagram data) similarly inject common attributes into their responses. Simpler to implement (no migration, no COW implications), but common attributes are never real DB records — they exist only as API-level projections. Prevents the duplicate-fields bug by having a single source of truth for what attributes exist (the merged list). |
+| **TD-42** | **[IMPORTANT] Add Contained Instance modal missing custom attributes** | The "Add Contained Instance" modal in the operational `CatalogDetailPage` only shows Name and Description fields. It does not render the contained entity type's custom attributes (string, number, enum fields from the schema). Users must create the contained instance with only a name, then edit it separately to fill in attribute values. The root-level Create Instance modal correctly renders all schema attributes (system + custom). | Load the contained entity type's schema attributes (via snapshot or attribute list) when the child type is selected in the modal. Render attribute fields using the same pattern as the root-level Create Instance modal — system attrs map to top-level request fields, custom attrs map to the `attributes` map. Pass the attributes in the `POST /{parent-type}/{parent-id}/{child-type}` request body. The API already supports attributes on contained instance creation (`CreateContainedInstance` accepts `attrInput`). |
+| ~~TD-22~~ | ~~[CRITICAL] Common attributes as schema-level attributes~~ | **RESOLVED (Approach B — API-level merge).** Common attributes — Name (required) and Description (optional) — are injected as synthetic system attributes (`system: true`) into all API responses: instance detail, attribute lists, version snapshots, and UML diagrams. The UI renders them uniformly alongside custom attributes. System attributes cannot be created, edited, renamed, or deleted by users. Custom attribute names "name"/"description" are rejected. Copy-attributes excludes system attributes. Catalog validation checks Name is non-empty. No DB schema changes — common attributes remain as fields on `EntityInstance`, with the API layer handling the merge. |
 
 ## 12. Future Features
 
@@ -1389,14 +1396,36 @@ A future edit-from-CV workflow could:
 
 ### FF-4: Edit Catalog Version
 
-Catalog versions are currently immutable after creation — pins (entity type version selections) cannot be changed, and there is no way to add or remove entity types from an existing CV. A future enhancement would allow editing a catalog version's pins.
+Catalog versions are currently immutable after creation — pins (entity type version selections) cannot be changed, and there is no way to add or remove entity types from an existing CV. This forces users to delete and recreate CVs when entity types evolve, which is disruptive when catalogs already reference the CV.
 
-**Potential capabilities (details TBD):**
-- Add or remove entity type pins from an existing catalog version
-- Change the pinned version for an entity type (e.g., upgrade from V2 to V3)
-- Possibly restricted by lifecycle stage (e.g., only development-stage CVs are editable)
+**Capabilities:**
+- **Add entity type pin** — pin a new entity type (at a specific version) to an existing CV
+- **Remove entity type pin** — unpin an entity type from the CV
+- **Change pinned version** — upgrade or downgrade the pinned version for an entity type (e.g., V2 → V3)
 
-**Decision:** Deferred. Requirements not yet clear. Revisit when usage patterns emerge.
+**Editing constraints based on CV usage:**
+
+| CV Usage | Allowed Changes |
+|----------|----------------|
+| **Unused** (no catalogs reference it) | All changes — add, remove, change pins freely |
+| **Used by draft-only catalogs** (all catalogs are unpublished with status `draft` or `invalid`) | All changes with warnings — removing an entity type that has instances in a catalog resets that catalog's validation status to `draft`. The UI warns but allows the operation. |
+| **Used by published catalogs** (at least one catalog is published) | **Non-destructive changes only:** (1) Add new entity type pins (new types have no instances yet, so no data impact). (2) Change pinned version to a newer version IF the new version is backward-compatible — meaning it only adds optional attributes, adds optional associations (`0..n` cardinality), or changes descriptions. Renaming attributes, removing attributes, changing types, adding required attributes/associations, or removing entity type pins are **blocked** with a clear error explaining why. |
+
+**Backward-compatible version change detection:** When upgrading a pin from V_old to V_new, the system computes a version diff (same logic as the existing version comparison feature) and classifies each change as compatible or breaking:
+- **Compatible:** added optional attribute, added optional association (`0..n`), changed attribute/association description, changed entity type description
+- **Breaking:** removed attribute, renamed attribute, changed attribute type, added required attribute, added mandatory association (`1` or `1..n` cardinality), removed association, changed association type or target
+
+**API:**
+- `PUT /api/meta/v1/catalog-versions/:id/pins` — replace the full pin set (validates constraints before applying)
+- `POST /api/meta/v1/catalog-versions/:id/pins` — add a single pin
+- `DELETE /api/meta/v1/catalog-versions/:id/pins/:entity-type-id` — remove a pin
+- `PUT /api/meta/v1/catalog-versions/:id/pins/:entity-type-id` — change pinned version for one entity type
+
+**UI:**
+- CV detail page gains an "Edit Pins" mode with add/remove/upgrade controls
+- When upgrading a pin version, a diff preview shows what changed (reuses existing version diff component)
+- Breaking changes on published CVs show a blocked indicator with explanation
+- Removing a pin that has catalog instances shows a warning with affected catalog names and instance counts
 
 ### FF-5: Configurable Diagram Layout
 

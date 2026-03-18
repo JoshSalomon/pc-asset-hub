@@ -115,7 +115,7 @@ func TestT11_35_CreateInstance(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, "my-inst", resp["name"])
 	attrs := resp["attributes"].([]any)
-	assert.Len(t, attrs, 1)
+	assert.Len(t, attrs, 3) // 2 system + 1 custom
 }
 
 // T-11.36: POST nonexistent catalog → 404
@@ -226,7 +226,7 @@ func TestT11_42_GetInstance(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, "inst-a", resp["name"])
 	attrs := resp["attributes"].([]any)
-	assert.Len(t, attrs, 1)
+	assert.Len(t, attrs, 3) // 2 system + 1 custom
 }
 
 // T-11.43: GET nonexistent instance → 404
@@ -910,4 +910,175 @@ func TestSetParent_EmptyParentType(t *testing.T) {
 	rec := doInstanceRequest(e, http.MethodPut, "/api/data/v1/catalogs/my-catalog/model/i1/parent", body, apimw.RoleRW)
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Contains(t, rec.Body.String(), "parent_type is required")
+}
+
+// === TD-22: System Attributes — Instance DTO Injection ===
+
+// T-18.01: instanceDetailToDTO prepends Name system attr
+func TestT18_01_SystemAttr_Name(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.mockPinResolution()
+
+	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
+		ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Name: "my-inst", Description: "desc", Version: 1,
+	}, nil)
+	m.iavRepo.On("GetCurrentValues", mock.Anything, "i1").Return([]*models.InstanceAttributeValue{
+		{AttributeID: "a1", ValueString: "host-a"},
+	}, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model/i1", "", apimw.RoleRO)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	attrs := resp["attributes"].([]any)
+	require.True(t, len(attrs) >= 2, "expected at least 2 attrs (system), got %d", len(attrs))
+	nameAttr := attrs[0].(map[string]any)
+	assert.Equal(t, "name", nameAttr["name"])
+	assert.Equal(t, "string", nameAttr["type"])
+	assert.Equal(t, true, nameAttr["system"])
+	assert.Equal(t, true, nameAttr["required"])
+	assert.Equal(t, "my-inst", nameAttr["value"])
+}
+
+// T-18.02: instanceDetailToDTO prepends Description system attr
+func TestT18_02_SystemAttr_Description(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.mockPinResolution()
+
+	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
+		ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Name: "my-inst", Description: "my-desc", Version: 1,
+	}, nil)
+	m.iavRepo.On("GetCurrentValues", mock.Anything, "i1").Return([]*models.InstanceAttributeValue{}, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model/i1", "", apimw.RoleRO)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	attrs := resp["attributes"].([]any)
+	require.True(t, len(attrs) >= 2)
+	descAttr := attrs[1].(map[string]any)
+	assert.Equal(t, "description", descAttr["name"])
+	assert.Equal(t, "string", descAttr["type"])
+	assert.Equal(t, true, descAttr["system"])
+	assert.Equal(t, false, descAttr["required"])
+	assert.Equal(t, "my-desc", descAttr["value"])
+}
+
+// T-18.04: Custom attributes follow system attrs and have system=false
+func TestT18_04_CustomAttrsAfterSystem(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.mockPinResolution()
+
+	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
+		ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Name: "inst", Version: 1,
+	}, nil)
+	m.iavRepo.On("GetCurrentValues", mock.Anything, "i1").Return([]*models.InstanceAttributeValue{
+		{AttributeID: "a1", ValueString: "host-val"},
+	}, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model/i1", "", apimw.RoleRO)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	attrs := resp["attributes"].([]any)
+	require.Len(t, attrs, 3) // 2 system + 1 custom
+	customAttr := attrs[2].(map[string]any)
+	assert.Equal(t, "hostname", customAttr["name"])
+	assert.Equal(t, false, customAttr["system"])
+}
+
+// T-18.05: Instance with zero custom attrs still has 2 system attrs
+func TestT18_05_ZeroCustomAttrsHasSystemAttrs(t *testing.T) {
+	e, m := setupInstanceServer()
+	// Use a pin resolution with no custom attrs
+	m.catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	m.etRepo.On("GetByName", mock.Anything, "model").Return(&models.EntityType{ID: "et1", Name: "model"}, nil)
+	m.pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	m.etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	m.attrRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Attribute{}, nil)
+
+	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
+		ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Name: "inst", Version: 1,
+	}, nil)
+	m.iavRepo.On("GetCurrentValues", mock.Anything, "i1").Return([]*models.InstanceAttributeValue{}, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model/i1", "", apimw.RoleRO)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	attrs := resp["attributes"].([]any)
+	assert.Len(t, attrs, 2) // only system attrs
+}
+
+// S1: Custom attrs include Required flag from schema
+func TestSystemAttrs_CustomAttrRequiredFlag(t *testing.T) {
+	e, m := setupInstanceServer()
+	// Use a pin with a required attribute
+	m.catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	m.etRepo.On("GetByName", mock.Anything, "model").Return(&models.EntityType{ID: "et1", Name: "model"}, nil)
+	m.pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	m.etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	m.attrRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Attribute{
+		{ID: "a1", Name: "hostname", Type: models.AttributeTypeString, Required: true},
+	}, nil)
+
+	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
+		ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Name: "inst", Version: 1,
+	}, nil)
+	m.iavRepo.On("GetCurrentValues", mock.Anything, "i1").Return([]*models.InstanceAttributeValue{
+		{AttributeID: "a1", ValueString: "host-val"},
+	}, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model/i1", "", apimw.RoleRO)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	attrs := resp["attributes"].([]any)
+	// Third attr (hostname) should have required=true
+	customAttr := attrs[2].(map[string]any)
+	assert.Equal(t, "hostname", customAttr["name"])
+	assert.Equal(t, true, customAttr["required"])
+}
+
+// T-18.06: System attrs injected in list instances response
+func TestT18_06_SystemAttrsInListResponse(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.mockPinResolution()
+
+	m.instRepo.On("List", mock.Anything, "et1", "cat1", mock.AnythingOfType("models.ListParams")).Return([]*models.EntityInstance{
+		{ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Name: "inst-a", Version: 1},
+	}, 1, nil)
+	m.iavRepo.On("GetCurrentValues", mock.Anything, "i1").Return([]*models.InstanceAttributeValue{
+		{AttributeID: "a1", ValueString: "host-a"},
+	}, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model", "", apimw.RoleRO)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	items := resp["items"].([]any)
+	require.Len(t, items, 1)
+	item := items[0].(map[string]any)
+	attrs := item["attributes"].([]any)
+	require.Len(t, attrs, 3) // 2 system + 1 custom
+	assert.Equal(t, "name", attrs[0].(map[string]any)["name"])
+	assert.Equal(t, "inst-a", attrs[0].(map[string]any)["value"])
 }

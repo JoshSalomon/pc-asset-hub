@@ -663,3 +663,46 @@ test('catalogs.replace calls correct URL and body', async () => {
     }),
   )
 })
+
+// T-18.45: getSnapshot client function returns system attrs in response
+test('T-18.45: versions.snapshot returns system attrs', async () => {
+  const snapshotData = {
+    entity_type: { id: 'et-1', name: 'Model' },
+    version: { id: 'v1', version: 1 },
+    attributes: [
+      { id: 'sys-name', name: 'Name', type: 'string', ordinal: -2, required: true, system: true },
+      { id: 'sys-desc', name: 'Description', type: 'string', ordinal: -1, required: false, system: true },
+      { id: 'a1', name: 'hostname', type: 'string', ordinal: 0, required: false },
+    ],
+    associations: [],
+  }
+  mockFetch.mockReturnValue(jsonResponse(snapshotData))
+
+  const result = await api.versions.snapshot('et-1', 1)
+  expect(result.attributes).toHaveLength(3)
+  expect(result.attributes[0].system).toBe(true)
+  expect(result.attributes[0].name).toBe('Name')
+  expect(result.attributes[1].system).toBe(true)
+  expect(result.attributes[1].name).toBe('Description')
+  expect(result.attributes[2].system).toBeUndefined()
+})
+
+// T-18.46: listAttributes client function returns system attrs in response
+test('T-18.46: attributes.list returns system attrs', async () => {
+  const attrsData = {
+    items: [
+      { id: 'sys-name', name: 'Name', description: 'Instance name', type: 'string', ordinal: -2, required: true, system: true },
+      { id: 'sys-desc', name: 'Description', description: 'Instance description', type: 'string', ordinal: -1, required: false, system: true },
+      { id: 'a1', name: 'hostname', description: '', type: 'string', ordinal: 0, required: false },
+    ],
+    total: 3,
+  }
+  mockFetch.mockReturnValue(jsonResponse(attrsData))
+
+  const result = await api.attributes.list('et-1')
+  expect(result.items).toHaveLength(3)
+  expect(result.items[0].system).toBe(true)
+  expect(result.items[0].name).toBe('Name')
+  expect(result.items[1].system).toBe(true)
+  expect(result.items[2].system).toBeUndefined()
+})

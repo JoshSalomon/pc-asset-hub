@@ -572,8 +572,8 @@ export default function EntityTypeDetailPage({ role }: Props) {
                 </Thead>
                 <Tbody>
                   {attributes.map((attr, idx) => (
-                    <Tr key={attr.id}>
-                      <Td>{attr.name}{attr.required ? ' *' : ''}</Td>
+                    <Tr key={attr.id || attr.name}>
+                      <Td>{attr.name}{attr.required ? ' *' : ''}{attr.system ? <>{' '}<Label color="blue" isCompact>System</Label></> : ''}</Td>
                       <Td>
                         <Label color={attr.type === 'enum' ? 'purple' : attr.type === 'number' ? 'blue' : 'grey'}>
                           {attr.type === 'enum' && attr.enum_id ? `enum (${enums.find((en) => en.id === attr.enum_id)?.name || attr.enum_id.slice(0, 8)})` : attr.type}
@@ -583,26 +583,30 @@ export default function EntityTypeDetailPage({ role }: Props) {
                       <Td>{attr.ordinal}</Td>
                       {canEdit && (
                         <Td>
-                          <Button
-                            variant="plain"
-                            size="sm"
-                            onClick={() => handleReorderAttribute(idx, 'up')}
-                            isDisabled={idx === 0}
-                            aria-label="Move up"
-                          >
-                            <ArrowUpIcon />
-                          </Button>
-                          <Button
-                            variant="plain"
-                            size="sm"
-                            onClick={() => handleReorderAttribute(idx, 'down')}
-                            isDisabled={idx === attributes.length - 1}
-                            aria-label="Move down"
-                          >
-                            <ArrowDownIcon />
-                          </Button>
-                          <Button variant="secondary" size="sm" onClick={() => openEditAttr(attr)} style={{ marginRight: '0.25rem' }}>Edit</Button>
-                          <Button variant="danger" size="sm" onClick={() => handleRemoveAttribute(attr.name)}>Remove</Button>
+                          {!attr.system && (
+                            <>
+                              <Button
+                                variant="plain"
+                                size="sm"
+                                onClick={() => handleReorderAttribute(idx, 'up')}
+                                isDisabled={idx === 0 || attributes[idx - 1]?.system}
+                                aria-label="Move up"
+                              >
+                                <ArrowUpIcon />
+                              </Button>
+                              <Button
+                                variant="plain"
+                                size="sm"
+                                onClick={() => handleReorderAttribute(idx, 'down')}
+                                isDisabled={idx === attributes.length - 1 || attributes[idx + 1]?.system}
+                                aria-label="Move down"
+                              >
+                                <ArrowDownIcon />
+                              </Button>
+                              <Button variant="secondary" size="sm" onClick={() => openEditAttr(attr)} style={{ marginRight: '0.25rem' }}>Edit</Button>
+                              <Button variant="danger" size="sm" onClick={() => handleRemoveAttribute(attr.name)}>Remove</Button>
+                            </>
+                          )}
                         </Td>
                       )}
                     </Tr>
@@ -1155,7 +1159,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
                 </Tr>
               </Thead>
               <Tbody>
-                {sourceAttributes.map((sa) => {
+                {sourceAttributes.filter((sa) => !sa.system).map((sa) => {
                   const conflict = attributes.some((a) => a.name === sa.name)
                   return (
                     <Tr key={sa.id}>

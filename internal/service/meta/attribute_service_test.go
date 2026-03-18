@@ -549,3 +549,104 @@ func TestTE141_EditAttributeChangeRequired(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, newVer.Version)
 }
+
+// === TD-22: System Attributes — Copy Attributes Exclusion ===
+
+// T-18.19: CopyAttributes with "name" in list silently skips it
+func TestT18_19_CopySkipsSystemName(t *testing.T) {
+	svc, attrRepo, etvRepo, assocRepo, _ := setupAttrService()
+
+	srcV1 := &models.EntityTypeVersion{ID: "src-v1", EntityTypeID: "src-et", Version: 1}
+	tgtV1 := &models.EntityTypeVersion{ID: "tgt-v1", EntityTypeID: "tgt-et", Version: 1}
+
+	etvRepo.On("GetByEntityTypeAndVersion", mock.Anything, "src-et", 1).Return(srcV1, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "tgt-et").Return(tgtV1, nil)
+
+	attrRepo.On("ListByVersion", mock.Anything, "src-v1").Return([]*models.Attribute{
+		{Name: "hostname", Type: models.AttributeTypeString},
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "tgt-v1").Return([]*models.Attribute{}, nil)
+
+	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, "tgt-v1", mock.AnythingOfType("string")).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, "tgt-v1", mock.AnythingOfType("string")).Return(nil)
+	attrRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Attribute")).Return(nil)
+
+	// Request both "name" (system) and "hostname" (custom) — only hostname should be copied
+	newVer, err := svc.CopyAttributesFromType(context.Background(), "tgt-et", "src-et", 1, []string{"name", "hostname"})
+	require.NoError(t, err)
+	assert.Equal(t, 2, newVer.Version)
+	// Verify Create was called exactly once — for "hostname", not "name"
+	attrRepo.AssertNumberOfCalls(t, "Create", 1)
+}
+
+// T-18.20: CopyAttributes with "description" in list silently skips it
+func TestT18_20_CopySkipsSystemDescription(t *testing.T) {
+	svc, attrRepo, etvRepo, assocRepo, _ := setupAttrService()
+
+	srcV1 := &models.EntityTypeVersion{ID: "src-v1", EntityTypeID: "src-et", Version: 1}
+	tgtV1 := &models.EntityTypeVersion{ID: "tgt-v1", EntityTypeID: "tgt-et", Version: 1}
+
+	etvRepo.On("GetByEntityTypeAndVersion", mock.Anything, "src-et", 1).Return(srcV1, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "tgt-et").Return(tgtV1, nil)
+
+	attrRepo.On("ListByVersion", mock.Anything, "src-v1").Return([]*models.Attribute{
+		{Name: "hostname", Type: models.AttributeTypeString},
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "tgt-v1").Return([]*models.Attribute{}, nil)
+
+	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, "tgt-v1", mock.AnythingOfType("string")).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, "tgt-v1", mock.AnythingOfType("string")).Return(nil)
+	attrRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Attribute")).Return(nil)
+
+	newVer, err := svc.CopyAttributesFromType(context.Background(), "tgt-et", "src-et", 1, []string{"description", "hostname"})
+	require.NoError(t, err)
+	assert.Equal(t, 2, newVer.Version)
+	attrRepo.AssertNumberOfCalls(t, "Create", 1)
+}
+
+// T-18.21: CopyAttributes with only system names results in no new attrs
+func TestT18_21_CopyOnlySystemNamesNoOp(t *testing.T) {
+	svc, attrRepo, etvRepo, _, _ := setupAttrService()
+
+	srcV1 := &models.EntityTypeVersion{ID: "src-v1", EntityTypeID: "src-et", Version: 1}
+
+	etvRepo.On("GetByEntityTypeAndVersion", mock.Anything, "src-et", 1).Return(srcV1, nil)
+
+	attrRepo.On("ListByVersion", mock.Anything, "src-v1").Return([]*models.Attribute{}, nil)
+
+	// Requesting only system names — should return error "attribute not found" since "name" isn't a real attr
+	_, err := svc.CopyAttributesFromType(context.Background(), "tgt-et", "src-et", 1, []string{"name", "description"})
+	// After filtering system names, the list is empty. The service should handle this gracefully.
+	// Current behavior: it would try to find attrs named "name"/"description" in source and fail.
+	// With the fix: system names are skipped, and if nothing remains, we should get an error or no-op.
+	assert.Error(t, err) // no custom attrs to copy
+}
+
+// === I5: Service-level reserved name guard ===
+
+// AddAttribute rejects reserved name "name" at service level
+func TestAddAttribute_RejectsReservedName(t *testing.T) {
+	svc, _, _, _, _ := setupAttrService()
+	_, err := svc.AddAttribute(context.Background(), "et1", "name", "", models.AttributeTypeString, "", false)
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+// AddAttribute rejects reserved name "description" at service level
+func TestAddAttribute_RejectsReservedDescription(t *testing.T) {
+	svc, _, _, _, _ := setupAttrService()
+	_, err := svc.AddAttribute(context.Background(), "et1", "description", "", models.AttributeTypeString, "", false)
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+// EditAttribute rejects renaming to reserved name at service level
+func TestEditAttribute_RejectsRenameToReserved(t *testing.T) {
+	svc, _, _, _, _ := setupAttrService()
+	reservedName := "name"
+	_, err := svc.EditAttribute(context.Background(), "et1", "hostname", &reservedName, nil, nil, nil, nil)
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+}

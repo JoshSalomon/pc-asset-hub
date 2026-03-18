@@ -1,13 +1,16 @@
 package meta_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
+	"github.com/project-catalyst/pc-asset-hub/internal/api/dto"
 	apimeta "github.com/project-catalyst/pc-asset-hub/internal/api/meta"
 	apimw "github.com/project-catalyst/pc-asset-hub/internal/api/middleware"
 	domainerrors "github.com/project-catalyst/pc-asset-hub/internal/domain/errors"
@@ -271,6 +274,32 @@ func TestTE16_EditAttributeValid(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), `"version":2`)
 }
 
+// Coverage: Edit with type change covers req.Type != nil branch
+func TestEditAttribute_WithTypeChange(t *testing.T) {
+	attrRepo := new(mocks.MockAttributeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	assocRepo := new(mocks.MockAssociationRepo)
+	e := setupAttrServer(attrRepo, etvRepo, assocRepo, nil)
+
+	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(v1, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "a1", Name: "hostname", Type: models.AttributeTypeString, Ordinal: 0},
+	}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("ListByVersion", mock.Anything, mock.MatchedBy(func(id string) bool { return id != "v1" })).Return([]*models.Attribute{
+		{ID: "a1-copy", Name: "hostname", Type: models.AttributeTypeString, Ordinal: 0},
+	}, nil)
+	attrRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/attributes/hostname",
+		`{"type":"number"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
 // T-E.17: PUT /attributes/:name as RO → 403
 func TestTE17_EditAttributeAsRO(t *testing.T) {
 	e := setupAttrServer(nil, nil, nil, nil)
@@ -418,6 +447,145 @@ func TestAttrCopy_EmptyAttributeNames(t *testing.T) {
 	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/attributes/copy",
 		`{"source_entity_type_id":"src","source_version":1,"attribute_names":[]}`, apimw.RoleAdmin)
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// === TD-22: System Attributes in Attribute List ===
+
+// T-18.10: Attribute list prepends Name and Description system attrs
+func TestT18_10_AttrListSystemAttrs(t *testing.T) {
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	e := setupAttrServer(attrRepo, etvRepo, nil, nil)
+
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1"}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "a1", Name: "hostname", Type: "string", Ordinal: 0},
+	}, nil)
+
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types/et1/attributes", "", apimw.RoleRO)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.ListResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, 3, resp.Total) // 2 system + 1 custom
+	items := resp.Items.([]any)
+	nameAttr := items[0].(map[string]any)
+	assert.Equal(t, "name", nameAttr["name"])
+	assert.Equal(t, true, nameAttr["system"])
+	assert.Equal(t, true, nameAttr["required"])
+	descAttr := items[1].(map[string]any)
+	assert.Equal(t, "description", descAttr["name"])
+	assert.Equal(t, true, descAttr["system"])
+	assert.Equal(t, false, descAttr["required"])
+}
+
+// T-18.11: System attrs have correct types and required flags
+func TestT18_11_AttrListSystemTypes(t *testing.T) {
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	e := setupAttrServer(attrRepo, etvRepo, nil, nil)
+
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1"}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types/et1/attributes", "", apimw.RoleRO)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.ListResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, 2, resp.Total) // only system attrs
+	items := resp.Items.([]any)
+	nameAttr := items[0].(map[string]any)
+	assert.Equal(t, "string", nameAttr["type"])
+	assert.Equal(t, float64(-2), nameAttr["ordinal"])
+	descAttr := items[1].(map[string]any)
+	assert.Equal(t, "string", descAttr["type"])
+	assert.Equal(t, float64(-1), descAttr["ordinal"])
+}
+
+// T-18.12: Create attribute with name "name" is rejected
+func TestT18_12_ReservedNameRejected(t *testing.T) {
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	e := setupAttrServer(attrRepo, etvRepo, nil, nil)
+
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/attributes",
+		`{"name":"name","type":"string"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "reserved")
+}
+
+// T-18.13: Create attribute with name "description" is rejected
+func TestT18_13_ReservedDescriptionRejected(t *testing.T) {
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	e := setupAttrServer(attrRepo, etvRepo, nil, nil)
+
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/attributes",
+		`{"name":"description","type":"string"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "reserved")
+}
+
+// T-18.14: Create attribute with name "Name" (uppercase) is allowed
+func TestT18_14_UppercaseNameAllowed(t *testing.T) {
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	assocRepo := new(mocks.MockAssociationRepo)
+	e := setupAttrServer(attrRepo, etvRepo, assocRepo, nil)
+
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
+	attrRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/attributes",
+		`{"name":"Name","type":"string"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
+// T-18.15: Rename attribute to "name" is rejected
+func TestT18_15_RenameToNameRejected(t *testing.T) {
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	e := setupAttrServer(attrRepo, etvRepo, nil, nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/attributes/hostname",
+		`{"name":"name"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "reserved")
+}
+
+// T-18.16: Rename attribute to "description" is rejected
+func TestT18_16_RenameToDescriptionRejected(t *testing.T) {
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	e := setupAttrServer(attrRepo, etvRepo, nil, nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/attributes/hostname",
+		`{"name":"description"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "reserved")
+}
+
+// I3: Remove handler rejects system attribute names
+func TestRemove_RejectsReservedName(t *testing.T) {
+	e := setupAttrServer(nil, nil, nil, nil)
+
+	rec := doRequest(e, http.MethodDelete, "/api/meta/v1/entity-types/et1/attributes/name", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "system attribute")
+}
+
+func TestRemove_RejectsReservedDescription(t *testing.T) {
+	e := setupAttrServer(nil, nil, nil, nil)
+
+	rec := doRequest(e, http.MethodDelete, "/api/meta/v1/entity-types/et1/attributes/description", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "system attribute")
 }
 
 // Coverage: Edit service error (lines 99-102)
