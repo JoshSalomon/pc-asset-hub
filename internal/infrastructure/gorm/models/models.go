@@ -1,7 +1,6 @@
 package models
 
 import (
-	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -473,35 +472,6 @@ func InitDB(db *gorm.DB) error {
 			unnamed[i].Name = n
 			if err := db.Save(&unnamed[i]).Error; err != nil {
 				return err
-			}
-		}
-	}
-
-	// Pre-migration: remove old catalog_version_id column from entity_instances
-	// (replaced by catalog_id). Copy data if catalog_id is empty.
-	if db.Migrator().HasTable(&EntityInstance{}) {
-		var hasBoth int64
-		// Check PostgreSQL
-		db.Raw("SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'entity_instances' AND column_name = 'catalog_version_id'").Scan(&hasBoth)
-		if hasBoth == 0 {
-			// Check SQLite
-			var cols []struct{ Name string }
-			db.Raw("PRAGMA table_info(entity_instances)").Scan(&cols)
-			for _, c := range cols {
-				if c.Name == "catalog_version_id" {
-					hasBoth = 1
-					break
-				}
-			}
-		}
-		if hasBoth > 0 {
-			// Copy data from old column to new column if needed
-			if err := db.Exec("UPDATE entity_instances SET catalog_id = catalog_version_id WHERE catalog_id IS NULL OR catalog_id = ''").Error; err != nil {
-				return fmt.Errorf("migration: copy catalog_version_id to catalog_id: %w", err)
-			}
-			// Drop old column
-			if err := db.Exec("ALTER TABLE entity_instances DROP COLUMN catalog_version_id").Error; err != nil {
-				return fmt.Errorf("migration: drop catalog_version_id column: %w", err)
 			}
 		}
 	}
