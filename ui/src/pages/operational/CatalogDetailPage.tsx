@@ -34,6 +34,9 @@ import type { Catalog, CatalogVersionPin, EntityInstance, SnapshotAttribute, Sna
 import { useValidation } from '../../hooks/useValidation'
 import ValidationResults from '../../components/ValidationResults'
 
+const DNS_LABEL_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
+const isValidDnsLabel = (s: string) => DNS_LABEL_RE.test(s)
+
 export default function CatalogDetailPage({ role }: { role: Role }) {
   const { name } = useParams<{ name: string }>()
   const navigate = useNavigate()
@@ -112,6 +115,22 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
   const [parentInstances, setParentInstances] = useState<EntityInstance[]>([])
   const [setParentError, setSetParentError] = useState<string | null>(null)
   const [parentInstSelectOpen, setParentInstSelectOpen] = useState(false)
+
+  // Copy catalog modal
+  const [copyOpen, setCopyOpen] = useState(false)
+  const [copyName, setCopyName] = useState('')
+  const [copyDesc, setCopyDesc] = useState('')
+  const [copyError, setCopyError] = useState<string | null>(null)
+  const [copyLoading, setCopyLoading] = useState(false)
+
+  // Replace catalog modal
+  const [replaceOpen, setReplaceOpen] = useState(false)
+  const [replaceTarget, setReplaceTarget] = useState('')
+  const [replaceArchiveName, setReplaceArchiveName] = useState('')
+  const [replaceError, setReplaceError] = useState<string | null>(null)
+  const [replaceLoading, setReplaceLoading] = useState(false)
+  const [replaceTargetSelectOpen, setReplaceTargetSelectOpen] = useState(false)
+  const [availableCatalogs, setAvailableCatalogs] = useState<Catalog[]>([])
 
   const canWrite = role === 'RW' || role === 'Admin' || role === 'SuperAdmin'
   const isAdmin = role === 'Admin' || role === 'SuperAdmin'
@@ -428,6 +447,8 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
   if (error && !catalog) return <PageSection><Alert variant="danger" title={error} /></PageSection>
   if (!catalog) return <PageSection><Alert variant="warning" title="Catalog not found" /></PageSection>
 
+  const canPublishOrReplace = isAdmin && !catalog.published && catalog.validation_status === 'valid'
+
   return (
     <PageSection>
       <Button variant="link" onClick={() => navigate('/catalogs')} style={{ marginBottom: '1rem' }}>
@@ -463,7 +484,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
             Validate
           </Button>
         )}
-        {isAdmin && !catalog.published && catalog.validation_status === 'valid' && (
+        {canPublishOrReplace && (
           <Button variant="primary" onClick={async () => {
             try { await api.catalogs.publish(catalog.name); await loadCatalog() }
             catch (e) { setError(e instanceof Error ? e.message : 'Failed to publish') }
@@ -477,6 +498,23 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
             catch (e) { setError(e instanceof Error ? e.message : 'Failed to unpublish') }
           }}>
             Unpublish
+          </Button>
+        )}
+        {canWrite && (
+          <Button variant="secondary" onClick={() => { setCopyOpen(true); setCopyName(''); setCopyDesc(''); setCopyError(null) }}>
+            Copy
+          </Button>
+        )}
+        {canPublishOrReplace && (
+          <Button variant="secondary" onClick={async () => {
+            setReplaceError(null); setReplaceTarget(''); setReplaceArchiveName('')
+            try {
+              const res = await api.catalogs.list()
+              setAvailableCatalogs((res.items || []).filter((c: Catalog) => c.name !== catalog.name))
+            } catch { /* ignore */ }
+            setReplaceOpen(true)
+          }}>
+            Replace
           </Button>
         )}
       </div>
@@ -960,6 +998,103 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
         <ModalFooter>
           <Button variant="danger" onClick={handleDelete}>Delete</Button>
           <Button variant="link" onClick={() => { setDeleteTarget(null); setDeleteError(null) }}>Cancel</Button>
+        </ModalFooter>
+      </Modal>
+      {/* Copy Catalog Modal */}
+      <Modal
+        variant={ModalVariant.small}
+        isOpen={copyOpen}
+        onClose={() => { setCopyOpen(false); setCopyError(null) }}
+      >
+        <ModalHeader title="Copy Catalog" />
+        <ModalBody>
+          {copyError && <Alert variant="danger" title={copyError} isInline style={{ marginBottom: '1rem' }} />}
+          <Form>
+            <FormGroup label="New catalog name" isRequired fieldId="copy-name">
+              <TextInput id="copy-name" value={copyName} onChange={(_e, v) => setCopyName(v)}
+                validated={copyName && !isValidDnsLabel(copyName) ? 'error' : 'default'}
+              />
+              {copyName && !isValidDnsLabel(copyName) && (
+                <div style={{ color: '#c9190b', fontSize: '0.875rem', marginTop: '0.25rem' }}>Must be a valid DNS label (lowercase alphanumeric and hyphens)</div>
+              )}
+            </FormGroup>
+            <FormGroup label="Description" fieldId="copy-desc">
+              <TextInput id="copy-desc" value={copyDesc} onChange={(_e, v) => setCopyDesc(v)} />
+            </FormGroup>
+          </Form>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="primary" isDisabled={!copyName || !isValidDnsLabel(copyName) || copyLoading} isLoading={copyLoading} onClick={async () => {
+            setCopyError(null)
+            setCopyLoading(true)
+            try {
+              await api.catalogs.copy({ source: catalog.name, name: copyName, description: copyDesc || undefined })
+              setCopyOpen(false)
+              navigate(`/catalogs/${copyName}`)
+            } catch (e) {
+              setCopyError(e instanceof Error ? e.message : 'Failed to copy catalog')
+            } finally {
+              setCopyLoading(false)
+            }
+          }}>Copy</Button>
+          <Button variant="link" onClick={() => { setCopyOpen(false); setCopyError(null) }}>Cancel</Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Replace Catalog Modal */}
+      <Modal
+        variant={ModalVariant.small}
+        isOpen={replaceOpen}
+        onClose={() => { setReplaceOpen(false); setReplaceError(null) }}
+      >
+        <ModalHeader title="Replace Catalog" />
+        <ModalBody>
+          {replaceError && <Alert variant="danger" title={replaceError} isInline style={{ marginBottom: '1rem' }} />}
+          <Form>
+            <FormGroup label="Target catalog" isRequired fieldId="replace-target">
+              <Select
+                id="replace-target"
+                isOpen={replaceTargetSelectOpen}
+                selected={replaceTarget}
+                onSelect={(_e, val) => { setReplaceTarget(val as string); setReplaceTargetSelectOpen(false) }}
+                onOpenChange={setReplaceTargetSelectOpen}
+                toggle={(ref: React.Ref<MenuToggleElement>) => (
+                  <MenuToggle ref={ref} onClick={() => setReplaceTargetSelectOpen(!replaceTargetSelectOpen)} isExpanded={replaceTargetSelectOpen} style={{ width: '100%' }}>
+                    {replaceTarget || 'Select target catalog...'}
+                  </MenuToggle>
+                )}
+              >
+                {availableCatalogs.map(c => (
+                  <SelectOption key={c.name} value={c.name}>{c.name}</SelectOption>
+                ))}
+              </Select>
+            </FormGroup>
+            <FormGroup label="Archive name (optional)" fieldId="replace-archive">
+              <TextInput id="replace-archive" value={replaceArchiveName} onChange={(_e, v) => setReplaceArchiveName(v)}
+                placeholder={replaceTarget ? `${replaceTarget}-archive-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}` : ''}
+                validated={replaceArchiveName && !isValidDnsLabel(replaceArchiveName) ? 'error' : 'default'}
+              />
+              {replaceArchiveName && !isValidDnsLabel(replaceArchiveName) && (
+                <div style={{ color: '#c9190b', fontSize: '0.875rem', marginTop: '0.25rem' }}>Must be a valid DNS label</div>
+              )}
+            </FormGroup>
+          </Form>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="primary" isDisabled={!replaceTarget || (!!replaceArchiveName && !isValidDnsLabel(replaceArchiveName)) || replaceLoading} isLoading={replaceLoading} onClick={async () => {
+            setReplaceError(null)
+            setReplaceLoading(true)
+            try {
+              await api.catalogs.replace({ source: catalog.name, target: replaceTarget, archive_name: replaceArchiveName || undefined })
+              setReplaceOpen(false)
+              navigate('/catalogs')
+            } catch (e) {
+              setReplaceError(e instanceof Error ? e.message : 'Failed to replace catalog')
+            } finally {
+              setReplaceLoading(false)
+            }
+          }}>Replace</Button>
+          <Button variant="link" onClick={() => { setReplaceOpen(false); setReplaceError(null) }}>Cancel</Button>
         </ModalFooter>
       </Modal>
     </PageSection>

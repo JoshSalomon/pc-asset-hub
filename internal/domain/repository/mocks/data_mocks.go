@@ -96,12 +96,22 @@ func (m *MockCatalogRepo) UpdateValidationStatus(ctx context.Context, id string,
 func (m *MockCatalogRepo) UpdatePublished(ctx context.Context, id string, published bool, publishedAt *time.Time) error {
 	return m.Called(ctx, id, published, publishedAt).Error(0)
 }
+func (m *MockCatalogRepo) UpdateName(ctx context.Context, id string, newName string) error {
+	return m.Called(ctx, id, newName).Error(0)
+}
 func (m *MockCatalogRepo) ListByCatalogVersionID(ctx context.Context, catalogVersionID string) ([]*models.Catalog, error) {
 	args := m.Called(ctx, catalogVersionID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]*models.Catalog), args.Error(1)
+}
+
+// MockTransactionManager mocks TransactionManager — executes the function directly (no real transaction).
+type MockTransactionManager struct{}
+
+func (m *MockTransactionManager) RunInTransaction(ctx context.Context, fn func(ctx context.Context) error) error {
+	return fn(ctx)
 }
 
 // MockInstanceAttributeValueRepo mocks InstanceAttributeValueRepository.
@@ -146,9 +156,15 @@ func (m *MockAssociationLinkRepo) DeleteByInstance(ctx context.Context, instance
 }
 func (m *MockAssociationLinkRepo) GetForwardRefs(ctx context.Context, sourceInstanceID string) ([]*models.AssociationLink, error) {
 	args := m.Called(ctx, sourceInstanceID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]*models.AssociationLink), args.Error(1)
 }
 func (m *MockAssociationLinkRepo) GetReverseRefs(ctx context.Context, targetInstanceID string) ([]*models.AssociationLink, error) {
 	args := m.Called(ctx, targetInstanceID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]*models.AssociationLink), args.Error(1)
 }

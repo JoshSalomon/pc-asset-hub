@@ -30,9 +30,9 @@ Development proceeds through three environment phases, each with increasing infr
 
 **Milestones completed**: 1–12 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired), T-14.01 through T-14.22, T-15.01 through T-15.81, and T-16.01 through T-16.69 (714 test cases), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired), T-14.01 through T-14.22, T-15.01 through T-15.81, T-16.01 through T-16.69, and T-17.01 through T-17.88 (802 test cases), using SQLite and mocked/simulated infrastructure.
 
-**Human checkpoint**: After all 714 tests pass with 100% coverage (documented exceptions). This is the first review point.
+**Human checkpoint**: After all 802 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
 ---
 
@@ -2039,6 +2039,155 @@ Phase 7 of the catalog implementation plan. Explicit publish/unpublish operation
 
 ---
 
+## Milestone 17: Copy & Replace Catalog
+
+Phase 8 of the catalog implementation plan. Copy Catalog deep-clones all data from a source catalog (instances, attribute values, association links, containment hierarchy) into a new catalog with new UUIDs and remapped references. Replace Catalog atomically swaps a staging catalog into the name of a published one, archiving the old catalog. Both operations are transactional. User stories: US-44, US-45, US-46.
+
+### Repository — UpdateName
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.01 | UpdateName changes catalog name in database | Integration | Name updated, other fields unchanged |
+| T-17.02 | UpdateName with name that already exists returns ConflictError | Integration | ConflictError returned |
+| T-17.03 | UpdateName with nonexistent catalog ID returns NotFoundError | Integration | NotFoundError returned |
+| T-17.04 | UpdatePublished via UpdateName preserves published state | Integration | published and published_at unchanged after rename |
+
+### Copy Catalog — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.05 | Copy creates new catalog with same CV pin and draft status | Unit | New catalog with source's CV ID, status=draft |
+| T-17.06 | Copy uses provided description (or source description if empty) | Unit | Description set correctly |
+| T-17.07 | Copy clones all instances with new UUIDs | Unit | Instance count matches, IDs differ |
+| T-17.08 | Copy preserves instance entity type, name, and description | Unit | Fields match source instances |
+| T-17.09 | Copy resets instance version to 1 | Unit | All cloned instances at version 1 |
+| T-17.10 | Copy clones attribute values remapped to new instance IDs | Unit | Values match, instance IDs remapped |
+| T-17.11 | Copy clones association links remapped to new source/target IDs | Unit | Links match, source/target IDs remapped |
+| T-17.12 | Copy preserves containment hierarchy — parent refs remapped | Unit | Parent-child relationships intact with new IDs |
+| T-17.13 | Copy with nonexistent source returns NotFoundError | Unit | NotFoundError |
+| T-17.14 | Copy with invalid target name returns validation error | Unit | Validation error |
+| T-17.15 | Copy with duplicate target name returns ConflictError | Unit | ConflictError |
+| T-17.16 | Copy of empty catalog (no instances) creates empty catalog | Unit | Catalog created, zero instances |
+| T-17.17 | Copy with self-referential links (src and tgt in same catalog) remaps correctly | Unit | Both ends of link remapped to new IDs |
+| T-17.18 | Copy is transactional — partial failure creates no catalog | Unit | No catalog/instances on error |
+| T-17.19 | Copy does not modify source catalog | Unit | Source unchanged after copy |
+
+### Copy Catalog — Integration (End-to-End)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.20 | Copy catalog with instances, attributes, links, containment in real DB | Integration | All data cloned with new IDs |
+| T-17.21 | Copied instances have correct catalog_id pointing to new catalog | Integration | FK integrity maintained |
+| T-17.22 | Copied attribute values retrievable via GetCurrentValues on new instances | Integration | Values match source |
+| T-17.23 | Copied links retrievable via GetForwardRefs/GetReverseRefs on new instances | Integration | Links point to new instances |
+| T-17.24 | Containment hierarchy intact — ListByParent on new parent returns new children | Integration | Children found under new parent |
+| T-17.25 | Original catalog data unchanged after copy | Integration | Source instances/attrs/links untouched |
+
+### Replace Catalog — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.26 | Replace renames target to archive name | Unit | Target gets archive name |
+| T-17.27 | Replace renames source to target's original name | Unit | Source gets target's name |
+| T-17.28 | Replace with default archive name uses `{target}-archive-{timestamp}` | Unit | Name matches pattern |
+| T-17.29 | Replace with custom archive name uses provided name | Unit | Custom archive name used |
+| T-17.30 | Replace requires source validation status `valid` | Unit | Error for draft source |
+| T-17.31 | Replace requires source validation status `valid` (invalid) | Unit | Error for invalid source |
+| T-17.32 | Replace with nonexistent source returns NotFoundError | Unit | NotFoundError |
+| T-17.33 | Replace with nonexistent target returns NotFoundError | Unit | NotFoundError |
+| T-17.34 | Replace where source equals target returns error | Unit | Validation error |
+| T-17.35 | Replace with invalid archive name (non-DNS-label) returns error | Unit | Validation error |
+| T-17.36 | Replace with archive name that already exists returns ConflictError | Unit | ConflictError |
+| T-17.37 | Replace transfers published state: target was published → source inherits published=true | Unit | Source gets published=true, published_at |
+| T-17.38 | Replace transfers published state: archive becomes unpublished | Unit | Archive gets published=false, published_at=nil |
+| T-17.39 | Replace on unpublished target: both source and archive remain unpublished | Unit | No published state change |
+| T-17.40 | Replace calls SyncCR after swap to update Catalog CR spec | Unit | SyncCR called with target name |
+| T-17.41 | Replace deletes archive catalog's CR (old name no longer valid) | Unit | CRManager.Delete called for archive |
+| T-17.42 | Replace bumps CR DataVersion so consumers detect the swap | Unit | CreateOrUpdate called with incremented SyncVersion |
+| T-17.43 | Replace is transactional — failure in second rename rolls back first | Unit | Both catalogs retain original names |
+| T-17.44 | Replace with nil crManager skips CR operations (DB-only) | Unit | No panic, names swapped |
+
+### Replace Catalog — Integration (End-to-End)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.45 | Replace swaps names in real DB | Integration | Names swapped correctly |
+| T-17.46 | Replace transfers published state in real DB | Integration | published=true on renamed source |
+| T-17.47 | Instances in renamed catalogs retain correct catalog_id | Integration | FK integrity maintained |
+| T-17.48 | Replace with draft source leaves DB unchanged | Integration | No names changed |
+| T-17.49 | Replace with nonexistent source leaves DB unchanged | Integration | No names changed |
+| T-17.50 | Replace with archive name collision leaves DB unchanged | Integration | No names changed |
+
+### Copy Catalog — API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.51 | `POST /api/data/v1/catalogs/copy` returns 201 with new catalog | API | CatalogResponse with new ID |
+| T-17.52 | Copy response includes resolved CV label | API | catalog_version_label present |
+| T-17.53 | Copy with nonexistent source → 404 | API | Not found |
+| T-17.54 | Copy with duplicate target name → 409 | API | Conflict |
+| T-17.55 | Copy with invalid target name → 400 | API | Bad request |
+| T-17.56 | Copy as RO → 403 | API | Forbidden |
+| T-17.57 | Copy as RW → 201 (RW can create catalogs) | API | Success |
+| T-17.58 | Copy request binds source, name, description | API | Fields correctly extracted |
+
+### Replace Catalog — API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.59 | `POST /api/data/v1/catalogs/replace` returns 200 with updated catalog | API | CatalogResponse |
+| T-17.60 | Replace with non-valid source → 400 | API | Bad request |
+| T-17.61 | Replace with nonexistent source → 404 | API | Not found |
+| T-17.62 | Replace with nonexistent target → 404 | API | Not found |
+| T-17.63 | Replace with invalid archive name → 400 | API | Bad request |
+| T-17.64 | Replace as RO → 403 | API | Forbidden |
+| T-17.65 | Replace as RW → 403 | API | Forbidden |
+| T-17.66 | Replace as Admin → 200 | API | Success |
+| T-17.67 | Replace request binds source, target, archive_name | API | Fields correctly extracted |
+
+### Copy Catalog — UI (Meta)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.68 | Copy button visible on catalog detail for RW+ users | Browser | Button rendered |
+| T-17.69 | Copy button hidden for RO users | Browser | Button not rendered |
+| T-17.70 | Copy modal opens with name input | Browser | Modal with text field |
+| T-17.71 | Copy modal validates DNS-label format (error for invalid) | Browser | Inline validation error |
+| T-17.72 | Successful copy calls POST /catalogs/copy API | Browser | API called with correct body |
+| T-17.73 | Copy error (409 conflict) shows alert | Browser | Error alert displayed |
+| T-17.74 | Successful copy refreshes catalog list or navigates to new catalog | Browser | List refreshed / navigation occurs |
+
+### Replace Catalog — UI (Meta)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.75 | Replace button visible on valid catalog for Admin+ users | Browser | Button rendered |
+| T-17.76 | Replace button hidden for RW users | Browser | Button not rendered |
+| T-17.77 | Replace button hidden for RO users | Browser | Button not rendered |
+| T-17.78 | Replace button hidden for draft catalogs | Browser | Button not rendered |
+| T-17.79 | Replace button hidden for invalid catalogs | Browser | Button not rendered |
+| T-17.80 | Replace modal opens with target dropdown and archive name input | Browser | Modal with dropdown + input |
+| T-17.81 | Replace modal target dropdown shows existing catalogs | Browser | Catalog names listed |
+| T-17.82 | Replace modal archive name validates DNS-label format | Browser | Inline validation error for invalid |
+| T-17.83 | Successful replace calls POST /catalogs/replace API | Browser | API called with correct body |
+| T-17.84 | Replace error shows alert | Browser | Error alert displayed |
+| T-17.85 | Successful replace refreshes catalog list | Browser | List refreshed |
+
+### Operator — CR DataVersion After Replace
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.86 | SyncCR after replace triggers CreateOrUpdate with incremented SyncVersion | Operator | SyncVersion bumped in CR spec |
+
+### Copy & Replace — API Client (Browser)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.87 | copyCatalog client function sends POST with correct body | Browser | mockFetch called correctly |
+| T-17.88 | replaceCatalog client function sends POST with correct body | Browser | mockFetch called correctly |
+
+---
+
 ## Coverage Criteria
 
 ### Pass Rate
@@ -2075,7 +2224,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 714 test cases (T-1.01 through T-16.69; T-13.78 through T-13.85 retired) pass
+- All 802 test cases (T-1.01 through T-17.88; T-13.78 through T-13.85 retired) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

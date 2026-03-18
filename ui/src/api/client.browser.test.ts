@@ -637,3 +637,29 @@ test('links.reverseRefs calls correct URL', async () => {
     expect.anything(),
   )
 })
+
+// T-17.87: copyCatalog client function sends POST with correct body
+test('catalogs.copy calls correct URL and body', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'new-id', name: 'target' }))
+  await api.catalogs.copy({ source: 'source', name: 'target', description: 'desc' })
+  expect(mockFetch).toHaveBeenCalledWith(
+    expect.stringContaining('/catalogs/copy'),
+    expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ source: 'source', name: 'target', description: 'desc' }),
+    }),
+  )
+})
+
+// T-17.88: replaceCatalog client function sends POST with correct body
+test('catalogs.replace calls correct URL and body', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'src-id', name: 'prod' }))
+  await api.catalogs.replace({ source: 'staging', target: 'prod', archive_name: 'prod-archive' })
+  expect(mockFetch).toHaveBeenCalledWith(
+    expect.stringContaining('/catalogs/replace'),
+    expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ source: 'staging', target: 'prod', archive_name: 'prod-archive' }),
+    }),
+  )
+})

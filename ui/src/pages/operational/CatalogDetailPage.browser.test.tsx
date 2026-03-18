@@ -7,7 +7,7 @@ import { api } from '../../api/client'
 
 vi.mock('../../api/client', () => ({
   api: {
-    catalogs: { get: vi.fn(), validate: vi.fn(), publish: vi.fn(), unpublish: vi.fn() },
+    catalogs: { get: vi.fn(), list: vi.fn(), validate: vi.fn(), publish: vi.fn(), unpublish: vi.fn(), copy: vi.fn(), replace: vi.fn() },
     catalogVersions: { listPins: vi.fn() },
     versions: { snapshot: vi.fn() },
     instances: { list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), createContained: vi.fn(), listContained: vi.fn(), setParent: vi.fn() },
@@ -87,6 +87,9 @@ beforeEach(() => {
   ;(api.links.reverseRefs as Mock).mockResolvedValue(mockReverseRefs)
   ;(api.links.create as Mock).mockResolvedValue({ id: 'link-new' })
   ;(api.links.delete as Mock).mockResolvedValue(undefined)
+  ;(api.catalogs.copy as Mock).mockResolvedValue({ id: 'new-id', name: 'copy-cat' })
+  ;(api.catalogs.replace as Mock).mockResolvedValue({ id: 'src-id', name: 'prod' })
+  ;(api.catalogs.list as Mock).mockResolvedValue({ items: [{ name: 'other-cat' }, { name: 'prod-cat' }], total: 2 })
 })
 
 // Helper: wait for instance table to render
@@ -519,6 +522,67 @@ test('add contained in adopt mode shows adopt controls', async () => {
   await expect.element(page.getByRole('dialog').getByRole('button', { name: 'Adopt', exact: true })).toBeVisible()
 })
 
+// Adopt mode: select instance and submit calls setParent API
+test('adopt mode submits setParent API call', async () => {
+  const uncontainedTools = [
+    { id: 'ut1', entity_type_id: 'et2', catalog_id: 'cat1', name: 'orphan-tool', description: '', version: 1, attributes: [] },
+  ]
+  ;(api.instances.list as Mock).mockImplementation((_cat: string, type: string) => {
+    if (type === 'model') return Promise.resolve({ items: mockInstances, total: 1 })
+    return Promise.resolve({ items: uncontainedTools, total: 1 })
+  })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await page.getByRole('button', { name: 'Add Contained Instance' }).first().click()
+
+  // Switch to Adopt Existing mode
+  await page.getByRole('dialog').getByText('Create New').click()
+  await page.getByText('Adopt Existing').first().click()
+
+  // Select the orphan instance
+  await page.getByText('Select instance...').click()
+  await page.getByText('orphan-tool').click()
+
+  // Click Adopt
+  await page.getByRole('dialog').getByRole('button', { name: 'Adopt', exact: true }).click()
+  expect(api.instances.setParent).toHaveBeenCalledWith('my-catalog', 'tool', 'ut1', {
+    parent_type: 'model',
+    parent_instance_id: 'i1',
+  })
+})
+
+// Set container modal: select parent and submit
+test('set container modal submits setParent API call', async () => {
+  const parentInstances = [
+    { id: 'p1', entity_type_id: 'et1', catalog_id: 'cat1', name: 'parent-server', description: '', version: 1, attributes: [] },
+  ]
+  // First call returns mockInstances (for initial list load), subsequent calls return parentInstances
+  let listCallCount = 0
+  ;(api.instances.list as Mock).mockImplementation((_cat: string, type: string) => {
+    listCallCount++
+    if (type === 'model' && listCallCount <= 1) return Promise.resolve({ items: mockInstances, total: 1 })
+    if (type === 'model') return Promise.resolve({ items: parentInstances, total: 1 })
+    return Promise.resolve({ items: mockInstances, total: 1 })
+  })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await page.getByRole('button', { name: 'Set Container' }).first().click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  // Select parent instance from dropdown
+  await page.getByText('Select container...').click()
+  await page.getByText('parent-server').click()
+
+  // Click Set Container submit
+  await page.getByRole('dialog').getByRole('button', { name: 'Set Container' }).click()
+  expect(api.instances.setParent).toHaveBeenCalledWith('my-catalog', 'model', 'i1', {
+    parent_type: 'model',
+    parent_instance_id: 'p1',
+  })
+})
+
 // Set container modal opens with correct parent type
 test('set container modal opens and shows pre-selected container type', async () => {
   renderDetail('Admin')
@@ -932,4 +996,229 @@ test('no published badge on unpublished catalog', async () => {
   // Default mockCatalog has published: undefined/false
   const labels = Array.from(document.querySelectorAll('span')).map(s => s.textContent)
   expect(labels).not.toContain('published')
+})
+
+// ---- Copy & Replace UI Tests ----
+
+// T-17.68: Copy button visible for RW+ users
+test('T-17.68: copy button visible for RW users', async () => {
+  renderDetail('RW')
+  await waitForInstances()
+  await expect.element(page.getByRole('button', { name: 'Copy' })).toBeVisible()
+})
+
+// T-17.69: Copy button hidden for RO users
+test('T-17.69: copy button hidden for RO users', async () => {
+  renderDetail('RO')
+  await waitForInstances()
+  expect(page.getByRole('button', { name: 'Copy' }).query()).toBeNull()
+})
+
+// T-17.70: Copy modal opens with name input
+test('T-17.70: copy modal opens', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Copy' }).click()
+  await expect.element(page.getByText('Copy Catalog')).toBeVisible()
+  await expect.element(page.getByRole('dialog').getByRole('textbox').first()).toBeVisible()
+})
+
+// T-17.72: Successful copy calls API
+test('T-17.72: copy calls API with correct body', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Copy' }).click()
+  await page.getByRole('dialog').getByRole('textbox').first().fill('new-copy')
+  // Click the modal footer's Copy button
+  await page.getByRole('dialog').getByRole('button', { name: 'Copy' }).click()
+  expect(api.catalogs.copy).toHaveBeenCalledWith({
+    source: 'my-catalog',
+    name: 'new-copy',
+    description: undefined,
+  })
+})
+
+// T-17.75: Replace button visible on valid catalog for Admin
+test('T-17.75: replace button visible for Admin on valid catalog', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid' })
+  renderDetail('Admin')
+  await waitForInstances()
+  await expect.element(page.getByRole('button', { name: 'Replace' })).toBeVisible()
+})
+
+// T-17.76: Replace button hidden for RW users
+test('T-17.76: replace button hidden for RW', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid' })
+  renderDetail('RW')
+  await waitForInstances()
+  expect(page.getByRole('button', { name: 'Replace' }).query()).toBeNull()
+})
+
+// T-17.77: Replace button hidden for RO users
+test('T-17.77: replace button hidden for RO', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid' })
+  renderDetail('RO')
+  await waitForInstances()
+  expect(page.getByRole('button', { name: 'Replace' }).query()).toBeNull()
+})
+
+// T-17.78: Replace button hidden for draft catalogs
+test('T-17.78: replace button hidden for draft catalog', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  // Default mockCatalog has validation_status: 'draft'
+  expect(page.getByRole('button', { name: 'Replace' }).query()).toBeNull()
+})
+
+// T-17.71: Copy modal validates DNS-label format
+test('T-17.71: copy modal shows validation error for invalid name', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Copy' }).click()
+  await page.getByRole('dialog').getByRole('textbox').first().fill('INVALID_NAME')
+  await expect.element(page.getByText('Must be a valid DNS label')).toBeVisible()
+  // Copy button should be disabled
+  const copyBtn = page.getByRole('dialog').getByRole('button', { name: 'Copy' })
+  await expect.element(copyBtn).toBeDisabled()
+})
+
+// T-17.73: Copy error shows alert
+test('T-17.73: copy error shows alert', async () => {
+  ;(api.catalogs.copy as Mock).mockRejectedValue(new Error('name already exists'))
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Copy' }).click()
+  await page.getByRole('dialog').getByRole('textbox').first().fill('new-copy')
+  await page.getByRole('dialog').getByRole('button', { name: 'Copy' }).click()
+  await expect.element(page.getByText('name already exists')).toBeVisible()
+})
+
+// Copy modal cancel button
+test('copy modal cancel closes modal', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Copy' }).click()
+  await expect.element(page.getByText('Copy Catalog')).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  await expect.element(page.getByText('Copy Catalog')).not.toBeInTheDocument()
+})
+
+// Copy modal description field
+test('copy modal description field works', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Copy' }).click()
+  // Fill description (second textbox in dialog)
+  const textboxes = page.getByRole('dialog').getByRole('textbox')
+  await textboxes.nth(1).fill('my description')
+  await textboxes.first().fill('new-copy')
+  await page.getByRole('dialog').getByRole('button', { name: 'Copy' }).click()
+  expect(api.catalogs.copy).toHaveBeenCalledWith({
+    source: 'my-catalog',
+    name: 'new-copy',
+    description: 'my description',
+  })
+})
+
+// Copy modal X close button
+test('copy modal X button closes modal', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Copy' }).click()
+  await expect.element(page.getByText('Copy Catalog')).toBeVisible()
+  // PatternFly Modal close button is aria-label="Close"
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
+  await expect.element(page.getByText('Copy Catalog')).not.toBeInTheDocument()
+})
+
+// T-17.80: Replace modal opens with target dropdown
+test('T-17.80: replace modal opens with target dropdown', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid' })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Replace' }).click()
+  await expect.element(page.getByText('Replace Catalog')).toBeVisible()
+  await expect.element(page.getByText('Select target catalog...')).toBeVisible()
+})
+
+// T-17.81: Replace modal target dropdown shows catalogs
+test('T-17.81: replace modal shows catalog options', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid' })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Replace' }).click()
+  // Open the dropdown
+  await page.getByText('Select target catalog...').click()
+  await expect.element(page.getByText('other-cat')).toBeVisible()
+  await expect.element(page.getByText('prod-cat')).toBeVisible()
+})
+
+// T-17.83: Replace submit calls API
+test('T-17.83: replace calls API with correct body', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid' })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Replace' }).click()
+  // Select target from dropdown
+  await page.getByText('Select target catalog...').click()
+  await page.getByText('prod-cat').click()
+  // Click Replace button in modal
+  await page.getByRole('dialog').getByRole('button', { name: 'Replace' }).click()
+  expect(api.catalogs.replace).toHaveBeenCalledWith({
+    source: 'my-catalog',
+    target: 'prod-cat',
+    archive_name: undefined,
+  })
+})
+
+// T-17.82: Replace archive name validation
+test('T-17.82: replace archive name validates DNS-label', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid' })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Replace' }).click()
+  // Select target
+  await page.getByText('Select target catalog...').click()
+  await page.getByText('prod-cat').click()
+  // Enter invalid archive name
+  const archiveInput = page.getByRole('dialog').getByRole('textbox')
+  await archiveInput.first().fill('INVALID')
+  await expect.element(page.getByText('Must be a valid DNS label')).toBeVisible()
+  // Replace button should be disabled
+  await expect.element(page.getByRole('dialog').getByRole('button', { name: 'Replace' })).toBeDisabled()
+})
+
+// T-17.84: Replace error shows alert
+test('T-17.84: replace error shows alert', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid' })
+  ;(api.catalogs.replace as Mock).mockRejectedValue(new Error('replace failed'))
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Replace' }).click()
+  await page.getByText('Select target catalog...').click()
+  await page.getByText('prod-cat').click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Replace' }).click()
+  await expect.element(page.getByText('replace failed')).toBeVisible()
+})
+
+// Replace modal X close button
+test('replace modal X button closes modal', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid' })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Replace' }).click()
+  await expect.element(page.getByText('Replace Catalog')).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
+  await expect.element(page.getByText('Replace Catalog')).not.toBeInTheDocument()
+})
+
+// Replace modal cancel button
+test('replace modal cancel closes modal', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid' })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Replace' }).click()
+  await expect.element(page.getByText('Replace Catalog')).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  await expect.element(page.getByText('Replace Catalog')).not.toBeInTheDocument()
 })

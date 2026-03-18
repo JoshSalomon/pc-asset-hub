@@ -21,7 +21,7 @@ func NewCatalogGormRepo(db *gorm.DB) *CatalogGormRepo {
 
 func (r *CatalogGormRepo) Create(ctx context.Context, catalog *models.Catalog) error {
 	record := gormmodels.CatalogFromModel(catalog)
-	result := r.db.WithContext(ctx).Create(record)
+	result := getDB(ctx, r.db).Create(record)
 	if result.Error != nil {
 		if isUniqueConstraintError(result.Error) {
 			return domainerrors.NewConflict("Catalog", "name already exists: "+catalog.Name)
@@ -33,7 +33,7 @@ func (r *CatalogGormRepo) Create(ctx context.Context, catalog *models.Catalog) e
 
 func (r *CatalogGormRepo) GetByName(ctx context.Context, name string) (*models.Catalog, error) {
 	var record gormmodels.Catalog
-	result := r.db.WithContext(ctx).Where("name = ?", name).First(&record)
+	result := getDB(ctx, r.db).Where("name = ?", name).First(&record)
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
 			return nil, domainerrors.NewNotFound("Catalog", name)
@@ -45,7 +45,7 @@ func (r *CatalogGormRepo) GetByName(ctx context.Context, name string) (*models.C
 
 func (r *CatalogGormRepo) GetByID(ctx context.Context, id string) (*models.Catalog, error) {
 	var record gormmodels.Catalog
-	result := r.db.WithContext(ctx).First(&record, "id = ?", id)
+	result := getDB(ctx, r.db).First(&record, "id = ?", id)
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
 			return nil, domainerrors.NewNotFound("Catalog", id)
@@ -57,7 +57,7 @@ func (r *CatalogGormRepo) GetByID(ctx context.Context, id string) (*models.Catal
 
 func (r *CatalogGormRepo) List(ctx context.Context, params models.ListParams) ([]*models.Catalog, int, error) {
 	var records []gormmodels.Catalog
-	query := r.db.WithContext(ctx).Model(&gormmodels.Catalog{})
+	query := getDB(ctx, r.db).Model(&gormmodels.Catalog{})
 
 	if cvID, ok := params.Filters["catalog_version_id"]; ok {
 		query = query.Where("catalog_version_id = ?", cvID)
@@ -91,7 +91,7 @@ func (r *CatalogGormRepo) List(ctx context.Context, params models.ListParams) ([
 }
 
 func (r *CatalogGormRepo) Delete(ctx context.Context, id string) error {
-	result := r.db.WithContext(ctx).Delete(&gormmodels.Catalog{}, "id = ?", id)
+	result := getDB(ctx, r.db).Delete(&gormmodels.Catalog{}, "id = ?", id)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -102,7 +102,7 @@ func (r *CatalogGormRepo) Delete(ctx context.Context, id string) error {
 }
 
 func (r *CatalogGormRepo) UpdateValidationStatus(ctx context.Context, id string, status models.ValidationStatus) error {
-	result := r.db.WithContext(ctx).Model(&gormmodels.Catalog{}).
+	result := getDB(ctx, r.db).Model(&gormmodels.Catalog{}).
 		Where("id = ?", id).
 		Updates(map[string]interface{}{
 			"validation_status": string(status),
@@ -118,7 +118,7 @@ func (r *CatalogGormRepo) UpdateValidationStatus(ctx context.Context, id string,
 }
 
 func (r *CatalogGormRepo) UpdatePublished(ctx context.Context, id string, published bool, publishedAt *time.Time) error {
-	result := r.db.WithContext(ctx).Model(&gormmodels.Catalog{}).
+	result := getDB(ctx, r.db).Model(&gormmodels.Catalog{}).
 		Where("id = ?", id).
 		Updates(map[string]interface{}{
 			"published":    published,
@@ -134,9 +134,28 @@ func (r *CatalogGormRepo) UpdatePublished(ctx context.Context, id string, publis
 	return nil
 }
 
+func (r *CatalogGormRepo) UpdateName(ctx context.Context, id string, newName string) error {
+	result := getDB(ctx, r.db).Model(&gormmodels.Catalog{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"name":       newName,
+			"updated_at": time.Now(),
+		})
+	if result.Error != nil {
+		if isUniqueConstraintError(result.Error) {
+			return domainerrors.NewConflict("Catalog", "name already exists: "+newName)
+		}
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domainerrors.NewNotFound("Catalog", id)
+	}
+	return nil
+}
+
 func (r *CatalogGormRepo) ListByCatalogVersionID(ctx context.Context, catalogVersionID string) ([]*models.Catalog, error) {
 	var records []gormmodels.Catalog
-	if err := r.db.WithContext(ctx).Where("catalog_version_id = ?", catalogVersionID).Find(&records).Error; err != nil {
+	if err := getDB(ctx, r.db).Where("catalog_version_id = ?", catalogVersionID).Find(&records).Error; err != nil {
 		return nil, err
 	}
 	result := make([]*models.Catalog, len(records))

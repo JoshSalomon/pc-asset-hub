@@ -26,7 +26,7 @@ func (r *InstanceAttributeValueGormRepo) SetValues(ctx context.Context, values [
 	for i, v := range values {
 		records[i] = *gormmodels.InstanceAttributeValueFromModel(v)
 	}
-	result := r.db.WithContext(ctx).Create(&records)
+	result := getDB(ctx, r.db).Create(&records)
 	if result.Error != nil {
 		if isUniqueConstraintError(result.Error) {
 			return domainerrors.NewConflict("InstanceAttributeValue", "duplicate attribute value for this instance version")
@@ -39,7 +39,7 @@ func (r *InstanceAttributeValueGormRepo) SetValues(ctx context.Context, values [
 func (r *InstanceAttributeValueGormRepo) GetCurrentValues(ctx context.Context, instanceID string) ([]*models.InstanceAttributeValue, error) {
 	// Get the max version for this instance, then get values for that version
 	var maxVersion int
-	err := r.db.WithContext(ctx).Model(&gormmodels.InstanceAttributeValue{}).
+	err := getDB(ctx, r.db).Model(&gormmodels.InstanceAttributeValue{}).
 		Where("instance_id = ?", instanceID).
 		Select("COALESCE(MAX(instance_version), 0)").
 		Scan(&maxVersion).Error
@@ -54,7 +54,7 @@ func (r *InstanceAttributeValueGormRepo) GetCurrentValues(ctx context.Context, i
 
 func (r *InstanceAttributeValueGormRepo) GetValuesForVersion(ctx context.Context, instanceID string, version int) ([]*models.InstanceAttributeValue, error) {
 	var records []gormmodels.InstanceAttributeValue
-	result := r.db.WithContext(ctx).
+	result := getDB(ctx, r.db).
 		Where("instance_id = ? AND instance_version = ?", instanceID, version).
 		Find(&records)
 	if result.Error != nil {

@@ -143,6 +143,69 @@ func (h *CatalogHandler) UnpublishCatalog(c echo.Context) error {
 	return c.JSON(http.StatusOK, dto.StatusResponse{Status: "unpublished"})
 }
 
+func (h *CatalogHandler) CopyCatalog(c echo.Context) error {
+	var req dto.CopyCatalogRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+
+	// Check access to source catalog (read)
+	if allowed, err := h.accessChecker.CheckAccess(c, req.Source, "get"); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "access check failed")
+	} else if !allowed {
+		return echo.NewHTTPError(http.StatusForbidden, "access denied to catalog: "+req.Source)
+	}
+	// Check access to target catalog (create)
+	if allowed, err := h.accessChecker.CheckAccess(c, req.Name, "create"); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "access check failed")
+	} else if !allowed {
+		return echo.NewHTTPError(http.StatusForbidden, "access denied to catalog: "+req.Name)
+	}
+
+	catalog, err := h.svc.CopyCatalog(c.Request().Context(), req.Source, req.Name, req.Description)
+	if err != nil {
+		return mapError(err)
+	}
+
+	// Resolve CV label for response
+	detail, err := h.svc.GetByName(c.Request().Context(), catalog.Name)
+	if err != nil {
+		return c.JSON(http.StatusCreated, catalogToDTO(catalog, ""))
+	}
+	return c.JSON(http.StatusCreated, catalogToDTO(catalog, detail.CatalogVersionLabel))
+}
+
+func (h *CatalogHandler) ReplaceCatalog(c echo.Context) error {
+	var req dto.ReplaceCatalogRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+
+	// Check access to both source and target catalogs
+	if allowed, err := h.accessChecker.CheckAccess(c, req.Source, "update"); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "access check failed")
+	} else if !allowed {
+		return echo.NewHTTPError(http.StatusForbidden, "access denied to catalog: "+req.Source)
+	}
+	if allowed, err := h.accessChecker.CheckAccess(c, req.Target, "update"); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "access check failed")
+	} else if !allowed {
+		return echo.NewHTTPError(http.StatusForbidden, "access denied to catalog: "+req.Target)
+	}
+
+	catalog, err := h.svc.ReplaceCatalog(c.Request().Context(), req.Source, req.Target, req.ArchiveName)
+	if err != nil {
+		return mapError(err)
+	}
+
+	// Resolve CV label for response
+	detail, err := h.svc.GetByName(c.Request().Context(), catalog.Name)
+	if err != nil {
+		return c.JSON(http.StatusOK, catalogToDTO(catalog, ""))
+	}
+	return c.JSON(http.StatusOK, catalogToDTO(catalog, detail.CatalogVersionLabel))
+}
+
 func catalogToDTO(cat *models.Catalog, cvLabel string) dto.CatalogResponse {
 	return dto.CatalogResponse{
 		ID:                  cat.ID,
@@ -162,6 +225,9 @@ func RegisterCatalogRoutes(g *echo.Group, h *CatalogHandler, requireRW, requireA
 	requireCatalogAccess := apimw.RequireCatalogAccess(h.accessChecker)
 	g.POST("", h.CreateCatalog, requireRW)
 	g.GET("", h.ListCatalogs)
+	// Static segments must be registered BEFORE parameterized /:catalog-name
+	g.POST("/copy", h.CopyCatalog, requireRW)
+	g.POST("/replace", h.ReplaceCatalog, requireAdmin)
 	g.GET("/:catalog-name", h.GetCatalog, requireCatalogAccess)
 	g.DELETE("/:catalog-name", h.DeleteCatalog, requireRW, requireCatalogAccess)
 	g.POST("/:catalog-name/validate", h.ValidateCatalog, requireRW, requireCatalogAccess)

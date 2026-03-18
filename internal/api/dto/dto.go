@@ -272,6 +272,18 @@ type StatusResponse struct {
 	Status string `json:"status"`
 }
 
+type CopyCatalogRequest struct {
+	Source      string `json:"source"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+type ReplaceCatalogRequest struct {
+	Source      string `json:"source"`
+	Target      string `json:"target"`
+	ArchiveName string `json:"archive_name"`
+}
+
 type CatalogWarningResponse struct {
 	CatalogName      string `json:"catalog_name"`
 	ValidationStatus string `json:"validation_status"`

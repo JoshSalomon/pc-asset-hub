@@ -336,7 +336,7 @@ Operational UI pages:
 
 **API:**
 
-- `POST /api/data/v1/catalogs/copy` — `{source_catalog_name, name, description?}` → 201 with new catalog
+- `POST /api/data/v1/catalogs/copy` — `{source, name, description?}` → 201 with new catalog
 - `POST /api/data/v1/catalogs/replace` — `{source, target, archive_name?}` → 200 with updated catalog
 
 **UI (meta UI):**

@@ -1186,6 +1186,81 @@ Acceptance Criteria:
 
 ---
 
+### Copy & Replace Catalog
+
+Two operations that enable a staging workflow for extending published catalogs without disrupting them.
+
+**Problem:** Adding instances to a `valid` published catalog resets it to `draft`, temporarily removing it from K8s discovery. Users need a way to prepare changes in isolation and swap atomically.
+
+**US-44: Copy Catalog**
+
+As an RW user, I want to deep-clone an existing catalog into a new one so that I can prepare changes without affecting the original.
+
+**Why**: Published catalogs are write-protected (US-43). Users need to copy a published catalog into a staging copy, make changes there, validate, and then swap it back in. Without Copy, users would have to manually recreate all instances, attributes, and links — error-prone and time-consuming for catalogs with hundreds of instances.
+
+Acceptance Criteria:
+- AC-44.1: `POST /api/data/v1/catalogs/copy` with `{source, name, description?}` creates a new catalog with the same CV pin, `draft` status
+- AC-44.2: All entity instances are cloned with new UUIDs, same entity type, name, description, version reset to 1
+- AC-44.3: All instance attribute values are cloned and remapped to new instance IDs
+- AC-44.4: All association links are cloned and remapped to new source/target instance IDs
+- AC-44.5: Containment hierarchy is preserved — parent references remapped to new instance IDs
+- AC-44.6: Copy is transactional — all-or-nothing (if any step fails, no partial data is created)
+- AC-44.7: Source catalog name must exist; returns 404 if not found
+- AC-44.8: Target catalog name must be DNS-label compatible and unique; returns 409 if name taken
+- AC-44.9: Requires RW+ access (create verb checked on the new catalog name)
+- AC-44.10: Returns 201 with the new catalog details
+
+---
+
+**US-45: Replace Catalog**
+
+As an Admin user, I want to atomically swap a staging catalog into the name of a published one so that I can update production data without downtime.
+
+**Why**: The Copy & Replace workflow is the safe alternative to editing published catalogs directly. Replace performs an atomic name swap — the published catalog name now serves the staging catalog's data, and the old data is archived under a new name for rollback. External consumers (watching the Catalog CR) see a DataVersion bump and know to refresh.
+
+Acceptance Criteria:
+- AC-45.1: `POST /api/data/v1/catalogs/replace` with `{source, target, archive_name?}` swaps the catalogs
+- AC-45.2: Source catalog must be `valid`; returns 400 if `draft` or `invalid`
+- AC-45.3: Target catalog must exist; returns 404 if not found
+- AC-45.4: Source catalog must exist; returns 404 if not found
+- AC-45.5: Target is renamed to archive name (default: `{target}-archive-{timestamp}`)
+- AC-45.6: Source is renamed to target's original name
+- AC-45.7: Replace is transactional — both renames succeed or neither does
+- AC-45.8: If target was published, the source (now with target's name) inherits published state; archive is unpublished
+- AC-45.9: The Catalog CR (if target was published) continues to reference the same name — now serves new data; CR spec is updated via SyncCR
+- AC-45.10: The Catalog CR's DataVersion is bumped after replace so that consumers watching the CR know to invalidate their cache
+- AC-45.11: Archive name must be DNS-label compatible; returns 400 if invalid
+- AC-45.12: Requires Admin+ access
+- AC-45.13: Returns 200 with the updated catalog (source, now renamed to target)
+
+---
+
+**US-46: Copy & Replace UI**
+
+As an admin using the meta UI, I want Copy and Replace buttons on the catalog detail page so that I can perform the staging workflow through the UI.
+
+**Why**: The staging workflow (copy → edit → validate → replace) should be accessible through the UI, not just via API. The Copy button is available on any catalog; the Replace button is available on valid staging catalogs to swap them into a published catalog's name.
+
+Acceptance Criteria:
+- AC-46.1: "Copy" button on catalog detail page opens a modal with new name input
+- AC-46.2: Copy modal validates DNS-label format before submitting
+- AC-46.3: "Replace" button visible on `valid` staging catalogs opens a modal to select target catalog and optional archive name
+- AC-46.4: Replace modal shows target catalog dropdown (filtered to existing catalogs)
+- AC-46.5: Archive catalogs are visible in the catalog list as normal catalogs
+
+**Staging workflow:**
+1. `prod-catalog` is `valid` and published.
+2. Copy: `prod-catalog` → `prod-catalog-next`
+3. Edit `prod-catalog-next`: add/modify/delete instances.
+4. Validate `prod-catalog-next` — must reach `valid`.
+5. Replace: `source=prod-catalog-next, target=prod-catalog` → atomically swaps them. Old data archived as `prod-catalog-archive-20260316`.
+6. The Catalog CR for `prod-catalog` now serves the updated data. Rollback: replace back from the archive.
+
+**Rollback:**
+- The archived catalog is a normal catalog — it can be browsed, validated, and used as a replace source to roll back.
+
+---
+
 ## 10. Open Design Decisions
 
 The following items are acknowledged but not yet fully specified:
@@ -1249,7 +1324,9 @@ Items where the current implementation diverges from the intended behavior descr
 | TD-38 | Entity type tab selector doesn't scale in meta catalog detail | The meta UI `CatalogDetailPage` uses PatternFly Tabs with one tab per entity type. When a catalog has many entity types (10+), the tabs overflow a single row and become hard to navigate. | Options: (A) Replace tabs with a sidebar or dropdown selector. (B) Add a search/filter input above the tabs. (C) Use PatternFly's scrollable tabs variant (`isOverflowHorizontal`). (D) Switch to a two-pane layout similar to the operational UI's tree browser. |
 | TD-36 | Review usefulness of Overview tab in operational catalog view | The Overview tab shows entity type names, pinned versions, and a "Browse Instances" button per type. With the two-pane tree browser now grouping instances under entity type headers, the Overview tab is largely redundant — the only unique information it provides is the meta entity type version number. | Options: (A) Remove the Overview tab entirely and make the tree browser the default (and only) tab. Show entity type version info in the tree group headers (e.g., "mcp-server V3 (2)"). (B) Repurpose the Overview tab as a catalog dashboard with useful aggregate info: instance counts per type, validation summary, catalog metadata, recent changes. (C) Keep as-is for users who want a quick summary before diving into the tree. |
 | TD-28 | Phase 3 code quality improvements (L1-L5, L7) | Multiple low-severity issues from quality review: (L1) duplicated forward/reverse reference handler conversion logic, (L2) dead `_ = parentInst`/`_ = sourceInst` assignments, (L3) JSON tags on service-layer `ReferenceDetail`, (L4) N+1 queries in `resolveLinks`, (L5) CatalogDetailPage now has ~30 state variables and should be decomposed, (L7) silently swallowed `UpdateValidationStatus` errors. | Extract `refsToDTO` helper in handler. Clean up dead assignments. Remove JSON tags from service types. Add batch fetch for links resolution. Decompose CatalogDetailPage into sub-components. Log validation status update failures. |
-| **TD-22** | **[CRITICAL] Common attributes as schema-level attributes** | Common attributes (Name, Description) are fields on `EntityInstance` but are NOT represented as `Attribute` records in the entity type schema. They are invisible in attribute lists, diagrams, and BOM modals. If an entity type manually creates custom attributes named `name`/`description`, the create instance modal shows duplicate fields. | **Approach A (DB-level):** Make common attributes into real `Attribute` records: (1) Auto-create them when an entity type is created, marked with a `system: true` flag. (2) Prevent deletion of system attributes. (3) Show them in all views — attribute tabs, diagrams, BOM modals, create/edit modals. (4) Remove the hardcoded Name/Description fields from the instance create/edit modals — use the schema attributes instead. (5) Design for extensibility: future common attributes like `Version` (auto-incremented) and `State` (enum lifecycle) should follow the same pattern. **Approach B (API-level merge):** Keep common attributes as hardcoded fields on `EntityInstance` (no DB schema change). The API layer merges them into the dynamic attribute list when returning responses — injecting synthetic `name`, `description`, `version` entries at the top of the attributes array with a `system: true` marker. The UI renders all attributes uniformly from this merged list and prevents editing/removing system-flagged ones. Meta API endpoints (attribute list, version snapshot, diagram data) similarly inject common attributes into their responses. Simpler to implement (no migration, no COW implications), but common attributes are never real DB records — they exist only as API-level projections. Prevents the duplicate-fields bug by having a single source of truth for what attributes exist (the merged list). |
+| TD-39 | CopyCatalog sequential instance creation doesn't scale | `CopyCatalog` creates instances one at a time via N individual `instRepo.Create` calls, plus N `GetCurrentValues` and N `GetForwardRefs` calls. For catalogs with 1000+ instances this is slow. | Add `CreateBatch` method to `EntityInstanceRepository` that inserts multiple instances in a single query. Similarly batch `SetValues` and link creation. Low priority — catalogs currently have <100 instances. |
+| TD-40 | `SyncCR` uses unstructured logging | `SyncCR` in `catalog_service.go` uses `log.Printf("warning: ...")` (Go's default logger). In production this produces unstructured text logs that are hard to filter and correlate in centralized logging systems. | Replace `log.Printf` with structured logging (e.g., `slog.Warn` or a project-standard logger) that includes catalog name, error, and operation context as structured fields. Apply the same fix to any other `log.Printf` calls in the codebase. |
+| **TD-22** | **[CRITICAL] Common attributes as schema-level attributes** | Common attributes (Name, Description) are fields on `EntityInstance` but are NOT represented as `Attribute` records in the entity type schema. They are invisible in attribute lists, diagrams, and BOM modals. If an entity type manually creates custom attributes named `name`/`description`, the create instance modal shows duplicate fields. Additionally, catalog validation does not check that the `Name` common field is non-empty — a catalog with an empty-named instance passes validation as `valid`, which violates the Name field's required semantics. | **Approach A (DB-level):** Make common attributes into real `Attribute` records: (1) Auto-create them when an entity type is created, marked with a `system: true` flag. (2) Prevent deletion of system attributes. (3) Show them in all views — attribute tabs, diagrams, BOM modals, create/edit modals. (4) Remove the hardcoded Name/Description fields from the instance create/edit modals — use the schema attributes instead. (5) Design for extensibility: future common attributes like `Version` (auto-incremented) and `State` (enum lifecycle) should follow the same pattern. **Approach B (API-level merge):** Keep common attributes as hardcoded fields on `EntityInstance` (no DB schema change). The API layer merges them into the dynamic attribute list when returning responses — injecting synthetic `name`, `description`, `version` entries at the top of the attributes array with a `system: true` marker. The UI renders all attributes uniformly from this merged list and prevents editing/removing system-flagged ones. Meta API endpoints (attribute list, version snapshot, diagram data) similarly inject common attributes into their responses. Simpler to implement (no migration, no COW implications), but common attributes are never real DB records — they exist only as API-level projections. Prevents the duplicate-fields bug by having a single source of truth for what attributes exist (the merged list). |
 
 ## 12. Future Features
 
@@ -1368,50 +1445,9 @@ Catalogs currently have a single mutable set of instances with a validation stat
 
 **Decision:** Deferred. Phase 7 will use a simpler approach (Option A: `draft` does not unpublish — the Catalog CR represents the last validated state). Catalog versioning can be added when the need for immutable published snapshots is validated with users.
 
-### FF-8: Copy & Replace Catalog (PLANNED — see design doc Phase 8)
+### FF-8: Copy & Replace Catalog — IMPLEMENTED
 
-Two operations that enable a staging workflow for extending published catalogs without disrupting them.
-
-**Problem:** Adding instances to a `valid` published catalog resets it to `draft`, temporarily removing it from K8s discovery. Users need a way to prepare changes in isolation and swap atomically.
-
-**Operation 1: Copy Catalog**
-
-Deep-clones an existing catalog into a new one, pre-populated with all its data.
-
-- `POST /api/data/v1/catalogs/copy` — `{source_catalog_name: string, name: string, description?: string}`
-- Returns the new catalog with `validation_status: "draft"`
-
-**What gets copied:**
-- Catalog metadata: description copied, same CV pin, new name
-- All entity instances (new IDs generated)
-- All instance attribute values (remapped to new instance IDs)
-- All association links (remapped to new source/target instance IDs)
-- Containment hierarchy (parent references remapped to new instance IDs)
-
-**Operation 2: Replace Catalog**
-
-Atomically swaps a new catalog into the name of an existing one, archiving the old catalog under a different name for rollback.
-
-- `POST /api/data/v1/catalogs/replace` — `{source: string, target: string, archive_name?: string}`
-- Preconditions: source catalog must be `valid`; target catalog must exist
-- Atomically: renames `target` → `archive_name` (default: `{target}-archive-{timestamp}`), then renames `source` → `target`
-- The Catalog CR (if any) continues to point to the same catalog name — it now serves the new data
-- The archived catalog retains its data and `valid` status for rollback
-
-**Staging workflow:**
-1. `prod-catalog` is `valid` and published.
-2. Copy: `prod-catalog` → `prod-catalog-next`
-3. Edit `prod-catalog-next`: add/modify/delete instances.
-4. Validate `prod-catalog-next` — must reach `valid`.
-5. Replace: `source=prod-catalog-next, target=prod-catalog` → atomically swaps them. Old data archived as `prod-catalog-archive-20260316`.
-6. The Catalog CR for `prod-catalog` now serves the updated data. Rollback: replace back from the archive.
-
-**UI:**
-- "Copy" button on catalog detail page → modal with new name input
-- "Replace" button on a `valid` staging catalog → modal selecting target catalog, optional archive name
-
-**Rollback:**
-- The archived catalog is a normal catalog — it can be browsed, validated, and used as a replace source to roll back.
+See US-44 (Copy Catalog), US-45 (Replace Catalog), US-46 (Copy & Replace UI) in section 9.
 
 ### FF-9: Multi-Namespace Catalog Publishing
 

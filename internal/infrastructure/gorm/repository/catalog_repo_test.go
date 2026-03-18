@@ -450,6 +450,110 @@ func TestT16_01_UpdatePublished(t *testing.T) {
 	assert.False(t, cat.Published)
 }
 
+// T-17.01: UpdateName changes catalog name in database
+func TestT17_01_UpdateName(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	catalogRepo := repository.NewCatalogGormRepo(db)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	ctx := context.Background()
+
+	cvID := newCatalogID()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{
+		ID: cvID, VersionLabel: "v1", LifecycleStage: "development",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	catID := newCatalogID()
+	require.NoError(t, catalogRepo.Create(ctx, &models.Catalog{
+		ID: catID, Name: "old-name", CatalogVersionID: cvID,
+		ValidationStatus: models.ValidationStatusDraft, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	err := catalogRepo.UpdateName(ctx, catID, "new-name")
+	require.NoError(t, err)
+
+	found, err := catalogRepo.GetByName(ctx, "new-name")
+	require.NoError(t, err)
+	assert.Equal(t, catID, found.ID)
+	assert.Equal(t, "new-name", found.Name)
+
+	// Old name should not be found
+	_, err = catalogRepo.GetByName(ctx, "old-name")
+	assert.Error(t, err)
+}
+
+// T-17.02: UpdateName with name that already exists returns ConflictError
+func TestT17_02_UpdateName_Conflict(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	catalogRepo := repository.NewCatalogGormRepo(db)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	ctx := context.Background()
+
+	cvID := newCatalogID()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{
+		ID: cvID, VersionLabel: "v1", LifecycleStage: "development",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	cat1ID := newCatalogID()
+	require.NoError(t, catalogRepo.Create(ctx, &models.Catalog{
+		ID: cat1ID, Name: "cat-one", CatalogVersionID: cvID,
+		ValidationStatus: models.ValidationStatusDraft, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	cat2ID := newCatalogID()
+	require.NoError(t, catalogRepo.Create(ctx, &models.Catalog{
+		ID: cat2ID, Name: "cat-two", CatalogVersionID: cvID,
+		ValidationStatus: models.ValidationStatusDraft, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	err := catalogRepo.UpdateName(ctx, cat1ID, "cat-two")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "already exists")
+}
+
+// T-17.03: UpdateName with nonexistent catalog ID returns NotFoundError
+func TestT17_03_UpdateName_NotFound(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	catalogRepo := repository.NewCatalogGormRepo(db)
+	ctx := context.Background()
+
+	err := catalogRepo.UpdateName(ctx, "nonexistent-id", "new-name")
+	assert.Error(t, err)
+}
+
+// T-17.04: UpdateName preserves published state
+func TestT17_04_UpdateName_PreservesPublished(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	catalogRepo := repository.NewCatalogGormRepo(db)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	ctx := context.Background()
+
+	cvID := newCatalogID()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{
+		ID: cvID, VersionLabel: "v1", LifecycleStage: "development",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	catID := newCatalogID()
+	require.NoError(t, catalogRepo.Create(ctx, &models.Catalog{
+		ID: catID, Name: "pub-cat", CatalogVersionID: cvID,
+		ValidationStatus: models.ValidationStatusValid, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	// Publish it
+	now := time.Now()
+	require.NoError(t, catalogRepo.UpdatePublished(ctx, catID, true, &now))
+
+	// Rename
+	require.NoError(t, catalogRepo.UpdateName(ctx, catID, "renamed-pub-cat"))
+
+	// Verify published state preserved
+	found, err := catalogRepo.GetByName(ctx, "renamed-pub-cat")
+	require.NoError(t, err)
+	assert.True(t, found.Published)
+	assert.NotNil(t, found.PublishedAt)
+}
+
 // T-16.44 (partial): ListByCatalogVersionID
 func TestListByCatalogVersionID(t *testing.T) {
 	db := testutil.NewTestDB(t)

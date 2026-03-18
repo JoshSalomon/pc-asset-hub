@@ -89,7 +89,8 @@ func main() {
 	cvSvc := svcmeta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, crManager, watchNamespace, cfg.AllowedStages(), etRepo, etvRepo, catalogRepo)
 	enumValRepo := gormrepo.NewEnumValueGormRepo(db)
 	instSvc := svcop.NewEntityInstanceService(instRepo, iavRepo, attrRepo, cvRepo, linkRepo)
-	catalogSvc := svcop.NewCatalogService(catalogRepo, cvRepo, instRepo, catalogCRManager, watchNamespace)
+	txManager := gormrepo.NewGormTransactionManager(db)
+	catalogSvc := svcop.NewCatalogService(catalogRepo, cvRepo, instRepo, catalogCRManager, watchNamespace, svcop.WithCopyDeps(iavRepo, linkRepo), svcop.WithTransactionManager(txManager))
 	instanceSvc := svcop.NewInstanceService(instRepo, iavRepo, catalogRepo, cvRepo, pinRepo, attrRepo, etvRepo, etRepo, enumValRepo, assocRepo, linkRepo)
 
 	// Handlers

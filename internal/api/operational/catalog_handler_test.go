@@ -486,3 +486,341 @@ func TestT16_38_CatalogResponseHasPublishedFields(t *testing.T) {
 	assert.Equal(t, true, resp["published"])
 	assert.NotNil(t, resp["published_at"])
 }
+
+// ---- Copy & Replace Handler Tests ----
+
+func setupCatalogServerWithCopy() (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockCatalogVersionRepo, *mocks.MockEntityInstanceRepo, *mocks.MockInstanceAttributeValueRepo, *mocks.MockAssociationLinkRepo) {
+	catRepo := new(mocks.MockCatalogRepo)
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	iavRepo := new(mocks.MockInstanceAttributeValueRepo)
+	linkRepo := new(mocks.MockAssociationLinkRepo)
+	txm := &mocks.MockTransactionManager{}
+	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo, nil, "", svcop.WithCopyDeps(iavRepo, linkRepo), svcop.WithTransactionManager(txm))
+	accessChecker := &apimw.HeaderCatalogAccessChecker{}
+	handler := apiop.NewCatalogHandler(svc, nil, accessChecker)
+
+	e := echo.New()
+	g := e.Group("/api/data/v1/catalogs")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	requireRW := apimw.RequireRole(apimw.RoleRW)
+	apiop.RegisterCatalogRoutes(g, handler, requireRW, apimw.RequireRole(apimw.RoleAdmin))
+
+	return e, catRepo, cvRepo, instRepo, iavRepo, linkRepo
+}
+
+// T-17.51: POST /catalogs/copy returns 201
+func TestT17_51_CopyCatalog_Success(t *testing.T) {
+	e, catRepo, cvRepo, instRepo, _, _ := setupCatalogServerWithCopy()
+
+	catRepo.On("GetByName", mock.Anything, "source").Return(&models.Catalog{
+		ID: "src-id", Name: "source", Description: "desc", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	catRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Catalog")).Return(nil)
+	instRepo.On("ListByCatalog", mock.Anything, "src-id").Return([]*models.EntityInstance{}, nil)
+	// For CV label resolution in response
+	catRepo.On("GetByName", mock.Anything, "target").Return(&models.Catalog{
+		ID: "new-id", Name: "target", CatalogVersionID: "cv1",
+	}, nil)
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1.0"}, nil)
+
+	body := `{"source":"source","name":"target","description":"copied"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/copy", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusCreated, rec.Code)
+
+	var resp dto.CatalogResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, "target", resp.Name)
+	assert.Equal(t, "draft", resp.ValidationStatus)
+	assert.Equal(t, "v1.0", resp.CatalogVersionLabel) // M4: CV label resolved
+}
+
+// T-17.53: Copy with nonexistent source → 404
+func TestT17_53_CopyCatalog_SourceNotFound(t *testing.T) {
+	e, catRepo, _, _, _, _ := setupCatalogServerWithCopy()
+
+	catRepo.On("GetByName", mock.Anything, "nonexistent").Return(nil, domainerrors.NewNotFound("Catalog", "nonexistent"))
+
+	body := `{"source":"nonexistent","name":"target"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/copy", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// T-17.54: Copy with duplicate target → 409
+func TestT17_54_CopyCatalog_DuplicateTarget(t *testing.T) {
+	e, catRepo, _, instRepo, _, _ := setupCatalogServerWithCopy()
+
+	catRepo.On("GetByName", mock.Anything, "source").Return(&models.Catalog{
+		ID: "src-id", Name: "source", CatalogVersionID: "cv1",
+	}, nil)
+	instRepo.On("ListByCatalog", mock.Anything, "src-id").Return([]*models.EntityInstance{}, nil)
+	catRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Catalog")).Return(
+		domainerrors.NewConflict("Catalog", "name already exists"),
+	)
+
+	body := `{"source":"source","name":"existing"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/copy", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusConflict, rec.Code)
+}
+
+// T-17.55: Copy with invalid target name → 400
+func TestT17_55_CopyCatalog_InvalidName(t *testing.T) {
+	e, catRepo, _, _, _, _ := setupCatalogServerWithCopy()
+
+	catRepo.On("GetByName", mock.Anything, "source").Return(&models.Catalog{
+		ID: "src-id", Name: "source", CatalogVersionID: "cv1",
+	}, nil)
+
+	body := `{"source":"source","name":"INVALID"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/copy", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// T-17.56: Copy as RO → 403
+func TestT17_56_CopyCatalog_RO_Forbidden(t *testing.T) {
+	e, _, _, _, _, _ := setupCatalogServerWithCopy()
+
+	body := `{"source":"source","name":"target"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/copy", body, apimw.RoleRO)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// T-17.57: Copy as RW → 201
+func TestT17_57_CopyCatalog_RW_Allowed(t *testing.T) {
+	e, catRepo, cvRepo, instRepo, _, _ := setupCatalogServerWithCopy()
+
+	catRepo.On("GetByName", mock.Anything, "source").Return(&models.Catalog{
+		ID: "src-id", Name: "source", CatalogVersionID: "cv1",
+	}, nil)
+	catRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Catalog")).Return(nil)
+	instRepo.On("ListByCatalog", mock.Anything, "src-id").Return([]*models.EntityInstance{}, nil)
+	catRepo.On("GetByName", mock.Anything, "target").Return(&models.Catalog{ID: "new-id", Name: "target", CatalogVersionID: "cv1"}, nil)
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1"}, nil)
+
+	body := `{"source":"source","name":"target"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/copy", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
+// T-17.59: POST /catalogs/replace returns 200
+func TestT17_59_ReplaceCatalog_Success(t *testing.T) {
+	e, catRepo, cvRepo, _, _, _ := setupCatalogServerWithCopy()
+
+	catRepo.On("GetByName", mock.Anything, "staging").Return(&models.Catalog{
+		ID: "src-id", Name: "staging", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	catRepo.On("GetByName", mock.Anything, "prod").Return(&models.Catalog{
+		ID: "tgt-id", Name: "prod", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	catRepo.On("UpdateName", mock.Anything, "tgt-id", "prod-archive").Return(nil)
+	catRepo.On("UpdateName", mock.Anything, "src-id", "prod").Return(nil)
+	// For CV label resolution — after replace, source is named "prod"
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1.0"}, nil)
+
+	body := `{"source":"staging","target":"prod","archive_name":"prod-archive"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/replace", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.CatalogResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, "prod", resp.Name) // M1: correct name in response
+}
+
+// T-17.60: Replace with non-valid source → 400
+func TestT17_60_ReplaceCatalog_InvalidSource(t *testing.T) {
+	e, catRepo, _, _, _, _ := setupCatalogServerWithCopy()
+
+	catRepo.On("GetByName", mock.Anything, "staging").Return(&models.Catalog{
+		ID: "src-id", Name: "staging", ValidationStatus: models.ValidationStatusDraft,
+	}, nil)
+	catRepo.On("GetByName", mock.Anything, "prod").Return(&models.Catalog{
+		ID: "tgt-id", Name: "prod",
+	}, nil)
+
+	body := `{"source":"staging","target":"prod"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/replace", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// T-17.64: Replace as RO → 403
+func TestT17_64_ReplaceCatalog_RO_Forbidden(t *testing.T) {
+	e, _, _, _, _, _ := setupCatalogServerWithCopy()
+
+	body := `{"source":"staging","target":"prod"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/replace", body, apimw.RoleRO)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// T-17.65: Replace as RW → 403
+func TestT17_65_ReplaceCatalog_RW_Forbidden(t *testing.T) {
+	e, _, _, _, _, _ := setupCatalogServerWithCopy()
+
+	body := `{"source":"staging","target":"prod"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/replace", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// --- Copy/Replace access checker error coverage ---
+
+func setupCopyServerWithAccessChecker(checker apimw.CatalogAccessChecker) (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockCatalogVersionRepo, *mocks.MockEntityInstanceRepo) {
+	catRepo := new(mocks.MockCatalogRepo)
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	iavRepo := new(mocks.MockInstanceAttributeValueRepo)
+	linkRepo := new(mocks.MockAssociationLinkRepo)
+	txm := &mocks.MockTransactionManager{}
+	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo, nil, "", svcop.WithCopyDeps(iavRepo, linkRepo), svcop.WithTransactionManager(txm))
+	handler := apiop.NewCatalogHandler(svc, nil, checker)
+
+	e := echo.New()
+	g := e.Group("/api/data/v1/catalogs")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	requireRW := apimw.RequireRole(apimw.RoleRW)
+	apiop.RegisterCatalogRoutes(g, handler, requireRW, apimw.RequireRole(apimw.RoleAdmin))
+	return e, catRepo, cvRepo, instRepo
+}
+
+// Copy: source access denied → 403
+func TestCopyCatalog_SourceAccessDenied(t *testing.T) {
+	checker := &mockAccessChecker{allowed: map[string]bool{"source": false, "target": true}}
+	e, _, _, _ := setupCopyServerWithAccessChecker(checker)
+
+	body := `{"source":"source","name":"target"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/copy", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// Copy: target access denied → 403
+func TestCopyCatalog_TargetAccessDenied(t *testing.T) {
+	checker := &mockAccessChecker{allowed: map[string]bool{"source": true, "target": false}}
+	e, _, _, _ := setupCopyServerWithAccessChecker(checker)
+
+	body := `{"source":"source","name":"target"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/copy", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// Replace: source access denied → 403
+func TestReplaceCatalog_SourceAccessDenied(t *testing.T) {
+	checker := &mockAccessChecker{allowed: map[string]bool{"staging": false, "prod": true}}
+	e, _, _, _ := setupCopyServerWithAccessChecker(checker)
+
+	body := `{"source":"staging","target":"prod"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/replace", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// Replace: target access denied → 403
+func TestReplaceCatalog_TargetAccessDenied(t *testing.T) {
+	checker := &mockAccessChecker{allowed: map[string]bool{"staging": true, "prod": false}}
+	e, _, _, _ := setupCopyServerWithAccessChecker(checker)
+
+	body := `{"source":"staging","target":"prod"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/replace", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// errorAccessChecker always returns an error
+type errorAccessChecker struct{}
+
+func (e *errorAccessChecker) CheckAccess(_ echo.Context, _ string, _ string) (bool, error) {
+	return false, fmt.Errorf("access check error")
+}
+
+// Copy: access checker error → 500
+func TestCopyCatalog_AccessCheckError(t *testing.T) {
+	e, _, _, _ := setupCopyServerWithAccessChecker(&errorAccessChecker{})
+
+	body := `{"source":"source","name":"target"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/copy", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// Replace: access checker error → 500
+func TestReplaceCatalog_AccessCheckError(t *testing.T) {
+	e, _, _, _ := setupCopyServerWithAccessChecker(&errorAccessChecker{})
+
+	body := `{"source":"staging","target":"prod"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/replace", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// targetErrorAccessChecker allows source but errors on target
+type targetErrorAccessChecker struct{}
+
+func (t *targetErrorAccessChecker) CheckAccess(_ echo.Context, name string, _ string) (bool, error) {
+	if name == "source" || name == "staging" {
+		return true, nil
+	}
+	return false, fmt.Errorf("access check error for target")
+}
+
+// Copy: target access check error → 500
+func TestCopyCatalog_TargetAccessCheckError(t *testing.T) {
+	e, _, _, _ := setupCopyServerWithAccessChecker(&targetErrorAccessChecker{})
+
+	body := `{"source":"source","name":"target"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/copy", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// Replace: target access check error → 500
+func TestReplaceCatalog_TargetAccessCheckError(t *testing.T) {
+	e, _, _, _ := setupCopyServerWithAccessChecker(&targetErrorAccessChecker{})
+
+	body := `{"source":"staging","target":"prod"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/replace", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// Copy: CV label resolution failure — fallback to empty label
+func TestCopyCatalog_CVLabelFallback(t *testing.T) {
+	e, catRepo, cvRepo, instRepo, _, _ := setupCatalogServerWithCopy()
+
+	catRepo.On("GetByName", mock.Anything, "source").Return(&models.Catalog{
+		ID: "src-id", Name: "source", CatalogVersionID: "cv1",
+	}, nil)
+	catRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Catalog")).Return(nil)
+	instRepo.On("ListByCatalog", mock.Anything, "src-id").Return([]*models.EntityInstance{}, nil)
+	// GetByName for CV label resolution fails
+	catRepo.On("GetByName", mock.Anything, "target").Return(nil, fmt.Errorf("not found"))
+	_ = cvRepo // not called since GetByName fails first
+
+	body := `{"source":"source","name":"target"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/copy", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusCreated, rec.Code)
+
+	var resp dto.CatalogResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, "", resp.CatalogVersionLabel) // fallback
+}
+
+// Replace: CV label resolution failure — fallback to empty label
+func TestReplaceCatalog_CVLabelFallback(t *testing.T) {
+	e, catRepo, cvRepo, _, _, _ := setupCatalogServerWithCopy()
+
+	catRepo.On("GetByName", mock.Anything, "staging").Return(&models.Catalog{
+		ID: "src-id", Name: "staging", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	catRepo.On("GetByName", mock.Anything, "prod").Return(&models.Catalog{
+		ID: "tgt-id", Name: "prod", CatalogVersionID: "cv1",
+	}, nil)
+	catRepo.On("UpdateName", mock.Anything, "tgt-id", "prod-archive").Return(nil)
+	catRepo.On("UpdateName", mock.Anything, "src-id", "prod").Return(nil)
+	// CV label resolution will fail — cvRepo.GetByID returns error
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(nil, fmt.Errorf("cv not found"))
+
+	body := `{"source":"staging","target":"prod","archive_name":"prod-archive"}`
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/replace", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.CatalogResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, "", resp.CatalogVersionLabel) // fallback
+}

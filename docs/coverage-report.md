@@ -1,6 +1,6 @@
 # AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-03-16
+Last updated: 2026-03-17
 
 ---
 
@@ -8,12 +8,12 @@ Last updated: 2026-03-16
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1191 | 100% | 89.6% | — |
+| Backend (Go) | 1261 | 100% | 94.0% | — |
 | UI — Unit tests | 75 | 100% | 17.9% | 20.6% |
-| UI — Browser tests (Playwright) | 429 | 100% | 83.4% | 88.0% |
+| UI — Browser tests (Playwright) | 453 | 100% | 84.6% | 89.0% |
 | UI — System tests (Playwright + live server) | 30 | 100% | — | — |
-| Live system (bash scripts) | 64 | 100% | — | — |
-| **Total** | **1789** | **100%** | — | — |
+| Live system (bash scripts) | 81 | 100% | — | — |
+| **Total** | **1900** | **100%** | — | — |
 
 ---
 
@@ -24,17 +24,17 @@ Last updated: 2026-03-16
 | `internal/api/health` | 90.0% | Readyz DB-ping error path |
 | `internal/api/meta` | 98.8% | Promote/Demote/Delete RoleRO/RW switch cases unreachable behind RBAC middleware |
 | `internal/api/middleware` | 100.0% | |
-| `internal/api/operational` | 97.3% | All Phase 7 handlers (Publish, Unpublish) at 100%; legacy handler.go bind-error branches |
+| `internal/api/operational` | 97.0% | Copy/Replace handlers at 94.4% (bind-error branches only); legacy handler.go bind-error branches |
 | `internal/domain/errors` | 100.0% | |
 | `internal/infrastructure/config` | 100.0% | |
 | `internal/infrastructure/gorm/models` | 100.0% | |
-| `internal/infrastructure/gorm/repository` | 90.5% | GORM error branches on Delete/Update, `CatalogVersionGormRepo.Delete` at 0%; new `CatalogGormRepo` at 90-100% |
+| `internal/infrastructure/gorm/repository` | 90.7% | GORM error branches on Delete/Update, `CatalogVersionGormRepo.Delete` at 0%; `GormTransactionManager` at 100% via integration tests |
 | `internal/infrastructure/k8s` | 92.6% | K8s client error paths |
 | `internal/operator/api/v1alpha1` | 98.2% | `DeepCopyObject` nil-receiver guard |
 | `internal/operator/controllers` | 78.8% | `SetupWithManager`, Route reconciliation, K8s client error paths in `reconcileCatalogVersions` and `reconcileCatalogs` (SetOwnerReference, Update, Status().Update failures) |
 | `internal/operator/crdgen` | 84.2% | `GenerateCRDJSON`, `GenerateCR` error paths |
 | `internal/service/meta` | 94.6% | `ListAttributes` and `ListValues` at 0% (trivial delegators) |
-| `internal/service/operational` | 99.3% | All validation and publishing functions at 100%; `instance_service.go` at 99%+ |
+| `internal/service/operational` | 98.8% | CopyCatalog 98.3%, ReplaceCatalog 98.1%; validation and publishing at 100% |
 | `internal/service/validation` | 95.6% | |
 
 ### Excluded from Coverage
@@ -108,19 +108,19 @@ These methods are single-line delegations to the repository layer with no branch
 | Test File | Tests | Status |
 |-----------|-------|--------|
 | `App.browser.test.tsx` | 51 | Pass |
-| `client.browser.test.ts` | 59 | Pass |
+| `client.browser.test.ts` | 61 | Pass |
 | `EntityTypeDetailPage.browser.test.tsx` | 77 | Pass |
 | `EntityTypeListPage.browser.test.tsx` | 12 | Pass |
 | `EnumDetailPage.browser.test.tsx` | 24 | Pass |
 | `EnumListPage.browser.test.tsx` | 14 | Pass |
 | `CatalogVersionDetailPage.browser.test.tsx` | 27 | Pass |
 | `CatalogListPage.browser.test.tsx` | 19 | Pass |
-| `CatalogDetailPage.browser.test.tsx` | 78 | Pass |
+| `CatalogDetailPage.browser.test.tsx` | 95 | Pass |
 | `OperationalCatalogDetailPage.browser.test.tsx` | 36 | Pass |
 | `OperationalCatalogListPage.browser.test.tsx` | 13 | Pass |
 | `OperationalApp.browser.test.tsx` | 3 | Pass |
 | `useValidation.browser.test.tsx` | 6 | Pass |
-| **Total** | **429** | **100% pass** |
+| **Total** | **453** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
@@ -376,6 +376,69 @@ New files:
 - `scripts/test-publishing.sh` — 14 live system tests
 
 Live system tests: `scripts/test-publishing.sh` — 14 tests covering publish/unpublish RBAC, draft/valid validation gate, write protection (RW blocked, SuperAdmin allowed), status persistence, CR cleanup, CV promotion warnings.
+
+### New Code Coverage (Session 010 — Copy & Replace Catalog)
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/operational/catalog_service.go` | `CopyCatalog` | 98.3% |
+| `service/operational/catalog_service.go` | `ReplaceCatalog` | 98.1% |
+| `service/operational/catalog_service.go` | `WithCopyDeps` | 100% |
+| `service/operational/catalog_service.go` | `WithTransactionManager` | 100% |
+| `api/operational/catalog_handler.go` | `CopyCatalog` | 94.4% |
+| `api/operational/catalog_handler.go` | `ReplaceCatalog` | 94.4% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `UpdateName` | 100% |
+| `infrastructure/gorm/repository/transaction.go` | `NewGormTransactionManager` | 100% |
+| `infrastructure/gorm/repository/transaction.go` | `RunInTransaction` | 100% |
+| `infrastructure/gorm/repository/transaction.go` | `getDB` | 100% |
+
+Uncovered lines with justification:
+- `CopyCatalog handler:94.4%` — 1 line: `c.Bind` error (pre-existing pattern across all handlers; requires malformed JSON that bypasses Echo's content-type negotiation)
+- `ReplaceCatalog handler:94.4%` — 1 line: same `c.Bind` error pattern
+- `CopyCatalog service:98.3%` — 1 line: error return inside `txManager != nil` branch; the error path IS tested (via MockTransactionManager which passes through to doMutations), but the specific `txManager.RunInTransaction` error-wrapping line shows as partially uncovered due to Go coverage instrumentation
+- `ReplaceCatalog service:98.1%` — 1 line: same `txManager.RunInTransaction` error-wrapping line
+
+Error paths covered by dedicated tests:
+- Instance create error during copy (T-17.18)
+- GetCurrentValues error during copy
+- SetValues error during copy
+- GetForwardRefs error during copy
+- Link Create error during copy
+- Link with target outside catalog skipped
+- Copy and Replace with nil TransactionManager (both success and error)
+- Replace step 2 rename error
+- Replace UpdatePublished error in step 3
+- Replace source-published unpublish error
+- Handler: source access denied, target access denied, access checker error (both copy and replace)
+- Handler: CV label resolution fallback (both copy and replace)
+- Replace auto-generated archive name too long
+
+Quality review fixes applied: (H1) TransactionManager for atomic copy/replace operations. (H2) Mock nil-guard on GetForwardRefs/GetReverseRefs. (M1) ReplaceCatalog returns correct in-memory name. (M2) DNS label regex extracted to shared constant in UI. (M3) Per-catalog access checks in Copy (source+target) and Replace (source+target) handlers. (M4) CV label resolved in Copy/Replace API responses. (M5) Source-published handling in Replace (unpublish + CR cleanup). (L1) Better error message for auto-generated archive name exceeding 63 chars. (L2) API field name standardized to `source` (was `source_catalog_name`). (L3) Loading/spinner state on Copy/Replace buttons. (L4) Removed unnecessary `seen` map. (L5) Extracted `canPublishOrReplace` named boolean.
+
+New files:
+- `internal/domain/repository/transaction.go` — TransactionManager interface
+- `internal/infrastructure/gorm/repository/transaction.go` — GORM TransactionManager + getDB helper
+- `internal/infrastructure/gorm/repository/catalog_copy_integration_test.go` — End-to-end integration tests (including transaction rollback/commit verification)
+- `scripts/test-copy-replace.sh` — 17 live system tests
+
+Browser test count: 429 → 453 (+24 new tests for Copy/Replace UI and pre-existing gap coverage).
+Live system tests: 64 → 81 (+17 new tests in test-copy-replace.sh).
+
+UI new code coverage:
+- All new Copy/Replace modal code: **100% covered** (0 uncovered lines in lines 1000+)
+- Copy modal: open, close (X button), cancel, name validation, description input, submit success, submit error
+- Replace modal: open, close (X button), cancel, target dropdown interaction, archive name validation, submit success, submit error
+- `api/client.ts` copy/replace methods: 100% covered via client browser tests
+- Pre-existing gaps addressed: adopt-mode submit (setParent API call), set-container submit (setParent API call)
+- Remaining uncovered lines 1112/1115 are in the pre-existing `EnumSelect` component (not new code)
+- Remaining pre-existing uncovered lines (139-992): guard returns, error catch blocks, and PatternFly modal onClose/onChange callbacks — documented in detail below
+
+Pre-existing uncovered lines in CatalogDetailPage.tsx (not from Phase 8):
+- Guard returns (139, 183, 206, 248, 274, 338, 370, 384, 399, 416, 434): early returns when URL param, active tab, or form state is missing — never triggered because test data always satisfies conditions
+- Error catch blocks (299, 315, 329-330, 343, 366, 429): require API mocks to fail at specific points during multi-step interactions
+- `loadLinkTargetInstances` (348-357): requires completing a multi-step PatternFly Select cascade (select association → triggers async load → select target) that blocks test automation
+- `handleCreateLink` (399-411): same cascading Select dependency
+- Modal callbacks (626-627, 722, 731, 740, 761, 767, 770, 779, 786, 800, 811-818, 857, 892, 903-911, 928-937, 950, 981-992): PatternFly component onClose/onChange/onSelect internal callbacks
 
 ### Coverage Gaps to Address
 

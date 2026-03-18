@@ -22,6 +22,9 @@ dist/
 .env
 .env.local
 __screenshots__/
+ui/coverage-browser/
+ui/coverage-jsdom/
+ui/coverage/
 
 # Build artifacts
 *.log

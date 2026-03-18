@@ -214,6 +214,16 @@ export const api = {
       fetchJSON(`${DATA_BASE_URL}/catalogs/${name}/publish`, { method: 'POST' }),
     unpublish: (name: string) =>
       fetchJSON(`${DATA_BASE_URL}/catalogs/${name}/unpublish`, { method: 'POST' }),
+    copy: (data: { source: string; name: string; description?: string }) =>
+      fetchJSON<Catalog>(`${DATA_BASE_URL}/catalogs/copy`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    replace: (data: { source: string; target: string; archive_name?: string }) =>
+      fetchJSON<Catalog>(`${DATA_BASE_URL}/catalogs/replace`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
   },
 
   instances: {
