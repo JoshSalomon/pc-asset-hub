@@ -31,7 +31,7 @@ func (r *AssociationLinkGormRepo) GetByID(ctx context.Context, id string) (*mode
 	var record gormmodels.AssociationLink
 	result := getDB(ctx, r.db).Where("id = ?", id).First(&record)
 	if result.Error != nil {
-		if result.Error.Error() == "record not found" {
+		if result.Error == gorm.ErrRecordNotFound {
 			return nil, domainerrors.NewNotFound("AssociationLink", id)
 		}
 		return nil, result.Error

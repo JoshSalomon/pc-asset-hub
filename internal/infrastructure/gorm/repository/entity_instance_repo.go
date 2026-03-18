@@ -71,14 +71,16 @@ func applyAttrFilters(query *gorm.DB, filters map[string]string) (*gorm.DB, erro
 		alias := fmt.Sprintf("iav%d", joinIdx)
 		joinIdx++
 
+		// JOIN condition includes instance_version to match only current attribute values (not historical versions)
+		joinCond := fmt.Sprintf("JOIN instance_attribute_values AS %s ON %s.instance_id = entity_instances.id AND %s.instance_version = entity_instances.version AND %s.attribute_id = ?", alias, alias, alias, alias)
+
 		if strings.HasSuffix(key, ".min") {
 			attrID := strings.TrimSuffix(key, ".min")
 			numVal, err := strconv.ParseFloat(val, 64)
 			if err != nil {
 				return nil, domainerrors.NewValidation(fmt.Sprintf("invalid number for filter %s: %s", key, val))
 			}
-			query = query.Joins(
-				fmt.Sprintf("JOIN instance_attribute_values AS %s ON %s.instance_id = entity_instances.id AND %s.attribute_id = ?", alias, alias, alias), attrID).
+			query = query.Joins(joinCond, attrID).
 				Where(fmt.Sprintf("%s.value_number >= ?", alias), numVal)
 		} else if strings.HasSuffix(key, ".max") {
 			attrID := strings.TrimSuffix(key, ".max")
@@ -86,12 +88,10 @@ func applyAttrFilters(query *gorm.DB, filters map[string]string) (*gorm.DB, erro
 			if err != nil {
 				return nil, domainerrors.NewValidation(fmt.Sprintf("invalid number for filter %s: %s", key, val))
 			}
-			query = query.Joins(
-				fmt.Sprintf("JOIN instance_attribute_values AS %s ON %s.instance_id = entity_instances.id AND %s.attribute_id = ?", alias, alias, alias), attrID).
+			query = query.Joins(joinCond, attrID).
 				Where(fmt.Sprintf("%s.value_number <= ?", alias), numVal)
 		} else {
-			query = query.Joins(
-				fmt.Sprintf("JOIN instance_attribute_values AS %s ON %s.instance_id = entity_instances.id AND %s.attribute_id = ?", alias, alias, alias), key).
+			query = query.Joins(joinCond, key).
 				Where(fmt.Sprintf("(LOWER(%s.value_string) LIKE ? OR %s.value_enum = ?)", alias, alias), "%"+strings.ToLower(val)+"%", val)
 		}
 	}

@@ -419,3 +419,48 @@ func TestCov_CatalogList_Offset(t *testing.T) {
 	assert.Equal(t, 3, total)
 	assert.Len(t, items, 2)
 }
+
+// Bug: attribute filter JOIN must constrain to current instance version.
+// Without the version constraint, filtering matches historical attribute values
+// from previous versions, producing incorrect results.
+func TestAttrFilter_OnlyMatchesCurrentVersion(t *testing.T) {
+	data, instRepo, iavRepo := setupInstanceTestData(t)
+	ctx := context.Background()
+
+	// Create an instance at version 1 with hostname="old-host"
+	instID := instTestID()
+	require.NoError(t, instRepo.Create(ctx, &models.EntityInstance{
+		ID: instID, EntityTypeID: data.etID, CatalogID: data.catID,
+		Name: "versioned-inst", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{
+		{ID: instTestID(), InstanceID: instID, InstanceVersion: 1, AttributeID: data.attrStringID, ValueString: "old-host"},
+	}))
+
+	// Simulate update: bump to version 2 with hostname="new-host"
+	require.NoError(t, instRepo.Update(ctx, &models.EntityInstance{
+		ID: instID, EntityTypeID: data.etID, CatalogID: data.catID,
+		Name: "versioned-inst", Version: 2, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{
+		{ID: instTestID(), InstanceID: instID, InstanceVersion: 2, AttributeID: data.attrStringID, ValueString: "new-host"},
+	}))
+
+	// Filter by "old-host" — should NOT match (only version 1 had this value)
+	items, total, err := instRepo.List(ctx, data.etID, data.catID, models.ListParams{
+		Limit:   20,
+		Filters: map[string]string{data.attrStringID: "old-host"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 0, total, "filter by old version's value should return 0 results")
+	assert.Len(t, items, 0)
+
+	// Filter by "new-host" — should match (current version 2 has this value)
+	items, total, err = instRepo.List(ctx, data.etID, data.catID, models.ListParams{
+		Limit:   20,
+		Filters: map[string]string{data.attrStringID: "new-host"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, total, "filter by current version's value should return 1 result")
+	assert.Len(t, items, 1)
+}

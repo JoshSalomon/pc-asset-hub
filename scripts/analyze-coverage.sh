@@ -6,8 +6,9 @@
 #   ./scripts/analyze-coverage.sh client       # show only files matching "client"
 #   ./scripts/analyze-coverage.sh CatalogDetail # show only CatalogDetail files
 
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 COVERAGE_FILE="${1:-}"
-SUMMARY_FILE="/home/jsalomon/src/pc-asset-hub/ui/coverage/coverage-summary.json"
+SUMMARY_FILE="${COVERAGE_SUMMARY:-$REPO_ROOT/ui/coverage-browser/coverage-summary.json}"
 
 if [ ! -f "$SUMMARY_FILE" ]; then
   echo "No coverage summary found. Run: npx vitest run --config vitest.browser.config.ts --coverage"

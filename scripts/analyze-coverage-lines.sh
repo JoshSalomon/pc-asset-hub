@@ -5,9 +5,10 @@
 #   ./scripts/analyze-coverage-lines.sh CatalogDetailPage        # all uncovered lines
 #   ./scripts/analyze-coverage-lines.sh CatalogDetailPage 1000   # only lines >= 1000
 
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PATTERN="${1:?Usage: $0 <file-pattern> [min-line]}"
 MIN_LINE="${2:-0}"
-COVERAGE_FILE="/home/jsalomon/src/pc-asset-hub/ui/coverage/coverage-final.json"
+COVERAGE_FILE="${COVERAGE_JSON:-$REPO_ROOT/ui/coverage-browser/coverage-final.json}"
 
 if [ ! -f "$COVERAGE_FILE" ]; then
   echo "No coverage data found. Run: npx vitest run --config vitest.browser.config.ts --coverage --coverage.reporter=json"
