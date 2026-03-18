@@ -247,6 +247,149 @@ type ContainmentTreeNodeDTO struct {
 	Children      []ContainmentTreeNodeDTO   `json:"children"`
 }
 
+// === Catalog DTOs ===
+
+type CreateCatalogRequest struct {
+	Name             string `json:"name"`
+	Description      string `json:"description"`
+	CatalogVersionID string `json:"catalog_version_id"`
+}
+
+type CatalogResponse struct {
+	ID                  string     `json:"id"`
+	Name                string     `json:"name"`
+	Description         string     `json:"description"`
+	CatalogVersionID    string     `json:"catalog_version_id"`
+	CatalogVersionLabel string     `json:"catalog_version_label,omitempty"`
+	ValidationStatus    string     `json:"validation_status"`
+	Published           bool       `json:"published"`
+	PublishedAt         *time.Time `json:"published_at,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
+}
+
+type StatusResponse struct {
+	Status string `json:"status"`
+}
+
+type CopyCatalogRequest struct {
+	Source      string `json:"source"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+type ReplaceCatalogRequest struct {
+	Source      string `json:"source"`
+	Target      string `json:"target"`
+	ArchiveName string `json:"archive_name"`
+}
+
+type CatalogWarningResponse struct {
+	CatalogName      string `json:"catalog_name"`
+	ValidationStatus string `json:"validation_status"`
+}
+
+type PromoteResponse struct {
+	Status   string                   `json:"status"`
+	Warnings []CatalogWarningResponse `json:"warnings"`
+}
+
+// === Validation DTOs ===
+
+type ValidationErrorResponse struct {
+	EntityType   string `json:"entity_type"`
+	InstanceName string `json:"instance_name"`
+	Field        string `json:"field"`
+	Violation    string `json:"violation"`
+}
+
+type ValidationResultResponse struct {
+	Status string                    `json:"status"`
+	Errors []ValidationErrorResponse `json:"errors"`
+}
+
+// === Instance DTOs ===
+
+type CreateInstanceRequest struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Attributes  map[string]interface{} `json:"attributes"`
+}
+
+type UpdateInstanceRequest struct {
+	Version     int                    `json:"version"`
+	Name        *string                `json:"name,omitempty"`
+	Description *string                `json:"description,omitempty"`
+	Attributes  map[string]interface{} `json:"attributes,omitempty"`
+}
+
+type InstanceResponse struct {
+	ID               string                     `json:"id"`
+	EntityTypeID     string                     `json:"entity_type_id"`
+	CatalogID        string                     `json:"catalog_id"`
+	ParentInstanceID string                     `json:"parent_instance_id,omitempty"`
+	Name             string                     `json:"name"`
+	Description      string                     `json:"description"`
+	Version          int                        `json:"version"`
+	Attributes       []AttributeValueResponse   `json:"attributes"`
+	ParentChain      []ParentChainEntryResponse `json:"parent_chain,omitempty"`
+	CreatedAt        time.Time                  `json:"created_at"`
+	UpdatedAt        time.Time                  `json:"updated_at"`
+}
+
+type AttributeValueResponse struct {
+	Name  string      `json:"name"`
+	Type  string      `json:"type"`
+	Value interface{} `json:"value"`
+}
+
+// === Association Link DTOs ===
+
+type CreateAssociationLinkRequest struct {
+	TargetInstanceID string `json:"target_instance_id" validate:"required"`
+	AssociationName  string `json:"association_name" validate:"required"`
+}
+
+type AssociationLinkResponse struct {
+	ID               string    `json:"id"`
+	AssociationID    string    `json:"association_id"`
+	SourceInstanceID string    `json:"source_instance_id"`
+	TargetInstanceID string    `json:"target_instance_id"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+type ReferenceResponse struct {
+	LinkID          string `json:"link_id"`
+	AssociationName string `json:"association_name"`
+	AssociationType string `json:"association_type"`
+	InstanceID      string `json:"instance_id"`
+	InstanceName    string `json:"instance_name"`
+	EntityTypeName  string `json:"entity_type_name"`
+}
+
+// === Set Parent DTO ===
+
+type SetParentRequest struct {
+	ParentType       string `json:"parent_type"`
+	ParentInstanceID string `json:"parent_instance_id"`
+}
+
+// === Catalog Data Viewer DTOs ===
+
+type TreeNodeResponse struct {
+	InstanceID     string             `json:"instance_id"`
+	InstanceName   string             `json:"instance_name"`
+	EntityTypeName string             `json:"entity_type_name"`
+	Description    string             `json:"description"`
+	Children       []TreeNodeResponse `json:"children"`
+}
+
+type ParentChainEntryResponse struct {
+	InstanceID     string `json:"instance_id"`
+	InstanceName   string `json:"instance_name"`
+	EntityTypeName string `json:"entity_type_name"`
+}
+
 // === List Response ===
 
 type ListResponse struct {

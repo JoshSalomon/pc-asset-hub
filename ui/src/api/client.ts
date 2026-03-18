@@ -5,6 +5,7 @@ import type {
   Association,
   Enum,
   EnumValue,
+  Catalog,
   CatalogVersion,
   CatalogVersionPin,
   LifecycleTransition,
@@ -12,10 +13,16 @@ import type {
   VersionDiff,
   ContainmentTreeNode,
   VersionSnapshot,
+  EntityInstance,
+  AssociationLink,
+  ReferenceDetail,
+  TreeNodeResponse,
+  ValidationResult,
   ListResponse,
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/meta/v1'
+const DATA_BASE_URL = import.meta.env.VITE_DATA_API_BASE_URL || '/api/data/v1'
 
 let currentRole: string | null = null
 
@@ -182,5 +189,98 @@ export const api = {
       }),
     delete: (id: string) =>
       fetchJSON(`${BASE_URL}/catalog-versions/${id}`, { method: 'DELETE' }),
+  },
+
+  catalogs: {
+    list: (params?: { catalog_version_id?: string; validation_status?: string }) => {
+      const query = new URLSearchParams()
+      if (params?.catalog_version_id) query.set('catalog_version_id', params.catalog_version_id)
+      if (params?.validation_status) query.set('validation_status', params.validation_status)
+      const qs = query.toString()
+      return fetchJSON<ListResponse<Catalog>>(`${DATA_BASE_URL}/catalogs${qs ? `?${qs}` : ''}`)
+    },
+    get: (name: string) =>
+      fetchJSON<Catalog>(`${DATA_BASE_URL}/catalogs/${name}`),
+    create: (data: { name: string; description?: string; catalog_version_id: string }) =>
+      fetchJSON<Catalog>(`${DATA_BASE_URL}/catalogs`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    delete: (name: string) =>
+      fetchJSON(`${DATA_BASE_URL}/catalogs/${name}`, { method: 'DELETE' }),
+    validate: (name: string) =>
+      fetchJSON<ValidationResult>(`${DATA_BASE_URL}/catalogs/${name}/validate`, { method: 'POST' }),
+    publish: (name: string) =>
+      fetchJSON(`${DATA_BASE_URL}/catalogs/${name}/publish`, { method: 'POST' }),
+    unpublish: (name: string) =>
+      fetchJSON(`${DATA_BASE_URL}/catalogs/${name}/unpublish`, { method: 'POST' }),
+    copy: (data: { source: string; name: string; description?: string }) =>
+      fetchJSON<Catalog>(`${DATA_BASE_URL}/catalogs/copy`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    replace: (data: { source: string; target: string; archive_name?: string }) =>
+      fetchJSON<Catalog>(`${DATA_BASE_URL}/catalogs/replace`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+  },
+
+  instances: {
+    list: (catalogName: string, entityTypeName: string, params?: { limit?: number; offset?: number; sort?: string; filters?: Record<string, string> }) => {
+      const query = new URLSearchParams()
+      if (params?.limit !== undefined) query.set('limit', String(params.limit))
+      if (params?.offset !== undefined) query.set('offset', String(params.offset))
+      if (params?.sort) query.set('sort', params.sort)
+      if (params?.filters) {
+        for (const [k, v] of Object.entries(params.filters)) {
+          query.set(`filter.${k}`, v)
+        }
+      }
+      const qs = query.toString()
+      return fetchJSON<ListResponse<EntityInstance>>(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityTypeName}${qs ? `?${qs}` : ''}`)
+    },
+    tree: (catalogName: string) =>
+      fetchJSON<TreeNodeResponse[]>(`${DATA_BASE_URL}/catalogs/${catalogName}/tree`),
+    get: (catalogName: string, entityTypeName: string, instanceId: string) =>
+      fetchJSON<EntityInstance>(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityTypeName}/${instanceId}`),
+    create: (catalogName: string, entityTypeName: string, data: { name: string; description?: string; attributes?: Record<string, unknown> }) =>
+      fetchJSON<EntityInstance>(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityTypeName}`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    update: (catalogName: string, entityTypeName: string, instanceId: string, data: { version: number; name?: string; description?: string; attributes?: Record<string, unknown> }) =>
+      fetchJSON<EntityInstance>(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityTypeName}/${instanceId}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    delete: (catalogName: string, entityTypeName: string, instanceId: string) =>
+      fetchJSON(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityTypeName}/${instanceId}`, { method: 'DELETE' }),
+    setParent: (catalogName: string, entityType: string, instanceId: string, data: { parent_type: string; parent_instance_id: string }) =>
+      fetchJSON(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityType}/${instanceId}/parent`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    createContained: (catalogName: string, parentType: string, parentId: string, childType: string, data: { name: string; description?: string; attributes?: Record<string, unknown> }) =>
+      fetchJSON<EntityInstance>(`${DATA_BASE_URL}/catalogs/${catalogName}/${parentType}/${parentId}/${childType}`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    listContained: (catalogName: string, parentType: string, parentId: string, childType: string) =>
+      fetchJSON<ListResponse<EntityInstance>>(`${DATA_BASE_URL}/catalogs/${catalogName}/${parentType}/${parentId}/${childType}`),
+  },
+
+  links: {
+    create: (catalogName: string, entityType: string, instanceId: string, data: { target_instance_id: string; association_name: string }) =>
+      fetchJSON<AssociationLink>(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityType}/${instanceId}/links`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    delete: (catalogName: string, entityType: string, instanceId: string, linkId: string) =>
+      fetchJSON(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityType}/${instanceId}/links/${linkId}`, { method: 'DELETE' }),
+    forwardRefs: (catalogName: string, entityType: string, instanceId: string) =>
+      fetchJSON<ReferenceDetail[]>(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityType}/${instanceId}/references`),
+    reverseRefs: (catalogName: string, entityType: string, instanceId: string) =>
+      fetchJSON<ReferenceDetail[]>(`${DATA_BASE_URL}/catalogs/${catalogName}/${entityType}/${instanceId}/referenced-by`),
   },
 }

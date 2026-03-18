@@ -135,6 +135,82 @@ export interface VersionSnapshot {
   associations: SnapshotAssociation[]
 }
 
+export interface Catalog {
+  id: string
+  name: string
+  description: string
+  catalog_version_id: string
+  catalog_version_label?: string
+  validation_status: 'draft' | 'valid' | 'invalid'
+  published: boolean
+  published_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface EntityInstance {
+  id: string
+  entity_type_id: string
+  catalog_id: string
+  parent_instance_id?: string
+  name: string
+  description: string
+  version: number
+  attributes: AttributeValueResponse[]
+  parent_chain?: ParentChainEntry[]
+  created_at: string
+  updated_at: string
+}
+
+export interface AttributeValueResponse {
+  name: string
+  type: string
+  value: string | number | null
+}
+
+export interface AssociationLink {
+  id: string
+  association_id: string
+  source_instance_id: string
+  target_instance_id: string
+  created_at: string
+}
+
+export interface ReferenceDetail {
+  link_id: string
+  association_name: string
+  association_type: string
+  instance_id: string
+  instance_name: string
+  entity_type_name: string
+}
+
+export interface ParentChainEntry {
+  instance_id: string
+  instance_name: string
+  entity_type_name: string
+}
+
+export interface TreeNodeResponse {
+  instance_id: string
+  instance_name: string
+  entity_type_name: string
+  description: string
+  children: TreeNodeResponse[]
+}
+
+export interface ValidationError {
+  entity_type: string
+  instance_name: string
+  field: string
+  violation: string
+}
+
+export interface ValidationResult {
+  status: 'valid' | 'invalid'
+  errors: ValidationError[]
+}
+
 export interface ListResponse<T> {
   items: T[]
   total: number

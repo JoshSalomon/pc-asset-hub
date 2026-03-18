@@ -143,6 +143,47 @@ Each feature area is tested at the appropriate layers:
 | Association cardinality | X | X | X | X | |
 | Edit association (COW) | X | | X | X | |
 | Association names + shared namespace | X | X | X | X | |
+| Catalog CRUD + name validation | X | X | X | X | |
+| Catalog scoping (data isolation) | X | X | X | | |
+| Instance CRUD within catalog | X | X | X | X | |
+| Instance attribute values (set/get/validate) | X | X | X | X | |
+| Entity type pin resolution (catalog → CV → pins) | X | X | X | | |
+| Instance optimistic locking | X | X | X | | |
+| Catalog validation status reset on mutation | X | X | X | | |
+| Contained instance CRUD within catalog | X | X | X | X | |
+| Association link CRUD + validation against CV | X | X | X | X | |
+| Forward/reverse reference resolution (operational) | X | X | X | X | |
+| Containment tree endpoint | X | X | X | | |
+| Attribute-based filtering (string/number/enum) | X | X | X | X | |
+| Multi-field sorting | X | X | X | X | |
+| Pagination (offset/limit/total) | X | X | X | X | |
+| Parent chain resolution (breadcrumb) | X | | X | X | |
+| Operational UI — catalog list + counts | | | | X | |
+| Operational UI — containment tree browser | | | | X | |
+| Operational UI — instance detail + attributes | | | | X | |
+| Operational UI — reference navigation | | | | X | |
+| Operational UI — breadcrumb navigation | | | | X | |
+| Operational UI — Vite multi-entry build | | | | X | |
+| Catalog-level RBAC — access check + middleware | X | | X | | |
+| Catalog-level RBAC — catalog list filtering | X | | X | | |
+| Catalog-level RBAC — header mode passthrough | X | | X | | |
+| Catalog validation — required attrs + type check | X | X | X | X | |
+| Catalog validation — mandatory associations | X | X | X | | |
+| Catalog validation — containment consistency | X | X | X | | |
+| Catalog validation — status update (valid/invalid) | X | X | X | X | |
+| Catalog validation — RBAC (RW+ only) | X | | X | X | |
+| Catalog publish/unpublish — service + status | X | X | X | X | |
+| Catalog publish — RBAC (Admin+ only) | X | | X | X | |
+| Published catalog write protection (SuperAdmin) | X | X | X | X | |
+| Catalog CR lifecycle (create/delete on publish) | X | | | | X |
+| Catalog CR status.DataVersion (operator bump) | | | | | X |
+| CV promotion warnings (draft/invalid catalogs) | X | X | X | X | |
+| Copy Catalog — deep clone (service + transaction) | X | X | X | X | |
+| Copy Catalog — instance/attr/link/hierarchy remap | X | X | X | | |
+| Replace Catalog — atomic swap + archive naming | X | X | X | X | |
+| Replace Catalog — published state transfer + CR sync | X | X | X | | X |
+| Copy & Replace — RBAC (RW+ copy, Admin+ replace) | X | | X | X | |
+| Copy & Replace — validation & error cases | X | X | X | | |
 
 ---
 
@@ -200,13 +241,14 @@ CatalogVersion CRs bridge the database and K8s for discovery. Cluster role contr
 - ≥90% on controller (excluding SetupWithManager) and CatalogVersionService promotion/demotion with CR operations
 - Documented exceptions per uncovered line
 
-### 5.5 Catalog Version Scoping
+### 5.5 Catalog Scoping
 
-Catalog version scoping is the core isolation mechanism for the operational API:
+Catalog scoping is the core isolation mechanism for the operational API. Entity instances belong to a catalog (named data collection), which is pinned to a catalog version (schema snapshot).
 
-- **API tests**: Verify that every operational API call scoped to a catalog version returns only entity types and instances consistent with that version's pinned entity type definitions.
-- **API tests**: Verify that creating or modifying entities in one catalog version does not affect another.
-- **API tests**: Verify that requests with an invalid catalog version return a clear error. Verify that requests against a demoted (no longer in production) catalog version return an appropriate error rather than stale data.
+- **API tests**: Verify that every operational API call scoped to a catalog returns only entity instances belonging to that catalog.
+- **API tests**: Verify that instances in one catalog are not visible in another catalog, even if both share the same CV.
+- **API tests**: Verify that requests with a nonexistent catalog name return 404.
+- **API tests**: Verify that the catalog's pinned CV determines which entity types are available for creating instances.
 
 ### 5.6 Edit Attribute
 
@@ -303,3 +345,139 @@ UML-like graphical diagram of entity types and their associations using `@patter
 
 - **UI tests (browser — main page)**: Verify "Model Diagram" tab exists. Verify diagram renders entity type nodes with name, version, and attributes. Verify edges rendered between associated entity types with labels (name, type, cardinality). Verify containment edges visually distinct from reference edges. Verify zoom/pan controls present.
 - **UI tests (browser — CV detail)**: Verify "Diagram" tab exists on CV detail page. Verify diagram renders only pinned entity types with attributes and associations.
+
+### 5.18 Catalog CRUD (US-33)
+
+Catalogs are named data containers pinned to a catalog version. The operational API uses the catalog name in URLs (DNS-label format). This section covers the catalog entity itself — instance management within catalogs is tested separately.
+
+- **Unit tests (service)**: Verify `CreateCatalog` validates name format (DNS-label: `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`, max 63 chars), rejects invalid names, enforces uniqueness, verifies CV exists, and sets initial validation status to `draft`. Verify `GetByName` retrieves catalog with resolved CV label. Verify `List` supports filtering by `catalog_version_id` and `validation_status`. Verify `Delete` cascades to all entity instances in the catalog.
+- **Integration tests (repository)**: Verify CRUD operations on `catalogs` table. Verify unique constraint on name. Verify FK to `catalog_versions`. Verify cascade behavior when catalog is deleted (entity instances removed). Verify `entity_instances.catalog_id` FK works correctly.
+- **API tests (handler)**: Verify `POST /api/data/v1/catalogs` returns 201 with catalog data on success. Verify 400 for invalid name format. Verify 409 for duplicate name. Verify 404 for nonexistent CV ID. Verify 403 for RO role. Verify `GET /api/data/v1/catalogs` returns list with filtering. Verify `GET /api/data/v1/catalogs/{name}` returns catalog detail with resolved CV label. Verify `DELETE /api/data/v1/catalogs/{name}` returns 204 and cascades. Verify 403 for RO on delete.
+- **UI tests (browser)**: Verify Catalogs nav item in meta UI. Verify catalog list page shows name, CV label, validation status badge, created date. Verify create modal with name input (DNS-label validation), description, CV dropdown. Verify delete with confirmation dialog. Verify RO user sees no create/delete controls.
+
+### 5.19 Instance CRUD with Attributes (US-13, US-14, US-15)
+
+Entity instances are created within a catalog, scoped to an entity type that must be pinned in the catalog's CV. Attribute values are set on create, updated on PUT, and returned with resolved names in all responses. The old CV-scoped instance scaffolding is replaced with catalog-scoped routes.
+
+- **Unit tests (service)**: Verify instance creation resolves catalog name → CV → pins → entity type version. Verify entity type not pinned in CV returns error. Verify attribute value type validation (string accepted, number must be parseable, enum must be in allowed list). Verify missing optional attributes allowed. Verify name uniqueness within catalog scope. Verify optimistic locking on update (version mismatch returns conflict). Verify update increments version and stores previous attribute values. Verify cascade delete removes children. Verify catalog validation status reset to `draft` on create/update/delete.
+- **Integration tests (repository)**: Verify `InstanceAttributeValue` CRUD — set values, get current values, get values for specific version. Verify attribute values survive instance version increment (previous values retained). Verify instance creation with `catalog_id` FK. Verify pin resolution query chain (catalog → CV → pins → entity type version) against real DB with multi-table joins. Verify optimistic locking — concurrent update with stale version returns 0 rows affected. Verify catalog validation status reset — `UpdateValidationStatus` called after instance mutation updates the `updated_at` timestamp.
+- **API tests (handler)**: Verify `POST /api/data/v1/catalogs/{name}/{entity-type}` creates instance with attributes, returns 201. Verify 404 for nonexistent catalog. Verify 404 for entity type not pinned in CV. Verify 400 for invalid attribute values. Verify 403 for RO. Verify `GET /{name}/{type}` lists instances with attribute values. Verify `GET /{name}/{type}/{id}` returns instance with resolved attributes. Verify `PUT /{name}/{type}/{id}` updates attributes, increments version, returns 409 on version mismatch. Verify `DELETE /{name}/{type}/{id}` returns 204 with cascade.
+- **UI tests (browser)**: Verify catalog detail page shows tabs per entity type. Verify instance list table with dynamic columns from attributes. Verify create instance modal with dynamic attribute form (text for string, number input for number, dropdown for enum). Verify edit instance modal pre-fills current values. Verify delete with confirmation. Verify RO user sees no create/edit/delete controls.
+
+### 5.20 Contained Instance CRUD within Catalog (US-16, US-18)
+
+Contained instances are created under a parent instance via sub-resource URLs. The containment relationship must be validated against the pinned CV's association definitions — a containment association must exist between the parent's entity type and the child's entity type. Name uniqueness is enforced within the parent's namespace. Single-level containment routes are supported; multi-level containment URLs (e.g., `/a/{a-id}/b/{b-id}/c`) are deferred to Phase 4.
+
+- **Unit tests (service)**: Verify `CreateContainedInstance` validates parent exists, child entity type is pinned in CV, and a containment association exists between parent and child types in the CV. Verify name uniqueness within parent namespace (same name under different parents allowed, same name under same parent rejected). Verify creation with nonexistent parent returns NotFound. Verify creation with entity type not in a containment relationship returns validation error. Verify `ListContainedInstances` returns only direct children of the specified type under the parent. Verify contained instance creation resets catalog validation status to draft.
+- **Integration tests (repository)**: Verify contained instance stored with `parent_instance_id` set. Verify unique constraint `(entity_type_id, catalog_id, parent_instance_id, name)` allows same name under different parents. Verify `ListByParent` returns correct children.
+- **API tests (handler)**: Verify `POST /{catalog-name}/{parent-type}/{parent-id}/{child-type}` creates contained instance, returns 201. Verify 404 for nonexistent parent. Verify 400 for entity type not in containment relationship. Verify 403 for RO. Verify `GET /{catalog-name}/{parent-type}/{parent-id}/{child-type}` lists contained instances.
+- **UI tests (browser)**: Verify parent instance detail shows contained children. Verify "Add contained instance" action creates child under parent. Verify contained instance appears in parent's children list.
+
+### 5.21 Association Link CRUD and Validation (US-19, US-20)
+
+Association links connect two instances based on a directional or bidirectional association defined in the pinned CV. Link creation validates that the source and target instances match the association definition's entity types. Forward references return all instances referenced by a given instance; reverse references return all instances that reference a given instance.
+
+- **Unit tests (service)**: Verify `CreateAssociationLink` validates association definition exists in CV, source instance's entity type matches association's source entity type, and target instance's entity type matches association's target entity type. Verify link creation with nonexistent association returns NotFound. Verify link creation with mismatched entity types returns validation error. Verify link creation with nonexistent target instance returns NotFound. Verify `DeleteAssociationLink` removes the link. Verify `GetForwardReferences` returns resolved target info (link ID, association name, association type, target instance ID/name/entity type). Verify `GetReverseReferences` returns resolved source info. Verify both directional and bidirectional associations included in forward and reverse queries. Verify link creation resets catalog validation status to draft.
+- **Integration tests (repository)**: Verify `AssociationLink` CRUD — create link, get forward refs, get reverse refs, delete link. Verify FK constraints on source/target instance IDs.
+- **API tests (handler)**: Verify `POST /{catalog-name}/{entity-type}/{instance-id}/links` creates link, returns 201. Verify 404 for nonexistent instance or target. Verify 400 for invalid association. Verify 403 for RO. Verify `DELETE /{catalog-name}/{entity-type}/{instance-id}/links/{link-id}` returns 204. Verify `GET /{catalog-name}/{entity-type}/{instance-id}/references` returns forward refs with resolved target info. Verify `GET /{catalog-name}/{entity-type}/{instance-id}/referenced-by` returns reverse refs with resolved source info.
+- **UI tests (browser)**: Verify instance detail shows references tab with forward and reverse references. Verify "Link to instance" action creates association link. Verify "Unlink" action removes association link. Verify RO user sees references but no link/unlink controls.
+
+### 5.22 Containment Tree Endpoint (US-18, US-40)
+
+The containment tree endpoint returns the full instance hierarchy for a catalog as a nested structure. Each node includes the instance, its entity type name, and its children. This powers the tree browser in the operational UI.
+
+- **Unit tests (service)**: Verify `GetContainmentTree` builds a correct tree from flat instance list. Verify root instances (no parent) appear as top-level nodes. Verify children are nested under their parent, grouped by entity type. Verify multi-level nesting (grandchildren). Verify empty catalog returns empty tree. Verify instances are annotated with entity type name.
+- **Integration tests (repository)**: Verify `ListByCatalog` returns all instances in a catalog regardless of entity type. Verify instances from other catalogs are excluded.
+- **API tests (handler)**: Verify `GET /api/data/v1/catalogs/{name}/tree` returns 200 with nested tree structure. Verify 404 for nonexistent catalog. Verify tree includes entity type names on each node. Verify tree structure matches containment relationships.
+
+### 5.23 Attribute-Based Filtering (US-17)
+
+Instance list endpoints accept filter query parameters that are applied server-side via SQL JOINs on the EAV attribute value table. Filter semantics are type-aware.
+
+- **Unit tests (service)**: Verify filter params are passed through to repository. Verify unknown attribute name in filter returns validation error.
+- **Integration tests (repository)**: Verify string filter applies case-insensitive contains match. Verify number filter applies exact match. Verify number range filter with min/max. Verify enum filter applies exact match. Verify multiple filters combine with AND logic. Verify filter on nonexistent attribute returns empty result (not error at repo level). Verify filtering works correctly across the EAV join (instance ↔ attribute value ↔ attribute).
+- **API tests (handler)**: Verify `GET /{name}/{type}?filter.attr=value` returns filtered results. Verify `filter.numattr=5` filters by exact number. Verify `filter.numattr.min=1&filter.numattr.max=10` filters by range. Verify multiple filter params combine. Verify 400 for filter on unknown attribute.
+
+### 5.24 Sorting and Pagination (US-17)
+
+Instance list endpoints accept sort and pagination query parameters. Sorting is applied server-side. Pagination uses offset/limit with total count in the response.
+
+- **Unit tests (service)**: Verify sort params are passed through to repository. Verify pagination params (offset, limit) are passed through.
+- **Integration tests (repository)**: Verify sorting by string attribute (alphabetical). Verify sorting by number attribute (numeric order). Verify ascending and descending sort. Verify offset skips correct number of results. Verify limit caps result count. Verify total count is unaffected by offset/limit.
+- **API tests (handler)**: Verify `?sort=attr:asc` sorts ascending. Verify `?sort=attr:desc` sorts descending. Verify `?limit=5&offset=10` returns correct page. Verify response includes total count. Verify default limit is 20 when not specified. Verify limit capped at 100.
+- **UI tests (browser)**: Sorting and pagination UI controls are deferred to FF-6 (operational editing). The backend API supports these via query parameters and is tested at the API layer.
+
+### 5.25 Parent Chain Resolution (US-18, US-40)
+
+Instance detail responses include a parent chain — an ordered list of ancestors from root to immediate parent — for breadcrumb navigation.
+
+- **Unit tests (service)**: Verify parent chain resolves from instance up to root. Verify root instance has empty parent chain. Verify multi-level chain (3+ levels). Verify each entry includes instance ID, instance name, and entity type name.
+- **API tests (handler)**: Verify `GET /{name}/{type}/{id}` includes `parent_chain` array in response. Verify chain is ordered root-first. Verify chain is empty for root instances.
+- **UI tests (browser)**: Verify breadcrumb renders containment path from catalog to current instance. Verify breadcrumb shows entity type and instance name for each level. Verify breadcrumb links are clickable and navigate to the ancestor in the tree. Verify root instance shows breadcrumb with catalog only (no parent entries).
+
+### 5.26 Operational UI — Catalog Data Viewer (US-40)
+
+The operational UI is a separate read-only web application for browsing catalog data. It shares types and API client with the meta UI but has its own Vite entry point and app shell.
+
+- **UI tests (browser — build infrastructure)**: Verify Vite multi-entry build produces both `index.html` (meta) and `operational.html` (operational). Verify operational entry point renders the operational app shell. Verify operational app masthead shows "AI Asset Hub — Data Viewer". Verify role selector in masthead works.
+- **UI tests (browser — catalog list)**: Verify catalog list page loads and shows catalogs. Verify catalog name, CV label, validation status badge, and instance count columns. Verify search input filters catalogs by name. Verify sortable columns. Verify pagination controls. Verify clicking catalog name navigates to catalog detail.
+- **UI tests (browser — catalog detail overview)**: Verify catalog detail page shows catalog header with name, status badge, and CV label. Verify overview tab lists entity types with instance counts. Verify "Browse Instances" navigates to tree browser for that type.
+- **UI tests (browser — containment tree)**: Verify tree browser tab shows two-pane layout: tree on left, detail on right. Verify tree groups root instances under entity type headers with counts. Verify clicking a tree node loads instance detail in the right panel. Verify multi-level tree expands correctly. Verify empty state when no instance selected.
+- **UI tests (browser — instance detail)**: Verify instance detail panel shows attributes table with name, type, and value. Verify enum values show resolved names. Verify description, version, and timestamps displayed. Verify breadcrumb shows containment path.
+- **UI tests (browser — reference navigation)**: Verify references tab shows forward references with association name, type, target instance, and entity type. Verify referenced-by tab shows reverse references. Verify clicking a referenced instance navigates to it in the tree.
+- **UI tests (browser — read-only)**: Verify no create, edit, or delete buttons are visible in the operational UI regardless of role. Verify no write-action modals exist.
+
+### 5.27 Catalog-Level RBAC (US-23, US-39)
+
+Per-catalog access control using a `CatalogAccessChecker` interface. In header-based dev mode, all catalogs are accessible (passthrough). In SAR mode (future Phase C), SubjectAccessReview checks `resourceName` against K8s RBAC. The middleware extracts the catalog name from the URL path and checks access before the handler runs.
+
+- **Unit tests (middleware)**: Verify `RequireCatalogAccess` middleware extracts catalog name from `:catalog-name` URL param. Verify middleware calls `CatalogAccessChecker.CheckAccess` with correct catalog name and verb. Verify middleware returns 403 when access is denied. Verify middleware passes through when access is allowed. Verify verb mapping: GET→get, POST→create, PUT/PATCH→update, DELETE→delete.
+- **Unit tests (HeaderCatalogAccessChecker)**: Verify always returns true (passthrough in dev mode).
+- **API tests (handler)**: Verify `GET /api/data/v1/catalogs` filters results through access checker. Verify catalog list with denied catalogs excludes them. Verify `GET /api/data/v1/catalogs/{name}/...` returns 403 when access denied. Verify all sub-resource operations (instances, tree, links, references) inherit catalog access check.
+- **Integration note**: Real SAR-based checking is deferred to Phase C (OCP cluster required). Unit tests use a mock `CatalogAccessChecker` that can be configured to allow/deny specific catalogs.
+
+### 5.28 Catalog Validation (US-34)
+
+On-demand validation of all entity instances in a catalog against the pinned CV's schema. The `CatalogValidationService` loads all instances, resolves the schema for each entity type via the CV's pins, and checks four constraint categories. Returns a structured error list and updates the catalog's validation status.
+
+- **Unit tests (service)**: Verify required attribute check — instance missing a value for a `Required=true` attribute produces a validation error. Verify type check — number attribute with non-parseable value, enum attribute with value not in allowed list. Verify mandatory association check — association with target cardinality min >= 1 (e.g., `1` or `1..n`) requires each source instance to have at least one link; missing link produces error. Verify containment check — instance with `ParentInstanceID` pointing to a non-existent instance, or parent whose entity type has no containment association to the child's type. Verify status update — no errors sets status to `valid`; errors set status to `invalid`. Verify empty catalog (no instances) passes validation. Verify error structure includes entity type name, instance name, field name, and violation description.
+- **Integration tests (end-to-end validation against real DB)**: Set up a complete catalog with a CV, pins, entity types with required attributes, mandatory associations, and containment. Create instances with valid and invalid data. Run the full validation service against the real SQLite database and verify it detects the expected violations. Verify a fully valid catalog produces no errors. Verify status is persisted correctly after validation.
+- **API tests (handler)**: Verify `POST /api/data/v1/catalogs/{name}/validate` returns 200 with validation results. Verify response includes `status` (`valid` or `invalid`) and `errors` array. Verify 404 for nonexistent catalog. Verify 403 for RO role. Verify catalog status is updated in the database after validation.
+- **UI tests (browser — meta)**: Verify "Validate" button appears on catalog detail page for RW+ users. Verify RO users do not see the Validate button. Verify clicking Validate calls the API and displays results. Verify validation errors are displayed grouped by entity type with per-instance details. Verify status badge updates after validation.
+- **UI tests (browser — operational)**: Verify "Validate" button appears on operational catalog detail page. Verify validation results display in the operational UI.
+
+### 5.29 Catalog Publishing (US-42, US-43)
+
+Explicit publish/unpublish operations for catalogs. Publishing creates a namespaced Catalog CR in K8s for discovery. Published catalogs are write-protected — data mutations require SuperAdmin role. CV promotion warns about draft/invalid catalogs.
+
+- **Unit tests (service — publish/unpublish)**: Verify `Publish` requires validation status `valid` — returns error for `draft` or `invalid`. Verify `Publish` sets `published=true` and `published_at` timestamp. Verify `Publish` calls CatalogCRManager.CreateOrUpdate with correct spec. Verify `Unpublish` sets `published=false` and calls CatalogCRManager.Delete. Verify `Publish` on already-published catalog is idempotent. Verify `Unpublish` on unpublished catalog is idempotent. Verify `Publish`/`Unpublish` with nil crManager skips CR operations (DB-only mode).
+- **Unit tests (service — write protection)**: Verify data mutations (CreateInstance, UpdateInstance, DeleteInstance, CreateContainedInstance, CreateAssociationLink, DeleteAssociationLink, SetParent) on a published catalog return 403 for RW role. Verify same mutations succeed for SuperAdmin. Verify mutations still reset validation status to `draft` even on published catalogs. Verify `draft` does not auto-unpublish — `published` stays `true`.
+- **Unit tests (service — CV promotion warnings)**: Verify `Promote` returns warnings for catalogs pinned to the CV with `draft` or `invalid` status. Verify promotion proceeds despite warnings. Verify no warnings when all pinned catalogs are `valid`. Verify no warnings when no catalogs are pinned.
+- **Integration tests (publish/unpublish)**: Verify publish persists `published=true` and `published_at` in the database. Verify unpublish persists `published=false`. Verify data mutation on published catalog by SuperAdmin resets status to `draft` but keeps `published=true`.
+- **Integration tests (write protection)**: Set up a published catalog with instances in real SQLite. Verify instance creation on published catalog fails for non-SuperAdmin. Verify instance creation succeeds for SuperAdmin. Verify the `published` field survives the full create→publish→mutate→query round-trip.
+- **Integration tests (CV promotion warnings)**: Create a CV with multiple pinned catalogs at different validation statuses (draft, valid, invalid) in real SQLite. Promote the CV and verify the response includes warnings for draft/invalid catalogs. Verify no warnings when all catalogs are valid.
+- **API tests (handler)**: Verify `POST /catalogs/{name}/publish` returns 200 for Admin. Verify 403 for RW and RO. Verify 400 for `draft` or `invalid` catalog. Verify 404 for nonexistent catalog. Verify `POST /catalogs/{name}/unpublish` returns 200 for Admin, 403 for RW/RO. Verify instance create/update/delete on published catalog returns 403 for RW, 200 for SuperAdmin.
+- **Unit tests (K8s CR manager)**: Verify `CatalogCRManager.CreateOrUpdate` creates Catalog CR with correct spec, annotations, and namespace. Verify `CatalogCRManager.Delete` removes Catalog CR. Verify Delete is idempotent (nonexistent CR returns nil).
+- **Operator tests**: Verify reconciler sets owner reference on Catalog CRs. Verify reconciler updates Catalog CR status. Verify `status.DataVersion` is incremented on each reconciliation. Verify new Catalog CR has `DataVersion: 0` before first reconciliation. Verify `DataVersion` becomes 1 after first reconciliation. Verify `DataVersion` increments from existing value on subsequent reconciliations.
+- **UI tests (browser — meta)**: Verify "Publish" button visible for Admin on `valid` unpublished catalog. Verify "Publish" button hidden for RW. Verify "Publish" button hidden when catalog is `draft` or `invalid`. Verify "Unpublish" button visible on published catalog for Admin. Verify published badge on catalog list and detail. Verify warning banner on published catalog for RW users. Verify instance create/edit/delete controls disabled on published catalogs for RW. Verify controls enabled for SuperAdmin on published catalogs.
+- **UI tests (browser — CV promotion)**: Verify promotion dialog shows warnings for draft/invalid catalogs pinned to the CV being promoted.
+
+### 5.30 Copy & Replace Catalog (US-44, US-45, US-46)
+
+Copy Catalog deep-clones all data (instances, attribute values, association links, containment hierarchy) from a source catalog into a new catalog with new UUIDs, remapped references, and `draft` status. Replace Catalog atomically swaps a staging catalog into the name of a published one by renaming both catalogs in a single transaction. Both operations require transactional guarantees — all-or-nothing.
+
+**What is tested at each layer:**
+
+- **Unit tests (service — CopyCatalog)**: Verify copy creates a new catalog with same CV pin, `draft` status, and new description. Verify all instances are cloned with new UUIDs, same entity type/name/description, version reset to 1. Verify attribute values are cloned and remapped to new instance IDs. Verify association links are cloned with remapped source/target instance IDs. Verify containment hierarchy is preserved — parent references remapped to new instance IDs. Verify source catalog name must exist (returns NotFound). Verify target name validated (DNS-label, uniqueness — returns ConflictError). Verify copy is transactional — if any step fails, the new catalog is not created. Verify copy of an empty catalog (no instances) creates empty catalog. Verify self-referential links (source and target in same catalog) are correctly remapped.
+- **Unit tests (service — ReplaceCatalog)**: Verify source validation status must be `valid` (returns error for `draft` or `invalid`). Verify source and target must exist (404 for each). Verify target is renamed to archive name (default: `{target}-archive-{timestamp}`). Verify source is renamed to target's original name. Verify archive name is validated (DNS-label format). Verify custom archive name is used when provided. Verify replace is transactional — both renames succeed or neither does. Verify published state transfer: if target was published, source (now named as target) inherits `published=true` and `published_at`; archive becomes `published=false`. Verify SyncCR is called after replace to update the Catalog CR spec with new data. Verify CR DataVersion is bumped so consumers detect the swap. Verify archive catalog's CR is deleted (it has a new name). Verify source cannot equal target (returns error). Verify archive name collision (returns ConflictError if archive name already taken).
+- **Unit tests (handler — DTO)**: Verify `CopyCatalogRequest` binding with `source`, `name`, `description`. Verify `ReplaceCatalogRequest` binding with `source`, `target`, `archive_name`. Verify correct HTTP status codes (201 for copy, 200 for replace).
+- **Integration tests (repository — UpdateName)**: Verify `UpdateName` updates the catalog name in the database. Verify `UpdateName` returns ConflictError when new name already exists. Verify `UpdateName` returns NotFoundError when catalog ID doesn't exist.
+- **Integration tests (end-to-end copy)**: Set up a complete catalog in real SQLite with instances, attribute values, association links, and containment. Copy it. Verify the new catalog has all data with new IDs. Verify original catalog is unchanged. Verify association links point to the new instances. Verify containment hierarchy is intact.
+- **Integration tests (end-to-end replace)**: Set up source and target catalogs in real SQLite. Replace. Verify names swapped correctly. Verify published state transferred. Verify data integrity — instances in the renamed catalogs still have correct catalog IDs.
+- **Integration tests (validation error paths)**: Verify replace with `draft` source returns error and no names are changed. Verify replace with nonexistent source returns NotFound. Verify replace with archive name that already exists returns ConflictError. Verify copy with duplicate target name returns ConflictError. Verify all error cases leave the database unchanged (transactional rollback).
+- **API tests (handler — copy)**: Verify `POST /api/data/v1/catalogs/copy` returns 201 with new catalog. Verify 404 for nonexistent source. Verify 409 for duplicate target name. Verify 400 for invalid target name. Verify 403 for RO role. Verify response includes full catalog detail with resolved CV label.
+- **API tests (handler — replace)**: Verify `POST /api/data/v1/catalogs/replace` returns 200 with updated catalog. Verify 400 for non-valid source. Verify 404 for nonexistent source or target. Verify 400 for invalid archive name. Verify 403 for non-Admin roles (RO, RW). Verify response includes updated catalog.
+- **UI tests (browser — copy modal)**: Verify "Copy" button visible on catalog detail page for RW+ users. Verify Copy button hidden for RO. Verify copy modal opens with name input. Verify name input validates DNS-label format (shows error for invalid names). Verify successful copy navigates to the new catalog or refreshes the list. Verify copy error (409 duplicate name) shows alert.
+- **UI tests (browser — replace modal)**: Verify "Replace" button visible on `valid` staging catalogs for Admin+ users. Verify Replace button hidden for RW and RO. Verify Replace button hidden for `draft` or `invalid` catalogs. Verify replace modal shows target catalog dropdown. Verify optional archive name input with DNS-label validation. Verify successful replace refreshes catalog list. Verify replace error shows alert.
+- **Operator tests**: Verify Catalog CR DataVersion bumped after replace (via SyncCR → CreateOrUpdate with incremented SyncVersion, then operator reconciliation increments DataVersion).
+- **Live system test**: Verify full staging workflow — copy published catalog, edit staging copy, validate, replace back. Verify original data archived. Verify rollback by replacing from archive.

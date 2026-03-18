@@ -44,6 +44,8 @@ import EntityTypeDetailPage from './pages/meta/EntityTypeDetailPage'
 import EnumListPage from './pages/meta/EnumListPage'
 import EnumDetailPage from './pages/meta/EnumDetailPage'
 import CatalogVersionDetailPage from './pages/meta/CatalogVersionDetailPage'
+import CatalogListPage from './pages/operational/CatalogListPage'
+import CatalogDetailPage from './pages/operational/CatalogDetailPage'
 
 const ROLES: Role[] = ['RO', 'RW', 'Admin', 'SuperAdmin']
 
@@ -111,6 +113,7 @@ function App() {
   // Determine active tab from URL
   const getActiveTab = () => {
     if (location.pathname.startsWith('/catalog-versions')) return 'catalogVersions'
+    if (location.pathname.startsWith('/catalogs')) return 'catalogs'
     if (location.pathname.startsWith('/enums')) return 'enums'
     if (location.pathname.startsWith('/model-diagram')) return 'modelDiagram'
     return 'entityTypes'
@@ -461,6 +464,7 @@ function App() {
   const handleTabSelect = (_e: React.MouseEvent<HTMLElement>, key: string | number) => {
     if (key === 'entityTypes') navigate('/')
     else if (key === 'catalogVersions') navigate('/catalog-versions')
+    else if (key === 'catalogs') navigate('/catalogs')
     else if (key === 'enums') navigate('/enums')
     else if (key === 'modelDiagram') navigate('/model-diagram')
   }
@@ -670,6 +674,7 @@ function App() {
     >
       <Routes>
         <Route path="/entity-types/:id" element={<EntityTypeDetailPage role={role} />} />
+        <Route path="/catalogs/:name" element={<CatalogDetailPage role={role} />} />
         <Route path="/catalog-versions/:id" element={<CatalogVersionDetailPage role={role} />} />
         <Route path="/enums/:id" element={<EnumDetailPage role={role} />} />
         <Route path="*" element={
@@ -680,6 +685,9 @@ function App() {
               </Tab>
               <Tab eventKey="catalogVersions" title={<TabTitleText>Catalog Versions</TabTitleText>}>
                 {catalogVersionsContent}
+              </Tab>
+              <Tab eventKey="catalogs" title={<TabTitleText>Catalogs</TabTitleText>}>
+                <CatalogListPage role={role} />
               </Tab>
               <Tab eventKey="enums" title={<TabTitleText>Enums</TabTitleText>}>
                 <EnumListPage role={role} />

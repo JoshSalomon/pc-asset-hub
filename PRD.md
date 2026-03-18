@@ -18,11 +18,22 @@ The system does not have a fixed list of entity types. Instead, a configuration 
 
 This configuration is itself versioned and subject to lifecycle management.
 
-### 2.2 Entity Instances (Data Layer)
+### 2.2 Catalogs
+
+A **catalog** is a named collection of entity instances that uses a catalog version (CV) as its schema. The CV determines which entity types, attributes, and associations are available; the catalog holds the actual data.
+
+- Multiple catalogs can share the same CV (e.g., "Production App A" and "Staging App B" both use CV v2.0 but contain different assets).
+- A catalog is pinned to a single CV at creation. In v1, this pin is immutable — to use a new CV, create a new catalog. Re-pinning (upgrading a catalog to a newer CV) is a future capability.
+- Each catalog has a **validation status**: `draft` (incomplete, work in progress), `valid` (all constraints satisfied), or `invalid` (constraints violated, e.g., after a CV schema change).
+- Entity instances are created freely in a catalog without immediate validation (draft mode). Validation runs on demand or at lifecycle gates.
+
+### 2.3 Entity Instances (Data Layer)
 
 Instances of the configured entity types, with values for their defined attributes. These are the actual AI assets being managed (e.g., a specific model called "llama-3-70b").
 
-### 2.3 Associations
+Entity instances belong to a **catalog** (not directly to a CV). The catalog's pinned CV determines the schema — which entity types exist, what attributes they have, and what association constraints apply.
+
+### 2.4 Associations
 
 Three types of associations can be defined between entity types:
 
@@ -40,7 +51,7 @@ Three types of associations can be defined between entity types:
 #### Bidirectional Reference
 - E refers to F and F refers to E. Both directions must be fast to resolve.
 
-### 2.4 Attributes
+### 2.5 Attributes
 
 All entities share a set of **common attributes**:
 
@@ -89,6 +100,26 @@ Each catalog version progresses through lifecycle stages:
 
 Demoting a catalog version back to Development deletes its `CatalogVersion` CR from K8s.
 
+When a catalog version is promoted, the system warns if any catalogs pinned to that CV have a validation status of `draft` or `invalid`. The user decides whether to proceed with promotion or fix the catalogs first.
+
+### 3.5 Catalog Validation
+
+Entity instances in a catalog are created in **draft mode** — missing required attributes, missing mandatory associations (cardinality `1` or `1..n`), and incomplete containment are allowed. This supports incremental data entry.
+
+**Validation** checks all entity instances in a catalog against the pinned CV's schema:
+- All required attributes have values
+- Attribute values match their type (string, number, valid enum value)
+- All mandatory associations are satisfied (cardinality constraints met)
+- Containment hierarchy is consistent (no orphaned contained entities)
+
+Validation can be triggered:
+- **On demand** — user explicitly validates a catalog (API or UI)
+- **On CV promotion** — system warns about invalid catalogs pinned to the CV being promoted
+
+A catalog's validation status is: `draft` (never validated or has unvalidated changes), `valid` (last validation passed), or `invalid` (last validation found errors).
+
+**Publishing** is a separate, explicit action (not automatic on validation). Only `valid` catalogs can be published. Published catalogs are write-protected — data mutations require SuperAdmin role. See US-42, US-43.
+
 ## 4. Persistence and Storage
 
 ### 4.1 Database as Source of Truth
@@ -96,8 +127,7 @@ Demoting a catalog version back to Development deletes its `CatalogVersion` CR f
 The database is the primary store for all data:
 
 - Meta configuration (entity type definitions, association rules, attribute schemas) — all versions
-- Entity instances and their attribute values
-- Association links
+- Catalogs and their entity instances, attribute values, and association links
 - Catalog version definitions and their entity version pins
 - Version history
 
@@ -116,6 +146,13 @@ Kubernetes Custom Resources are **not** the source of truth. They are generated 
 - The API server creates CatalogVersion CRs on promotion; the operator reconciles them (sets owner references to the AssetHub CR for garbage collection, updates status conditions).
 - During development, no CRs are created — all work happens via the UI/API against the database.
 
+**Catalog CRs (discovery artifacts):**
+- Lightweight CRs created when an Admin explicitly **publishes** a catalog. Publishing is a manual action, not automatic on validation — a catalog must be `valid` to publish, but not all valid catalogs are published.
+- Publishing creates the Catalog CR; unpublishing deletes it. Going to `draft` (after a data mutation) does NOT auto-unpublish — the CR remains until explicitly unpublished, representing the last validated state.
+- Data mutations on published catalogs require SuperAdmin role. RW users can only modify unpublished catalogs. This protects production data — use the Copy & Replace workflow (FF-8) for safe edits.
+- Contain catalog name, pinned CV reference, API endpoint, catalog ID, validation status, and published timestamp — enough for applications to discover available catalogs and query their data via the Operational API.
+- **Scoping: namespaced**, in the same namespace as the AssetHub CR (consistent with CatalogVersion CRs). Owner reference to the AssetHub CR enables garbage collection on operator uninstall. Multi-namespace publishing (creating Catalog CRs in consumer namespaces) is a future enhancement (see FF-9).
+
 **Entity type CRDs (future scope):**
 - Full schema-as-CRD artifacts generated from entity type definitions. These would allow entity instances to be represented as native K8s resources.
 - This feature is out of scope for the current implementation and will be addressed in a future phase.
@@ -133,15 +170,17 @@ This separation supports:
 Manages the schema layer — entity type definitions, association definitions, attribute schemas, and catalog versions. Used by administrators to configure what the system manages.
 
 #### Operational API
-Manages entity instances — CRUD operations and queries. Used by operators and consumers to work with actual AI assets.
+Manages catalogs and entity instances — CRUD operations and queries. Used by operators and consumers to work with actual AI assets.
 
-### 5.2 API Versioning
+### 5.2 API Scoping
 
-The operational API must be scoped to a catalog version, either through:
-- API versioning (e.g., `/api/v1/...`, `/api/v2/...`), or
-- A mandatory version parameter on all operational API calls
+The operational API is scoped to a **catalog**:
+- Catalog CRUD: `POST /api/data/v1/catalogs`, `GET /api/data/v1/catalogs`, `GET /api/data/v1/catalogs/{catalog-name}`
+- Entity instances within a catalog: `GET /api/data/v1/catalogs/{catalog-name}/mcp-servers`
+- Catalog validation: `POST /api/data/v1/catalogs/{catalog-name}/validate`
+- Catalog names must be DNS-label compatible (`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`, max 63 chars) so they are safe for use in URL paths.
 
-This ensures that a consumer always interacts with a consistent, fixed view of the asset catalog.
+This ensures that a consumer always interacts with a named, consistent data set backed by a specific schema (CV).
 
 ### 5.3 Query Capabilities
 
@@ -641,19 +680,53 @@ Acceptance Criteria:
 
 ---
 
+### Catalog Management
+
+**US-33: Create a catalog**
+As an RW user, I want to create a named catalog pinned to a catalog version, so that I can start populating it with entity instances.
+
+Acceptance Criteria:
+- RW user can create a catalog by specifying a name, description (optional), and a catalog version ID.
+- The catalog name must be unique and DNS-label compatible (`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`, max 63 chars).
+- The catalog is created with validation status `draft`.
+- The catalog's pinned CV determines which entity types and attributes are available for creating instances.
+- RO users cannot create catalogs; the API returns a 403.
+- `GET /api/data/v1/catalogs` lists all catalogs with support for filtering by `catalog_version_id` and `validation_status`.
+- `GET /api/data/v1/catalogs/{catalog-name}` returns catalog detail including resolved CV label (not just CV ID).
+- `DELETE /api/data/v1/catalogs/{catalog-name}` deletes the catalog and cascades deletion to all entity instances within it. RW and above can delete; RO returns 403.
+
+---
+
+**US-34: Validate a catalog**
+As an RW user, I want to validate all entity instances in a catalog against the pinned CV's schema constraints, so that I can identify and fix errors before the catalog is published.
+
+Acceptance Criteria:
+- RW (and above) users can trigger validation. RO users cannot.
+- Validation checks: required attributes have values, attribute values match their type, mandatory associations are satisfied (cardinality `1` or `1..n`), containment hierarchy is consistent.
+- Validation returns a list of errors (entity name, field, violation) — not just pass/fail.
+- Validation status is updated to `valid` (no errors) or `invalid` (errors found).
+- Any subsequent data change resets the status to `draft`.
+- Publishing a catalog is a separate action (see US-42) — validation is a prerequisite, not a trigger.
+
+---
+
 ### Entity Instance Management
 
 **US-13: Create an entity instance**
-As an RW user, I want to create a new instance of a configured entity type with values for its attributes, so that I can register a new AI asset in the hub.
+As an RW user, I want to create a new instance of a configured entity type within a catalog, with values for its attributes, so that I can register a new AI asset in the hub.
 
 **Why**: This is the primary write operation of the system — registering actual AI assets. Without it, the hub would have schema but no data.
 
 Acceptance Criteria:
-- RW user can create an entity instance by specifying the entity type, a name, description, and values for custom attributes.
-- The name must be unique within scope (global for top-level entities, within the parent for contained entities).
-- Attribute values are validated against the attribute type (string, number, enum value from allowed list).
+- RW user can create an entity instance by specifying the catalog, entity type, a name, description, and values for custom attributes.
+- The entity type must be one of the types pinned in the catalog's CV.
+- The name must be unique within scope (global for top-level entities within the catalog, within the parent for contained entities).
+- Attribute values are validated against the attribute type (string, number, enum value from allowed list), but missing optional attributes are allowed (draft mode).
 - The instance is created at version 1 with a system-calculated ID.
 - RO users cannot create instances; the API returns a 403.
+- The response includes the instance with resolved attribute values (attribute name, type, and value — not just raw IDs).
+- The API URL uses the entity type name: `POST /api/data/v1/catalogs/{catalog-name}/{entity-type-name}`.
+- Any data mutation to instances in a catalog resets the catalog's validation status to `draft`.
 
 ---
 
@@ -667,7 +740,9 @@ Acceptance Criteria:
 - The system increments the instance version automatically on each successful update.
 - The previous version state is retained in the database.
 - Attribute value changes are validated against the attribute type definition.
-- The updated instance returns the new version number in the response.
+- The updated instance returns the new version number and all current attribute values in the response.
+- Update requires the current version number for optimistic locking (409 on mismatch).
+- The update request can include name, description, and/or attribute values — all optional, only provided fields are changed.
 
 ---
 
@@ -708,10 +783,13 @@ As an RO user, I want to list entity instances with attribute-based filtering an
 
 Acceptance Criteria:
 - RO user can list entity instances of a given type.
-- Results can be filtered by any attribute value (common or custom).
+- Results can be filtered by any attribute value (common or custom). Filter semantics are type-aware:
+  - String attributes: case-insensitive substring match (contains).
+  - Number attributes: exact match, or range filter with min/max.
+  - Enum attributes: exact match against the enum value.
 - Results can be sorted by any attribute (ascending or descending).
 - Multiple filters can be combined (AND logic).
-- The response includes pagination support.
+- The response includes pagination support (offset/limit with total count). Default page size is 20; configurable up to 100.
 - Filtering by non-existent attributes returns an error, not an empty result.
 
 ---
@@ -724,9 +802,12 @@ As an RO user, I want to access contained entities via the parent entity's URL (
 Acceptance Criteria:
 - Contained entities are accessible via `GET /{parent-type}/{parent-id}/{contained-type}`.
 - Individual contained entities are accessible via `GET /{parent-type}/{parent-id}/{contained-type}/{name}`.
-- Multi-level containment is supported (e.g., `GET /a/{id}/b/{id}/c`).
 - Filtering and sorting (from US-17) apply to contained entity listings.
 - Accessing a contained entity via a non-existent parent returns 404.
+- A containment tree endpoint (`GET /catalogs/{name}/tree`) returns the full instance hierarchy for a catalog as a nested structure, enabling tree-based browsing UIs.
+- Each instance in the tree includes its entity type name and a summary of its children.
+- Instance detail includes a parent chain (ordered list of ancestors up to root) for breadcrumb navigation.
+- Multi-level containment URLs (e.g., `GET /a/{id}/b/{id}/c`) are deferred — single-level parent-child routes and the tree endpoint are sufficient for navigating deep hierarchies.
 
 ---
 
@@ -797,6 +878,7 @@ Acceptance Criteria:
 - Authorization decisions use the OCP RBAC API (SubjectAccessReview or equivalent).
 - Adding or removing users from roles is done via standard OpenShift tooling (oc, console).
 - No custom user management UI or API exists in the hub.
+- Per-catalog access control is enforced using K8s RBAC `resourceNames` on the `catalogs` resource (see US-39).
 
 ---
 
@@ -953,7 +1035,7 @@ Acceptance Criteria:
 
 ---
 
-**US-34: Catalog version creation in the UI**
+**US-41: Catalog version creation in the UI**
 As an Admin, I want to create a catalog version by selecting specific entity definition versions from a list, so that I can assemble a bill of materials for deployment.
 
 **Why**: The catalog version is what gets deployed. The selection interface must make it easy to choose the right versions and review the complete snapshot before committing, to avoid deploying unintended entity definition versions.
@@ -1031,6 +1113,154 @@ Acceptance Criteria:
 - When a control is hidden due to role restrictions, no placeholder or "locked" indicator is shown — the control simply does not exist in the UI.
 - When a control is disabled due to state restrictions (e.g., entity type in production, not a role issue), the control is visible but grayed out with a tooltip explaining why.
 
+---
+
+**US-39: Catalog-level access control**
+As a platform administrator, I want to grant users read or write access to specific catalogs (not all catalogs globally), so that teams can only access the data they own or are responsible for.
+
+**Why**: In a multi-team environment, different teams manage different catalogs (e.g., "team-alpha-prod", "team-beta-staging"). A global RW role that grants write access to all catalogs violates the principle of least privilege. Catalog-level access control ensures data isolation between teams without requiring separate Asset Hub deployments.
+
+Acceptance Criteria:
+- Per-catalog access is controlled via K8s RBAC using `resourceNames` on the `catalogs` resource. No custom ACL tables or user management APIs are introduced.
+- Cluster admins can grant a user read or write access to specific catalogs by creating a RoleBinding with `resourceNames` listing the allowed catalog names.
+- Users without a `resourceNames` restriction (i.e., a Role that grants access to all `catalogs` resources) retain access to all catalogs, preserving backward compatibility.
+- The catalog list API (`GET /api/data/v1/catalogs`) returns only catalogs the requesting user is authorized to access.
+- Accessing a catalog the user is not authorized for returns 403 with a clear error message.
+- All sub-resource operations (instance CRUD, links, references) under a catalog inherit the catalog's access check — no separate per-instance authorization.
+- In development mode (`RBAC_MODE=header`), the global role header applies to all catalogs (no per-catalog restriction), preserving the existing development workflow.
+- No catalog-level permission management UI exists in the hub — admins use `oc`, `kubectl`, or the OCP console to manage RoleBindings.
+
+---
+
+**US-40: Operational data viewer UI**
+As an operator or consumer, I want a dedicated read-only UI for browsing catalog data, separate from the admin/meta UI, so that I can discover and navigate assets without being exposed to schema management concerns.
+
+**Why**: The meta UI is designed for administrators building and managing schemas and populating data. Operators and consumers need a simpler, read-optimized interface focused on browsing — finding assets, navigating containment hierarchies, following references, and filtering by attributes. Separating these concerns avoids overloading the admin UI and allows the operational viewer to be deployed independently with its own access controls.
+
+Acceptance Criteria:
+- The operational UI is a separate web application served at `/operational` (path-based routing on the same port as the meta UI), built from the same codebase with its own Vite entry point.
+- The operational UI is read-only — no create, edit, or delete actions are available. All data modification is performed through the meta UI (see FF-6 for future editing support).
+- The operational UI provides a catalog list page showing catalog name, pinned CV label, validation status, and instance counts.
+- The operational UI provides a catalog detail page with an entity type overview (types with instance counts) and a containment tree browser.
+- The containment tree browser uses a two-pane layout: the left pane shows the containment tree grouped by entity type with expandable headers; the right pane shows the selected instance's detail. No separate instance list table — the tree is the primary navigation for browsing instances.
+- Instance detail shows all attribute values (with resolved enum names), description, version, and timestamps.
+- Instance detail shows forward references ("References") and reverse references ("Referenced By") with clickable links that navigate to the referenced instance in the tree.
+- Breadcrumb navigation shows the containment path from catalog root to the current instance.
+- The backend supports attribute-based filtering (US-17), column sorting, and pagination via API query parameters, available for future use by the operational editing UI (FF-6).
+- The operational UI shares types, API client, and utility code with the meta UI — no duplication of shared infrastructure.
+- The meta UI's catalog detail page includes a link to open the same catalog in the operational data viewer, providing a seamless transition from editing to browsing.
+- Deployment: a single nginx pod serves both the meta UI (at `/`) and the operational UI (at `/operational`) via path-based routing.
+- Deployment: a single nginx pod serves both the meta UI (on port 30000) and the operational UI (on port 30001) via separate location blocks.
+
+---
+
+**US-42: Publish a catalog**
+As an Admin, I want to explicitly publish a validated catalog so that it becomes discoverable via a K8s Catalog CR, and I want to control when this happens rather than it being automatic.
+
+**Why**: Publishing makes catalog data visible to external consumers via K8s discovery. This should be a deliberate action — not every valid catalog should be automatically published (e.g., staging catalogs, test data). Explicit publishing gives administrators control over what is exposed to the cluster.
+
+Acceptance Criteria:
+- Admin (and above) can publish a catalog. RW and RO users cannot.
+- Publishing requires validation status `valid`. Attempting to publish a `draft` or `invalid` catalog returns 400.
+- Publishing creates a Catalog CR in K8s with catalog name, CV reference, API endpoint, catalog ID, validation status, and published timestamp.
+- A published catalog that goes to `draft` (due to data mutation) does NOT auto-unpublish. The Catalog CR remains, representing the last validated state.
+- Admin can explicitly unpublish a catalog, which deletes the Catalog CR.
+- The catalog list and detail pages show a "published" indicator.
+- A "Publish" button appears on the catalog detail page for Admin+ users when the catalog is `valid` and not yet published.
+- An "Unpublish" button appears on published catalogs for Admin+ users.
+
+---
+
+**US-43: Published catalog write protection**
+As a platform administrator, I want data mutations on published catalogs restricted to SuperAdmin only, so that production data is protected from accidental edits by regular RW users.
+
+**Why**: Published catalogs serve as the source of truth for external consumers. Accidental edits by RW users could corrupt production data. Restricting writes to SuperAdmin ensures that only deliberate, authorized changes are made. For routine catalog updates, the Copy & Replace workflow (FF-8) provides a safe staging pattern that doesn't require SuperAdmin access.
+
+Acceptance Criteria:
+- Data mutations (create/update/delete instance, create/delete link, set parent) on a published catalog require SuperAdmin role. RW and Admin users receive 403.
+- RW users see instance create/edit/delete controls disabled on published catalogs with a tooltip explaining the restriction.
+- Published catalogs show a warning banner: "This catalog is published. Editing requires SuperAdmin privileges."
+- SuperAdmin edits still reset validation status to `draft` (same behavior as unpublished catalogs).
+- Validation (POST .../validate) remains available to RW+ users on published catalogs — it is a read operation.
+- Catalog-level operations (delete catalog, unpublish) require Admin+ regardless of published state.
+
+---
+
+### Copy & Replace Catalog
+
+Two operations that enable a staging workflow for extending published catalogs without disrupting them.
+
+**Problem:** Adding instances to a `valid` published catalog resets it to `draft`, temporarily removing it from K8s discovery. Users need a way to prepare changes in isolation and swap atomically.
+
+**US-44: Copy Catalog**
+
+As an RW user, I want to deep-clone an existing catalog into a new one so that I can prepare changes without affecting the original.
+
+**Why**: Published catalogs are write-protected (US-43). Users need to copy a published catalog into a staging copy, make changes there, validate, and then swap it back in. Without Copy, users would have to manually recreate all instances, attributes, and links — error-prone and time-consuming for catalogs with hundreds of instances.
+
+Acceptance Criteria:
+- AC-44.1: `POST /api/data/v1/catalogs/copy` with `{source, name, description?}` creates a new catalog with the same CV pin, `draft` status
+- AC-44.2: All entity instances are cloned with new UUIDs, same entity type, name, description, version reset to 1
+- AC-44.3: All instance attribute values are cloned and remapped to new instance IDs
+- AC-44.4: All association links are cloned and remapped to new source/target instance IDs
+- AC-44.5: Containment hierarchy is preserved — parent references remapped to new instance IDs
+- AC-44.6: Copy is transactional — all-or-nothing (if any step fails, no partial data is created)
+- AC-44.7: Source catalog name must exist; returns 404 if not found
+- AC-44.8: Target catalog name must be DNS-label compatible and unique; returns 409 if name taken
+- AC-44.9: Requires RW+ access (create verb checked on the new catalog name)
+- AC-44.10: Returns 201 with the new catalog details
+
+---
+
+**US-45: Replace Catalog**
+
+As an Admin user, I want to atomically swap a staging catalog into the name of a published one so that I can update production data without downtime.
+
+**Why**: The Copy & Replace workflow is the safe alternative to editing published catalogs directly. Replace performs an atomic name swap — the published catalog name now serves the staging catalog's data, and the old data is archived under a new name for rollback. External consumers (watching the Catalog CR) see a DataVersion bump and know to refresh.
+
+Acceptance Criteria:
+- AC-45.1: `POST /api/data/v1/catalogs/replace` with `{source, target, archive_name?}` swaps the catalogs
+- AC-45.2: Source catalog must be `valid`; returns 400 if `draft` or `invalid`
+- AC-45.3: Target catalog must exist; returns 404 if not found
+- AC-45.4: Source catalog must exist; returns 404 if not found
+- AC-45.5: Target is renamed to archive name (default: `{target}-archive-{timestamp}`)
+- AC-45.6: Source is renamed to target's original name
+- AC-45.7: Replace is transactional — both renames succeed or neither does
+- AC-45.8: If target was published, the source (now with target's name) inherits published state; archive is unpublished
+- AC-45.9: The Catalog CR (if target was published) continues to reference the same name — now serves new data; CR spec is updated via SyncCR
+- AC-45.10: The Catalog CR's DataVersion is bumped after replace so that consumers watching the CR know to invalidate their cache
+- AC-45.11: Archive name must be DNS-label compatible; returns 400 if invalid
+- AC-45.12: Requires Admin+ access
+- AC-45.13: Returns 200 with the updated catalog (source, now renamed to target)
+
+---
+
+**US-46: Copy & Replace UI**
+
+As an admin using the meta UI, I want Copy and Replace buttons on the catalog detail page so that I can perform the staging workflow through the UI.
+
+**Why**: The staging workflow (copy → edit → validate → replace) should be accessible through the UI, not just via API. The Copy button is available on any catalog; the Replace button is available on valid staging catalogs to swap them into a published catalog's name.
+
+Acceptance Criteria:
+- AC-46.1: "Copy" button on catalog detail page opens a modal with new name input
+- AC-46.2: Copy modal validates DNS-label format before submitting
+- AC-46.3: "Replace" button visible on `valid` staging catalogs opens a modal to select target catalog and optional archive name
+- AC-46.4: Replace modal shows target catalog dropdown (filtered to existing catalogs)
+- AC-46.5: Archive catalogs are visible in the catalog list as normal catalogs
+
+**Staging workflow:**
+1. `prod-catalog` is `valid` and published.
+2. Copy: `prod-catalog` → `prod-catalog-next`
+3. Edit `prod-catalog-next`: add/modify/delete instances.
+4. Validate `prod-catalog-next` — must reach `valid`.
+5. Replace: `source=prod-catalog-next, target=prod-catalog` → atomically swaps them. Old data archived as `prod-catalog-archive-20260316`.
+6. The Catalog CR for `prod-catalog` now serves the updated data. Rollback: replace back from the archive.
+
+**Rollback:**
+- The archived catalog is a normal catalog — it can be browsed, validated, and used as a replace source to roll back.
+
+---
+
 ## 10. Open Design Decisions
 
 The following items are acknowledged but not yet fully specified:
@@ -1038,7 +1268,7 @@ The following items are acknowledged but not yet fully specified:
 | Item | Notes |
 |------|-------|
 | ID calculation strategy | How entity IDs are generated (UUID, hash, deterministic from name+version, etc.) |
-| Exact CRD schema | Partially resolved: `CatalogVersion` CRD defined for discovery. Entity type CRD schema (full schema-as-CRD) remains open. |
+| Exact CRD schema | Partially resolved: `CatalogVersion` CRD defined for discovery. `Catalog` CRD for data discovery — namespaced in AssetHub namespace (resolved), multi-namespace via FF-9 (future). Entity type CRD schema (full schema-as-CRD) remains open. |
 | Entity type CRDs | Full schema-as-CRD feature where entity type definitions become native K8s CRDs. Future scope — separate from CatalogVersion discovery CRs. |
 | Catalog version creation workflow | How an author assembles a catalog version from entity definition versions — manual selection vs. automatic "snapshot current state" |
 | Concurrent editing model | Optimistic locking, pessimistic locking, or merge-based conflict resolution |
@@ -1066,8 +1296,37 @@ Items where the current implementation diverges from the intended behavior descr
 | TD-8c | Extract diagram data loading into a custom hook | `App.tsx` and `CatalogVersionDetailPage.tsx` both have `loadDiagramData` functions that fetch snapshots and build `DiagramEntityType[]` | Extract into `ui/src/hooks/useDiagramData.ts` with `loadFromAllEntityTypes()` and `loadFromPins(pins)` methods. |
 | TD-8d | Extract EdgeClickData interface | `onEdgeClick` prop on `EntityTypeDiagramProps` uses inline type with 9 fields | Extract to a named `EdgeClickData` interface for reuse and readability. |
 | TD-9 | Show required attributes in diagram | Diagram nodes list attributes without required indicator | Required attributes in diagram UML nodes should show `*` or bold to distinguish mandatory from optional attributes. |
-| TD-11 | Show mandatory associations in UI | Associations with cardinality `1` or `1..n` are not visually distinguished from optional ones | On the entity detail page, BOM modal, and diagram, show a mandatory indicator (e.g., `*` or bold) on the side of the association where cardinality starts with `1`. For example, mcp-tool's containment by mcp-server (cardinality `1` on source) shows as mandatory on the mcp-tool detail screen but NOT on the mcp-server detail screen (where the target cardinality `0..n` is optional). The indicator appears only from the perspective of the entity that is required to have the association. |
 | TD-10 | Mutable CVs in development mode | CV pins are immutable — entity types are pinned at creation and cannot be changed | In development stage, CVs should be mutable: add/remove entity type pins, change pinned versions. Pins are frozen only on promotion to testing. Catalogs cannot be created against a development-stage CV. If a CV with existing catalogs is demoted back to development, modified, and re-promoted, all catalogs pinned to that CV must be re-validated — they may become invalid if entity types were removed or attribute schemas changed. |
+| TD-11 | Show mandatory associations in UI | Associations with cardinality `1` or `1..n` are not visually distinguished from optional ones | On the entity detail page, BOM modal, and diagram, show a mandatory indicator (e.g., `*` or bold) on the side of the association where cardinality starts with `1`. For example, mcp-tool's containment by mcp-server (cardinality `1` on source) shows as mandatory on the mcp-tool detail screen but NOT on the mcp-server detail screen (where the target cardinality `0..n` is optional). The indicator appears only from the perspective of the entity that is required to have the association. |
+| TD-12 | Catalog re-pinning | A catalog's CV pin is immutable — to use a new CV, create a new catalog | Allow upgrading a catalog to a newer CV. Requires data migration validation: check that all entity instances are still valid under the new CV's schema. Report incompatibilities and let the user resolve them before completing the re-pin. |
+| TD-13 | Get catalog version by name | CV can only be retrieved by ID; no lookup by version_label | Add `GET /api/meta/v1/catalog-versions/by-name/:label` endpoint for name-based lookup. The K8s CR already uses the label as its name. |
+| TD-14 | Catalogs using this CV | CatalogVersion detail page does not show which catalogs are pinned to it | Add a "Catalogs" section on the CatalogVersion detail page listing catalogs pinned to that CV, with name, validation status, and link to catalog detail. |
+| TD-15 | Catalog cascade delete needs transaction | `CatalogService.Delete` performs soft-delete of instances then hard-delete of catalog as two separate DB operations without a transaction | Wrap both operations in a database transaction. If the catalog delete fails after instances are soft-deleted, the system is left in an inconsistent state. Requires either passing a `*gorm.DB` transaction through context or introducing a unit-of-work pattern. The retry path currently works (soft-delete is idempotent on already-deleted rows), so this is a correctness improvement, not a data-loss risk. |
+| TD-16 | Mixed soft-delete/hard-delete on catalog deletion | Instances are soft-deleted (`deleted_at` set) but the catalog itself is hard-deleted. Soft-deleted instances with no parent catalog accumulate as dead rows. | Either hard-delete instances when the catalog is deleted (since the catalog is hard-deleted, there's no recovery path anyway), or soft-delete the catalog too. Also consider a periodic cleanup job for orphaned soft-deleted instances. |
+| TD-17 | Catalog list pagination | `ListCatalogs` handler hardcodes `Limit: 20` with no `offset`/`limit` query parameters | Accept `limit` and `offset` query parameters so clients can paginate through large catalog lists. The `total` count is already returned in the response. Apply the same fix to the instance list handler. |
+| TD-18 | UI component props style inconsistency | Minor style issue: some components use a named `interface Props { ... }` for their parameter type (e.g., `EnumListPage`), while others use inline destructured types (e.g., `CatalogListPage`: `{ role }: { role: Role }`). Both are functionally identical. | Pick one convention and apply it consistently across all page components. The named `Props` interface is more common in the codebase and scales better when props grow. Low priority — a future style alignment pass. |
+| TD-19 | N+1 query in resolveEntityType | `InstanceService.resolveEntityType` iterates all CV pins and calls `etvRepo.GetByID` for each to find the matching entity type | Replace the per-pin query loop with a batch fetch or a join query that resolves entity type ID → pinned version in one call. Acceptable for now since CVs typically have 3-5 pins; becomes a problem at 20+. |
+| TD-20 | Missing name validation on instance creation | `CreateInstanceRequest.Name` has no `validate:"required"` tag and the handler does not validate the name before passing to the service. An empty-name instance can be created. | Add explicit name validation in the service layer (`name is required`, `name must not be empty`). Also consider a codebase-wide pass to add consistent `validate` tags across all DTOs — currently only `CreateEntityTypeRequest` uses them. |
+| TD-21 | Remove catalog_version_id migration code | `InitDB` in `models.go` contains one-time migration code that detects and drops the old `catalog_version_id` column from `entity_instances`, copying data to `catalog_id`. This runs on every startup. | Once all environments (dev, staging, production) have been migrated, remove the migration block from `InitDB`. It is safe to remove after all databases have been started at least once with the current code. The migration is idempotent (no-ops if the old column doesn't exist) so there is no urgency. |
+| TD-23 | CatalogDetailPage component too large | `CatalogDetailPage.tsx` is 429 lines with 14 `useState` calls managing catalog loading, instance loading, schema loading, enum caching, create/edit/delete modals — all in one file | Extract custom hooks (`useInstances`, `useSchema`) and split modals into sub-components. Follows the same pattern as `EntityTypeDetailPage` which is similarly large but could also benefit from extraction. |
+| TD-24 | Remove legacy EntityInstanceService | Both `entity_instance_service.go` (legacy, CV-scoped) and `instance_service.go` (new, catalog-scoped) exist in the same `operational` package. The legacy service is still wired in `main.go` and its routes registered under `/api/data/v1/:catalog-version`. | Remove `entity_instance_service.go`, its tests, the legacy `Handler` in `handler.go`, and the legacy route registration in `main.go`. The new `InstanceService` and `InstanceHandler` replace them entirely. Also remove the legacy handler tests. |
+| TD-25 | Replace `interface{}` with `any` across codebase | Multiple files use `interface{}` instead of the Go 1.18+ alias `any`. The `modernize` linter flags 15+ occurrences across DTOs, service, and test files. | Run a codebase-wide find-and-replace of `interface{}` → `any`. Low priority — purely cosmetic, no behavior change. |
+| TD-26 | Extract shared instance creation logic (M5) | `CreateInstance` and `CreateContainedInstance` share ~70% of logic (instance model creation, attribute validation, persistence, validation status reset, attribute resolution). | Extract a private `createInstanceInternal` method that both call, passing `parentID` (empty for root) and containment validation as optional steps. |
+| TD-27 | ListContainedInstances pagination broken by in-memory filtering (M7) | `ListContainedInstances` fetches children with `ListByParent` (which respects limit/offset), then filters by entity type in memory. This can return fewer results than limit or miss results entirely when the parent has children of multiple types. | Push the entity type filter into the repository query (add `ListByParentAndType` method), or fetch all children without pagination and paginate after filtering. |
+| TD-29 | Reject reserved entity type names | Entity types named `links`, `references`, or `referenced-by` would shadow the static route segments used for association links and reference queries, making containment routes for those types unreachable. No server-side validation prevents creating such names. | Add validation in `CreateEntityType` and `RenameEntityType` to reject entity type names that collide with reserved operational API path segments: `links`, `references`, `referenced-by`. |
+| TD-30 | Add catalog ownership check on instance read/update/delete | `GetInstance`, `UpdateInstance`, and `DeleteInstance` resolve the catalog from the URL but do not verify the fetched instance's `CatalogID` matches the resolved catalog. This means a request with a mismatched catalog name succeeds and resets the wrong catalog's validation status. Write operations (`CreateContainedInstance`, `CreateAssociationLink`) already perform this check. | Add `if inst.CatalogID != catalog.ID { return NotFound }` after `instRepo.GetByID` in `GetInstance`, `UpdateInstance`, and `DeleteInstance`. |
+| TD-31 | Create new container from contained instance's Set Container modal | The Set Container modal only allows selecting existing parent instances. Users cannot create a new container directly from the child side — they must first create the container via the parent entity type tab, then come back and set it. | Add a "Create New" mode to the Set Container modal (similar to the "Create New / Adopt Existing" toggle in the Add Contained Instance modal). The natural flow is parent-first, so this is a convenience feature, not a critical gap. |
+| TD-32 | Diagram: overlapping edges between same entity pair | When two or more associations exist between the same pair of entity types (e.g., mcp-tool → guardrail with both "uses" and "validates"), the edges overlap into a single line with two labels stacked on top of each other. | Add edge offset or curvature so multiple edges between the same pair are visually distinct. Dagre layout doesn't natively support parallel edges — options include: (a) adding a small vertical offset per duplicate edge, (b) using quadratic bezier curves with different control points, or (c) bundling labels into a single edge with a multi-line label. |
+| TD-33 | "Contained by" flickers UUID before showing parent name | When opening instance details for a contained entity, the parent UUID briefly flashes before the async API call resolves the parent name. | Either (a) include `parent_instance_name` in the instance list API response so no extra fetch is needed, or (b) show a spinner/placeholder instead of the raw UUID while loading. Option (a) is cleaner — resolve the parent name server-side in `ListInstances`/`GetInstance`. |
+| TD-34 | `SetParentRequest.ParentType` missing `validate:"required"` | When setting a parent, `ParentType` is logically required but lacks the `validate:"required"` tag. Empty `ParentType` with non-empty `ParentInstanceID` reaches the service and fails with a confusing `EntityType not found: ""` error instead of a clear 400. | Add `validate:"required"` to `ParentType` in `SetParentRequest`, or add explicit validation in the handler/service. |
+| TD-35 | Operational catalog detail page too large | `OperationalCatalogDetailPage.tsx` manages 17+ state variables across 4 concerns (catalog metadata, tree state, instance detail/refs, instance list) in a single 500+ line component. | Extract the containment tree panel, instance detail drawer, and instance list table into separate sub-components to reduce cognitive load and improve testability. |
+| TD-37 | Reference direction unclear in tree browser detail panel | In the instance detail panel, directional associations show under "Forward References" and "Referenced By" sections with a "Type" column showing "directional". It is not clear which direction the association goes — the user cannot tell whether the selected instance depends on the target or vice versa. The association name alone may not convey direction (e.g., "uses-model" is clear, but "related-to" is not). | Show an arrow or directional indicator in the reference table: e.g., "my-server → gpt-4" for forward refs and "monitor-1 → my-server" for reverse. Alternatively, use role labels from the association definition (source_role/target_role) to clarify the relationship semantics. Consider replacing the generic "directional" type label with the actual role or a "depends on" / "depended by" phrasing. |
+| TD-38 | Entity type tab selector doesn't scale in meta catalog detail | The meta UI `CatalogDetailPage` uses PatternFly Tabs with one tab per entity type. When a catalog has many entity types (10+), the tabs overflow a single row and become hard to navigate. | Options: (A) Replace tabs with a sidebar or dropdown selector. (B) Add a search/filter input above the tabs. (C) Use PatternFly's scrollable tabs variant (`isOverflowHorizontal`). (D) Switch to a two-pane layout similar to the operational UI's tree browser. |
+| TD-36 | Review usefulness of Overview tab in operational catalog view | The Overview tab shows entity type names, pinned versions, and a "Browse Instances" button per type. With the two-pane tree browser now grouping instances under entity type headers, the Overview tab is largely redundant — the only unique information it provides is the meta entity type version number. | Options: (A) Remove the Overview tab entirely and make the tree browser the default (and only) tab. Show entity type version info in the tree group headers (e.g., "mcp-server V3 (2)"). (B) Repurpose the Overview tab as a catalog dashboard with useful aggregate info: instance counts per type, validation summary, catalog metadata, recent changes. (C) Keep as-is for users who want a quick summary before diving into the tree. |
+| TD-28 | Phase 3 code quality improvements (L1-L5, L7) | Multiple low-severity issues from quality review: (L1) duplicated forward/reverse reference handler conversion logic, (L2) dead `_ = parentInst`/`_ = sourceInst` assignments, (L3) JSON tags on service-layer `ReferenceDetail`, (L4) N+1 queries in `resolveLinks`, (L5) CatalogDetailPage now has ~30 state variables and should be decomposed, (L7) silently swallowed `UpdateValidationStatus` errors. | Extract `refsToDTO` helper in handler. Clean up dead assignments. Remove JSON tags from service types. Add batch fetch for links resolution. Decompose CatalogDetailPage into sub-components. Log validation status update failures. |
+| TD-39 | CopyCatalog sequential instance creation doesn't scale | `CopyCatalog` creates instances one at a time via N individual `instRepo.Create` calls, plus N `GetCurrentValues` and N `GetForwardRefs` calls. For catalogs with 1000+ instances this is slow. | Add `CreateBatch` method to `EntityInstanceRepository` that inserts multiple instances in a single query. Similarly batch `SetValues` and link creation. Low priority — catalogs currently have <100 instances. |
+| TD-40 | `SyncCR` uses unstructured logging | `SyncCR` in `catalog_service.go` uses `log.Printf("warning: ...")` (Go's default logger). In production this produces unstructured text logs that are hard to filter and correlate in centralized logging systems. | Replace `log.Printf` with structured logging (e.g., `slog.Warn` or a project-standard logger) that includes catalog name, error, and operation context as structured fields. Apply the same fix to any other `log.Printf` calls in the codebase. |
+| **TD-22** | **[CRITICAL] Common attributes as schema-level attributes** | Common attributes (Name, Description) are fields on `EntityInstance` but are NOT represented as `Attribute` records in the entity type schema. They are invisible in attribute lists, diagrams, and BOM modals. If an entity type manually creates custom attributes named `name`/`description`, the create instance modal shows duplicate fields. Additionally, catalog validation does not check that the `Name` common field is non-empty — a catalog with an empty-named instance passes validation as `valid`, which violates the Name field's required semantics. | **Approach A (DB-level):** Make common attributes into real `Attribute` records: (1) Auto-create them when an entity type is created, marked with a `system: true` flag. (2) Prevent deletion of system attributes. (3) Show them in all views — attribute tabs, diagrams, BOM modals, create/edit modals. (4) Remove the hardcoded Name/Description fields from the instance create/edit modals — use the schema attributes instead. (5) Design for extensibility: future common attributes like `Version` (auto-incremented) and `State` (enum lifecycle) should follow the same pattern. **Approach B (API-level merge):** Keep common attributes as hardcoded fields on `EntityInstance` (no DB schema change). The API layer merges them into the dynamic attribute list when returning responses — injecting synthetic `name`, `description`, `version` entries at the top of the attributes array with a `system: true` marker. The UI renders all attributes uniformly from this merged list and prevents editing/removing system-flagged ones. Meta API endpoints (attribute list, version snapshot, diagram data) similarly inject common attributes into their responses. Simpler to implement (no migration, no COW implications), but common attributes are never real DB records — they exist only as API-level projections. Prevents the duplicate-fields bug by having a single source of truth for what attributes exist (the merged list). |
 
 ## 12. Future Features
 
@@ -1149,4 +1408,68 @@ The entity type diagram currently uses a hardcoded Dagre (hierarchical top-to-bo
 - Concentric, Grid, BreadthFirst
 
 **Decision:** Deferred. Current Dagre layout works well for the UML class diagram use case.
+
+### FF-6: Operational UI Editing
+
+The operational UI (Phase 4) is initially read-only — a data viewer for operators and consumers to browse, filter, and navigate catalog data. A future enhancement would add write capabilities to the operational UI, allowing authorized users to create, edit, and delete instances, manage containment, and create association links directly from the operational interface.
+
+**Motivation:** Some teams may prefer a single UI for both browsing and editing catalog data, rather than switching between the meta UI (editing) and operational UI (browsing). This is especially relevant when catalog-level RBAC (US-39) is in place — an operator with write access to a specific catalog should be able to edit it from the same interface they use to browse it.
+
+**Scope:** Reuse the existing create/edit/delete modals from the meta UI's `CatalogDetailPage`, adapted for the operational app shell. Role-aware rendering (RO vs RW) determines which controls are visible.
+
+**Decision:** Deferred. The read-only viewer must be validated with users first. Editing features can be added incrementally once the browsing UX is stable.
+
+### FF-7: Catalog Versioning (Snapshots)
+
+Catalogs currently have a single mutable set of instances with a validation status (`draft`/`valid`/`invalid`). Any data mutation resets the status to `draft`. This creates a problem for published catalogs: adding a new instance to a `valid` catalog resets it to `draft`, which could cause it to be unpublished (once Catalog CRs are implemented in Phase 7).
+
+**Proposed solution:** Catalog snapshots — immutable, versioned copies of a catalog's data at a point in time. Similar to how CatalogVersions snapshot entity type schemas, catalog snapshots would freeze instance data.
+
+**Workflow:**
+1. A catalog has a working copy (mutable, always `draft` after changes) and zero or more published snapshots.
+2. When validation passes, the user can "publish" the current state as a numbered snapshot (V1, V2, ...).
+3. Published snapshots are immutable and retain their `valid` status.
+4. The Catalog CR references the latest published snapshot, not the mutable working copy.
+5. Users continue editing the working copy. The published snapshot is unaffected until a new snapshot is explicitly published.
+
+**Benefits:**
+- Published catalogs are never disrupted by ongoing edits
+- Rollback to a previous snapshot is possible
+- Consumers always see a consistent, validated dataset
+- Diff between snapshots enables change tracking
+
+**Considerations:**
+- Storage cost: each snapshot duplicates instance data (or uses COW/reference counting)
+- Migration: existing catalogs would need an initial V1 snapshot created from their current state
+- UI: snapshot list, publish action, rollback, diff view
+
+**Decision:** Deferred. Phase 7 will use a simpler approach (Option A: `draft` does not unpublish — the Catalog CR represents the last validated state). Catalog versioning can be added when the need for immutable published snapshots is validated with users.
+
+### FF-8: Copy & Replace Catalog — IMPLEMENTED
+
+See US-44 (Copy Catalog), US-45 (Replace Catalog), US-46 (Copy & Replace UI) in section 9.
+
+### FF-9: Multi-Namespace Catalog Publishing
+
+In Phase 7, Catalog CRs are created in the AssetHub's own namespace. This means all published catalogs are visible to any application with access to that namespace. FF-9 extends publishing to support target namespaces, so catalogs are discoverable only by apps in specific namespaces.
+
+**Proposed change:** The `publish` API accepts an optional `namespace` parameter. When specified, the Catalog CR is created in that namespace instead of the AssetHub's namespace. A catalog can be published to multiple namespaces simultaneously.
+
+**API:**
+- `POST /api/data/v1/catalogs/{name}/publish` — `{namespace?: string}` (default: AssetHub namespace)
+- `POST /api/data/v1/catalogs/{name}/unpublish` — `{namespace?: string}` (unpublish from specific namespace, or all if omitted)
+- `GET /api/data/v1/catalogs/{name}/publications` — list namespaces where the catalog is published
+
+**Backend changes:**
+- `CatalogPublication` table: `(catalog_id, namespace, published_at)` — tracks where each catalog is published
+- Operator needs ClusterRole to create/delete CRs in arbitrary namespaces
+- Owner references cannot cross namespaces — use finalizers on the AssetHub CR or a controller-based cleanup for GC
+- Namespace must exist; publishing to a non-existent namespace returns 404
+
+**Benefits:**
+- K8s RBAC "just works" — apps see only Catalog CRs in their own namespace
+- Multi-audience: one catalog published to many namespaces for different teams
+- Clean tenant isolation without custom cross-namespace authorization
+
+**Decision:** Deferred. Phase 7 publishes to the AssetHub's namespace only. Multi-namespace publishing can be added when multi-tenancy requirements are validated.
 

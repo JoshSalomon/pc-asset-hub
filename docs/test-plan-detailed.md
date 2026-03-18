@@ -28,11 +28,11 @@ Development proceeds through three environment phases, each with increasing infr
 - Deployment on a real cluster
 - Real OpenShift RBAC (SubjectAccessReview against a live API server)
 
-**Milestones completed**: 1–9 plus CatalogVersion Discovery CRD (all code written and tested)
+**Milestones completed**: 1–12 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, and T-E.01 through T-E.146 (331 test cases), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired), T-14.01 through T-14.22, T-15.01 through T-15.81, T-16.01 through T-16.69, and T-17.01 through T-17.88 (802 test cases), using SQLite and mocked/simulated infrastructure.
 
-**Human checkpoint**: After all 331 tests pass with 100% coverage (documented exceptions). This is the first review point.
+**Human checkpoint**: After all 802 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
 ---
 
@@ -691,12 +691,12 @@ Version history endpoints are read-only — all authenticated roles can access.
 | T-7.31 | Delete blocked when referenced (shows referencing attributes) | UI | US-33: delete blocked |
 | T-7.32 | Inline creation available from attribute type dropdown | UI | US-33: inline creation |
 
-### Catalog Version Management (US-34, US-35)
+### Catalog Version Management (US-41, US-35)
 
 | ID | Test Case | Layer | Acceptance Criteria |
 |----|-----------|-------|-------------------|
-| T-7.33 | Create UI shows all types with version dropdowns, latest pre-selected | UI | US-34: version picker with defaults |
-| T-7.34 | Summary/review step shows full bill of materials | UI | US-34: review before confirm |
+| T-7.33 | Create UI shows all types with version dropdowns, latest pre-selected | UI | US-41: version picker with defaults |
+| T-7.34 | Summary/review step shows full bill of materials | UI | US-41: review before confirm |
 | T-7.35 | Detail shows identifier, lifecycle badge (color-coded), BOM | UI | US-35: detail view |
 | T-7.36 | Development stage: "Promote to Testing" visible for RW+ | UI | US-35: role-based actions |
 | T-7.37 | Testing stage: "Promote to Production" visible for Admin+, "Demote" for RW+ | UI | US-35: role-based actions |
@@ -1187,6 +1187,1007 @@ These tests cover the remaining CRUD gaps identified in the meta model gap analy
 
 ---
 
+## Milestone 10: Catalog Foundation
+
+Catalogs are named data containers pinned to a catalog version. The operational API uses catalog names (DNS-label format) in URLs. This milestone covers the Catalog entity CRUD, domain model refactoring (`EntityInstance.CatalogVersionID` → `CatalogID`), and removal of the old CV-scoped operational scaffolding.
+
+### Catalog Domain Model and Repository
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-10.01 | Create catalog with valid name and CV ID | Integration | Catalog persisted with validation_status=draft |
+| T-10.02 | Create catalog with duplicate name | Integration | Unique constraint error |
+| T-10.03 | Create catalog with nonexistent CV ID | Integration | FK constraint error |
+| T-10.04 | GetByName retrieves catalog by name | Integration | Correct catalog returned |
+| T-10.05 | GetByName for nonexistent name | Integration | NotFound error |
+| T-10.06 | List catalogs returns all | Integration | All catalogs returned with total count |
+| T-10.07 | List catalogs filtered by catalog_version_id | Integration | Only catalogs with matching CV returned |
+| T-10.08 | List catalogs filtered by validation_status | Integration | Only catalogs with matching status returned |
+| T-10.09 | Delete catalog by ID | Integration | Catalog removed from DB |
+| T-10.10 | EntityInstance uses catalog_id FK (not catalog_version_id) | Integration | Instance created with catalog_id, FK enforced |
+
+### Catalog Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-10.11 | CreateCatalog with valid DNS-label name | Unit | Catalog created with draft status, UUID assigned |
+| T-10.12 | CreateCatalog with invalid name (uppercase) | Unit | Validation error |
+| T-10.13 | CreateCatalog with invalid name (special chars) | Unit | Validation error |
+| T-10.14 | CreateCatalog with invalid name (empty) | Unit | Validation error |
+| T-10.15 | CreateCatalog with invalid name (>63 chars) | Unit | Validation error |
+| T-10.16 | CreateCatalog with invalid name (starts with hyphen) | Unit | Validation error |
+| T-10.17 | CreateCatalog with invalid name (ends with hyphen) | Unit | Validation error |
+| T-10.18 | CreateCatalog with duplicate name | Unit | Conflict error |
+| T-10.19 | CreateCatalog with nonexistent CV ID | Unit | NotFound error |
+| T-10.20 | GetByName returns catalog with resolved CV label | Unit | Response includes CV version_label |
+| T-10.21 | GetByName for nonexistent name | Unit | NotFound error |
+| T-10.22 | List catalogs with no filters | Unit | All catalogs returned |
+| T-10.23 | List catalogs filtered by catalog_version_id | Unit | Filtered results |
+| T-10.24 | List catalogs filtered by validation_status | Unit | Filtered results |
+| T-10.25 | Delete catalog cascades to entity instances | Unit | All instances in catalog deleted |
+| T-10.26 | Delete nonexistent catalog | Unit | NotFound error |
+
+### Catalog API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-10.27 | POST /api/data/v1/catalogs with valid request | API | 201, catalog with id, name, status=draft |
+| T-10.28 | POST /api/data/v1/catalogs with invalid name format | API | 400, clear error message |
+| T-10.29 | POST /api/data/v1/catalogs with duplicate name | API | 409 |
+| T-10.30 | POST /api/data/v1/catalogs with nonexistent CV | API | 404 |
+| T-10.31 | POST /api/data/v1/catalogs as RO | API | 403 |
+| T-10.32 | POST /api/data/v1/catalogs as RW | API | 201 (RW can create) |
+| T-10.33 | GET /api/data/v1/catalogs returns list | API | 200, array with total count |
+| T-10.34 | GET /api/data/v1/catalogs?catalog_version_id=X | API | 200, filtered list |
+| T-10.35 | GET /api/data/v1/catalogs?validation_status=draft | API | 200, filtered list |
+| T-10.36 | GET /api/data/v1/catalogs/{name} returns detail | API | 200, catalog with resolved CV label |
+| T-10.37 | GET /api/data/v1/catalogs/{name} nonexistent | API | 404 |
+| T-10.38 | DELETE /api/data/v1/catalogs/{name} | API | 204, catalog and instances removed |
+| T-10.39 | DELETE /api/data/v1/catalogs/{name} as RO | API | 403 |
+| T-10.40 | DELETE /api/data/v1/catalogs/{name} nonexistent | API | 404 |
+
+### Catalog UI (Meta UI)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-10.41 | Catalogs nav item visible in sidebar | Browser | Nav item "Catalogs" present |
+| T-10.42 | Catalog list page shows name, CV label, status badge, date | Browser | All columns rendered with correct data |
+| T-10.43 | Catalog list status badge color-coded (draft=blue, valid=green, invalid=red) | Browser | Correct badge variant per status |
+| T-10.44 | Create catalog button visible for RW+, hidden for RO | Browser | Role-aware visibility |
+| T-10.45 | Create catalog modal: name input, description, CV dropdown | Browser | All form fields present |
+| T-10.46 | Create catalog modal: invalid name shows inline error | Browser | Error shown for uppercase, special chars, etc. |
+| T-10.47 | Create catalog modal: submit calls API, list refreshes | Browser | API called, new catalog appears in list |
+| T-10.48 | Delete catalog button visible for RW+, hidden for RO | Browser | Role-aware visibility |
+| T-10.49 | Delete catalog shows confirmation dialog | Browser | Confirmation required before delete |
+| T-10.50 | Delete catalog: confirm removes from list | Browser | Catalog disappears from list after delete |
+
+### Old Operational Scaffolding Removal
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-10.51 | Old CV-scoped routes (/api/catalog/{cv}/...) no longer registered | API | 404 for old route pattern |
+
+---
+
+## Milestone 11: Instance CRUD with Attributes
+
+Entity instances are created within a catalog, scoped to an entity type pinned in the catalog's CV. Attribute values are set on create, validated by type, returned with resolved names, and versioned on update. The old CV-scoped instance scaffolding is replaced with catalog-scoped routes.
+
+### Instance Repository — Attribute Values
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.01 | SetValues stores attribute values for instance | Integration | Values persisted and retrievable |
+| T-11.02 | GetCurrentValues returns latest version's values | Integration | Returns values for highest version |
+| T-11.03 | GetValuesForVersion returns values for specific version | Integration | Returns values for requested version only |
+| T-11.04 | SetValues for new version preserves previous version's values | Integration | Both version 1 and version 2 values retrievable independently |
+| T-11.05 | Instance creation with catalog_id and attribute values end-to-end | Integration | Instance + values persisted, FK constraints satisfied |
+
+### Pin Resolution Chain
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.06 | Catalog → CV → Pin → EntityTypeVersion resolution | Integration | Given catalog with CV that pins entity type, full chain resolves to correct EntityTypeVersion |
+| T-11.07 | Pin resolution returns attributes for the pinned version | Integration | Attributes from pinned version (not latest) returned |
+| T-11.08 | Pin resolution for entity type not pinned in CV | Integration | No pin found for that entity type |
+
+### Optimistic Locking (DB level)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.09 | Update instance with matching version succeeds | Integration | Version incremented, update applied |
+| T-11.10 | Update instance with stale version returns 0 rows affected | Integration | RowsAffected=0, no data changed |
+
+### Instance Service — Create with Pin Resolution
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.11 | Create instance in catalog with pinned entity type | Unit | Instance created with correct CatalogID and EntityTypeID |
+| T-11.12 | Create instance with entity type not pinned in CV | Unit | NotFound error |
+| T-11.13 | Create instance in nonexistent catalog | Unit | NotFound error |
+| T-11.14 | Create instance with attribute values (string) | Unit | Instance created, string attribute value stored |
+| T-11.15 | Create instance with attribute values (number) | Unit | Instance created, number attribute value stored |
+| T-11.16 | Create instance with attribute values (enum — valid value) | Unit | Instance created, enum value stored |
+| T-11.17 | Create instance with attribute values (enum — invalid value) | Unit | Validation error |
+| T-11.18 | Create instance with attribute values (number — non-parseable) | Unit | Validation error |
+| T-11.19 | Create instance with missing optional attributes | Unit | Instance created, no error |
+| T-11.20 | Create instance with missing required attributes (draft mode) | Unit | Instance created, no error (validation is Phase 5) |
+| T-11.21 | Create instance with duplicate name in same catalog | Unit | Conflict error |
+| T-11.22 | Create instance with unknown attribute name | Unit | Validation error — attribute not in schema |
+
+### Instance Service — Update
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.23 | Update instance attribute values | Unit | Version incremented, new values stored, previous retained |
+| T-11.24 | Update instance with version mismatch | Unit | Conflict error |
+| T-11.25 | Update instance name and description | Unit | Fields updated, version incremented |
+| T-11.26 | Update with invalid attribute value type | Unit | Validation error, no version change |
+| T-11.27 | Update nonexistent instance | Unit | NotFound error |
+
+### Instance Service — Get and List
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.28 | Get instance returns resolved attribute values (name, type, value) | Unit | Response includes attribute name/type from schema + value |
+| T-11.29 | List instances returns instances with attribute values | Unit | Each instance includes its current attribute values |
+| T-11.30 | List instances in catalog with no instances | Unit | Empty list, total=0 |
+
+### Instance Service — Delete and Validation Status
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.31 | Delete instance cascades to children | Unit | Parent and children soft-deleted |
+| T-11.32 | Create instance resets catalog validation status to draft | Unit | Catalog status updated to draft |
+| T-11.33 | Update instance resets catalog validation status to draft | Unit | Catalog status updated to draft |
+| T-11.34 | Delete instance resets catalog validation status to draft | Unit | Catalog status updated to draft |
+
+### Instance API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.35 | POST /catalogs/{name}/{entity-type} with attributes → 201 | API | Instance created with attribute values in response |
+| T-11.36 | POST /catalogs/{name}/{entity-type} nonexistent catalog → 404 | API | Clear error message |
+| T-11.37 | POST /catalogs/{name}/{entity-type} entity type not pinned → 404 | API | Clear error message |
+| T-11.38 | POST /catalogs/{name}/{entity-type} invalid attribute value → 400 | API | Validation error |
+| T-11.39 | POST /catalogs/{name}/{entity-type} as RO → 403 | API | Forbidden |
+| T-11.40 | POST /catalogs/{name}/{entity-type} as RW → 201 | API | RW can create instances |
+| T-11.41 | GET /catalogs/{name}/{entity-type} → 200 list with attributes | API | Instances with resolved attribute values |
+| T-11.42 | GET /catalogs/{name}/{entity-type}/{id} → 200 with attributes | API | Single instance with resolved attribute values |
+| T-11.43 | GET /catalogs/{name}/{entity-type}/{id} nonexistent → 404 | API | Not found |
+| T-11.44 | PUT /catalogs/{name}/{entity-type}/{id} → 200, version incremented | API | Updated attributes, new version in response |
+| T-11.45 | PUT /catalogs/{name}/{entity-type}/{id} version mismatch → 409 | API | Conflict error |
+| T-11.46 | DELETE /catalogs/{name}/{entity-type}/{id} → 204 | API | Instance deleted |
+| T-11.47 | DELETE /catalogs/{name}/{entity-type}/{id} as RO → 403 | API | Forbidden |
+
+### Instance UI — Catalog Detail Page
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-11.48 | Catalog detail page shows tabs per pinned entity type | Browser | One tab per entity type in CV pins |
+| T-11.49 | Entity type tab shows instance list table | Browser | Table with Name, Description columns + dynamic attribute columns |
+| T-11.50 | Instance list shows attribute values in columns | Browser | Attribute values rendered in correct columns |
+| T-11.51 | Create instance button visible for RW+, hidden for RO | Browser | Role-aware visibility |
+| T-11.52 | Create instance modal has dynamic attribute form | Browser | String → text input, number → number input, enum → dropdown |
+| T-11.53 | Create instance modal submits with attribute values | Browser | API called with name, description, attributes; list refreshes |
+| T-11.54 | Edit instance opens modal with pre-filled values | Browser | Current name, description, attribute values shown |
+| T-11.55 | Edit instance submits updated values | Browser | API called with version + changed fields; list refreshes |
+| T-11.56 | Delete instance shows confirmation dialog | Browser | Confirmation with instance name |
+| T-11.57 | Delete instance removes from list | Browser | Instance disappears after confirm |
+| T-11.58 | Empty instance list shows empty state | Browser | "No instances" message |
+
+---
+
+## Milestone 12: Containment & Association Links
+
+Contained instances are created under a parent instance via sub-resource URLs. Association links connect instances based on directional or bidirectional association definitions in the pinned CV. All relationships are validated against the CV's association definitions. Single-level containment routes are supported; multi-level containment URLs are deferred to Phase 4.
+
+### Contained Instance Repository
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-12.01 | Create contained instance with parent_instance_id set | Integration | Instance persisted with correct parent_instance_id |
+| T-12.02 | Same name under different parents allowed | Integration | Both instances created, unique constraint satisfied |
+| T-12.03 | Same name under same parent rejected | Integration | Unique constraint violation |
+| T-12.04 | ListByParent returns only direct children of specified parent | Integration | Only children with matching parent_instance_id returned |
+
+### Contained Instance Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-12.05 | CreateContainedInstance with valid parent and containment association in CV | Unit | Instance created with parent_instance_id set, correct entity type |
+| T-12.06 | CreateContainedInstance with nonexistent parent | Unit | NotFound error |
+| T-12.07 | CreateContainedInstance with child type not in containment relationship with parent type | Unit | Validation error — no containment association exists |
+| T-12.08 | CreateContainedInstance with child type not pinned in CV | Unit | NotFound error |
+| T-12.09 | CreateContainedInstance same name under different parents | Unit | Both created successfully |
+| T-12.10 | CreateContainedInstance duplicate name under same parent | Unit | Conflict error |
+| T-12.11 | ListContainedInstances returns only direct children of specified type | Unit | Filtered by parent ID and entity type |
+| T-12.12 | CreateContainedInstance resets catalog validation status to draft | Unit | Catalog status updated to draft |
+| T-12.13 | CreateContainedInstance with attribute values | Unit | Instance created with validated attribute values |
+
+### Association Link Repository
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-12.14 | Create association link with valid source and target IDs | Integration | Link persisted with correct association_id, source, target |
+| T-12.15 | GetForwardRefs returns target instances for source | Integration | All links where source matches returned |
+| T-12.16 | GetReverseRefs returns source instances for target | Integration | All links where target matches returned |
+| T-12.17 | Delete association link removes it | Integration | Link no longer returned by forward/reverse queries |
+| T-12.18 | GetForwardRefs for instance with no links | Integration | Empty list returned |
+
+### Association Link Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-12.19 | CreateAssociationLink with valid association definition in CV | Unit | Link created with correct association_id |
+| T-12.20 | CreateAssociationLink with nonexistent association name | Unit | NotFound error |
+| T-12.21 | CreateAssociationLink source entity type does not match association's source type | Unit | Validation error |
+| T-12.22 | CreateAssociationLink target entity type does not match association's target type | Unit | Validation error |
+| T-12.23 | CreateAssociationLink with nonexistent target instance | Unit | NotFound error |
+| T-12.24 | CreateAssociationLink with nonexistent source instance | Unit | NotFound error |
+| T-12.25 | DeleteAssociationLink removes link | Unit | Link deleted successfully |
+| T-12.26 | DeleteAssociationLink nonexistent link | Unit | NotFound error |
+| T-12.27 | CreateAssociationLink resets catalog validation status to draft | Unit | Catalog status updated to draft |
+| T-12.28 | DeleteAssociationLink resets catalog validation status to draft | Unit | Catalog status updated to draft |
+
+### Forward/Reverse Reference Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-12.29 | GetForwardReferences returns resolved target info | Unit | Response includes link ID, association name, association type, target instance ID/name/entity type name |
+| T-12.30 | GetForwardReferences includes directional associations | Unit | Directional links included in results |
+| T-12.31 | GetForwardReferences includes bidirectional associations | Unit | Bidirectional links included in results |
+| T-12.32 | GetForwardReferences for instance with no links | Unit | Empty list, no error |
+| T-12.33 | GetReverseReferences returns resolved source info | Unit | Response includes link ID, association name, association type, source instance ID/name/entity type name |
+| T-12.34 | GetReverseReferences includes directional associations | Unit | Directional links (where this instance is target) included |
+| T-12.35 | GetReverseReferences includes bidirectional associations | Unit | Bidirectional links (where this instance is target) included |
+| T-12.36 | GetReverseReferences for instance with no incoming links | Unit | Empty list, no error |
+
+### Contained Instance API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-12.37 | POST /{catalog}/{parent-type}/{parent-id}/{child-type} with valid request | API | 201, contained instance with parent_instance_id in response |
+| T-12.38 | POST /{catalog}/{parent-type}/{parent-id}/{child-type} nonexistent parent | API | 404 |
+| T-12.39 | POST /{catalog}/{parent-type}/{parent-id}/{child-type} no containment association | API | 400, clear error message |
+| T-12.40 | POST /{catalog}/{parent-type}/{parent-id}/{child-type} as RO | API | 403 |
+| T-12.41 | GET /{catalog}/{parent-type}/{parent-id}/{child-type} lists children | API | 200, array of contained instances |
+| T-12.42 | GET /{catalog}/{parent-type}/{parent-id}/{child-type} nonexistent parent | API | 404 |
+
+### Association Link API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-12.43 | POST /{catalog}/{type}/{id}/links with valid request | API | 201, link with resolved association info |
+| T-12.44 | POST /{catalog}/{type}/{id}/links nonexistent source instance | API | 404 |
+| T-12.45 | POST /{catalog}/{type}/{id}/links invalid association name | API | 400 |
+| T-12.46 | POST /{catalog}/{type}/{id}/links mismatched entity types | API | 400, validation error |
+| T-12.47 | POST /{catalog}/{type}/{id}/links as RO | API | 403 |
+| T-12.48 | DELETE /{catalog}/{type}/{id}/links/{link-id} | API | 204 |
+| T-12.49 | DELETE /{catalog}/{type}/{id}/links/{link-id} as RO | API | 403 |
+| T-12.50 | DELETE /{catalog}/{type}/{id}/links/{link-id} nonexistent | API | 404 |
+| T-12.51 | GET /{catalog}/{type}/{id}/references returns forward refs | API | 200, array with resolved target info |
+| T-12.52 | GET /{catalog}/{type}/{id}/referenced-by returns reverse refs | API | 200, array with resolved source info |
+| T-12.53 | GET /{catalog}/{type}/{id}/references nonexistent instance | API | 404 |
+
+### Containment & Links UI (Meta UI)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-12.54 | Instance detail shows contained children section | Browser | Children listed by entity type under parent |
+| T-12.55 | Add contained instance button visible for RW+, hidden for RO | Browser | Role-aware visibility |
+| T-12.56 | Add contained instance modal creates child under parent | Browser | API called with parent context, child appears in list |
+| T-12.57 | Contained instance appears in parent's children list after creation | Browser | List refreshes with new child |
+| T-12.58 | Instance detail shows references tab | Browser | Tab with forward and reverse reference sections |
+| T-12.59 | Forward references show target instance info with association name | Browser | Association name, type, target name displayed |
+| T-12.60 | Reverse references show source instance info with association name | Browser | Association name, type, source name displayed |
+| T-12.61 | Link to instance action creates association link | Browser | Modal for selecting target instance and association, API called |
+| T-12.62 | Unlink action removes association link | Browser | Confirmation dialog, link removed from list |
+| T-12.63 | RO user sees references but no link/unlink controls | Browser | Read-only view, no action buttons |
+
+## Milestone 13: Catalog Data Viewer
+
+Phase 4 of the catalog implementation plan. Adds a read-only operational UI for browsing catalog data, plus backend enhancements for filtering, sorting, pagination, containment tree, and parent chain resolution. User stories: US-17, US-18, US-19, US-20, US-21, US-40.
+
+### Containment Tree — Repository
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.01 | `ListByCatalog` returns all instances in a catalog | Integration | All instances across entity types returned |
+| T-13.02 | `ListByCatalog` excludes instances from other catalogs | Integration | Only instances matching catalogID returned |
+| T-13.03 | `ListByCatalog` returns empty list for empty catalog | Integration | Empty slice, no error |
+
+### Containment Tree — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.04 | `GetContainmentTree` builds tree from flat instance list | Unit | Root instances at top level, children nested |
+| T-13.05 | Root instances (no parent) appear as top-level nodes | Unit | Instances with empty ParentInstanceID at root |
+| T-13.06 | Children nested under their parent | Unit | Child nodes under correct parent |
+| T-13.07 | Multi-level nesting (grandchildren) | Unit | 3+ level hierarchy correctly built |
+| T-13.08 | Empty catalog returns empty tree | Unit | Empty slice, no error |
+| T-13.09 | Each tree node includes entity type name | Unit | Entity type name resolved via etRepo |
+| T-13.10 | Nonexistent catalog returns NotFound | Unit | 404 error |
+
+### Containment Tree — API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.11 | `GET /catalogs/{name}/tree` returns 200 with tree | API | Nested JSON tree structure |
+| T-13.12 | `GET /catalogs/{name}/tree` returns 404 for nonexistent catalog | API | 404 response |
+| T-13.13 | Tree nodes include instance name, ID, entity type name | API | All fields present in response |
+| T-13.14 | Tree structure matches containment relationships | API | Parent-child nesting correct |
+
+### Attribute-Based Filtering — Repository
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.15 | String filter applies case-insensitive contains match | Integration | `LIKE '%value%'` behavior |
+| T-13.16 | Number filter applies exact match | Integration | Exact float64 comparison |
+| T-13.17 | Number range filter with min only | Integration | `>= min` |
+| T-13.18 | Number range filter with max only | Integration | `<= max` |
+| T-13.19 | Number range filter with min and max | Integration | `>= min AND <= max` |
+| T-13.20 | Enum filter applies exact match | Integration | Exact string comparison on enum value |
+| T-13.21 | Multiple filters combine with AND logic | Integration | All conditions must match |
+| T-13.22 | Filter on attribute with no matching instances returns empty | Integration | Empty result, no error |
+| T-13.23 | Filtering works across EAV join | Integration | Correct join on instance_attribute_values |
+
+### Attribute-Based Filtering — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.24 | Filter params passed through to repository | Unit | Repository called with correct ListParams |
+| T-13.25 | Unknown attribute name in filter returns validation error | Unit | 400-level error |
+| T-13.26 | Filter params resolved from attribute name to attribute ID | Unit | Service translates name→ID before passing to repo |
+
+### Attribute-Based Filtering — API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.27 | `GET /{name}/{type}?filter.strattr=hello` returns filtered results | API | Only instances with matching string attr |
+| T-13.28 | `GET /{name}/{type}?filter.numattr=5` filters by exact number | API | Only instances with numattr=5 |
+| T-13.29 | `GET /{name}/{type}?filter.numattr.min=1&filter.numattr.max=10` range filter | API | Only instances with 1<=numattr<=10 |
+| T-13.30 | Multiple filter params combine with AND | API | Intersection of all filters |
+| T-13.31 | `filter.unknownattr=x` returns 400 | API | Bad request error |
+
+### Sorting — Repository
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.32 | Sort by string attribute ascending | Integration | Alphabetical order |
+| T-13.33 | Sort by string attribute descending | Integration | Reverse alphabetical |
+| T-13.34 | Sort by number attribute ascending | Integration | Numeric order (1, 2, 10 not 1, 10, 2) |
+| T-13.35 | Sort by number attribute descending | Integration | Reverse numeric order |
+| T-13.36 | Sort by name (built-in field) ascending | Integration | Name alphabetical |
+
+### Sorting — API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.37 | `?sort=attr:asc` sorts ascending | API | Results in ascending order |
+| T-13.38 | `?sort=attr:desc` sorts descending | API | Results in descending order |
+| T-13.39 | `?sort=name:asc` sorts by built-in name field | API | Results sorted by name |
+| T-13.40 | No sort param uses default order | API | Results in default (created) order |
+
+### Pagination — Repository
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.41 | Offset skips correct number of results | Integration | First N results excluded |
+| T-13.42 | Limit caps result count | Integration | At most N results returned |
+| T-13.43 | Total count unaffected by offset/limit | Integration | Total reflects all matching, not page |
+| T-13.44 | Offset beyond total returns empty with correct total | Integration | Empty items, total still accurate |
+
+### Pagination — API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.45 | `?limit=5&offset=10` returns correct page | API | 5 results starting from 11th |
+| T-13.46 | Response includes total count | API | `total` field in response |
+| T-13.47 | Default limit is 20 when not specified | API | 20 results max |
+| T-13.48 | Limit capped at 100 | API | `?limit=500` returns at most 100 |
+| T-13.49 | `?offset=0&limit=0` returns count only (no items) | API | Empty items array, total populated |
+
+### Parent Chain Resolution — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.50 | Parent chain resolves from instance up to root | Unit | Ordered list of ancestors |
+| T-13.51 | Root instance has empty parent chain | Unit | Empty array |
+| T-13.52 | Multi-level chain (3+ levels) resolves correctly | Unit | All ancestors in root-first order |
+| T-13.53 | Each chain entry includes instance ID, name, entity type name | Unit | All fields populated |
+
+### Parent Chain Resolution — API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.54 | `GET /{name}/{type}/{id}` includes `parent_chain` in response | API | Array field present |
+| T-13.55 | Parent chain is ordered root-first | API | First entry is root ancestor |
+| T-13.56 | Root instance has empty parent chain | API | Empty array in response |
+
+### Operational UI — Build Infrastructure
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.57 | Vite multi-entry build produces `index.html` and `operational.html` | Browser | Both HTML files exist in build output |
+| T-13.58 | Operational entry point renders OperationalApp shell | Browser | App mounts and renders |
+| T-13.59 | Operational app masthead shows "AI Asset Hub — Data Viewer" | Browser | Brand text correct |
+| T-13.60 | Role selector in masthead works | Browser | Role changes propagate to API calls |
+
+### Operational UI — Catalog List Page
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.61 | Catalog list page loads and shows catalogs | Browser | Table with catalog rows |
+| T-13.62 | Catalog columns: name, CV label, status badge, instance count | Browser | All columns rendered |
+| T-13.63 | Search input filters catalogs by name | Browser | Table filters as user types |
+| T-13.64 | Sortable column headers | Browser | Click header toggles sort |
+| T-13.65 | Pagination controls present | Browser | Page size selector and navigation |
+| T-13.66 | Clicking catalog name navigates to catalog detail | Browser | Route changes to /catalogs/{name} |
+| T-13.67 | Validation status badge colors (green=valid, blue=draft, red=invalid) | Browser | Correct label colors |
+
+### Operational UI — Catalog Detail Overview
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.68 | Catalog detail shows header with name, status badge, CV label | Browser | All header elements rendered |
+| T-13.69 | Overview tab lists entity types from pinned CV | Browser | Table with entity type rows |
+| T-13.70 | Entity type rows show name, version, instance count | Browser | All columns populated |
+| T-13.71 | "Browse Instances" button switches to tree browser for that type | Browser | Tab changes, tree loads |
+
+### Operational UI — Containment Tree Browser (Two-Pane Layout)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.72 | Tree browser tab renders two-pane layout with tree and detail | Browser | Tree on left, detail/empty state on right |
+| T-13.73 | Tree groups root instances under entity type headers with counts | Browser | "mcp-server (2)" format |
+| T-13.74 | Entity type group headers are expandable | Browser | Click expands/collapses to show instances |
+| T-13.75 | Clicking a tree instance shows detail in right panel | Browser | Detail panel populates inline (not drawer overlay) |
+| T-13.76 | Multi-level tree expands correctly (3+ levels) | Browser | Grandchildren visible after expanding |
+| T-13.77 | Empty state shown when no instance selected | Browser | "Select an instance" message in right panel |
+
+### Operational UI — Instance List (REMOVED)
+
+Instance list table with filtering, sorting, and pagination has been removed from the read-only tree browser. The tree is the primary navigation. The backend filtering/sorting/pagination API remains available and is tested at the API layer (T-13.27-49). UI for these controls is deferred to FF-6 (operational editing).
+
+Test cases T-13.78 through T-13.85 are retired.
+
+### Operational UI — Instance Detail
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.86 | Instance detail panel shows attributes table | Browser | Name, type, value columns |
+| T-13.87 | Enum values show resolved names | Browser | Enum display name, not raw value |
+| T-13.88 | Instance description displayed | Browser | Description text visible |
+| T-13.89 | Instance version and timestamps displayed | Browser | Version number, created/updated dates |
+
+### Operational UI — Breadcrumb Navigation
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.90 | Breadcrumb renders containment path | Browser | Catalog > Parent > Current |
+| T-13.91 | Breadcrumb shows entity type and instance name per level | Browser | "MCP Server: my-server" format |
+| T-13.92 | Breadcrumb links navigate to ancestor in tree | Browser | Click selects ancestor node |
+| T-13.93 | Root instance breadcrumb shows catalog only | Browser | No parent entries |
+
+### Operational UI — Reference Navigation
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.94 | References tab shows forward references | Browser | Table with assoc name, type, target |
+| T-13.95 | Referenced-by tab shows reverse references | Browser | Table with assoc name, type, source |
+| T-13.96 | Clicking referenced instance navigates to it in tree | Browser | Tree node selected, detail updates |
+| T-13.97 | No references shows empty state message | Browser | "No references" text |
+
+### Operational UI — Read-Only Enforcement
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-13.98 | No create buttons visible in operational UI | Browser | No "Create" buttons anywhere |
+| T-13.99 | No edit buttons visible in operational UI | Browser | No "Edit" buttons anywhere |
+| T-13.100 | No delete buttons visible in operational UI | Browser | No "Delete" buttons anywhere |
+| T-13.101 | No link/unlink actions in reference tabs | Browser | No write actions on references |
+| T-13.102 | Read-only enforcement applies regardless of role (even SuperAdmin) | Browser | SuperAdmin sees same read-only view |
+
+## Milestone 14: Catalog-Level RBAC
+
+Phase 5 of the catalog implementation plan. Adds per-catalog access control via a `CatalogAccessChecker` interface. In header-based dev mode (RBAC_MODE=header), all catalogs are accessible. In SAR mode (Phase C), SubjectAccessReview checks resourceName against K8s RBAC. User stories: US-23, US-39.
+
+### CatalogAccessChecker Interface + HeaderCatalogAccessChecker
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-14.01 | `HeaderCatalogAccessChecker.CheckAccess` returns true for any catalog | Unit | Always allowed in dev mode |
+| T-14.02 | `HeaderCatalogAccessChecker.CheckAccess` returns true for any verb | Unit | GET, POST, PUT, DELETE all allowed |
+
+### RequireCatalogAccess Middleware
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-14.03 | Middleware extracts catalog name from `:catalog-name` param | Unit | Correct name passed to CheckAccess |
+| T-14.04 | Middleware maps GET to verb "get" | Unit | CheckAccess called with verb "get" |
+| T-14.05 | Middleware maps POST to verb "create" | Unit | CheckAccess called with verb "create" |
+| T-14.06 | Middleware maps PUT to verb "update" | Unit | CheckAccess called with verb "update" |
+| T-14.07 | Middleware maps DELETE to verb "delete" | Unit | CheckAccess called with verb "delete" |
+| T-14.08 | Middleware returns 403 when CheckAccess returns false | Unit | 403 Forbidden response |
+| T-14.09 | Middleware passes through when CheckAccess returns true | Unit | Next handler called, 200 response |
+| T-14.10 | Middleware returns 500 when CheckAccess returns error | Unit | 500 Internal Server Error |
+| T-14.11 | Middleware skips check when no catalog name in path (catalog list) | Unit | Next handler called without CheckAccess |
+
+### Catalog List Filtering
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-14.12 | Catalog list filters out denied catalogs | Unit | Only allowed catalogs returned |
+| T-14.13 | Catalog list returns all catalogs when all are allowed | Unit | Full list returned |
+| T-14.14 | Catalog list returns empty when all catalogs denied | Unit | Empty items, total=0 |
+| T-14.15 | `GET /api/data/v1/catalogs` with mock deny returns filtered list | API | Denied catalogs excluded from response |
+| T-14.16 | `GET /api/data/v1/catalogs` with header mode returns all catalogs | API | All catalogs in response |
+
+### Catalog Access Enforcement via API
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-14.17 | `GET /api/data/v1/catalogs/{name}/tree` returns 403 when denied | API | 403 response |
+| T-14.18 | `GET /api/data/v1/catalogs/{name}/{type}` returns 403 when denied | API | 403 response |
+| T-14.19 | `POST /api/data/v1/catalogs/{name}/{type}` returns 403 when denied | API | 403 response |
+| T-14.20 | `GET /api/data/v1/catalogs/{name}/{type}/{id}` returns 403 when denied | API | 403 response |
+| T-14.21 | All sub-resource operations allowed when catalog access granted | API | 200 response |
+| T-14.22 | Header mode: all catalog operations pass regardless of catalog name | API | 200 response for any catalog |
+
+---
+
+## Milestone 15: Catalog Validation
+
+Phase 6 of the catalog implementation plan. On-demand validation of all entity instances in a catalog against the pinned CV's schema. The `CatalogValidationService` checks required attributes, type correctness, full cardinality validation (min and max, both target and source directions), containment consistency (orphaned instances, missing parents for contained types, invalid relationships), and unpinned entity types. Returns a structured error list and updates the catalog's validation status. User story: US-34.
+
+### Validation Service — Required Attributes
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.01 | Instance missing value for required attribute produces error | Unit | Error: entity_type, instance_name, field=attr_name, violation="required attribute missing" |
+| T-15.02 | Instance with value for required attribute passes | Unit | No error for that attribute |
+| T-15.03 | Instance missing value for optional attribute passes | Unit | No error — optional attrs are not required |
+| T-15.04 | Multiple instances missing different required attrs produce separate errors | Unit | One error per missing required attr per instance |
+
+### Validation Service — Attribute Type Check
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.05 | String attribute with any value passes | Unit | No error |
+| T-15.06 | Number attribute with valid float value passes | Unit | No error |
+| T-15.07 | Required number attribute with nil value produces error | Unit | Error: violation="required attribute missing" |
+| T-15.08 | Enum attribute with value in allowed list passes | Unit | No error |
+| T-15.09 | Enum attribute with value not in allowed list produces error | Unit | Error: violation="invalid enum value" |
+
+### Validation Service — Mandatory Associations
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.10 | Association with target_cardinality "1" — source instance has one link → passes | Unit | No error |
+| T-15.11 | Association with target_cardinality "1" — source instance has no link → error | Unit | Error: violation="mandatory association unsatisfied" |
+| T-15.12 | Association with target_cardinality "1..n" — source instance has one link → passes | Unit | No error |
+| T-15.13 | Association with target_cardinality "1..n" — source instance has no link → error | Unit | Error: violation="mandatory association unsatisfied" |
+| T-15.14 | Association with target_cardinality "0..n" — source instance has no link → passes | Unit | No error — optional association |
+| T-15.15 | Association with target_cardinality "0..1" — source instance has no link → passes | Unit | No error — optional association |
+| T-15.16 | Containment associations are excluded from mandatory assoc checks | Unit | Containment validated separately |
+
+### Validation Service — Cardinality Max and Source Direction
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.49 | Target cardinality "0..1" with 2 links → max exceeded error | Unit | Error: violation="exceeds maximum" |
+| T-15.50 | Exact cardinality "1" with 2 links → max exceeded error | Unit | Error: violation="exceeds maximum" |
+| T-15.51 | Bidirectional with source_cardinality "1" — target instance has no reverse links → error | Unit | Error: violation="source cardinality" |
+| T-15.52 | Directional with source_cardinality "1" — target instance has reverse link → passes | Unit | No error |
+| T-15.53 | Source cardinality "0..1" with 2 reverse links → max exceeded error | Unit | Error: violation="exceeds maximum" |
+| T-15.54 | Bidirectional with mandatory target_cardinality — source instance has no link → error | Unit | Error: violation="mandatory association" |
+| T-15.55 | ParseCardinality parses all formats correctly | Unit | "0..n"→(0,0,true), "1"→(1,1,false), "1..n"→(1,0,true), etc. |
+| T-15.56 | ParseCardinality with invalid max returns unbounded | Unit | "1..abc"→(1,0,true) |
+
+### Validation Service — Containment Consistency
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.17 | Contained instance with valid parent (correct type, exists) passes | Unit | No error |
+| T-15.18 | Instance with ParentInstanceID pointing to non-existent instance → error | Unit | Error: violation="orphaned contained instance" |
+| T-15.19 | Instance with parent whose entity type has no containment assoc to child type → error | Unit | Error: violation="invalid containment relationship" |
+| T-15.20 | Top-level instance (no ParentInstanceID) passes containment check | Unit | No error |
+| T-15.57 | Contained entity type instance without parent → error | Unit | Error: violation="contained entity type requires a parent" |
+| T-15.58 | Contained entity type instance with valid parent → passes | Unit | No error |
+| T-15.59 | Parent entity type not pinned in CV → error | Unit | Error: violation="parent entity type not pinned" |
+
+### Validation Service — Status Update and Edge Cases
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.21 | All checks pass → catalog status set to `valid` | Unit | UpdateValidationStatus called with "valid" |
+| T-15.22 | Any check fails → catalog status set to `invalid` | Unit | UpdateValidationStatus called with "invalid" |
+| T-15.23 | Empty catalog (no instances) → passes validation, status `valid` | Unit | No errors, status "valid" |
+| T-15.24 | Nonexistent catalog returns NotFound error | Unit | NotFound error returned |
+| T-15.25 | Error list contains entity_type, instance_name, field, violation for each error | Unit | Structured error with all four fields |
+| T-15.60 | Instance of unpinned entity type produces error | Unit | Error: violation="not pinned" |
+| T-15.61 | Entity type name fallback to ID when etRepo.GetByID fails | Unit | Uses entity type ID as name |
+
+### Validation Service — Error Propagation
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.62 | ListByCatalog error propagated | Unit | Error returned |
+| T-15.63 | Empty catalog UpdateValidationStatus error propagated | Unit | Error returned |
+| T-15.64 | ListByCatalogVersion error propagated | Unit | Error returned |
+| T-15.65 | etvRepo.GetByID error during pin resolution propagated | Unit | Error returned |
+| T-15.66 | attrRepo.ListByVersion error propagated | Unit | Error returned |
+| T-15.67 | enumValRepo.ListByEnum error propagated | Unit | Error returned |
+| T-15.68 | iavRepo.GetCurrentValues error propagated | Unit | Error returned |
+| T-15.69 | linkRepo.GetForwardRefs error propagated | Unit | Error returned |
+| T-15.70 | linkRepo.GetReverseRefs error propagated | Unit | Error returned |
+| T-15.71 | Final UpdateValidationStatus error propagated | Unit | Error returned |
+| T-15.72 | assocRepo.ListByVersion error during pre-load propagated | Unit | Error returned |
+| T-15.73 | IsEmptyValue returns true for unknown attribute type | Unit | true |
+
+### Validate API Handler — Additional
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.74 | Nil validationSvc returns 501 Not Implemented | API | 501 response |
+
+### Instance Service — Clear Attribute Value
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.75 | UpdateInstance with empty string clears attribute (not carried forward) | Unit | Attribute value cleared |
+
+### useValidation Hook
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.76 | Undefined catalogName does nothing on validate | Browser | API not called |
+| T-15.77 | Works without onComplete callback | Browser | Status set to valid |
+| T-15.78 | Calls onComplete after validation | Browser | Callback invoked |
+| T-15.79 | Handles missing errors field in response | Browser | Empty errors array |
+| T-15.80 | API error resets validating state | Browser | validating=false after error |
+
+### Operational UI — Additional
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.81 | Validate button hidden for RO in operational UI | Browser | Button not rendered |
+
+### Validation Service — Integration Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.26 | Full validation with valid catalog (all attrs set, all mandatory assocs linked, containment correct) | Integration | No errors, status "valid" |
+| T-15.27 | Full validation with missing required attribute on one instance | Integration | One error for that instance/attribute |
+| T-15.28 | Full validation with invalid enum value on one instance | Integration | One error for that instance/attribute |
+| T-15.29 | Full validation with mandatory association missing link | Integration | One error for that instance/association |
+| T-15.30 | Full validation with orphaned contained instance | Integration | One error for that instance |
+| T-15.31 | Full validation with multiple violations across entity types | Integration | Multiple errors, status "invalid" |
+| T-15.32 | Validation status persisted correctly after validation | Integration | DB query confirms status updated |
+
+### Validate API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.33 | `POST /api/data/v1/catalogs/{name}/validate` returns 200 with valid catalog | API | `{status: "valid", errors: []}` |
+| T-15.34 | `POST /api/data/v1/catalogs/{name}/validate` returns 200 with invalid catalog | API | `{status: "invalid", errors: [...]}` |
+| T-15.35 | `POST /api/data/v1/catalogs/{name}/validate` with nonexistent catalog → 404 | API | 404 Not Found |
+| T-15.36 | `POST /api/data/v1/catalogs/{name}/validate` as RO → 403 | API | 403 Forbidden |
+| T-15.37 | `POST /api/data/v1/catalogs/{name}/validate` as RW → 200 | API | Allowed |
+| T-15.38 | Validate response errors include entity_type, instance_name, field, violation | API | All four fields in each error object |
+
+### Catalog Detail UI — Validate Button (Meta)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.39 | Validate button visible for RW user on catalog detail | Browser | Button rendered |
+| T-15.40 | Validate button visible for Admin user | Browser | Button rendered |
+| T-15.41 | Validate button hidden for RO user | Browser | Button not rendered |
+| T-15.42 | Clicking Validate calls POST .../validate API | Browser | API called |
+| T-15.43 | Successful validation with no errors shows "valid" status badge | Browser | Green "valid" label |
+| T-15.44 | Validation with errors shows "invalid" status badge | Browser | Red "invalid" label |
+| T-15.45 | Validation errors displayed grouped by entity type | Browser | Errors grouped under entity type headings |
+| T-15.46 | Each error shows instance name, field, and violation | Browser | Error details visible |
+
+### Operational UI — Validate Button
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-15.47 | Validate button visible on operational catalog detail | Browser | Button rendered |
+| T-15.48 | Validation results displayed in operational UI | Browser | Errors shown after validation |
+
+---
+
+## Milestone 16: Catalog Publishing, K8s CRs & Promotion Warnings
+
+Phase 7 of the catalog implementation plan. Explicit publish/unpublish operations for catalogs. Publishing creates a namespaced Catalog CR in K8s for discovery. Published catalogs are write-protected — data mutations require SuperAdmin role. The operator reconciles Catalog CRs, sets owner references, and increments `status.DataVersion` for consumer cache invalidation. CV promotion warns about draft/invalid catalogs. User stories: US-42, US-43.
+
+### Catalog Model — Published Field
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.01 | Catalog model has `published` boolean field (default false) | Integration | New catalog has published=false |
+| T-16.02 | Catalog model has `published_at` timestamp field (default nil) | Integration | New catalog has published_at=nil |
+
+### Publish Catalog — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.03 | Publish a `valid` catalog sets published=true and published_at | Unit | Catalog updated |
+| T-16.04 | Publish a `draft` catalog returns error | Unit | Validation error |
+| T-16.05 | Publish an `invalid` catalog returns error | Unit | Validation error |
+| T-16.06 | Publish nonexistent catalog returns NotFound | Unit | NotFound error |
+| T-16.07 | Publish calls CatalogCRManager.CreateOrUpdate with correct spec | Unit | CR created with catalog name, CV label, validation status |
+| T-16.08 | Publish with nil crManager skips CR operation (DB-only) | Unit | No panic, published=true in DB |
+| T-16.09 | Publish already-published catalog is idempotent | Unit | No error, published stays true |
+| T-16.10 | Publish persists published=true and published_at in database | Integration | DB query confirms fields |
+
+### Unpublish Catalog — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.11 | Unpublish sets published=false | Unit | Catalog updated |
+| T-16.12 | Unpublish calls CatalogCRManager.Delete | Unit | CR deleted |
+| T-16.13 | Unpublish with nil crManager skips CR operation (DB-only) | Unit | No panic, published=false in DB |
+| T-16.14 | Unpublish already-unpublished catalog is idempotent | Unit | No error |
+| T-16.15 | Unpublish nonexistent catalog returns NotFound | Unit | NotFound error |
+| T-16.16 | Unpublish persists published=false in database | Integration | DB query confirms field |
+
+### Published Catalog Write Protection — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.17 | CreateInstance on published catalog as RW → 403 | Unit | Forbidden error |
+| T-16.18 | CreateInstance on published catalog as SuperAdmin → succeeds | Unit | Instance created |
+| T-16.19 | UpdateInstance on published catalog as RW → 403 | Unit | Forbidden error |
+| T-16.20 | DeleteInstance on published catalog as RW → 403 | Unit | Forbidden error |
+| T-16.21 | CreateContainedInstance on published catalog as RW → 403 | Unit | Forbidden error |
+| T-16.22 | CreateAssociationLink on published catalog as RW → 403 | Unit | Forbidden error |
+| T-16.23 | DeleteAssociationLink on published catalog as RW → 403 | Unit | Forbidden error |
+| T-16.24 | SetParent on published catalog as RW → 403 | Unit | Forbidden error |
+| T-16.25 | SuperAdmin mutation on published catalog resets status to draft | Unit | Status=draft, published=true |
+| T-16.26 | Draft does not auto-unpublish — published stays true after mutation | Unit | published=true after mutation |
+
+### Published Catalog Write Protection — Integration
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.27 | Publish catalog, create instance as SuperAdmin, verify published=true and status=draft | Integration | Full round-trip in DB |
+| T-16.28 | Published field survives create→publish→mutate→query round-trip | Integration | published=true persisted through mutations |
+
+### Publish/Unpublish API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.29 | `POST /catalogs/{name}/publish` as Admin → 200 | API | Published successfully |
+| T-16.30 | `POST /catalogs/{name}/publish` as RW → 403 | API | Forbidden |
+| T-16.31 | `POST /catalogs/{name}/publish` as RO → 403 | API | Forbidden |
+| T-16.32 | `POST /catalogs/{name}/publish` on draft catalog → 400 | API | Bad request |
+| T-16.33 | `POST /catalogs/{name}/publish` on nonexistent → 404 | API | Not found |
+| T-16.34 | `POST /catalogs/{name}/unpublish` as Admin → 200 | API | Unpublished successfully |
+| T-16.35 | `POST /catalogs/{name}/unpublish` as RW → 403 | API | Forbidden |
+| T-16.36 | Instance create on published catalog as RW → 403 | API | Forbidden |
+| T-16.37 | Instance create on published catalog as SuperAdmin → 201 | API | Instance created |
+| T-16.38 | Catalog response includes `published` and `published_at` fields | API | Fields in JSON response |
+
+### CV Promotion Warnings — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.39 | Promote CV with draft catalog pinned → warning in response | Unit | Warning includes catalog name and status |
+| T-16.40 | Promote CV with invalid catalog pinned → warning in response | Unit | Warning includes catalog name and status |
+| T-16.41 | Promote CV with all valid catalogs → no warnings | Unit | Empty warnings list |
+| T-16.42 | Promote CV with no catalogs pinned → no warnings | Unit | Empty warnings list |
+| T-16.43 | Promotion proceeds despite warnings (not blocked) | Unit | Lifecycle stage updated |
+
+### CV Promotion Warnings — Integration
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.44 | Create CV, pin catalogs with draft/valid/invalid statuses, promote → correct warnings | Integration | Warnings for draft and invalid only |
+
+### CV Promotion Warnings — API
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.45 | `POST /catalog-versions/{id}/promote` response includes `warnings` array | API | Warnings in JSON response |
+| T-16.46 | Promotion response with no warnings has empty array | API | `warnings: []` |
+
+### Catalog CR Manager
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.47 | CatalogCRManager.CreateOrUpdate creates Catalog CR with correct spec | Unit | CR has catalog name, CV label, status |
+| T-16.48 | CatalogCRManager.CreateOrUpdate sets annotations (source-db-id, published-at) | Unit | Annotations present |
+| T-16.49 | CatalogCRManager.CreateOrUpdate updates existing CR idempotently | Unit | Spec updated, no duplicate |
+| T-16.50 | CatalogCRManager.Delete removes Catalog CR | Unit | CR deleted |
+| T-16.51 | CatalogCRManager.Delete on nonexistent CR returns nil (idempotent) | Unit | No error |
+
+### Operator — Catalog CR Reconciliation
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.52 | Reconciler sets owner reference on Catalog CR to AssetHub CR | Operator | OwnerReference set |
+| T-16.53 | Reconciler updates Catalog CR status.Ready=true | Operator | Status updated |
+| T-16.54 | New Catalog CR has DataVersion=0 before reconciliation | Operator | DataVersion is zero value |
+| T-16.55 | First reconciliation sets DataVersion=1 | Operator | DataVersion incremented from 0 to 1 |
+| T-16.56 | Subsequent reconciliation increments DataVersion | Operator | DataVersion incremented from existing value |
+
+### Catalog Detail UI — Publish Button (Meta)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.57 | Publish button visible for Admin on valid unpublished catalog | Browser | Button rendered |
+| T-16.58 | Publish button hidden for RW user | Browser | Button not rendered |
+| T-16.59 | Publish button hidden when catalog is draft | Browser | Button not rendered |
+| T-16.60 | Publish button hidden when catalog is invalid | Browser | Button not rendered |
+| T-16.61 | Unpublish button visible on published catalog for Admin | Browser | Button rendered |
+| T-16.62 | Clicking Publish calls POST .../publish API | Browser | API called |
+| T-16.63 | Published badge shown on catalog detail after publish | Browser | "published" indicator visible |
+| T-16.64 | Published badge shown in catalog list | Browser | "published" indicator in list |
+| T-16.65 | Warning banner shown on published catalog for RW user | Browser | Banner visible |
+| T-16.66 | Instance create/edit/delete controls disabled for RW on published catalog | Browser | Controls disabled |
+| T-16.67 | Instance controls enabled for SuperAdmin on published catalog | Browser | Controls enabled |
+
+### CV Promotion UI — Warnings
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-16.68 | Promote dialog shows warnings for draft/invalid catalogs | Browser | Warning text visible |
+| T-16.69 | Promote dialog shows no warnings when all catalogs valid | Browser | No warning shown |
+
+---
+
+## Milestone 17: Copy & Replace Catalog
+
+Phase 8 of the catalog implementation plan. Copy Catalog deep-clones all data from a source catalog (instances, attribute values, association links, containment hierarchy) into a new catalog with new UUIDs and remapped references. Replace Catalog atomically swaps a staging catalog into the name of a published one, archiving the old catalog. Both operations are transactional. User stories: US-44, US-45, US-46.
+
+### Repository — UpdateName
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.01 | UpdateName changes catalog name in database | Integration | Name updated, other fields unchanged |
+| T-17.02 | UpdateName with name that already exists returns ConflictError | Integration | ConflictError returned |
+| T-17.03 | UpdateName with nonexistent catalog ID returns NotFoundError | Integration | NotFoundError returned |
+| T-17.04 | UpdatePublished via UpdateName preserves published state | Integration | published and published_at unchanged after rename |
+
+### Copy Catalog — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.05 | Copy creates new catalog with same CV pin and draft status | Unit | New catalog with source's CV ID, status=draft |
+| T-17.06 | Copy uses provided description (or source description if empty) | Unit | Description set correctly |
+| T-17.07 | Copy clones all instances with new UUIDs | Unit | Instance count matches, IDs differ |
+| T-17.08 | Copy preserves instance entity type, name, and description | Unit | Fields match source instances |
+| T-17.09 | Copy resets instance version to 1 | Unit | All cloned instances at version 1 |
+| T-17.10 | Copy clones attribute values remapped to new instance IDs | Unit | Values match, instance IDs remapped |
+| T-17.11 | Copy clones association links remapped to new source/target IDs | Unit | Links match, source/target IDs remapped |
+| T-17.12 | Copy preserves containment hierarchy — parent refs remapped | Unit | Parent-child relationships intact with new IDs |
+| T-17.13 | Copy with nonexistent source returns NotFoundError | Unit | NotFoundError |
+| T-17.14 | Copy with invalid target name returns validation error | Unit | Validation error |
+| T-17.15 | Copy with duplicate target name returns ConflictError | Unit | ConflictError |
+| T-17.16 | Copy of empty catalog (no instances) creates empty catalog | Unit | Catalog created, zero instances |
+| T-17.17 | Copy with self-referential links (src and tgt in same catalog) remaps correctly | Unit | Both ends of link remapped to new IDs |
+| T-17.18 | Copy is transactional — partial failure creates no catalog | Unit | No catalog/instances on error |
+| T-17.19 | Copy does not modify source catalog | Unit | Source unchanged after copy |
+
+### Copy Catalog — Integration (End-to-End)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.20 | Copy catalog with instances, attributes, links, containment in real DB | Integration | All data cloned with new IDs |
+| T-17.21 | Copied instances have correct catalog_id pointing to new catalog | Integration | FK integrity maintained |
+| T-17.22 | Copied attribute values retrievable via GetCurrentValues on new instances | Integration | Values match source |
+| T-17.23 | Copied links retrievable via GetForwardRefs/GetReverseRefs on new instances | Integration | Links point to new instances |
+| T-17.24 | Containment hierarchy intact — ListByParent on new parent returns new children | Integration | Children found under new parent |
+| T-17.25 | Original catalog data unchanged after copy | Integration | Source instances/attrs/links untouched |
+
+### Replace Catalog — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.26 | Replace renames target to archive name | Unit | Target gets archive name |
+| T-17.27 | Replace renames source to target's original name | Unit | Source gets target's name |
+| T-17.28 | Replace with default archive name uses `{target}-archive-{timestamp}` | Unit | Name matches pattern |
+| T-17.29 | Replace with custom archive name uses provided name | Unit | Custom archive name used |
+| T-17.30 | Replace requires source validation status `valid` | Unit | Error for draft source |
+| T-17.31 | Replace requires source validation status `valid` (invalid) | Unit | Error for invalid source |
+| T-17.32 | Replace with nonexistent source returns NotFoundError | Unit | NotFoundError |
+| T-17.33 | Replace with nonexistent target returns NotFoundError | Unit | NotFoundError |
+| T-17.34 | Replace where source equals target returns error | Unit | Validation error |
+| T-17.35 | Replace with invalid archive name (non-DNS-label) returns error | Unit | Validation error |
+| T-17.36 | Replace with archive name that already exists returns ConflictError | Unit | ConflictError |
+| T-17.37 | Replace transfers published state: target was published → source inherits published=true | Unit | Source gets published=true, published_at |
+| T-17.38 | Replace transfers published state: archive becomes unpublished | Unit | Archive gets published=false, published_at=nil |
+| T-17.39 | Replace on unpublished target: both source and archive remain unpublished | Unit | No published state change |
+| T-17.40 | Replace calls SyncCR after swap to update Catalog CR spec | Unit | SyncCR called with target name |
+| T-17.41 | Replace deletes archive catalog's CR (old name no longer valid) | Unit | CRManager.Delete called for archive |
+| T-17.42 | Replace bumps CR DataVersion so consumers detect the swap | Unit | CreateOrUpdate called with incremented SyncVersion |
+| T-17.43 | Replace is transactional — failure in second rename rolls back first | Unit | Both catalogs retain original names |
+| T-17.44 | Replace with nil crManager skips CR operations (DB-only) | Unit | No panic, names swapped |
+
+### Replace Catalog — Integration (End-to-End)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.45 | Replace swaps names in real DB | Integration | Names swapped correctly |
+| T-17.46 | Replace transfers published state in real DB | Integration | published=true on renamed source |
+| T-17.47 | Instances in renamed catalogs retain correct catalog_id | Integration | FK integrity maintained |
+| T-17.48 | Replace with draft source leaves DB unchanged | Integration | No names changed |
+| T-17.49 | Replace with nonexistent source leaves DB unchanged | Integration | No names changed |
+| T-17.50 | Replace with archive name collision leaves DB unchanged | Integration | No names changed |
+
+### Copy Catalog — API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.51 | `POST /api/data/v1/catalogs/copy` returns 201 with new catalog | API | CatalogResponse with new ID |
+| T-17.52 | Copy response includes resolved CV label | API | catalog_version_label present |
+| T-17.53 | Copy with nonexistent source → 404 | API | Not found |
+| T-17.54 | Copy with duplicate target name → 409 | API | Conflict |
+| T-17.55 | Copy with invalid target name → 400 | API | Bad request |
+| T-17.56 | Copy as RO → 403 | API | Forbidden |
+| T-17.57 | Copy as RW → 201 (RW can create catalogs) | API | Success |
+| T-17.58 | Copy request binds source, name, description | API | Fields correctly extracted |
+
+### Replace Catalog — API Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.59 | `POST /api/data/v1/catalogs/replace` returns 200 with updated catalog | API | CatalogResponse |
+| T-17.60 | Replace with non-valid source → 400 | API | Bad request |
+| T-17.61 | Replace with nonexistent source → 404 | API | Not found |
+| T-17.62 | Replace with nonexistent target → 404 | API | Not found |
+| T-17.63 | Replace with invalid archive name → 400 | API | Bad request |
+| T-17.64 | Replace as RO → 403 | API | Forbidden |
+| T-17.65 | Replace as RW → 403 | API | Forbidden |
+| T-17.66 | Replace as Admin → 200 | API | Success |
+| T-17.67 | Replace request binds source, target, archive_name | API | Fields correctly extracted |
+
+### Copy Catalog — UI (Meta)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.68 | Copy button visible on catalog detail for RW+ users | Browser | Button rendered |
+| T-17.69 | Copy button hidden for RO users | Browser | Button not rendered |
+| T-17.70 | Copy modal opens with name input | Browser | Modal with text field |
+| T-17.71 | Copy modal validates DNS-label format (error for invalid) | Browser | Inline validation error |
+| T-17.72 | Successful copy calls POST /catalogs/copy API | Browser | API called with correct body |
+| T-17.73 | Copy error (409 conflict) shows alert | Browser | Error alert displayed |
+| T-17.74 | Successful copy refreshes catalog list or navigates to new catalog | Browser | List refreshed / navigation occurs |
+
+### Replace Catalog — UI (Meta)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.75 | Replace button visible on valid catalog for Admin+ users | Browser | Button rendered |
+| T-17.76 | Replace button hidden for RW users | Browser | Button not rendered |
+| T-17.77 | Replace button hidden for RO users | Browser | Button not rendered |
+| T-17.78 | Replace button hidden for draft catalogs | Browser | Button not rendered |
+| T-17.79 | Replace button hidden for invalid catalogs | Browser | Button not rendered |
+| T-17.80 | Replace modal opens with target dropdown and archive name input | Browser | Modal with dropdown + input |
+| T-17.81 | Replace modal target dropdown shows existing catalogs | Browser | Catalog names listed |
+| T-17.82 | Replace modal archive name validates DNS-label format | Browser | Inline validation error for invalid |
+| T-17.83 | Successful replace calls POST /catalogs/replace API | Browser | API called with correct body |
+| T-17.84 | Replace error shows alert | Browser | Error alert displayed |
+| T-17.85 | Successful replace refreshes catalog list | Browser | List refreshed |
+
+### Operator — CR DataVersion After Replace
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.86 | SyncCR after replace triggers CreateOrUpdate with incremented SyncVersion | Operator | SyncVersion bumped in CR spec |
+
+### Copy & Replace — API Client (Browser)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-17.87 | copyCatalog client function sends POST with correct body | Browser | mockFetch called correctly |
+| T-17.88 | replaceCatalog client function sends POST with correct body | Browser | mockFetch called correctly |
+
+---
+
 ## Coverage Criteria
 
 ### Pass Rate
@@ -1223,7 +2224,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 275 test cases (T-1.01 through T-9.09, T-CV.01 through T-CV.31, and T-E.01 through T-E.90) pass
+- All 802 test cases (T-1.01 through T-17.88; T-13.78 through T-13.85 retired) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

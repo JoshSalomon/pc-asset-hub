@@ -260,3 +260,108 @@ func TestTC72_ROCannotAddEnumValue(t *testing.T) {
 		`{"value":"pending"}`, apimw.RoleRO)
 	assert.Equal(t, http.StatusForbidden, rec.Code)
 }
+
+// === Coverage: bind-error and service-error branches ===
+
+func TestEnumList_ServiceError(t *testing.T) {
+	enumRepo := new(mocks.MockEnumRepo)
+	e := setupEnumServer(enumRepo, nil)
+	enumRepo.On("List", mock.Anything, mock.Anything).Return(([]*models.Enum)(nil), 0, domainerrors.NewNotFound("Enum", ""))
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/enums", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestEnumCreate_BindError(t *testing.T) {
+	e := setupEnumServer(nil, nil)
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/enums", "bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestEnumCreate_EmptyName(t *testing.T) {
+	e := setupEnumServer(nil, nil)
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/enums", `{"name":""}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestEnumUpdate_BindError(t *testing.T) {
+	e := setupEnumServer(nil, nil)
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/enums/e1", "bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestEnumUpdate_EmptyName(t *testing.T) {
+	e := setupEnumServer(nil, nil)
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/enums/e1", `{"name":""}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestEnumListValues_ServiceError(t *testing.T) {
+	evRepo := new(mocks.MockEnumValueRepo)
+	e := setupEnumServer(nil, evRepo)
+	evRepo.On("ListByEnum", mock.Anything, "e1").Return(nil, domainerrors.NewNotFound("EnumValue", "e1"))
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/enums/e1/values", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestEnumAddValue_BindError(t *testing.T) {
+	e := setupEnumServer(nil, nil)
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/enums/e1/values", "bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestEnumAddValue_EmptyValue(t *testing.T) {
+	e := setupEnumServer(nil, nil)
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/enums/e1/values", `{"value":""}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestEnumRemoveValue_ServiceError(t *testing.T) {
+	evRepo := new(mocks.MockEnumValueRepo)
+	e := setupEnumServer(nil, evRepo)
+	evRepo.On("Delete", mock.Anything, "v1").Return(domainerrors.NewNotFound("EnumValue", "v1"))
+	rec := doRequest(e, http.MethodDelete, "/api/meta/v1/enums/e1/values/v1", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestEnumReorderValues_BindError(t *testing.T) {
+	e := setupEnumServer(nil, nil)
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/enums/e1/values/reorder", "bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestEnumReorderValues_EmptyIDs(t *testing.T) {
+	e := setupEnumServer(nil, nil)
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/enums/e1/values/reorder", `{"ordered_ids":[]}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// Coverage: Update service error
+func TestEnumUpdate_ServiceError(t *testing.T) {
+	enumRepo := new(mocks.MockEnumRepo)
+	e := setupEnumServer(enumRepo, nil)
+	enumRepo.On("GetByID", mock.Anything, "e1").Return(nil, domainerrors.NewNotFound("Enum", "e1"))
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/enums/e1", `{"name":"new"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// Coverage: AddValue service error
+func TestEnumAddValue_ServiceError(t *testing.T) {
+	enumRepo := new(mocks.MockEnumRepo)
+	evRepo := new(mocks.MockEnumValueRepo)
+	e := setupEnumServer(enumRepo, evRepo)
+	evRepo.On("Create", mock.Anything, mock.Anything).Return(domainerrors.NewValidation("db error"))
+	enumRepo.On("GetByID", mock.Anything, "e1").Return(&models.Enum{ID: "e1"}, nil)
+	evRepo.On("ListByEnum", mock.Anything, "e1").Return([]*models.EnumValue{}, nil)
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/enums/e1/values", `{"value":"x"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// Coverage: ReorderValues service error
+func TestEnumReorderValues_ServiceError(t *testing.T) {
+	enumRepo := new(mocks.MockEnumRepo)
+	evRepo := new(mocks.MockEnumValueRepo)
+	e := setupEnumServer(enumRepo, evRepo)
+	evRepo.On("Reorder", mock.Anything, mock.Anything, mock.Anything).Return(domainerrors.NewValidation("db error"))
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/enums/e1/values/reorder", `{"ordered_ids":["v1"]}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}

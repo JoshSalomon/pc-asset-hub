@@ -653,6 +653,62 @@ func TestVersionSnapshot_IncomingAssociation(t *testing.T) {
 	assert.Equal(t, "server", resp.Associations[0].SourceRole)
 }
 
+// === Coverage: bind-error and service-error branches ===
+
+func TestETCreate_BindError(t *testing.T) {
+	e := setupTestServer(nil, nil, nil, nil)
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types", "bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestETList_ServiceError(t *testing.T) {
+	etRepo := new(mocks.MockEntityTypeRepo)
+	e := setupTestServer(etRepo, nil, nil, nil)
+	etRepo.On("List", mock.Anything, mock.Anything).Return(([]*models.EntityType)(nil), 0, domainerrors.NewValidation("db error"))
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestETUpdate_BindError(t *testing.T) {
+	e := setupTestServer(nil, nil, nil, nil)
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1", "bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestETDelete_ServiceError(t *testing.T) {
+	etRepo := new(mocks.MockEntityTypeRepo)
+	e := setupTestServer(etRepo, nil, nil, nil)
+	etRepo.On("Delete", mock.Anything, "et1").Return(domainerrors.NewNotFound("EntityType", "et1"))
+	rec := doRequest(e, http.MethodDelete, "/api/meta/v1/entity-types/et1", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestETCopy_BindError(t *testing.T) {
+	e := setupTestServer(nil, nil, nil, nil)
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/copy", "bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestETCopy_EmptyName(t *testing.T) {
+	e := setupTestServer(nil, nil, nil, nil)
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/copy",
+		`{"source_version":1,"new_name":""}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestETRename_BindError(t *testing.T) {
+	e := setupTestServer(nil, nil, nil, nil)
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/rename", "bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestETRename_EmptyName(t *testing.T) {
+	e := setupTestServer(nil, nil, nil, nil)
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/rename",
+		`{"name":""}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
 // T-E.83: Version snapshot includes cardinality
 func TestTE83_VersionSnapshotIncludesCardinality(t *testing.T) {
 	etRepo := new(mocks.MockEntityTypeRepo)

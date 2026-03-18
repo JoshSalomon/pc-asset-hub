@@ -262,6 +262,136 @@
       "phase": 0,
       "difficulty": 0.8,
       "created_at": "2026-03-04T22:16:34.168927+00:00"
+    },
+    "mem_f1f6c181": {
+      "topic": "Catalog Foundation — implementation patterns and gotchas",
+      "tags": [
+        "catalog",
+        "architecture",
+        "implementation",
+        "operational-api",
+        "gotchas"
+      ],
+      "phase": 0,
+      "difficulty": 0.6,
+      "created_at": "2026-03-09T15:25:16.184113+00:00"
+    },
+    "mem_d9382bbb": {
+      "topic": "Fix LTM plugin SELinux permission errors on Fedora/podman",
+      "tags": [
+        "ltm",
+        "selinux",
+        "podman",
+        "permissions",
+        "debugging"
+      ],
+      "phase": 0,
+      "difficulty": 0.4,
+      "created_at": "2026-03-09T15:27:39.274775+00:00"
+    },
+    "mem_dabfbb44": {
+      "topic": "Instance CRUD with Attributes — implementation patterns and migration gotcha",
+      "tags": [
+        "instance",
+        "attributes",
+        "migration",
+        "gotchas",
+        "postgresql"
+      ],
+      "phase": 0,
+      "difficulty": 0.7,
+      "created_at": "2026-03-10T15:42:43.801262+00:00"
+    },
+    "mem_1cd1b1d4": {
+      "topic": "Containment & Association Links — implementation patterns and gotchas",
+      "tags": [
+        "containment",
+        "association-links",
+        "operational-api",
+        "gotchas",
+        "routes"
+      ],
+      "phase": 0,
+      "difficulty": 0.65,
+      "created_at": "2026-03-11T14:40:57.227225+00:00"
+    },
+    "mem_0daf29f3": {
+      "topic": "Phase 4: Catalog Data Viewer — Implementation Patterns",
+      "tags": [
+        "vite",
+        "filtering",
+        "containment-tree",
+        "operational-ui",
+        "worktree",
+        "patterns"
+      ],
+      "phase": 0,
+      "difficulty": 0.5,
+      "created_at": "2026-03-12T16:25:31.157817+00:00"
+    },
+    "mem_4d903f84": {
+      "topic": "Phase 4 post-mortem: coverage discipline, two-pane redesign, flaky test root cause",
+      "tags": [
+        "coverage",
+        "two-pane",
+        "flaky-test",
+        "makefile",
+        "lessons-learned"
+      ],
+      "phase": 0,
+      "difficulty": 0.5,
+      "created_at": "2026-03-15T14:51:29.240852+00:00"
+    },
+    "mem_cf2132de": {
+      "topic": "Phase 5: Catalog-Level RBAC — patterns and quality review lessons",
+      "tags": [
+        "rbac",
+        "catalog-access",
+        "middleware",
+        "security",
+        "quality-review"
+      ],
+      "phase": 0,
+      "difficulty": 0.4,
+      "created_at": "2026-03-15T16:27:44.576837+00:00"
+    },
+    "mem_dd81fc7a": {
+      "topic": "Catalog Validation (Phase 6) implementation patterns",
+      "tags": [
+        "catalog",
+        "validation",
+        "phase-6",
+        "architecture"
+      ],
+      "phase": 0,
+      "difficulty": 0.5,
+      "created_at": "2026-03-15T23:16:40.548454+00:00"
+    },
+    "mem_a6da2da9": {
+      "topic": "Catalog Publishing (Phase 7) implementation patterns",
+      "tags": [
+        "catalog",
+        "publishing",
+        "phase-7",
+        "k8s",
+        "operator",
+        "architecture"
+      ],
+      "phase": 0,
+      "difficulty": 0.5,
+      "created_at": "2026-03-16T17:25:02.992236+00:00"
+    },
+    "mem_3c8faa5c": {
+      "topic": "Browser test coverage strategy — how to maximize coverage on every feature",
+      "tags": [
+        "testing",
+        "coverage",
+        "browser-tests",
+        "best-practices"
+      ],
+      "phase": 0,
+      "difficulty": 0.7,
+      "created_at": "2026-03-16T17:25:32.656628+00:00"
     }
   }
 }

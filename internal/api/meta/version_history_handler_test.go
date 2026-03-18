@@ -95,3 +95,30 @@ func TestTC28c_CompareNonIntegerVersion(t *testing.T) {
 	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types/et1/versions/diff?v1=abc&v2=2", "", apimw.RoleRO)
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
+
+// === Coverage: service-error branches ===
+
+func TestVHList_ServiceError(t *testing.T) {
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupVHServer(etvRepo, nil, nil)
+	etvRepo.On("ListByEntityType", mock.Anything, "et1").Return(([]*models.EntityTypeVersion)(nil), domainerrors.NewNotFound("EntityType", "et1"))
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types/et1/versions", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestVHDiff_ServiceError(t *testing.T) {
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupVHServer(etvRepo, nil, nil)
+	etvRepo.On("GetByEntityTypeAndVersion", mock.Anything, "et1", 1).Return(nil, domainerrors.NewNotFound("EntityTypeVersion", "et1:1"))
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types/et1/versions/diff?v1=1&v2=2", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// Coverage: Diff v2 parse error (line 53-55)
+func TestVHDiff_V2ParseError(t *testing.T) {
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupVHServer(etvRepo, nil, nil)
+
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types/et1/versions/diff?v1=1&v2=abc", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}

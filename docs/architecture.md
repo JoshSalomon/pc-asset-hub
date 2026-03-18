@@ -161,9 +161,10 @@ Manages the schema layer. Used by Admins and Super Admins.
 - Catalog version management (create, promote, demote)
 - Version history and comparison
 
-**Operational API** (`/api/catalog/{catalog-version}/...`)
-Manages entity instances. Used by all roles. Scoped to a specific catalog version.
-- Entity instance CRUD with auto-versioning
+**Operational API** (`/api/data/v1/...`)
+Manages catalogs and entity instances. Used by all roles. Scoped to a specific catalog.
+- Catalog CRUD (create, list, get, delete)
+- Entity instance CRUD with auto-versioning (within a catalog)
 - Containment traversal via sub-resource URLs
 - Forward and reverse reference queries
 - Filtering, sorting, pagination
@@ -186,18 +187,21 @@ Meta API:
   /api/meta/v1/catalog-versions/{id}/promote
   /api/meta/v1/catalog-versions/{id}/demote
 
-Operational API:
-  /api/catalog/{catalog-version}/{entity-type}
-  /api/catalog/{catalog-version}/{entity-type}/{id}
-  /api/catalog/{catalog-version}/{entity-type}/{id}/{contained-type}
-  /api/catalog/{catalog-version}/{entity-type}/{id}/{contained-type}/{name}
-  /api/catalog/{catalog-version}/{entity-type}/{id}/references
-  /api/catalog/{catalog-version}/{entity-type}/{id}/references/{ref-type}
+Operational API (catalog-name is DNS-label: [a-z0-9-], max 63 chars):
+  /api/data/v1/catalogs
+  /api/data/v1/catalogs/{catalog-name}
+  /api/data/v1/catalogs/{catalog-name}/{entity-type}
+  /api/data/v1/catalogs/{catalog-name}/{entity-type}/{instance-id}
+  /api/data/v1/catalogs/{catalog-name}/{entity-type}/{instance-id}/{contained-type}
+  /api/data/v1/catalogs/{catalog-name}/{entity-type}/{instance-id}/{contained-type}/{name}
+  /api/data/v1/catalogs/{catalog-name}/{entity-type}/{instance-id}/references
+  /api/data/v1/catalogs/{catalog-name}/{entity-type}/{instance-id}/references/{ref-type}
+  /api/data/v1/catalogs/{catalog-name}/validate
 ```
 
-### Catalog Version Scoping
+### Catalog Scoping
 
-Every operational API call is scoped to a catalog version via the URL path. This ensures consumers always interact with a consistent, fixed view of the asset catalog. Changes to entity definitions in other catalog versions do not affect responses for the pinned version.
+Every operational API call is scoped to a **catalog** via the URL path. A catalog is a named collection of entity instances pinned to a specific catalog version (CV). The CV determines the schema (which entity types, attributes, and associations are available); the catalog holds the actual data. Multiple catalogs can share the same CV. This ensures consumers interact with a named, consistent data set backed by a specific schema.
 
 ---
 
@@ -256,12 +260,26 @@ The database uses a hybrid approach: **fixed relational tables** for the meta/sc
 ### Data Tables
 
 ```
+┌──────────────────┐
+│    catalogs      │
+│                  │
+│ id               │
+│ name (unique)    │
+│ description      │
+│ catalog_ver_id   │──FK──▶ catalog_versions.id
+│ validation_status│        (draft|valid|invalid)
+│ created_at       │
+│ updated_at       │
+└────────┬─────────┘
+         │
+         │ 1:N
+         ▼
 ┌──────────────────────┐        ┌───────────────────────────┐
 │  entity_instances    │──1:N─▶│ instance_attribute_values │
 │                      │        │                           │
 │ id                   │        │ id                        │
 │ entity_type_id (FK)  │        │ instance_id (FK)          │
-│ catalog_ver_id (FK)  │        │ instance_version          │
+│ catalog_id (FK)      │        │ instance_version          │
 │ parent_inst_id (FK)  │        │ attribute_id (FK)         │
 │ name                 │        │ value_string              │
 │ description          │        │ value_number              │
@@ -271,7 +289,7 @@ The database uses a hybrid approach: **fixed relational tables** for the meta/sc
 │ deleted_at           │        ┌───────────────────┐
 │                      │        │ association_links │
 │ UNIQUE(et_id,        │        │                   │
-│  cv_id, parent, name)│──────▶│ id                │
+│  cat_id, parent,name)│──────▶│ id                │
 └──────────────────────┘        │ association_id    │
                                 │ source_inst_id    │
                                 │ target_inst_id    │
@@ -368,11 +386,22 @@ lifecycle_transitions (
   notes TEXT
 )
 
+-- Catalogs (named data collections pinned to a CV)
+catalogs (
+  id UUID PK,
+  name TEXT UNIQUE NOT NULL,
+  description TEXT,
+  catalog_version_id UUID FK → catalog_versions.id NOT NULL,
+  validation_status TEXT NOT NULL DEFAULT 'draft',  -- draft | valid | invalid
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+)
+
 -- Entity instances (EAV pattern)
 entity_instances (
   id UUID PK,
   entity_type_id UUID FK → entity_types.id,
-  catalog_version_id UUID FK → catalog_versions.id,
+  catalog_id UUID FK → catalogs.id,
   parent_instance_id UUID FK → entity_instances.id NULLABLE,
   name TEXT NOT NULL,
   description TEXT,
@@ -380,7 +409,7 @@ entity_instances (
   created_at TIMESTAMP,
   updated_at TIMESTAMP,
   deleted_at TIMESTAMP NULLABLE,
-  UNIQUE(entity_type_id, catalog_version_id, parent_instance_id, name)
+  UNIQUE(entity_type_id, catalog_id, parent_instance_id, name)
 )
 
 -- Attribute values per instance version
@@ -415,7 +444,9 @@ association_links (
 
 **Instance version history**: `instance_attribute_values` includes `instance_version`, so every historical state of an instance's attributes is preserved.
 
-**Containment via self-reference**: `parent_instance_id` on `entity_instances` models the containment hierarchy. Name uniqueness is scoped to `(entity_type_id, catalog_version_id, parent_instance_id, name)`, enforcing the namespace rule.
+**Catalog as data container**: Entity instances belong to a `Catalog`, not directly to a `CatalogVersion`. The catalog is pinned to a CV at creation (immutable in v1). This separates schema (CV) from data (catalog) and allows multiple named datasets to share the same schema.
+
+**Containment via self-reference**: `parent_instance_id` on `entity_instances` models the containment hierarchy. Name uniqueness is scoped to `(entity_type_id, catalog_id, parent_instance_id, name)`, enforcing the namespace rule.
 
 **Soft deletes**: `deleted_at` on `entity_instances` supports audit trails while allowing cascade delete logic at the application layer.
 

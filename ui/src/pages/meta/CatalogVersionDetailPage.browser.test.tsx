@@ -192,7 +192,7 @@ test('T-E.65: BOM modal shows attributes table', async () => {
   await expect.element(page.getByRole('dialog')).toBeVisible()
   // Attributes should be listed — use exact matching to avoid description conflicts
   await expect.element(page.getByRole('dialog').getByRole('gridcell', { name: 'hostname', exact: true })).toBeVisible()
-  await expect.element(page.getByRole('dialog').getByRole('gridcell', { name: 'port', exact: true })).toBeVisible()
+  await expect.element(page.getByRole('dialog').getByRole('gridcell', { name: 'port *', exact: true })).toBeVisible()
   await expect.element(page.getByRole('dialog').getByRole('gridcell', { name: 'string', exact: true })).toBeVisible()
   await expect.element(page.getByRole('dialog').getByRole('gridcell', { name: 'number', exact: true })).toBeVisible()
   // Enum attribute should show "boolean (enum)" not just "enum"

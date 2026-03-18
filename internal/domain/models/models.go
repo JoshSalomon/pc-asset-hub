@@ -103,10 +103,30 @@ type LifecycleTransition struct {
 	Notes            string
 }
 
+type ValidationStatus string
+
+const (
+	ValidationStatusDraft   ValidationStatus = "draft"
+	ValidationStatusValid   ValidationStatus = "valid"
+	ValidationStatusInvalid ValidationStatus = "invalid"
+)
+
+type Catalog struct {
+	ID               string
+	Name             string
+	Description      string
+	CatalogVersionID string
+	ValidationStatus ValidationStatus
+	Published        bool
+	PublishedAt      *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
 type EntityInstance struct {
 	ID               string
 	EntityTypeID     string
-	CatalogVersionID string
+	CatalogID        string
 	ParentInstanceID string // empty if top-level
 	Name             string
 	Description      string

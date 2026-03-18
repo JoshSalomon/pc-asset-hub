@@ -45,7 +45,7 @@ func (s *EntityInstanceService) CreateInstance(ctx context.Context, entityTypeID
 	inst := &models.EntityInstance{
 		ID:               uuid.Must(uuid.NewV7()).String(),
 		EntityTypeID:     entityTypeID,
-		CatalogVersionID: catalogVersionID,
+		CatalogID:        catalogVersionID,
 		ParentInstanceID: parentInstanceID,
 		Name:             name,
 		Description:      description,

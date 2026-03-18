@@ -1,6 +1,6 @@
 # AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-03-02
+Last updated: 2026-03-17
 
 ---
 
@@ -8,11 +8,12 @@ Last updated: 2026-03-02
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 730 | 100% | 85.9% | — |
-| UI — Unit tests | 62 | 100% | 17.9% | 20.6% |
-| UI — Browser tests (Playwright) | 243 | 100% | 80.7% | 85.3% |
+| Backend (Go) | 1261 | 100% | 94.0% | — |
+| UI — Unit tests | 75 | 100% | 17.9% | 20.6% |
+| UI — Browser tests (Playwright) | 453 | 100% | 84.6% | 89.0% |
 | UI — System tests (Playwright + live server) | 30 | 100% | — | — |
-| **Total** | **1065** | **100%** | — | — |
+| Live system (bash scripts) | 81 | 100% | — | — |
+| **Total** | **1900** | **100%** | — | — |
 
 ---
 
@@ -21,19 +22,19 @@ Last updated: 2026-03-02
 | Package | Coverage | Notes |
 |---------|----------|-------|
 | `internal/api/health` | 90.0% | Readyz DB-ping error path |
-| `internal/api/meta` | 88.8% | Handler bind-error branches in some handlers |
+| `internal/api/meta` | 98.8% | Promote/Demote/Delete RoleRO/RW switch cases unreachable behind RBAC middleware |
 | `internal/api/middleware` | 100.0% | |
-| `internal/api/operational` | 91.4% | Handler bind-error branches |
+| `internal/api/operational` | 97.0% | Copy/Replace handlers at 94.4% (bind-error branches only); legacy handler.go bind-error branches |
 | `internal/domain/errors` | 100.0% | |
 | `internal/infrastructure/config` | 100.0% | |
 | `internal/infrastructure/gorm/models` | 100.0% | |
-| `internal/infrastructure/gorm/repository` | 91.0% | GORM error branches on Delete/Update, `CatalogVersionGormRepo.Delete` at 0% |
+| `internal/infrastructure/gorm/repository` | 90.7% | GORM error branches on Delete/Update, `CatalogVersionGormRepo.Delete` at 0%; `GormTransactionManager` at 100% via integration tests |
 | `internal/infrastructure/k8s` | 92.6% | K8s client error paths |
 | `internal/operator/api/v1alpha1` | 98.2% | `DeepCopyObject` nil-receiver guard |
-| `internal/operator/controllers` | 85.5% | `SetupWithManager`, Route reconciliation, complex controller paths |
+| `internal/operator/controllers` | 78.8% | `SetupWithManager`, Route reconciliation, K8s client error paths in `reconcileCatalogVersions` and `reconcileCatalogs` (SetOwnerReference, Update, Status().Update failures) |
 | `internal/operator/crdgen` | 84.2% | `GenerateCRDJSON`, `GenerateCR` error paths |
 | `internal/service/meta` | 94.6% | `ListAttributes` and `ListValues` at 0% (trivial delegators) |
-| `internal/service/operational` | 100.0% | |
+| `internal/service/operational` | 98.8% | CopyCatalog 98.3%, ReplaceCatalog 98.1%; validation and publishing at 100% |
 | `internal/service/validation` | 95.6% | |
 
 ### Excluded from Coverage
@@ -107,13 +108,19 @@ These methods are single-line delegations to the repository layer with no branch
 | Test File | Tests | Status |
 |-----------|-------|--------|
 | `App.browser.test.tsx` | 51 | Pass |
-| `client.browser.test.ts` | 36 | Pass |
+| `client.browser.test.ts` | 61 | Pass |
 | `EntityTypeDetailPage.browser.test.tsx` | 77 | Pass |
 | `EntityTypeListPage.browser.test.tsx` | 12 | Pass |
 | `EnumDetailPage.browser.test.tsx` | 24 | Pass |
 | `EnumListPage.browser.test.tsx` | 14 | Pass |
 | `CatalogVersionDetailPage.browser.test.tsx` | 27 | Pass |
-| **Total** | **240** | **100% pass** |
+| `CatalogListPage.browser.test.tsx` | 19 | Pass |
+| `CatalogDetailPage.browser.test.tsx` | 95 | Pass |
+| `OperationalCatalogDetailPage.browser.test.tsx` | 36 | Pass |
+| `OperationalCatalogListPage.browser.test.tsx` | 13 | Pass |
+| `OperationalApp.browser.test.tsx` | 3 | Pass |
+| `useValidation.browser.test.tsx` | 6 | Pass |
+| **Total** | **453** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
@@ -187,6 +194,251 @@ All new functions added in this session are at 100% coverage:
 | `components/EntityTypeDiagram.tsx` | Diagram component | 90.7% stmts, 90.1% lines |
 | `components/EditAssociationModal.tsx` | Shared edit modal | 92.4% stmts, 92.7% lines |
 | `App.tsx` | Diagram tab + edit modal | 87.6% stmts, 91.3% lines |
+
+### New Code Coverage (Session 004 — Catalog Foundation)
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/operational/catalog_service.go` | `NewCatalogService` | 100% |
+| `service/operational/catalog_service.go` | `ValidateCatalogName` | 100% |
+| `service/operational/catalog_service.go` | `CreateCatalog` | 100% |
+| `service/operational/catalog_service.go` | `GetByName` | 100% |
+| `service/operational/catalog_service.go` | `List` | 100% |
+| `service/operational/catalog_service.go` | `Delete` | 100% |
+| `api/operational/catalog_handler.go` | All 7 functions | 100% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `Create` | 100% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `GetByName` | 100% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `GetByID` | 100% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `List` | 90% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `Delete` | 100% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `UpdateValidationStatus` | 100% |
+| `infrastructure/gorm/repository/entity_instance_repo.go` | `DeleteByCatalogID` | 100% |
+
+`catalog_repo.go:List` at 90% — the `Find` error after `Count` succeeds requires the DB to fail between two queries in the same function, which cannot be triggered with the `closedDB` pattern.
+
+### New Code Coverage (Session 005 — Instance CRUD with Attributes)
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/operational/instance_service.go` | `NewInstanceService` | 100% |
+| `service/operational/instance_service.go` | `resolveEntityType` | 100% |
+| `service/operational/instance_service.go` | `resolveAttributeValues` | 100% |
+| `service/operational/instance_service.go` | `validateAndBuildAttributeValues` | 97% |
+| `service/operational/instance_service.go` | `CreateInstance` | 100% |
+| `service/operational/instance_service.go` | `GetInstance` | 100% |
+| `service/operational/instance_service.go` | `ListInstances` | 100% |
+| `service/operational/instance_service.go` | `mapAttributeValues` | 100% |
+| `service/operational/instance_service.go` | `UpdateInstance` | 100% |
+| `service/operational/instance_service.go` | `DeleteInstance` | 100% |
+| `service/operational/instance_service.go` | `cascadeDelete` | 100% |
+| `api/operational/instance_handler.go` | All 8 functions | 100% |
+| Service package total | | **99.6%** |
+| Handler package total | | **96.5%** |
+
+Remaining uncovered (5 lines):
+- `instance_service.go` — `default:` switch label in `validateAndBuildAttributeValues` (Go coverage instrumentation quirk; the body IS covered)
+- `catalog_repo.go:82-84` — `Find` error after `Count` succeeds (DB internal; requires failure between sequential queries)
+- `entity_instance_repo.go:71-73,91-93,120-122` — same `Find`-after-`Count` pattern across List/ListByParent
+
+Review fixes applied: (1) `resolveEntityType` now returns errors instead of silently continuing on pin resolution failure. (2) `UpdateInstance` validates attribute values before incrementing version, preventing inconsistent state. (3) `mapAttributeValues` extracted as shared helper, eliminating duplicate resolution logic.
+
+Bug found during live testing: PostgreSQL migration — old `catalog_version_id` column on `entity_instances` table not dropped. Fixed with `InitDB` pre-migration that copies data and drops old column.
+
+### New Code Coverage (Session 006 — Containment & Association Links)
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/operational/instance_service.go` | `CreateContainedInstance` | 100% |
+| `service/operational/instance_service.go` | `ListContainedInstances` | 100% |
+| `service/operational/instance_service.go` | `CreateAssociationLink` | 100% |
+| `service/operational/instance_service.go` | `DeleteAssociationLink` | 100% |
+| `service/operational/instance_service.go` | `GetForwardReferences` | 100% |
+| `service/operational/instance_service.go` | `GetReverseReferences` | 100% |
+| `service/operational/instance_service.go` | `resolveLinks` | 100% |
+| `service/operational/instance_service.go` | `cascadeDelete` | 100% |
+| `api/operational/instance_handler.go` | All 15 functions (incl. SetParent) | 100% |
+| `infrastructure/gorm/repository/association_link_repo.go` | `GetByID` | new |
+| `infrastructure/gorm/repository/association_link_repo.go` | `DeleteByInstance` | new |
+| Service package total | | **100.0%** |
+| `service/operational/instance_service.go` | `SetParent` | 100% |
+| `api/operational/instance_handler.go` | `SetParent` | 100% |
+| Handler package total | | **97.7%** (legacy handler.go has pre-existing uncovered bind-error branches)
+
+Quality review fixes applied: (H1) Route ambiguity resolved — static segments registered before parameterized. (H2) `ListContainedInstances` returns filtered count. (H3) `cascadeDelete` cleans up association links. (H4) `DeleteAssociationLink` verifies link ownership. (M2) Parent catalog validation. (M3) Same-catalog validation for links. (M6) Duplicate link prevention.
+
+UI bug fixes: Details pane closes on tab switch. Add Contained modal supports "Adopt Existing" mode. Link modal uses dropdowns for association and target instance. Set Container modal added for reparenting from child side. Buttons disabled when no applicable associations.
+
+Live system tests: `scripts/test-containment-links.sh` — 18 parameterized tests covering containment CRUD, validation, links, references, duplicate prevention, cascade delete with link cleanup.
+
+### New Code Coverage (Session 007 — Catalog Data Viewer)
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/operational/instance_service.go` | `GetContainmentTree` | 96.4% |
+| `service/operational/instance_service.go` | `resolveParentChain` | 87.5% |
+| `service/operational/instance_service.go` | `ListInstances` (enhanced) | 100% |
+| `service/operational/instance_service.go` | `GetInstance` (enhanced) | 93.8% |
+| `api/operational/instance_handler.go` | `GetContainmentTree` | 100% |
+| `api/operational/instance_handler.go` | `treeNodesToDTO` | 100% |
+| `api/operational/instance_handler.go` | `ListInstances` (enhanced) | 100% |
+| `api/operational/instance_handler.go` | `instanceDetailToDTO` (enhanced) | 100% |
+| `infrastructure/gorm/repository/entity_instance_repo.go` | `ListByCatalog` | 85.7% |
+| `infrastructure/gorm/repository/entity_instance_repo.go` | `applyAttrFilters` | 94.4% |
+| `infrastructure/gorm/repository/entity_instance_repo.go` | `List` (enhanced) | 93.3% |
+
+Remaining uncovered lines:
+- `ListByCatalog:85.7%` — GORM `Find` error path (DB internal failure; same pattern as other List methods)
+- `applyAttrFilters:94.4%` — `.max` error path (symmetric to `.min` path which is tested)
+- `resolveParentChain:87.5%` — cycle guard safety net (requires circular data which can't exist in normal operation)
+- `GetContainmentTree:96.4%` — already handles ET name fallback; remaining line is branch coverage instrumentation
+
+Quality review fixes applied: (H1) BrowserRouter basename for /operational path. (H2) Deduplicated count query in List. (M1) Extracted findAndSelect to navigateToTreeNode callback. (M2) Extracted statusColor to shared utility. (M4) Removed json tags from service-layer ParentChainEntry. (M5) applyAttrFilters returns error for invalid numeric values. (L1) Display total in catalog list. (L2) Wire detailLoading spinner. (L4) Cycle guard in resolveParentChain.
+
+New UI files (operational data viewer):
+- `ui/operational.html` — separate HTML entry point
+- `ui/src/main-operational.tsx` — operational app entry with basename="/operational"
+- `ui/src/OperationalApp.tsx` — app shell (masthead, role selector, routes)
+- `ui/src/pages/operational/OperationalCatalogListPage.tsx` — catalog list with search, pagination
+- `ui/src/pages/operational/OperationalCatalogDetailPage.tsx` — tree browser + instance detail drawer
+- `ui/src/utils/statusColor.ts` — shared utility
+
+Live system tests: `scripts/test-data-viewer.sh` — 23 parameterized tests covering containment tree, pagination, sorting, filtering, parent chain, operational UI serving, combined queries, and references.
+
+Two-pane redesign: Removed the redundant middle instance list pane from the tree browser. The tree is now the sole navigation (left pane), with instance detail shown inline in the right pane. Browser tests reduced from 37 to 27 for this page (instance list tests T-13.78-85 retired). Component simplified from ~605 lines to ~300 lines.
+
+### New Code Coverage (Session 008 — Catalog Validation)
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/operational/validation_service.go` | `NewCatalogValidationService` | 100% |
+| `service/operational/validation_service.go` | `Validate` | 100% |
+| `service/operational/validation_service.go` | `ParseCardinality` | 100% |
+| `service/operational/validation_service.go` | `CardinalityMinGE1` | 100% |
+| `service/operational/validation_service.go` | `IsEmptyValue` | 100% |
+| `api/operational/catalog_handler.go` | `ValidateCatalog` | 100% |
+| `api/dto/dto.go` | `ValidationResultResponse` | struct (no test files) |
+| `service/operational/instance_service.go` | `validateAndBuildAttributeValues` (updated) | 100% |
+| `components/ValidationResults.tsx` | component | 100% |
+| `hooks/useValidation.ts` | hook | 100% |
+
+All new Go and UI code at 100% coverage. Every error propagation path, edge case (empty cardinality, non-numeric cardinality, invalid max cardinality, unknown attribute types, nil validation service, max cardinality, source cardinality, contained-without-parent, unpinned entity types), and containment check path has explicit test coverage.
+
+Bug fixes included:
+- Instance service: `UpdateInstance` now respects explicitly cleared attribute values (sends empty string → value not carried forward)
+- Validation: full cardinality checks (min + max, target + source direction, directional + bidirectional)
+- Validation: contained entity type without parent flagged as error
+
+New UI files:
+- `ui/src/components/ValidationResults.tsx` — shared validation results display component
+- `ui/src/hooks/useValidation.ts` — shared validation hook
+
+Live system tests: `scripts/test-validation.sh` — 9 parameterized tests covering empty catalog, RO/RW access, 404, required attrs, error structure, status persistence, valid catalog, status reset after mutation.
+
+Quality review fixes applied: (M1) Eliminated duplicate `assocRepo.ListByVersion` calls — pre-load into `assocCache`. (M2) Added DTO layer — `ValidationResultResponse` and `ValidationErrorResponse`. (M3) Nil-guard on `validationSvc`. (L1) Unpinned entity type instances now produce validation errors. (L2) Operational UI Validate button hidden for RO. (L3) Extracted shared `useValidation` hook + `ValidationResults` component. (L6) Fixed inline import to top-level.
+
+New UI files:
+- `ui/src/components/ValidationResults.tsx` — shared validation results display component
+- `ui/src/hooks/useValidation.ts` — shared validation hook
+
+Live system tests: `scripts/test-validation.sh` — 9 parameterized tests covering empty catalog, RO/RW access, 404, required attrs, error structure, status persistence, valid catalog, status reset after mutation.
+
+### New Code Coverage (Session 009 — Catalog Publishing)
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/operational/catalog_service.go` | `Publish` | 100% |
+| `service/operational/catalog_service.go` | `Unpublish` | 100% |
+| `service/operational/catalog_service.go` | `IsPublished` | 100% |
+| `service/operational/catalog_service.go` | `Delete` (enhanced with CR cleanup) | 100% |
+| `api/operational/catalog_handler.go` | `PublishCatalog` | 100% |
+| `api/operational/catalog_handler.go` | `UnpublishCatalog` | 100% |
+| `api/middleware/catalog_access.go` | `RequireWriteAccess` | 100% |
+| `api/middleware/catalog_access.go` | `httpMethodToVerb` (with PUT/PATCH) | 100% |
+| `operator/controllers/reconciler.go` | `ReconcileCatalogStatus` | 100% |
+| `operator/api/v1alpha1/catalog_types.go` | All DeepCopy functions | 100% |
+| `infrastructure/k8s/cr_manager.go` | `K8sCatalogCRManager.CreateOrUpdate` | 100% |
+| `infrastructure/k8s/cr_manager.go` | `K8sCatalogCRManager.Delete` | 100% |
+| `service/meta/catalog_version_service.go` | `Promote` (with warnings) | 100% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `UpdatePublished` | 66.7% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `ListByCatalogVersionID` | 85.7% |
+| `operator/controllers/controller.go` | `reconcileCatalogs` | 77.8% |
+
+Uncovered lines with justification:
+- `UpdatePublished:66.7%` — GORM `RowsAffected==0` error path after successful Update (same pre-existing pattern as other repo Update methods — requires DB to fail between two sequential operations)
+- `ListByCatalogVersionID:85.7%` — GORM `Find` error path (same pre-existing pattern as other repo List methods)
+- `reconcileCatalogs:77.8%` — K8s client error paths for `SetOwnerReference`, `Update`, and `Status().Update` failures (same pre-existing pattern as `reconcileCatalogVersions` — fake K8s client doesn't simulate partial failures in these operations)
+
+Quality review fixes applied: (C1) Fixed infinite DataVersion loop — extracted `ReconcileCatalogStatus` pure function, only updates when status is stale. (C2) Created separate `K8sCatalogCRManager` type satisfying `CatalogCRManager` interface. (I1) Publish rolls back DB on CR creation failure. (I2) Added PUT/PATCH → "update" verb mapping. (I3) Delete cleans up Catalog CR for published catalogs. (I4) `IsPublished` uses request context via `echo.Context`. (I5) UI error handling on publish/unpublish clicks. (I6) Removed redundant `CatalogName` from `CatalogCRSpec`. (I8) Unpublish checks `catalog.Published` for early return. (S2) Added `StatusResponse` DTO. (S3) Extracted `ReconcileCatalogStatus` pure function.
+
+New files:
+- `internal/service/operational/cr_manager.go` — CatalogCRManager interface + CatalogCRSpec
+- `internal/operator/api/v1alpha1/catalog_types.go` — Catalog CR CRD type with DataVersion
+- `scripts/test-publishing.sh` — 14 live system tests
+
+Live system tests: `scripts/test-publishing.sh` — 14 tests covering publish/unpublish RBAC, draft/valid validation gate, write protection (RW blocked, SuperAdmin allowed), status persistence, CR cleanup, CV promotion warnings.
+
+### New Code Coverage (Session 010 — Copy & Replace Catalog)
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/operational/catalog_service.go` | `CopyCatalog` | 98.3% |
+| `service/operational/catalog_service.go` | `ReplaceCatalog` | 98.1% |
+| `service/operational/catalog_service.go` | `WithCopyDeps` | 100% |
+| `service/operational/catalog_service.go` | `WithTransactionManager` | 100% |
+| `api/operational/catalog_handler.go` | `CopyCatalog` | 94.4% |
+| `api/operational/catalog_handler.go` | `ReplaceCatalog` | 94.4% |
+| `infrastructure/gorm/repository/catalog_repo.go` | `UpdateName` | 100% |
+| `infrastructure/gorm/repository/transaction.go` | `NewGormTransactionManager` | 100% |
+| `infrastructure/gorm/repository/transaction.go` | `RunInTransaction` | 100% |
+| `infrastructure/gorm/repository/transaction.go` | `getDB` | 100% |
+
+Uncovered lines with justification:
+- `CopyCatalog handler:94.4%` — 1 line: `c.Bind` error (pre-existing pattern across all handlers; requires malformed JSON that bypasses Echo's content-type negotiation)
+- `ReplaceCatalog handler:94.4%` — 1 line: same `c.Bind` error pattern
+- `CopyCatalog service:98.3%` — 1 line: error return inside `txManager != nil` branch; the error path IS tested (via MockTransactionManager which passes through to doMutations), but the specific `txManager.RunInTransaction` error-wrapping line shows as partially uncovered due to Go coverage instrumentation
+- `ReplaceCatalog service:98.1%` — 1 line: same `txManager.RunInTransaction` error-wrapping line
+
+Error paths covered by dedicated tests:
+- Instance create error during copy (T-17.18)
+- GetCurrentValues error during copy
+- SetValues error during copy
+- GetForwardRefs error during copy
+- Link Create error during copy
+- Link with target outside catalog skipped
+- Copy and Replace with nil TransactionManager (both success and error)
+- Replace step 2 rename error
+- Replace UpdatePublished error in step 3
+- Replace source-published unpublish error
+- Handler: source access denied, target access denied, access checker error (both copy and replace)
+- Handler: CV label resolution fallback (both copy and replace)
+- Replace auto-generated archive name too long
+
+Quality review fixes applied: (H1) TransactionManager for atomic copy/replace operations. (H2) Mock nil-guard on GetForwardRefs/GetReverseRefs. (M1) ReplaceCatalog returns correct in-memory name. (M2) DNS label regex extracted to shared constant in UI. (M3) Per-catalog access checks in Copy (source+target) and Replace (source+target) handlers. (M4) CV label resolved in Copy/Replace API responses. (M5) Source-published handling in Replace (unpublish + CR cleanup). (L1) Better error message for auto-generated archive name exceeding 63 chars. (L2) API field name standardized to `source` (was `source_catalog_name`). (L3) Loading/spinner state on Copy/Replace buttons. (L4) Removed unnecessary `seen` map. (L5) Extracted `canPublishOrReplace` named boolean.
+
+New files:
+- `internal/domain/repository/transaction.go` — TransactionManager interface
+- `internal/infrastructure/gorm/repository/transaction.go` — GORM TransactionManager + getDB helper
+- `internal/infrastructure/gorm/repository/catalog_copy_integration_test.go` — End-to-end integration tests (including transaction rollback/commit verification)
+- `scripts/test-copy-replace.sh` — 17 live system tests
+
+Browser test count: 429 → 453 (+24 new tests for Copy/Replace UI and pre-existing gap coverage).
+Live system tests: 64 → 81 (+17 new tests in test-copy-replace.sh).
+
+UI new code coverage:
+- All new Copy/Replace modal code: **100% covered** (0 uncovered lines in lines 1000+)
+- Copy modal: open, close (X button), cancel, name validation, description input, submit success, submit error
+- Replace modal: open, close (X button), cancel, target dropdown interaction, archive name validation, submit success, submit error
+- `api/client.ts` copy/replace methods: 100% covered via client browser tests
+- Pre-existing gaps addressed: adopt-mode submit (setParent API call), set-container submit (setParent API call)
+- Remaining uncovered lines 1112/1115 are in the pre-existing `EnumSelect` component (not new code)
+- Remaining pre-existing uncovered lines (139-992): guard returns, error catch blocks, and PatternFly modal onClose/onChange callbacks — documented in detail below
+
+Pre-existing uncovered lines in CatalogDetailPage.tsx (not from Phase 8):
+- Guard returns (139, 183, 206, 248, 274, 338, 370, 384, 399, 416, 434): early returns when URL param, active tab, or form state is missing — never triggered because test data always satisfies conditions
+- Error catch blocks (299, 315, 329-330, 343, 366, 429): require API mocks to fail at specific points during multi-step interactions
+- `loadLinkTargetInstances` (348-357): requires completing a multi-step PatternFly Select cascade (select association → triggers async load → select target) that blocks test automation
+- `handleCreateLink` (399-411): same cascading Select dependency
+- Modal callbacks (626-627, 722, 731, 740, 761, 767, 770, 779, 786, 800, 811-818, 857, 892, 903-911, 928-937, 950, 981-992): PatternFly component onClose/onChange/onSelect internal callbacks
 
 ### Coverage Gaps to Address
 

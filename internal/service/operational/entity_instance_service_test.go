@@ -115,12 +115,12 @@ func TestT4_09_GetInstanceScopedToCatalogVersion(t *testing.T) {
 	svc, instRepo, _, _ := setupSvc()
 
 	instRepo.On("GetByID", mock.Anything, "inst1").Return(&models.EntityInstance{
-		ID: "inst1", CatalogVersionID: "cv1",
+		ID: "inst1", CatalogID: "cv1",
 	}, nil)
 
 	inst, err := svc.GetInstance(context.Background(), "inst1")
 	require.NoError(t, err)
-	assert.Equal(t, "cv1", inst.CatalogVersionID)
+	assert.Equal(t, "cv1", inst.CatalogID)
 }
 
 // T-4.10

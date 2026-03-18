@@ -534,3 +534,99 @@ func TestReconcile_OpenShiftMode_CreatesClusterIPServices(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, corev1.PullIfNotPresent, apiDep.Spec.Template.Spec.Containers[0].ImagePullPolicy)
 }
+
+// === Catalog CR Reconciliation Tests ===
+
+// T-16.52: Reconciler sets owner reference on Catalog CR
+func TestT16_52_CatalogCR_OwnerRefSet(t *testing.T) {
+	scheme := testScheme()
+	cr := newTestCR(1, "development")
+	cr.UID = "test-uid-123"
+
+	cat := &v1alpha1.Catalog{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "prod-catalog",
+			Namespace: "default",
+		},
+		Spec: v1alpha1.CatalogSpec{
+			CatalogName:      "prod-catalog",
+			ValidationStatus: "valid",
+		},
+	}
+
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(cr, cat).
+		WithStatusSubresource(cr, cat).
+		Build()
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: scheme}
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	require.NoError(t, err)
+
+	// Verify owner reference set
+	updatedCat := &v1alpha1.Catalog{}
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "prod-catalog", Namespace: "default"}, updatedCat)
+	require.NoError(t, err)
+	require.Len(t, updatedCat.OwnerReferences, 1)
+	assert.Equal(t, "test-hub", updatedCat.OwnerReferences[0].Name)
+}
+
+// T-16.53/55: Reconciler sets status.Ready and increments DataVersion
+func TestT16_53_CatalogCR_StatusUpdated(t *testing.T) {
+	scheme := testScheme()
+	cr := newTestCR(1, "development")
+	cr.UID = "test-uid-123"
+
+	cat := &v1alpha1.Catalog{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "prod-catalog",
+			Namespace: "default",
+		},
+		Spec: v1alpha1.CatalogSpec{
+			CatalogName:      "prod-catalog",
+			ValidationStatus: "valid",
+		},
+		Status: v1alpha1.CatalogStatus{
+			Ready:       false,
+			DataVersion: 0,
+		},
+	}
+
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(cr, cat).
+		WithStatusSubresource(cr, cat).
+		Build()
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: scheme}
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	require.NoError(t, err)
+
+	updatedCat := &v1alpha1.Catalog{}
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "prod-catalog", Namespace: "default"}, updatedCat)
+	require.NoError(t, err)
+	assert.True(t, updatedCat.Status.Ready)
+	assert.Equal(t, "catalog published", updatedCat.Status.Message)
+	assert.Equal(t, 1, updatedCat.Status.DataVersion)
+}
+
+// No Catalog CRs — reconciliation succeeds without error
+func TestCatalogCR_NoCatalogs(t *testing.T) {
+	scheme := testScheme()
+	cr := newTestCR(1, "development")
+	cr.UID = "test-uid-123"
+
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(cr).
+		WithStatusSubresource(cr).
+		Build()
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: scheme}
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	require.NoError(t, err)
+}

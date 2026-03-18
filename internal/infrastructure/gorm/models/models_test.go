@@ -102,7 +102,7 @@ func TestLifecycleTransitionConversion(t *testing.T) {
 func TestEntityInstanceConversion(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
 	del := now.Add(time.Hour)
-	m := &domain.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogVersionID: "cv1", ParentInstanceID: "p1", Name: "inst", Description: "desc", Version: 2, CreatedAt: now, UpdatedAt: now, DeletedAt: &del}
+	m := &domain.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "cv1", ParentInstanceID: "p1", Name: "inst", Description: "desc", Version: 2, CreatedAt: now, UpdatedAt: now, DeletedAt: &del}
 	g := EntityInstanceFromModel(m)
 	assert.Equal(t, "inst", g.Name)
 	assert.NotNil(t, g.DeletedAt)
@@ -131,9 +131,25 @@ func TestAssociationLinkConversion(t *testing.T) {
 	assert.Equal(t, "i2", back.TargetInstanceID)
 }
 
+func TestCatalogConversion(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	m := &domain.Catalog{
+		ID: "c1", Name: "prod-app-a", Description: "Production",
+		CatalogVersionID: "cv1", ValidationStatus: domain.ValidationStatusDraft,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	g := CatalogFromModel(m)
+	assert.Equal(t, "prod-app-a", g.Name)
+	assert.Equal(t, "draft", g.ValidationStatus)
+	back := g.ToModel()
+	assert.Equal(t, "c1", back.ID)
+	assert.Equal(t, domain.ValidationStatusDraft, back.ValidationStatus)
+	assert.Equal(t, "cv1", back.CatalogVersionID)
+}
+
 func TestAllModels(t *testing.T) {
 	models := AllModels()
-	assert.Len(t, models, 12)
+	assert.Len(t, models, 13)
 }
 
 func TestInitDB(t *testing.T) {

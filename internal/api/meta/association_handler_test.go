@@ -331,3 +331,63 @@ func TestTE103_EditAssociationInvalidCardinality(t *testing.T) {
 		`{"source_cardinality":"bad"}`, apimw.RoleAdmin)
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
+
+// === Coverage: bind-error and service-error branches ===
+
+func TestAssocCreate_BindError(t *testing.T) {
+	e := setupAssocServer(nil, nil, nil)
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/entity-types/et1/associations", "bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestAssocEdit_BindError(t *testing.T) {
+	e := setupAssocServer(nil, nil, nil)
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/associations/test_assoc", "bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestAssocEdit_ServiceError(t *testing.T) {
+	assocRepo := new(mocks.MockAssociationRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupAssocServer(assocRepo, etvRepo, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(nil, domainerrors.NewNotFound("EntityTypeVersion", "et1"))
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/associations/test_assoc",
+		`{"source_role":"new"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestAssocDelete_ServiceError(t *testing.T) {
+	assocRepo := new(mocks.MockAssociationRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupAssocServer(assocRepo, etvRepo, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(nil, domainerrors.NewNotFound("EntityTypeVersion", "et1"))
+	rec := doRequest(e, http.MethodDelete, "/api/meta/v1/entity-types/et1/associations/test_assoc", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// Coverage: Edit with type field (lines 79-82)
+func TestAssocEdit_WithType(t *testing.T) {
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	assocRepo := new(mocks.MockAssociationRepo)
+	e := setupAssocServer(assocRepo, etvRepo, attrRepo)
+
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 2,
+	}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Association{
+		{ID: "a1", Name: "old-name", Type: models.AssociationTypeDirectional},
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Attribute{}, nil)
+	etvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("ListByVersion", mock.Anything, mock.Anything).Return([]*models.Association{
+		{ID: "a2", Name: "old-name", Type: models.AssociationTypeBidirectional},
+	}, nil)
+	assocRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1/associations/old-name",
+		`{"type":"bidirectional"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}

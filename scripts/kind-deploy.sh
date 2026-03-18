@@ -148,6 +148,7 @@ deploy_resources() {
     log "Deploying operator CRDs and resources (operator manages API server and UI)..."
     $KUBE_CMD apply -f "$PROJECT_ROOT/deploy/k8s/operator/crd.yaml"
     $KUBE_CMD apply -f "$PROJECT_ROOT/deploy/k8s/operator/catalogversion-crd.yaml"
+    $KUBE_CMD apply -f "$PROJECT_ROOT/deploy/k8s/operator/catalog-crd.yaml"
     $KUBE_CMD apply -f "$PROJECT_ROOT/deploy/k8s/operator/"
 
     log "Deploying API server RBAC..."

@@ -21,6 +21,17 @@ const (
 	RoleSuperAdmin Role = "SuperAdmin"
 )
 
+// CatalogWarning represents a warning about a catalog's status during CV promotion.
+type CatalogWarning struct {
+	CatalogName      string
+	ValidationStatus string
+}
+
+// PromoteResult contains the result of a CV promotion, including any warnings.
+type PromoteResult struct {
+	Warnings []CatalogWarning
+}
+
 type CatalogVersionService struct {
 	cvRepo        repository.CatalogVersionRepository
 	pinRepo       repository.CatalogVersionPinRepository
@@ -30,6 +41,7 @@ type CatalogVersionService struct {
 	allowedStages []string // empty means all stages allowed
 	etRepo        repository.EntityTypeRepository
 	etvRepo       repository.EntityTypeVersionRepository
+	catalogRepo   repository.CatalogRepository
 }
 
 func NewCatalogVersionService(
@@ -41,6 +53,7 @@ func NewCatalogVersionService(
 	allowedStages []string,
 	etRepo repository.EntityTypeRepository,
 	etvRepo repository.EntityTypeVersionRepository,
+	catalogRepo repository.CatalogRepository,
 ) *CatalogVersionService {
 	return &CatalogVersionService{
 		cvRepo:        cvRepo,
@@ -51,6 +64,7 @@ func NewCatalogVersionService(
 		allowedStages: allowedStages,
 		etRepo:        etRepo,
 		etvRepo:       etvRepo,
+		catalogRepo:   catalogRepo,
 	}
 }
 
@@ -130,34 +144,32 @@ func (s *CatalogVersionService) isStageAllowed(stage models.LifecycleStage) bool
 }
 
 // Promote advances the lifecycle stage forward.
-func (s *CatalogVersionService) Promote(ctx context.Context, id string, role Role, performedBy string) error {
+func (s *CatalogVersionService) Promote(ctx context.Context, id string, role Role, performedBy string) (*PromoteResult, error) {
 	cv, err := s.cvRepo.GetByID(ctx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var targetStage models.LifecycleStage
 	switch cv.LifecycleStage {
 	case models.LifecycleStageDevelopment:
 		targetStage = models.LifecycleStageTesting
-		// RW and above can promote dev→test
 		if role == RoleRO {
-			return domainerrors.NewForbidden("RO users cannot promote catalog versions")
+			return nil, domainerrors.NewForbidden("RO users cannot promote catalog versions")
 		}
 	case models.LifecycleStageTesting:
 		targetStage = models.LifecycleStageProduction
-		// Admin and above can promote test→prod
 		if role == RoleRO || role == RoleRW {
-			return domainerrors.NewForbidden("only Admin and above can promote to production")
+			return nil, domainerrors.NewForbidden("only Admin and above can promote to production")
 		}
 	case models.LifecycleStageProduction:
-		return domainerrors.NewValidation("cannot promote beyond production")
+		return nil, domainerrors.NewValidation("cannot promote beyond production")
 	default:
-		return domainerrors.NewValidation("invalid lifecycle stage: " + string(cv.LifecycleStage))
+		return nil, domainerrors.NewValidation("invalid lifecycle stage: " + string(cv.LifecycleStage))
 	}
 
 	if err := s.cvRepo.UpdateLifecycle(ctx, id, targetStage); err != nil {
-		return err
+		return nil, err
 	}
 
 	now := time.Now()
@@ -169,33 +181,52 @@ func (s *CatalogVersionService) Promote(ctx context.Context, id string, role Rol
 		PerformedBy:      performedBy,
 		PerformedAt:      now,
 	}); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Create/update CatalogVersion CR in K8s
 	if s.crManager != nil {
 		k8sName := SanitizeK8sName(cv.VersionLabel)
 		if k8sName == "" {
-			return domainerrors.NewValidation("version label must contain at least one alphanumeric character")
+			return nil, domainerrors.NewValidation("version label must contain at least one alphanumeric character")
 		}
 		entityTypeNames, err := s.getEntityTypeNamesForCV(ctx, id)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		return s.crManager.CreateOrUpdate(ctx, CatalogVersionCRSpec{
+		if err := s.crManager.CreateOrUpdate(ctx, CatalogVersionCRSpec{
 			Name:           k8sName,
 			Namespace:      s.namespace,
 			VersionLabel:   cv.VersionLabel,
-			Description:    "", // description not stored on CatalogVersion model
+			Description:    "",
 			LifecycleStage: string(targetStage),
 			EntityTypes:    entityTypeNames,
 			SourceDBID:     cv.ID,
 			PromotedBy:     performedBy,
 			PromotedAt:     now.Format(time.RFC3339),
-		})
+		}); err != nil {
+			return nil, err
+		}
 	}
 
-	return nil
+	// Collect catalog warnings (draft/invalid catalogs pinned to this CV)
+	result := &PromoteResult{}
+	if s.catalogRepo != nil {
+		catalogs, err := s.catalogRepo.ListByCatalogVersionID(ctx, id)
+		if err == nil {
+			for _, cat := range catalogs {
+				if cat.ValidationStatus != models.ValidationStatusValid {
+					result.Warnings = append(result.Warnings, CatalogWarning{
+						CatalogName:      cat.Name,
+						ValidationStatus: string(cat.ValidationStatus),
+					})
+				}
+			}
+		}
+		// Warnings are best-effort — don't fail promotion if catalog lookup fails
+	}
+
+	return result, nil
 }
 
 // DeleteCatalogVersion deletes a catalog version.

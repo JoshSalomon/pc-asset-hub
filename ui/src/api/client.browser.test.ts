@@ -442,3 +442,224 @@ test('versions.diff calls correct URL with query params', async () => {
   expect(result.from_version).toBe(1)
   expect(result.to_version).toBe(2)
 })
+
+// === Operational API: Catalogs ===
+
+test('catalogs.list calls correct URL', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ items: [], total: 0 }))
+  await api.catalogs.list()
+  expect(mockFetch).toHaveBeenCalledWith(
+    expect.stringContaining('/catalogs'),
+    expect.anything(),
+  )
+})
+
+test('catalogs.list with filters passes query params', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ items: [], total: 0 }))
+  await api.catalogs.list({ catalog_version_id: 'cv1', validation_status: 'valid' })
+  const url = mockFetch.mock.calls[0][0]
+  expect(url).toContain('catalog_version_id=cv1')
+  expect(url).toContain('validation_status=valid')
+})
+
+test('catalogs.get calls correct URL', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'c1', name: 'my-cat' }))
+  const result = await api.catalogs.get('my-cat')
+  expect(mockFetch).toHaveBeenCalledWith(
+    expect.stringContaining('/catalogs/my-cat'),
+    expect.anything(),
+  )
+  expect(result.name).toBe('my-cat')
+})
+
+test('catalogs.create sends POST with body', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'c1', name: 'new-cat' }))
+  await api.catalogs.create({ name: 'new-cat', catalog_version_id: 'cv1' })
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs')
+  expect(opts.method).toBe('POST')
+  expect(JSON.parse(opts.body)).toEqual({ name: 'new-cat', catalog_version_id: 'cv1' })
+})
+
+test('catalogs.delete sends DELETE', async () => {
+  mockFetch.mockReturnValue(noContentResponse())
+  await api.catalogs.delete('my-cat')
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-cat')
+  expect(opts.method).toBe('DELETE')
+})
+
+test('catalogs.validate sends POST to /validate', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ status: 'valid', errors: [] }))
+  const result = await api.catalogs.validate('my-cat')
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-cat/validate')
+  expect(opts.method).toBe('POST')
+  expect(result.status).toBe('valid')
+})
+
+test('catalogs.publish sends POST to /publish', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ status: 'published' }))
+  await api.catalogs.publish('my-cat')
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-cat/publish')
+  expect(opts.method).toBe('POST')
+})
+
+test('catalogs.unpublish sends POST to /unpublish', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ status: 'unpublished' }))
+  await api.catalogs.unpublish('my-cat')
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-cat/unpublish')
+  expect(opts.method).toBe('POST')
+})
+
+// === Operational API: Instances ===
+
+test('instances.list calls correct URL', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ items: [], total: 0 }))
+  await api.instances.list('my-cat', 'server')
+  expect(mockFetch).toHaveBeenCalledWith(
+    expect.stringContaining('/catalogs/my-cat/server'),
+    expect.anything(),
+  )
+})
+
+test('instances.list with filters passes query params', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ items: [], total: 0 }))
+  await api.instances.list('my-cat', 'server', { limit: 10, offset: 5, sort: 'name:asc', filters: { hostname: 'web' } })
+  const url = mockFetch.mock.calls[0][0]
+  expect(url).toContain('limit=10')
+  expect(url).toContain('offset=5')
+  expect(url).toContain('sort=name%3Aasc')
+  expect(url).toContain('filter.hostname=web')
+})
+
+test('instances.tree calls correct URL', async () => {
+  mockFetch.mockReturnValue(jsonResponse([]))
+  await api.instances.tree('my-cat')
+  expect(mockFetch).toHaveBeenCalledWith(
+    expect.stringContaining('/catalogs/my-cat/tree'),
+    expect.anything(),
+  )
+})
+
+test('instances.get calls correct URL', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'i1', name: 'server-1' }))
+  await api.instances.get('my-cat', 'server', 'i1')
+  expect(mockFetch).toHaveBeenCalledWith(
+    expect.stringContaining('/catalogs/my-cat/server/i1'),
+    expect.anything(),
+  )
+})
+
+test('instances.create sends POST with body', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'i1' }))
+  await api.instances.create('my-cat', 'server', { name: 'srv-1' })
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-cat/server')
+  expect(opts.method).toBe('POST')
+})
+
+test('instances.update sends PUT', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'i1', version: 2 }))
+  await api.instances.update('my-cat', 'server', 'i1', { version: 1, name: 'new-name' })
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-cat/server/i1')
+  expect(opts.method).toBe('PUT')
+})
+
+test('instances.delete sends DELETE', async () => {
+  mockFetch.mockReturnValue(noContentResponse())
+  await api.instances.delete('my-cat', 'server', 'i1')
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-cat/server/i1')
+  expect(opts.method).toBe('DELETE')
+})
+
+test('instances.setParent sends PUT to /parent', async () => {
+  mockFetch.mockReturnValue(jsonResponse({}))
+  await api.instances.setParent('my-cat', 'tool', 'i1', { parent_type: 'server', parent_instance_id: 'p1' })
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-cat/tool/i1/parent')
+  expect(opts.method).toBe('PUT')
+})
+
+test('instances.createContained sends POST to parent/child route', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'c1' }))
+  await api.instances.createContained('my-cat', 'server', 'p1', 'tool', { name: 'tool-1' })
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-cat/server/p1/tool')
+  expect(opts.method).toBe('POST')
+})
+
+test('instances.listContained calls correct URL', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ items: [], total: 0 }))
+  await api.instances.listContained('my-cat', 'server', 'p1', 'tool')
+  expect(mockFetch).toHaveBeenCalledWith(
+    expect.stringContaining('/catalogs/my-cat/server/p1/tool'),
+    expect.anything(),
+  )
+})
+
+// === Operational API: Links ===
+
+test('links.create sends POST', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'link1' }))
+  await api.links.create('my-cat', 'server', 'i1', { target_instance_id: 'i2', association_name: 'uses' })
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-cat/server/i1/links')
+  expect(opts.method).toBe('POST')
+})
+
+test('links.delete sends DELETE', async () => {
+  mockFetch.mockReturnValue(noContentResponse())
+  await api.links.delete('my-cat', 'server', 'i1', 'link1')
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-cat/server/i1/links/link1')
+  expect(opts.method).toBe('DELETE')
+})
+
+test('links.forwardRefs calls correct URL', async () => {
+  mockFetch.mockReturnValue(jsonResponse([]))
+  await api.links.forwardRefs('my-cat', 'server', 'i1')
+  expect(mockFetch).toHaveBeenCalledWith(
+    expect.stringContaining('/catalogs/my-cat/server/i1/references'),
+    expect.anything(),
+  )
+})
+
+test('links.reverseRefs calls correct URL', async () => {
+  mockFetch.mockReturnValue(jsonResponse([]))
+  await api.links.reverseRefs('my-cat', 'server', 'i1')
+  expect(mockFetch).toHaveBeenCalledWith(
+    expect.stringContaining('/catalogs/my-cat/server/i1/referenced-by'),
+    expect.anything(),
+  )
+})
+
+// T-17.87: copyCatalog client function sends POST with correct body
+test('catalogs.copy calls correct URL and body', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'new-id', name: 'target' }))
+  await api.catalogs.copy({ source: 'source', name: 'target', description: 'desc' })
+  expect(mockFetch).toHaveBeenCalledWith(
+    expect.stringContaining('/catalogs/copy'),
+    expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ source: 'source', name: 'target', description: 'desc' }),
+    }),
+  )
+})
+
+// T-17.88: replaceCatalog client function sends POST with correct body
+test('catalogs.replace calls correct URL and body', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'src-id', name: 'prod' }))
+  await api.catalogs.replace({ source: 'staging', target: 'prod', archive_name: 'prod-archive' })
+  expect(mockFetch).toHaveBeenCalledWith(
+    expect.stringContaining('/catalogs/replace'),
+    expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ source: 'staging', target: 'prod', archive_name: 'prod-archive' }),
+    }),
+  )
+})

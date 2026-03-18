@@ -53,8 +53,9 @@ func main() {
 	iavRepo := gormrepo.NewInstanceAttributeValueGormRepo(db)
 	linkRepo := gormrepo.NewAssociationLinkGormRepo(db)
 
-	// Optional K8s client for CatalogVersion CR management
+	// Optional K8s client for CR management (CatalogVersion + Catalog CRs)
 	var crManager svcmeta.CatalogVersionCRManager
+	var catalogCRManager svcop.CatalogCRManager
 	k8sRestConfig, k8sErr := rest.InClusterConfig()
 	if k8sErr == nil {
 		scheme := runtime.NewScheme()
@@ -64,7 +65,8 @@ func main() {
 			log.Printf("warning: failed to create K8s client: %v (CR management disabled)", clientErr)
 		} else {
 			crManager = k8sinfra.NewK8sCRManager(k8sClient)
-			log.Println("K8s client initialized, CatalogVersion CR management enabled")
+			catalogCRManager = k8sinfra.NewK8sCatalogCRManager(k8sClient)
+			log.Println("K8s client initialized, CatalogVersion and Catalog CR management enabled")
 		}
 	} else {
 		log.Printf("not running in K8s cluster (CR management disabled): %v", k8sErr)
@@ -83,8 +85,13 @@ func main() {
 	enumSvc := svcmeta.NewEnumService(enumRepo, gormrepo.NewEnumValueGormRepo(db), attrRepo)
 	assocSvc := svcmeta.NewAssociationService(assocRepo, etvRepo, attrRepo)
 	vhSvc := svcmeta.NewVersionHistoryService(etvRepo, attrRepo, assocRepo)
-	cvSvc := svcmeta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, crManager, watchNamespace, cfg.AllowedStages(), etRepo, etvRepo)
+	catalogRepo := gormrepo.NewCatalogGormRepo(db)
+	cvSvc := svcmeta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, crManager, watchNamespace, cfg.AllowedStages(), etRepo, etvRepo, catalogRepo)
+	enumValRepo := gormrepo.NewEnumValueGormRepo(db)
 	instSvc := svcop.NewEntityInstanceService(instRepo, iavRepo, attrRepo, cvRepo, linkRepo)
+	txManager := gormrepo.NewGormTransactionManager(db)
+	catalogSvc := svcop.NewCatalogService(catalogRepo, cvRepo, instRepo, catalogCRManager, watchNamespace, svcop.WithCopyDeps(iavRepo, linkRepo), svcop.WithTransactionManager(txManager))
+	instanceSvc := svcop.NewInstanceService(instRepo, iavRepo, catalogRepo, cvRepo, pinRepo, attrRepo, etvRepo, etRepo, enumValRepo, assocRepo, linkRepo)
 
 	// Handlers
 	etHandler := apimeta.NewEntityTypeHandler(etSvc)
@@ -94,6 +101,10 @@ func main() {
 	vhHandler := apimeta.NewVersionHistoryHandler(vhSvc)
 	cvHandler := apimeta.NewCatalogVersionHandler(cvSvc)
 	opHandler := apiop.NewHandler(instSvc)
+	catalogAccessChecker := &middleware.HeaderCatalogAccessChecker{}
+	validationSvc := svcop.NewCatalogValidationService(catalogRepo, instRepo, iavRepo, pinRepo, etvRepo, attrRepo, assocRepo, enumValRepo, linkRepo, etRepo)
+	catalogHandler := apiop.NewCatalogHandler(catalogSvc, validationSvc, catalogAccessChecker)
+	instanceHandler := apiop.NewInstanceHandler(instanceSvc, catalogSvc)
 	healthHandler := apihealth.NewHandler(db)
 
 	// Echo server
@@ -122,7 +133,18 @@ func main() {
 	apimeta.RegisterVersionHistoryRoutes(metaGroup, vhHandler)
 	apimeta.RegisterCatalogVersionRoutes(metaGroup, cvHandler, requireRW)
 
-	// Operational API
+	// Operational API — Catalog CRUD
+	catalogGroup := e.Group("/api/data/v1/catalogs")
+	catalogGroup.Use(middleware.RBACMiddleware(rbacProvider))
+	apiop.RegisterCatalogRoutes(catalogGroup, catalogHandler, requireRW, requireAdmin)
+
+	// Operational API — Instance CRUD (under catalogs, with per-catalog access check)
+	instanceGroup := catalogGroup.Group("/:catalog-name")
+	instanceGroup.Use(middleware.RequireCatalogAccess(catalogAccessChecker))
+	requireWriteAccess := middleware.RequireWriteAccess(catalogSvc)
+	apiop.RegisterInstanceRoutes(instanceGroup, instanceHandler, requireRW, requireWriteAccess)
+
+	// Operational API — legacy instance routes (to be replaced)
 	opGroup := e.Group("/api/data/v1/:catalog-version")
 	opGroup.Use(middleware.RBACMiddleware(rbacProvider))
 	apiop.RegisterRoutes(opGroup, opHandler)

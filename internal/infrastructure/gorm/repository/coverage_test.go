@@ -345,7 +345,7 @@ func TestInstance_GetByNameAndParent(t *testing.T) {
 	require.NoError(t, pinRepo.Create(ctx, &models.CatalogVersionPin{ID: newID(), CatalogVersionID: cvID, EntityTypeVersionID: etvID}))
 
 	instID := newID()
-	require.NoError(t, instRepo.Create(ctx, &models.EntityInstance{ID: instID, EntityTypeID: etID, CatalogVersionID: cvID, Name: "test", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, instRepo.Create(ctx, &models.EntityInstance{ID: instID, EntityTypeID: etID, CatalogID: cvID, Name: "test", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
 
 	found, err := instRepo.GetByNameAndParent(ctx, etID, cvID, "", "test")
 	require.NoError(t, err)

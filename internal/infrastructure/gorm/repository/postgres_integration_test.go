@@ -170,7 +170,7 @@ func TestPG_EntityInstance(t *testing.T) {
 	require.NoError(t, pinRepo.Create(ctx, &models.CatalogVersionPin{ID: pgID(), CatalogVersionID: cvID, EntityTypeVersionID: etvID}))
 
 	instID := pgID()
-	require.NoError(t, instRepo.Create(ctx, &models.EntityInstance{ID: instID, EntityTypeVersionID: etvID, CatalogVersionID: cvID, Name: "llama-3", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, instRepo.Create(ctx, &models.EntityInstance{ID: instID, EntityTypeID: etID, CatalogID: cvID, Name: "llama-3", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
 
 	found, err := instRepo.GetByID(ctx, instID)
 	require.NoError(t, err)

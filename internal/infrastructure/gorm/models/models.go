@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -283,10 +284,50 @@ func LifecycleTransitionFromModel(m *domain.LifecycleTransition) *LifecycleTrans
 
 // === Data Table Models ===
 
+type Catalog struct {
+	ID               string     `gorm:"primaryKey;size:36"`
+	Name             string     `gorm:"uniqueIndex;not null;size:63"`
+	Description      string     `gorm:"size:1024"`
+	CatalogVersionID string     `gorm:"not null;size:36"`
+	ValidationStatus string     `gorm:"not null;size:20;default:draft"`
+	Published        bool       `gorm:"not null;default:false"`
+	PublishedAt      *time.Time `gorm:"default:null"`
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+func (c *Catalog) ToModel() *domain.Catalog {
+	return &domain.Catalog{
+		ID:               c.ID,
+		Name:             c.Name,
+		Description:      c.Description,
+		CatalogVersionID: c.CatalogVersionID,
+		ValidationStatus: domain.ValidationStatus(c.ValidationStatus),
+		Published:        c.Published,
+		PublishedAt:      c.PublishedAt,
+		CreatedAt:        c.CreatedAt,
+		UpdatedAt:        c.UpdatedAt,
+	}
+}
+
+func CatalogFromModel(m *domain.Catalog) *Catalog {
+	return &Catalog{
+		ID:               m.ID,
+		Name:             m.Name,
+		Description:      m.Description,
+		CatalogVersionID: m.CatalogVersionID,
+		ValidationStatus: string(m.ValidationStatus),
+		Published:        m.Published,
+		PublishedAt:      m.PublishedAt,
+		CreatedAt:        m.CreatedAt,
+		UpdatedAt:        m.UpdatedAt,
+	}
+}
+
 type EntityInstance struct {
 	ID               string `gorm:"primaryKey;size:36"`
 	EntityTypeID     string `gorm:"not null;size:36;uniqueIndex:idx_instance_scope"`
-	CatalogVersionID string `gorm:"not null;size:36;uniqueIndex:idx_instance_scope"`
+	CatalogID string `gorm:"column:catalog_id;not null;size:36;uniqueIndex:idx_instance_scope"`
 	ParentInstanceID string `gorm:"size:36;uniqueIndex:idx_instance_scope;default:''"`
 	Name             string `gorm:"not null;size:255;uniqueIndex:idx_instance_scope"`
 	Description      string `gorm:"size:1024"`
@@ -300,7 +341,7 @@ func (e *EntityInstance) ToModel() *domain.EntityInstance {
 	return &domain.EntityInstance{
 		ID:               e.ID,
 		EntityTypeID:     e.EntityTypeID,
-		CatalogVersionID: e.CatalogVersionID,
+		CatalogID:        e.CatalogID,
 		ParentInstanceID: e.ParentInstanceID,
 		Name:             e.Name,
 		Description:      e.Description,
@@ -315,7 +356,7 @@ func EntityInstanceFromModel(m *domain.EntityInstance) *EntityInstance {
 	return &EntityInstance{
 		ID:               m.ID,
 		EntityTypeID:     m.EntityTypeID,
-		CatalogVersionID: m.CatalogVersionID,
+		CatalogID:        m.CatalogID,
 		ParentInstanceID: m.ParentInstanceID,
 		Name:             m.Name,
 		Description:      m.Description,
@@ -400,6 +441,7 @@ func AllModels() []any {
 		&CatalogVersion{},
 		&CatalogVersionPin{},
 		&LifecycleTransition{},
+		&Catalog{},
 		&EntityInstance{},
 		&InstanceAttributeValue{},
 		&AssociationLink{},
@@ -431,6 +473,35 @@ func InitDB(db *gorm.DB) error {
 			unnamed[i].Name = n
 			if err := db.Save(&unnamed[i]).Error; err != nil {
 				return err
+			}
+		}
+	}
+
+	// Pre-migration: remove old catalog_version_id column from entity_instances
+	// (replaced by catalog_id). Copy data if catalog_id is empty.
+	if db.Migrator().HasTable(&EntityInstance{}) {
+		var hasBoth int64
+		// Check PostgreSQL
+		db.Raw("SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'entity_instances' AND column_name = 'catalog_version_id'").Scan(&hasBoth)
+		if hasBoth == 0 {
+			// Check SQLite
+			var cols []struct{ Name string }
+			db.Raw("PRAGMA table_info(entity_instances)").Scan(&cols)
+			for _, c := range cols {
+				if c.Name == "catalog_version_id" {
+					hasBoth = 1
+					break
+				}
+			}
+		}
+		if hasBoth > 0 {
+			// Copy data from old column to new column if needed
+			if err := db.Exec("UPDATE entity_instances SET catalog_id = catalog_version_id WHERE catalog_id IS NULL OR catalog_id = ''").Error; err != nil {
+				return fmt.Errorf("migration: copy catalog_version_id to catalog_id: %w", err)
+			}
+			// Drop old column
+			if err := db.Exec("ALTER TABLE entity_instances DROP COLUMN catalog_version_id").Error; err != nil {
+				return fmt.Errorf("migration: drop catalog_version_id column: %w", err)
 			}
 		}
 	}

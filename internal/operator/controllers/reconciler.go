@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
+	v1alpha1 "github.com/project-catalyst/pc-asset-hub/internal/operator/api/v1alpha1"
 	"github.com/project-catalyst/pc-asset-hub/internal/operator/crdgen"
 )
 
@@ -269,6 +270,45 @@ type CatalogVersionStatusResult struct {
 
 // ReconcileCatalogVersionStatus determines the status for a CatalogVersion CR
 // based on its lifecycle stage.
+// CatalogStatusResult contains the computed status for a Catalog CR.
+type CatalogStatusResult struct {
+	Ready              bool
+	Message            string
+	DataVersion        int
+	ObservedGeneration int64
+	NeedsUpdate        bool
+}
+
+// ReconcileCatalogStatus computes the desired Catalog CR status.
+// DataVersion increments when the spec generation changes (indicating the
+// API server updated the CR spec) or on first reconcile. ObservedGeneration
+// tracks the last-seen metadata.generation to detect spec changes.
+func ReconcileCatalogStatus(generation int64, currentStatus v1alpha1.CatalogStatus) CatalogStatusResult {
+	needsUpdate := false
+
+	// First reconcile (not ready yet)
+	if !currentStatus.Ready {
+		needsUpdate = true
+	}
+
+	// Spec changed since last reconcile (generation bumped by K8s)
+	if generation != currentStatus.ObservedGeneration {
+		needsUpdate = true
+	}
+
+	if !needsUpdate {
+		return CatalogStatusResult{NeedsUpdate: false}
+	}
+
+	return CatalogStatusResult{
+		Ready:              true,
+		Message:            "catalog published",
+		DataVersion:        currentStatus.DataVersion + 1,
+		ObservedGeneration: generation,
+		NeedsUpdate:        true,
+	}
+}
+
 func ReconcileCatalogVersionStatus(lifecycleStage string) CatalogVersionStatusResult {
 	switch lifecycleStage {
 	case "testing":
