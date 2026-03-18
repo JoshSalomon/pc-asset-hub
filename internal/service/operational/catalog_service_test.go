@@ -358,6 +358,98 @@ func TestCatalogService_Delete_CatalogDeleteError(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// Delete: with txManager exercises transactional path
+func TestCatalogService_Delete_WithTxManager(t *testing.T) {
+	svc, catRepo, _, instRepo, _, _ := setupCatalogServiceWithCopy()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{ID: "c1", Name: "my-catalog"}, nil)
+	instRepo.On("DeleteByCatalogID", ctx, "c1").Return(nil)
+	catRepo.On("Delete", ctx, "c1").Return(nil)
+
+	err := svc.Delete(ctx, "my-catalog")
+	require.NoError(t, err)
+}
+
+// SyncCR: crManager.CreateOrUpdate error logs warning (line 223)
+func TestSyncCR_CreateOrUpdateError(t *testing.T) {
+	svc, catRepo, cvRepo, _, _, _, crMgr := setupCatalogServiceWithCopyAndCR()
+	ctx := context.Background()
+	crMgr.createErr = fmt.Errorf("cr sync error")
+
+	catRepo.On("GetByName", ctx, "pub-cat").Return(&models.Catalog{
+		ID: "c1", Name: "pub-cat", CatalogVersionID: "cv1", Published: true,
+	}, nil)
+	cvRepo.On("GetByID", ctx, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1"}, nil)
+
+	// SyncCR should not return error — it logs and continues
+	svc.SyncCR(ctx, "pub-cat")
+	// Verify CreateOrUpdate was called (and failed)
+	assert.NotNil(t, crMgr.createOrUpdateSpec)
+}
+
+// ReplaceCatalog: Step 1 UpdateName error (line 468)
+func TestReplaceCatalog_Step1Error(t *testing.T) {
+	svc, catRepo, _, _, _, _ := setupCatalogServiceWithCopy()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "staging").Return(&models.Catalog{
+		ID: "src-id", Name: "staging", ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	catRepo.On("GetByName", ctx, "prod").Return(&models.Catalog{
+		ID: "tgt-id", Name: "prod",
+	}, nil)
+	catRepo.On("UpdateName", ctx, "tgt-id", "prod-archive").Return(fmt.Errorf("rename error"))
+
+	_, err := svc.ReplaceCatalog(ctx, "staging", "prod", "prod-archive")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "rename error")
+}
+
+// ReplaceCatalog: archive UpdatePublished error (line 483)
+func TestReplaceCatalog_ArchiveUnpublishError(t *testing.T) {
+	svc, catRepo, _, _, _, _ := setupCatalogServiceWithCopy()
+	ctx := context.Background()
+
+	pubTime := time.Now()
+	catRepo.On("GetByName", ctx, "staging").Return(&models.Catalog{
+		ID: "src-id", Name: "staging", ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	catRepo.On("GetByName", ctx, "prod").Return(&models.Catalog{
+		ID: "tgt-id", Name: "prod", Published: true, PublishedAt: &pubTime,
+	}, nil)
+	catRepo.On("UpdateName", ctx, "tgt-id", "prod-archive").Return(nil)
+	catRepo.On("UpdateName", ctx, "src-id", "prod").Return(nil)
+	catRepo.On("UpdatePublished", ctx, "src-id", true, mock.AnythingOfType("*time.Time")).Return(nil)
+	catRepo.On("UpdatePublished", ctx, "tgt-id", false, (*time.Time)(nil)).Return(fmt.Errorf("unpublish error"))
+
+	_, err := svc.ReplaceCatalog(ctx, "staging", "prod", "prod-archive")
+	assert.Error(t, err)
+}
+
+// ReplaceCatalog: nil txManager error fallback (line 500)
+func TestReplaceCatalog_NilTxManager_Error(t *testing.T) {
+	catRepo := new(mocks.MockCatalogRepo)
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	iavRepo := new(mocks.MockInstanceAttributeValueRepo)
+	linkRepo := new(mocks.MockAssociationLinkRepo)
+	svc := operational.NewCatalogService(catRepo, cvRepo, instRepo, nil, "", operational.WithCopyDeps(iavRepo, linkRepo))
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "staging").Return(&models.Catalog{
+		ID: "src-id", Name: "staging", ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	catRepo.On("GetByName", ctx, "prod").Return(&models.Catalog{
+		ID: "tgt-id", Name: "prod",
+	}, nil)
+	catRepo.On("UpdateName", ctx, "tgt-id", "prod-archive").Return(nil)
+	catRepo.On("UpdateName", ctx, "src-id", "prod").Return(fmt.Errorf("step2 error"))
+
+	_, err := svc.ReplaceCatalog(ctx, "staging", "prod", "prod-archive")
+	assert.Error(t, err)
+}
+
 // Handler: ListCatalogs error propagates
 func TestCatalogHandler_List_ServiceError(t *testing.T) {
 	// This is tested via the handler test file but adding explicit service error coverage

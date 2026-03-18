@@ -11,6 +11,19 @@ import (
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/repository"
 )
 
+// reservedEntityTypeNames are names that would shadow operational API path segments.
+var reservedEntityTypeNames = map[string]bool{
+	"links":         true,
+	"references":    true,
+	"referenced-by": true,
+	"copy":          true,
+	"replace":       true,
+	"tree":          true,
+	"validate":      true,
+	"publish":       true,
+	"unpublish":     true,
+}
+
 type EntityTypeService struct {
 	etRepo    repository.EntityTypeRepository
 	etvRepo   repository.EntityTypeVersionRepository
@@ -57,6 +70,9 @@ type RenameResult struct {
 func (s *EntityTypeService) CreateEntityType(ctx context.Context, name, description string) (*models.EntityType, *models.EntityTypeVersion, error) {
 	if name == "" {
 		return nil, nil, domainerrors.NewValidation("name is required")
+	}
+	if reservedEntityTypeNames[name] {
+		return nil, nil, domainerrors.NewValidation("entity type name '" + name + "' is reserved and cannot be used")
 	}
 
 	now := time.Now()
@@ -140,6 +156,9 @@ func (s *EntityTypeService) UpdateEntityType(ctx context.Context, id, descriptio
 func (s *EntityTypeService) RenameEntityType(ctx context.Context, id, newName string, deepCopyAllowed bool) (*RenameResult, error) {
 	if newName == "" {
 		return nil, domainerrors.NewValidation("name is required")
+	}
+	if reservedEntityTypeNames[newName] {
+		return nil, domainerrors.NewValidation("entity type name '" + newName + "' is reserved and cannot be used")
 	}
 
 	// Check name uniqueness

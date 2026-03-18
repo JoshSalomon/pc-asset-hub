@@ -254,18 +254,18 @@ func (r *AssetHubReconciler) reconcileRoute(ctx context.Context, cr *v1alpha1.As
 	route.SetNamespace(cr.Namespace)
 	route.SetLabels(map[string]string{"app.kubernetes.io/managed-by": "assethub-operator"})
 
-	spec := map[string]interface{}{
+	spec := map[string]any{
 		"host": rs.Hostname,
-		"to": map[string]interface{}{
+		"to": map[string]any{
 			"kind": "Service",
 			"name": rs.ServiceName,
 		},
-		"port": map[string]interface{}{
+		"port": map[string]any{
 			"targetPort": int64(rs.ServicePort),
 		},
 	}
 	if rs.TLS {
-		spec["tls"] = map[string]interface{}{
+		spec["tls"] = map[string]any{
 			"termination": "edge",
 		}
 	}

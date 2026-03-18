@@ -13,10 +13,10 @@ h() { echo ""; echo "=== $1 ==="; }
 
 cleanup() {
   h "Cleanup"
+  # Order matters: catalogs first (they reference CVs), then CVs (they pin ETVs), then ETs
   for name in source-cat target-cat copy-cat staging-cat prod-cat prod-cat-archive replace-src replace-tgt replace-archive; do
     curl -s -o /dev/null "$API/api/data/v1/catalogs/$name" -X DELETE -H 'X-User-Role: SuperAdmin' 2>/dev/null || true
   done
-  # Clean up CV and entity type
   if [ -n "${CV_ID:-}" ]; then
     curl -s -o /dev/null "$API/api/meta/v1/catalog-versions/$CV_ID" -X DELETE -H 'X-User-Role: Admin' 2>/dev/null || true
   fi

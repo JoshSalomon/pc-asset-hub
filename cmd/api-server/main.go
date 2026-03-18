@@ -88,7 +88,6 @@ func main() {
 	catalogRepo := gormrepo.NewCatalogGormRepo(db)
 	cvSvc := svcmeta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, crManager, watchNamespace, cfg.AllowedStages(), etRepo, etvRepo, catalogRepo)
 	enumValRepo := gormrepo.NewEnumValueGormRepo(db)
-	instSvc := svcop.NewEntityInstanceService(instRepo, iavRepo, attrRepo, cvRepo, linkRepo)
 	txManager := gormrepo.NewGormTransactionManager(db)
 	catalogSvc := svcop.NewCatalogService(catalogRepo, cvRepo, instRepo, catalogCRManager, watchNamespace, svcop.WithCopyDeps(iavRepo, linkRepo), svcop.WithTransactionManager(txManager))
 	instanceSvc := svcop.NewInstanceService(instRepo, iavRepo, catalogRepo, cvRepo, pinRepo, attrRepo, etvRepo, etRepo, enumValRepo, assocRepo, linkRepo)
@@ -100,7 +99,6 @@ func main() {
 	enumHandler := apimeta.NewEnumHandler(enumSvc)
 	vhHandler := apimeta.NewVersionHistoryHandler(vhSvc)
 	cvHandler := apimeta.NewCatalogVersionHandler(cvSvc)
-	opHandler := apiop.NewHandler(instSvc)
 	catalogAccessChecker := &middleware.HeaderCatalogAccessChecker{}
 	validationSvc := svcop.NewCatalogValidationService(catalogRepo, instRepo, iavRepo, pinRepo, etvRepo, attrRepo, assocRepo, enumValRepo, linkRepo, etRepo)
 	catalogHandler := apiop.NewCatalogHandler(catalogSvc, validationSvc, catalogAccessChecker)
@@ -143,11 +141,6 @@ func main() {
 	instanceGroup.Use(middleware.RequireCatalogAccess(catalogAccessChecker))
 	requireWriteAccess := middleware.RequireWriteAccess(catalogSvc)
 	apiop.RegisterInstanceRoutes(instanceGroup, instanceHandler, requireRW, requireWriteAccess)
-
-	// Operational API — legacy instance routes (to be replaced)
-	opGroup := e.Group("/api/data/v1/:catalog-version")
-	opGroup.Use(middleware.RBACMiddleware(rbacProvider))
-	apiop.RegisterRoutes(opGroup, opHandler)
 
 	// Graceful shutdown
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

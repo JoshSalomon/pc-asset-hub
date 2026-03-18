@@ -2,6 +2,7 @@ package operational
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/labstack/echo/v4"
 
@@ -48,6 +49,20 @@ func (h *CatalogHandler) ListCatalogs(c echo.Context) error {
 	params := models.ListParams{
 		Limit:   20,
 		Filters: make(map[string]string),
+	}
+
+	if limitStr := c.QueryParam("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			if l > 100 {
+				l = 100
+			}
+			params.Limit = l
+		}
+	}
+	if offsetStr := c.QueryParam("offset"); offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
+			params.Offset = o
+		}
 	}
 
 	if cvID := c.QueryParam("catalog_version_id"); cvID != "" {

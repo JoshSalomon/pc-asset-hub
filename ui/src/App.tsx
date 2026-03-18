@@ -38,7 +38,7 @@ import {
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
 import { api, setAuthRole } from './api/client'
 import type { EntityType, CatalogVersion, ContainmentTreeNode, Role, VersionSnapshot } from './types'
-import EntityTypeDiagram, { type DiagramEntityType } from './components/EntityTypeDiagram'
+import EntityTypeDiagram, { type DiagramEntityType, type EdgeClickData } from './components/EntityTypeDiagram'
 import EditAssociationModal from './components/EditAssociationModal'
 import EntityTypeDetailPage from './pages/meta/EntityTypeDetailPage'
 import EnumListPage from './pages/meta/EnumListPage'
@@ -212,7 +212,7 @@ function App() {
     sourceName: '', targetName: '',
   })
 
-  const handleDiagramEdgeClick = (edgeData: { name: string; assocType: string; sourceRole: string; targetRole: string; sourceCardinality: string; targetCardinality: string; sourceEntityTypeId: string; sourceEntityTypeName: string; targetEntityTypeName: string }) => {
+  const handleDiagramEdgeClick = (edgeData: EdgeClickData) => {
     setDiagramEditSourceId(edgeData.sourceEntityTypeId)
     setDiagramEditData({
       name: edgeData.name,

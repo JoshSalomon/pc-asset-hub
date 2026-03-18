@@ -120,6 +120,9 @@ func (m *MockAssociationRepo) GetByID(ctx context.Context, id string) (*models.A
 }
 func (m *MockAssociationRepo) ListByVersion(ctx context.Context, entityTypeVersionID string) ([]*models.Association, error) {
 	args := m.Called(ctx, entityTypeVersionID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]*models.Association), args.Error(1)
 }
 func (m *MockAssociationRepo) ListByTargetEntityType(ctx context.Context, targetEntityTypeID string) ([]*models.Association, error) {
@@ -213,6 +216,9 @@ func (m *MockCatalogVersionRepo) GetByLabel(ctx context.Context, label string) (
 }
 func (m *MockCatalogVersionRepo) List(ctx context.Context, params models.ListParams) ([]*models.CatalogVersion, int, error) {
 	args := m.Called(ctx, params)
+	if args.Get(0) == nil {
+		return nil, 0, args.Error(2)
+	}
 	return args.Get(0).([]*models.CatalogVersion), args.Int(1), args.Error(2)
 }
 func (m *MockCatalogVersionRepo) UpdateLifecycle(ctx context.Context, id string, stage models.LifecycleStage) error {

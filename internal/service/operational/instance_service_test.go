@@ -2,6 +2,7 @@ package operational_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -89,7 +90,7 @@ func TestT11_11_CreateInstance(t *testing.T) {
 	}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
-	detail, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "my-instance", "desc", map[string]interface{}{
+	detail, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "my-instance", "desc", map[string]any{
 		"hostname": "myhost",
 	})
 	require.NoError(t, err)
@@ -147,7 +148,7 @@ func TestT11_14_StringAttribute(t *testing.T) {
 	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
-	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]interface{}{
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
 		"hostname": "myhost",
 	})
 	require.NoError(t, err)
@@ -168,7 +169,7 @@ func TestT11_15_NumberAttribute(t *testing.T) {
 	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
-	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]interface{}{
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
 		"port": float64(8080),
 	})
 	require.NoError(t, err)
@@ -192,7 +193,7 @@ func TestT11_16_ValidEnumValue(t *testing.T) {
 	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
-	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]interface{}{
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
 		"status": "active",
 	})
 	require.NoError(t, err)
@@ -210,7 +211,7 @@ func TestT11_17_InvalidEnumValue(t *testing.T) {
 	}, nil)
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
 
-	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]interface{}{
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
 		"status": "bogus",
 	})
 	assert.Error(t, err)
@@ -226,7 +227,7 @@ func TestT11_18_NonParseableNumber(t *testing.T) {
 
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
 
-	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]interface{}{
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
 		"port": "not-a-number",
 	})
 	assert.Error(t, err)
@@ -294,7 +295,7 @@ func TestT11_22_UnknownAttribute(t *testing.T) {
 
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
 
-	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]interface{}{
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
 		"nonexistent-attr": "value",
 	})
 	assert.Error(t, err)
@@ -319,7 +320,7 @@ func TestT11_23_UpdateAttributes(t *testing.T) {
 	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
-	detail, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "inst1", 1, nil, nil, map[string]interface{}{
+	detail, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "inst1", 1, nil, nil, map[string]any{
 		"hostname": "newhost",
 	})
 	require.NoError(t, err)
@@ -333,7 +334,7 @@ func TestT11_24_VersionMismatch(t *testing.T) {
 	s.mockPinResolution(ctx)
 
 	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
-		ID: "inst1", Version: 3,
+		ID: "inst1", CatalogID: "cat1", Version: 3,
 	}, nil)
 
 	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "inst1", 1, nil, nil, nil)
@@ -373,10 +374,10 @@ func TestT11_26_InvalidAttrType(t *testing.T) {
 	s.mockAttributes(ctx)
 
 	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
-		ID: "inst1", Version: 1,
+		ID: "inst1", CatalogID: "cat1", Version: 1,
 	}, nil)
 
-	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "inst1", 1, nil, nil, map[string]interface{}{
+	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "inst1", 1, nil, nil, map[string]any{
 		"port": "not-a-number",
 	})
 	assert.Error(t, err)
@@ -466,6 +467,9 @@ func TestT11_31_CascadeDelete(t *testing.T) {
 	ctx := context.Background()
 	s.mockPinResolution(ctx)
 
+	s.instRepo.On("GetByID", ctx, "parent1").Return(&models.EntityInstance{
+		ID: "parent1", CatalogID: "cat1",
+	}, nil)
 	s.instRepo.On("ListByParent", ctx, "parent1", mock.Anything).Return([]*models.EntityInstance{
 		{ID: "child1"},
 	}, 1, nil)
@@ -535,6 +539,9 @@ func TestT11_34_DeleteResetsDraft(t *testing.T) {
 	ctx := context.Background()
 	s.mockPinResolution(ctx)
 
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", CatalogID: "cat1",
+	}, nil)
 	s.instRepo.On("ListByParent", ctx, "inst1", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
 	s.linkRepo.On("DeleteByInstance", ctx, "inst1").Return(nil)
 	s.instRepo.On("SoftDelete", ctx, "inst1").Return(nil)
@@ -643,7 +650,7 @@ func TestCov_ValidateAttrs_AttrRepoError(t *testing.T) {
 	s.attrRepo.On("ListByVersion", ctx, "etv1").Return(nil, domainerrors.NewValidation("db error"))
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
 
-	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]interface{}{"x": "y"})
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{"x": "y"})
 	assert.Error(t, err)
 }
 
@@ -656,7 +663,7 @@ func TestCov_ValidateAttrs_EnumRepoError(t *testing.T) {
 	s.enumValRepo.On("ListByEnum", ctx, "enum1").Return(nil, domainerrors.NewValidation("db error"))
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
 
-	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]interface{}{"status": "active"})
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{"status": "active"})
 	assert.Error(t, err)
 }
 
@@ -669,7 +676,7 @@ func TestCov_Create_SetValuesError(t *testing.T) {
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
 	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(domainerrors.NewValidation("db error"))
 
-	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]interface{}{"hostname": "h"})
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{"hostname": "h"})
 	assert.Error(t, err)
 }
 
@@ -788,7 +795,7 @@ func TestCov_UpdateInstance_ValidateError(t *testing.T) {
 	s.attrRepo.On("ListByVersion", ctx, "etv1").Return(nil, domainerrors.NewValidation("db error"))
 	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", Version: 1}, nil)
 
-	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "i1", 1, nil, nil, map[string]interface{}{"x": "y"})
+	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "i1", 1, nil, nil, map[string]any{"x": "y"})
 	assert.Error(t, err)
 	// Update should NOT be called — validation failed before version increment
 	s.instRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
@@ -805,7 +812,7 @@ func TestCov_UpdateInstance_SetValuesError(t *testing.T) {
 	s.iavRepo.On("GetValuesForVersion", ctx, "i1", 1).Return([]*models.InstanceAttributeValue{}, nil)
 	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(domainerrors.NewValidation("db error"))
 
-	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "i1", 1, nil, nil, map[string]interface{}{"hostname": "h"})
+	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "i1", 1, nil, nil, map[string]any{"hostname": "h"})
 	assert.Error(t, err)
 }
 
@@ -825,7 +832,7 @@ func TestCov_UpdateInstance_ResolveAttrsError(t *testing.T) {
 	// resolveAttributeValues calls GetCurrentValues — make it fail
 	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return(nil, domainerrors.NewValidation("db error"))
 
-	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "i1", 1, nil, nil, map[string]interface{}{"hostname": "h"})
+	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "i1", 1, nil, nil, map[string]any{"hostname": "h"})
 	assert.Error(t, err)
 }
 
@@ -844,6 +851,7 @@ func TestCov_DeleteInstance_CascadeError(t *testing.T) {
 	s := setupInstanceService()
 	ctx := context.Background()
 	s.mockPinResolution(ctx)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", CatalogID: "cat1"}, nil)
 	s.instRepo.On("ListByParent", ctx, "i1", mock.Anything).Return(nil, 0, domainerrors.NewValidation("db error"))
 
 	err := s.svc.DeleteInstance(ctx, "my-catalog", "model", "i1")
@@ -855,6 +863,7 @@ func TestCov_CascadeDelete_RecursiveError(t *testing.T) {
 	s := setupInstanceService()
 	ctx := context.Background()
 	s.mockPinResolution(ctx)
+	s.instRepo.On("GetByID", ctx, "parent").Return(&models.EntityInstance{ID: "parent", CatalogID: "cat1"}, nil)
 	s.instRepo.On("ListByParent", ctx, "parent", mock.Anything).Return([]*models.EntityInstance{
 		{ID: "child"},
 	}, 1, nil)
@@ -899,7 +908,7 @@ func TestCov_ValidateAttrs_IntNumber(t *testing.T) {
 	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
-	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]interface{}{
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
 		"port": int(42), // int, not float64
 	})
 	require.NoError(t, err)
@@ -913,7 +922,7 @@ func TestCov_ValidateAttrs_DefaultNumberType(t *testing.T) {
 	s.mockAttributes(ctx)
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
 
-	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]interface{}{
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
 		"port": true, // bool — triggers default branch
 	})
 	assert.Error(t, err)
@@ -1250,7 +1259,7 @@ func TestT12_13_ContainedInstance_WithAttributes(t *testing.T) {
 	}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
-	detail, err := s.svc.CreateContainedInstance(ctx, "my-catalog", "server", "parent1", "tool", "my-tool", "", map[string]interface{}{
+	detail, err := s.svc.CreateContainedInstance(ctx, "my-catalog", "server", "parent1", "tool", "my-tool", "", map[string]any{
 		"description": "a useful tool",
 	})
 	require.NoError(t, err)
@@ -1645,7 +1654,7 @@ func TestCov_UpdateInstance_CarryForward(t *testing.T) {
 	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
-	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "i1", 1, nil, nil, map[string]interface{}{
+	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "i1", 1, nil, nil, map[string]any{
 		"hostname": "new-host",
 	})
 	require.NoError(t, err)
@@ -1850,6 +1859,7 @@ func TestCov_CascadeDelete_LinkDeleteError(t *testing.T) {
 	s := setupInstanceService()
 	ctx := context.Background()
 	s.mockPinResolution(ctx)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", CatalogID: "cat1"}, nil)
 	s.instRepo.On("ListByParent", ctx, "i1", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
 	s.linkRepo.On("DeleteByInstance", ctx, "i1").Return(domainerrors.NewValidation("db error"))
 	err := s.svc.DeleteInstance(ctx, "my-catalog", "model", "i1")
@@ -1903,7 +1913,7 @@ func TestCov_CreateContained_AttrValidationError(t *testing.T) {
 	// Attribute validation will fail — unknown attribute
 	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
-	_, err := s.svc.CreateContainedInstance(ctx, "cat", "server", "p1", "tool", "child", "", map[string]interface{}{"bad": "val"})
+	_, err := s.svc.CreateContainedInstance(ctx, "cat", "server", "p1", "tool", "child", "", map[string]any{"bad": "val"})
 	assert.Error(t, err)
 	assert.True(t, domainerrors.IsValidation(err))
 }
@@ -1929,7 +1939,7 @@ func TestCov_CreateContained_SetValuesError(t *testing.T) {
 	}, nil)
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
 	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(domainerrors.NewValidation("db error"))
-	_, err := s.svc.CreateContainedInstance(ctx, "cat", "server", "p1", "tool", "child", "", map[string]interface{}{"desc": "val"})
+	_, err := s.svc.CreateContainedInstance(ctx, "cat", "server", "p1", "tool", "child", "", map[string]any{"desc": "val"})
 	assert.Error(t, err)
 }
 
@@ -2162,7 +2172,7 @@ func TestBug_EmptyEnumValueSkipped(t *testing.T) {
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	// Pass empty string for enum attribute — should succeed (skip it)
-	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]interface{}{
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
 		"hostname": "myhost",
 		"status":   "", // empty enum — should be skipped, not validated
 	})
@@ -2418,7 +2428,7 @@ func TestCov_ValidateAttrs_StringAsNumber(t *testing.T) {
 	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
-	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]interface{}{
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
 		"port": "42.5", // string that parses as number
 	})
 	require.NoError(t, err)
@@ -2505,6 +2515,7 @@ func TestQR_H3_CascadeDeleteCleansLinks(t *testing.T) {
 	ctx := context.Background()
 	s.mockPinResolution(ctx)
 
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{ID: "inst1", CatalogID: "cat1"}, nil)
 	s.instRepo.On("ListByParent", ctx, "inst1", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
 	s.linkRepo.On("DeleteByInstance", ctx, "inst1").Return(nil)
 	s.instRepo.On("SoftDelete", ctx, "inst1").Return(nil)
@@ -2951,7 +2962,7 @@ func TestUpdateInstance_ClearAttributeValue(t *testing.T) {
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	// Send empty string to clear hostname
-	detail, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "inst1", 1, nil, nil, map[string]interface{}{
+	detail, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "inst1", 1, nil, nil, map[string]any{
 		"hostname": "",
 	})
 	require.NoError(t, err)
@@ -2962,4 +2973,210 @@ func TestUpdateInstance_ClearAttributeValue(t *testing.T) {
 			assert.Nil(t, av.Value, "hostname should have been cleared, not carried forward")
 		}
 	}
+}
+
+// TD-20: Empty name validation
+func TestCreateInstance_EmptyNameRejected(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "", "", nil)
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "name is required")
+}
+
+func TestCreateInstance_WhitespaceOnlyNameRejected(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "   ", "", nil)
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+func TestCreateContainedInstance_EmptyNameRejected(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	_, err := s.svc.CreateContainedInstance(ctx, "my-catalog", "server", "p1", "tool", "", "", nil)
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "name is required")
+}
+
+// TD-30: Catalog ownership check on instance read/update/delete
+func TestGetInstance_WrongCatalogReturnsNotFound(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{ID: "cat1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "model").Return(&models.EntityType{ID: "et1", Name: "model"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1"}, nil)
+	// Instance belongs to a different catalog
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{
+		ID: "i1", CatalogID: "other-catalog-id", EntityTypeID: "et1",
+	}, nil)
+
+	_, err := s.svc.GetInstance(ctx, "my-catalog", "model", "i1")
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestGetInstance_ResolveAttrError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{
+		ID: "i1", CatalogID: "cat1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return(nil, fmt.Errorf("db error"))
+
+	_, err := s.svc.GetInstance(ctx, "my-catalog", "model", "i1")
+	assert.Error(t, err)
+}
+
+func TestDeleteInstance_GetByIDError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+
+	s.instRepo.On("GetByID", ctx, "i1").Return(nil, domainerrors.NewNotFound("EntityInstance", "i1"))
+
+	err := s.svc.DeleteInstance(ctx, "my-catalog", "model", "i1")
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestDeleteInstance_WrongCatalogReturnsNotFound(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{ID: "cat1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "model").Return(&models.EntityType{ID: "et1", Name: "model"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1"}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{
+		ID: "i1", CatalogID: "other-catalog-id", EntityTypeID: "et1",
+	}, nil)
+
+	err := s.svc.DeleteInstance(ctx, "my-catalog", "model", "i1")
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// === Coverage: remaining error paths in service/operational ===
+
+// GetInstance: resolveParentChain error (line 317)
+func TestGetInstance_ParentChainError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+	s.mockAttributes(ctx)
+
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{
+		ID: "i1", CatalogID: "cat1", EntityTypeID: "et1", Version: 1,
+		ParentInstanceID: "parent1",
+	}, nil)
+	s.iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{}, nil)
+	// Parent lookup fails
+	s.instRepo.On("GetByID", ctx, "parent1").Return(nil, fmt.Errorf("parent not found"))
+
+	_, err := s.svc.GetInstance(ctx, "my-catalog", "model", "i1")
+	assert.Error(t, err)
+}
+
+// UpdateInstance: instRepo.Update error (line 442)
+func TestUpdateInstance_RepoUpdateError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{
+		ID: "i1", CatalogID: "cat1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "i1", 1).Return([]*models.InstanceAttributeValue{}, nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(fmt.Errorf("update failed"))
+
+	newName := "new-name"
+	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "i1", 1, &newName, nil, nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "update failed")
+}
+
+// UpdateInstance: iavRepo.SetValues error (line 447)
+func TestUpdateInstance_SetValuesError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+	s.mockAttributes(ctx)
+
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{
+		ID: "i1", CatalogID: "cat1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "i1", 1).Return([]*models.InstanceAttributeValue{}, nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(fmt.Errorf("set values failed"))
+
+	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "i1", 1, nil, nil, map[string]any{"hostname": "h"})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "set values failed")
+}
+
+// UpdateInstance: GetValuesForVersion error (line 415)
+func TestUpdateInstance_GetPrevValuesError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{
+		ID: "i1", CatalogID: "cat1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "i1", 1).Return(nil, fmt.Errorf("prev values error"))
+
+	newName := "x"
+	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "i1", 1, &newName, nil, nil)
+	assert.Error(t, err)
+}
+
+// GetContainmentTree: ListByCatalog error (line 877)
+func TestGetContainmentTree_ListError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{ID: "cat1"}, nil)
+	s.instRepo.On("ListByCatalog", ctx, "cat1").Return(nil, fmt.Errorf("list error"))
+
+	_, err := s.svc.GetContainmentTree(ctx, "my-catalog")
+	assert.Error(t, err)
+}
+
+// resolveParentChain: GetByID error during walk (line 940) and ET name fallback (line 949)
+func TestGetInstance_ParentChainETNameFallback(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+	s.mockAttributes(ctx)
+
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{
+		ID: "i1", CatalogID: "cat1", EntityTypeID: "et1", Version: 1,
+		ParentInstanceID: "parent1",
+	}, nil)
+	s.iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{}, nil)
+	s.instRepo.On("GetByID", ctx, "parent1").Return(&models.EntityInstance{
+		ID: "parent1", CatalogID: "cat1", EntityTypeID: "et-unknown", Version: 1,
+	}, nil)
+	// ET lookup fails — should fallback to EntityTypeID
+	s.etRepo.On("GetByID", ctx, "et-unknown").Return(nil, fmt.Errorf("et not found"))
+
+	detail, err := s.svc.GetInstance(ctx, "my-catalog", "model", "i1")
+	require.NoError(t, err)
+	assert.Len(t, detail.ParentChain, 1)
+	assert.Equal(t, "et-unknown", detail.ParentChain[0].EntityTypeName) // fallback to ID
 }

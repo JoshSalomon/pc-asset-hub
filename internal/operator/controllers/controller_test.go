@@ -630,3 +630,72 @@ func TestCatalogCR_NoCatalogs(t *testing.T) {
 	})
 	require.NoError(t, err)
 }
+
+// CR being deleted — DeletionTimestamp set (line 46-48)
+func TestReconcile_CRBeingDeleted(t *testing.T) {
+	s := testScheme()
+	cr := newTestCR(1, "development")
+	now := metav1.Now()
+	cr.DeletionTimestamp = &now
+	cr.Finalizers = []string{"test-finalizer"} // Required for fake client to accept DeletionTimestamp
+
+	cl := fake.NewClientBuilder().WithScheme(s).
+		WithObjects(cr).
+		Build()
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: s}
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, ctrl.Result{}, result)
+}
+
+// CR not found — returns no error (line 38-40)
+func TestReconcile_CRNotFound(t *testing.T) {
+	s := testScheme()
+	cl := fake.NewClientBuilder().WithScheme(s).Build()
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: s}
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "nonexistent", Namespace: "default"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, ctrl.Result{}, result)
+}
+
+// CatalogVersion with existing owner ref — hasOwnerRef returns true, skips set (lines 376-377)
+func TestReconcile_CVWithExistingOwnerRef(t *testing.T) {
+	s := testScheme()
+	cr := newTestCR(1, "development")
+	cr.UID = "test-uid-123"
+
+	cv := &v1alpha1.CatalogVersion{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cv",
+			Namespace: "default",
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "assethub.project-catalyst.io/v1alpha1",
+					Kind:       "AssetHub",
+					Name:       "test-hub",
+					UID:        "test-uid-123",
+				},
+			},
+		},
+		Spec: v1alpha1.CatalogVersionSpec{
+			LifecycleStage: "testing",
+		},
+	}
+
+	cl := fake.NewClientBuilder().WithScheme(s).
+		WithObjects(cr, cv).
+		WithStatusSubresource(cr, cv).
+		Build()
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: s}
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	require.NoError(t, err)
+}

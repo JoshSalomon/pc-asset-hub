@@ -45,10 +45,22 @@ export interface DiagramEntityType {
   associations: SnapshotAssociation[]
 }
 
+export interface EdgeClickData {
+  name: string
+  assocType: string
+  sourceRole: string
+  targetRole: string
+  sourceCardinality: string
+  targetCardinality: string
+  sourceEntityTypeId: string
+  sourceEntityTypeName: string
+  targetEntityTypeName: string
+}
+
 interface EntityTypeDiagramProps {
   entityTypes: DiagramEntityType[]
   onNodeDoubleClick?: (entityTypeId: string) => void
-  onEdgeClick?: (edgeData: { name: string; assocType: string; sourceRole: string; targetRole: string; sourceCardinality: string; targetCardinality: string; sourceEntityTypeId: string; sourceEntityTypeName: string; targetEntityTypeName: string }) => void
+  onEdgeClick?: (edgeData: EdgeClickData) => void
 }
 
 // ─── Node Component ──────────────────────────────────────────────────
@@ -80,7 +92,7 @@ const EntityTypeNode: React.FunctionComponent<{
           return (
             <text key={attr.id || i} x={8} y={headerHeight + 14 + i * 14}
               fontSize={10} fill="#6a6e73" fontFamily="var(--pf-t--global--font--family--mono, monospace)">
-              {attr.name} : {typeName}
+              {attr.required ? '* ' : ''}{attr.name} : {typeName}
             </text>
           )
         })}

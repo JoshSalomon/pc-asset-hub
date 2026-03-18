@@ -168,19 +168,25 @@ func (s *CatalogService) Delete(ctx context.Context, name string) error {
 		return err
 	}
 
-	// Clean up Catalog CR if published
+	// Clean up Catalog CR if published (K8s operation, outside transaction)
 	if catalog.Published && s.crManager != nil {
 		if err := s.crManager.Delete(ctx, catalog.Name, s.namespace); err != nil {
 			return err
 		}
 	}
 
-	// Cascade delete all instances in this catalog
-	if err := s.instRepo.DeleteByCatalogID(ctx, catalog.ID); err != nil {
-		return err
+	// Cascade delete instances + catalog in a transaction for atomicity
+	doDelete := func(txCtx context.Context) error {
+		if err := s.instRepo.DeleteByCatalogID(txCtx, catalog.ID); err != nil {
+			return err
+		}
+		return s.catalogRepo.Delete(txCtx, catalog.ID)
 	}
 
-	return s.catalogRepo.Delete(ctx, catalog.ID)
+	if s.txManager != nil {
+		return s.txManager.RunInTransaction(ctx, doDelete)
+	}
+	return doDelete(ctx)
 }
 
 // IsPublished checks if a catalog is published (implements CatalogPublishChecker for middleware).
