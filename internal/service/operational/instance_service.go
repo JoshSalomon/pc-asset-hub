@@ -112,7 +112,7 @@ type InstanceDetail struct {
 type AttributeValue struct {
 	Name  string      `json:"name"`
 	Type  string      `json:"type"`
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // mapAttributeValues maps raw InstanceAttributeValues to resolved AttributeValues using schema attributes.
@@ -163,7 +163,7 @@ func (s *InstanceService) resolveAttributeValues(ctx context.Context, inst *mode
 // Returns the built IAV records and a set of attribute IDs that were explicitly
 // provided in the input (even if their value was empty/nil — used by UpdateInstance
 // to avoid carrying forward cleared values).
-func (s *InstanceService) validateAndBuildAttributeValues(ctx context.Context, etv *models.EntityTypeVersion, instanceID string, version int, attrInput map[string]interface{}) ([]*models.InstanceAttributeValue, map[string]bool, error) {
+func (s *InstanceService) validateAndBuildAttributeValues(ctx context.Context, etv *models.EntityTypeVersion, instanceID string, version int, attrInput map[string]any) ([]*models.InstanceAttributeValue, map[string]bool, error) {
 	attrs, err := s.attrRepo.ListByVersion(ctx, etv.ID)
 	if err != nil {
 		return nil, nil, err
@@ -241,7 +241,11 @@ func (s *InstanceService) validateAndBuildAttributeValues(ctx context.Context, e
 	return values, touchedAttrIDs, nil
 }
 
-func (s *InstanceService) CreateInstance(ctx context.Context, catalogName, entityTypeName, name, description string, attrInput map[string]interface{}) (*InstanceDetail, error) {
+func (s *InstanceService) CreateInstance(ctx context.Context, catalogName, entityTypeName, name, description string, attrInput map[string]any) (*InstanceDetail, error) {
+	if strings.TrimSpace(name) == "" {
+		return nil, domainerrors.NewValidation("instance name is required")
+	}
+
 	catalog, etv, err := s.resolveEntityType(ctx, catalogName, entityTypeName)
 	if err != nil {
 		return nil, err
@@ -287,7 +291,7 @@ func (s *InstanceService) CreateInstance(ctx context.Context, catalogName, entit
 }
 
 func (s *InstanceService) GetInstance(ctx context.Context, catalogName, entityTypeName, instanceID string) (*InstanceDetail, error) {
-	_, etv, err := s.resolveEntityType(ctx, catalogName, entityTypeName)
+	catalog, etv, err := s.resolveEntityType(ctx, catalogName, entityTypeName)
 	if err != nil {
 		return nil, err
 	}
@@ -295,6 +299,9 @@ func (s *InstanceService) GetInstance(ctx context.Context, catalogName, entityTy
 	inst, err := s.instRepo.GetByID(ctx, instanceID)
 	if err != nil {
 		return nil, err
+	}
+	if inst.CatalogID != catalog.ID {
+		return nil, domainerrors.NewNotFound("EntityInstance", instanceID)
 	}
 
 	avs, err := s.resolveAttributeValues(ctx, inst, etv)
@@ -372,7 +379,7 @@ func (s *InstanceService) ListInstances(ctx context.Context, catalogName, entity
 	return details, total, nil
 }
 
-func (s *InstanceService) UpdateInstance(ctx context.Context, catalogName, entityTypeName, instanceID string, currentVersion int, name, description *string, attrInput map[string]interface{}) (*InstanceDetail, error) {
+func (s *InstanceService) UpdateInstance(ctx context.Context, catalogName, entityTypeName, instanceID string, currentVersion int, name, description *string, attrInput map[string]any) (*InstanceDetail, error) {
 	catalog, etv, err := s.resolveEntityType(ctx, catalogName, entityTypeName)
 	if err != nil {
 		return nil, err
@@ -381,6 +388,9 @@ func (s *InstanceService) UpdateInstance(ctx context.Context, catalogName, entit
 	inst, err := s.instRepo.GetByID(ctx, instanceID)
 	if err != nil {
 		return nil, err
+	}
+	if inst.CatalogID != catalog.ID {
+		return nil, domainerrors.NewNotFound("EntityInstance", instanceID)
 	}
 
 	if inst.Version != currentVersion {
@@ -456,6 +466,15 @@ func (s *InstanceService) DeleteInstance(ctx context.Context, catalogName, entit
 		return err
 	}
 
+	// Verify instance belongs to this catalog
+	inst, err := s.instRepo.GetByID(ctx, instanceID)
+	if err != nil {
+		return err
+	}
+	if inst.CatalogID != catalog.ID {
+		return domainerrors.NewNotFound("EntityInstance", instanceID)
+	}
+
 	// Cascade delete children
 	if err := s.cascadeDelete(ctx, instanceID); err != nil {
 		return err
@@ -467,7 +486,11 @@ func (s *InstanceService) DeleteInstance(ctx context.Context, catalogName, entit
 	return nil
 }
 
-func (s *InstanceService) CreateContainedInstance(ctx context.Context, catalogName, parentType, parentID, childType, name, description string, attrInput map[string]interface{}) (*InstanceDetail, error) {
+func (s *InstanceService) CreateContainedInstance(ctx context.Context, catalogName, parentType, parentID, childType, name, description string, attrInput map[string]any) (*InstanceDetail, error) {
+	if strings.TrimSpace(name) == "" {
+		return nil, domainerrors.NewValidation("instance name is required")
+	}
+
 	// Resolve parent entity type
 	catalog, parentETV, err := s.resolveEntityType(ctx, catalogName, parentType)
 	if err != nil {

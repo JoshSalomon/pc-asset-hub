@@ -104,7 +104,7 @@ func (r *CatalogGormRepo) Delete(ctx context.Context, id string) error {
 func (r *CatalogGormRepo) UpdateValidationStatus(ctx context.Context, id string, status models.ValidationStatus) error {
 	result := getDB(ctx, r.db).Model(&gormmodels.Catalog{}).
 		Where("id = ?", id).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"validation_status": string(status),
 			"updated_at":        time.Now(),
 		})
@@ -120,7 +120,7 @@ func (r *CatalogGormRepo) UpdateValidationStatus(ctx context.Context, id string,
 func (r *CatalogGormRepo) UpdatePublished(ctx context.Context, id string, published bool, publishedAt *time.Time) error {
 	result := getDB(ctx, r.db).Model(&gormmodels.Catalog{}).
 		Where("id = ?", id).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"published":    published,
 			"published_at": publishedAt,
 			"updated_at":   time.Now(),
@@ -137,7 +137,7 @@ func (r *CatalogGormRepo) UpdatePublished(ctx context.Context, id string, publis
 func (r *CatalogGormRepo) UpdateName(ctx context.Context, id string, newName string) error {
 	result := getDB(ctx, r.db).Model(&gormmodels.Catalog{}).
 		Where("id = ?", id).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"name":       newName,
 			"updated_at": time.Now(),
 		})

@@ -396,3 +396,25 @@ func TestCatalogStatus_SpecChanged_BumpsDataVersion(t *testing.T) {
 	assert.Equal(t, 2, status.DataVersion)
 	assert.Equal(t, int64(2), status.ObservedGeneration)
 }
+
+// ReconcileCatalogVersionStatus: invalid lifecycle stage (line 324)
+func TestReconcileCatalogVersionStatus_InvalidStage(t *testing.T) {
+	result := controllers.ReconcileCatalogVersionStatus("invalid-stage")
+	assert.False(t, result.Ready)
+	assert.Contains(t, result.Message, "unexpected")
+}
+
+// ReconcilePromotion: nil entity type in list (line 226-235)
+func TestReconcilePromotion_NilEntityType(t *testing.T) {
+	result, err := controllers.ReconcilePromotion([]*models.EntityType{nil}, nil)
+	assert.Error(t, err)
+	assert.False(t, result.Status.Ready)
+	assert.Contains(t, result.Status.Message, "nil entity type")
+}
+
+// ReconcilePromotion: empty list produces no error (line 239 not triggered)
+func TestReconcilePromotion_EmptyList(t *testing.T) {
+	result, err := controllers.ReconcilePromotion([]*models.EntityType{}, nil)
+	require.NoError(t, err)
+	assert.True(t, result.Status.Ready)
+}

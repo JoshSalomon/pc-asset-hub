@@ -150,6 +150,33 @@ func TestT10_33_ListCatalogs(t *testing.T) {
 	assert.Equal(t, "release-1", first["catalog_version_label"])
 }
 
+// TD-17: Pagination query params
+func TestListCatalogs_WithPagination(t *testing.T) {
+	e, catRepo, cvRepo, _ := setupCatalogServer()
+
+	catRepo.On("List", mock.Anything, mock.MatchedBy(func(p models.ListParams) bool {
+		return p.Limit == 5 && p.Offset == 10
+	})).Return([]*models.Catalog{
+		{ID: "c1", Name: "cat-a", CatalogVersionID: "cv1", ValidationStatus: models.ValidationStatusDraft},
+	}, 20, nil)
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1"}, nil)
+
+	rec := doCatalogRequest(e, http.MethodGet, "/api/data/v1/catalogs?limit=5&offset=10", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestListCatalogs_LimitCappedAt100(t *testing.T) {
+	e, catRepo, cvRepo, _ := setupCatalogServer()
+
+	catRepo.On("List", mock.Anything, mock.MatchedBy(func(p models.ListParams) bool {
+		return p.Limit == 100 // capped from 999
+	})).Return([]*models.Catalog{}, 0, nil)
+	_ = cvRepo
+
+	rec := doCatalogRequest(e, http.MethodGet, "/api/data/v1/catalogs?limit=999", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
 // T-10.34: GET /api/data/v1/catalogs?catalog_version_id=X
 func TestT10_34_ListFilterByCVID(t *testing.T) {
 	e, catRepo, cvRepo, _ := setupCatalogServer()
@@ -481,7 +508,7 @@ func TestT16_38_CatalogResponseHasPublishedFields(t *testing.T) {
 	rec := doCatalogRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog", "", apimw.RoleAdmin)
 	assert.Equal(t, http.StatusOK, rec.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, true, resp["published"])
 	assert.NotNil(t, resp["published_at"])

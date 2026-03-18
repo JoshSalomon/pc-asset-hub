@@ -90,10 +90,10 @@ func TestT15_33_ValidateValidCatalog(t *testing.T) {
 	rec := doValidateRequest(e, "test-catalog", apimw.RoleRW)
 	assert.Equal(t, http.StatusOK, rec.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, "valid", resp["status"])
-	errors, ok := resp["errors"].([]interface{})
+	errors, ok := resp["errors"].([]any)
 	require.True(t, ok)
 	assert.Empty(t, errors)
 }
@@ -125,10 +125,10 @@ func TestT15_34_ValidateInvalidCatalog(t *testing.T) {
 	rec := doValidateRequest(e, "test-catalog", apimw.RoleRW)
 	assert.Equal(t, http.StatusOK, rec.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, "invalid", resp["status"])
-	errors, ok := resp["errors"].([]interface{})
+	errors, ok := resp["errors"].([]any)
 	require.True(t, ok)
 	assert.Len(t, errors, 1)
 }
@@ -192,11 +192,11 @@ func TestT15_38_ValidateErrorFields(t *testing.T) {
 	rec := doValidateRequest(e, "test-catalog", apimw.RoleRW)
 	assert.Equal(t, http.StatusOK, rec.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	errors := resp["errors"].([]interface{})
+	errors := resp["errors"].([]any)
 	require.Len(t, errors, 1)
-	errObj := errors[0].(map[string]interface{})
+	errObj := errors[0].(map[string]any)
 	assert.Equal(t, "Server", errObj["entity_type"])
 	assert.Equal(t, "server-1", errObj["instance_name"])
 	assert.Equal(t, "hostname", errObj["field"])

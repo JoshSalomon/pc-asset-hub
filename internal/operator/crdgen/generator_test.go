@@ -88,3 +88,53 @@ func TestT9_09_NoDBModification(t *testing.T) {
 	_, err = crdgen.GenerateCRD(nil, nil)
 	assert.Error(t, err)
 }
+
+// GenerateCRDJSON: nil entity type propagates error (line 106)
+func TestGenerateCRDJSON_NilEntityType(t *testing.T) {
+	_, err := crdgen.GenerateCRDJSON(nil, nil)
+	assert.Error(t, err)
+}
+
+// GenerateCR: nil entity type or instance (line 131)
+func TestGenerateCR_NilInputs(t *testing.T) {
+	_, err := crdgen.GenerateCR(nil, &models.EntityInstance{}, nil, nil)
+	assert.Error(t, err)
+
+	_, err = crdgen.GenerateCR(&models.EntityType{}, nil, nil, nil)
+	assert.Error(t, err)
+}
+
+// GenerateCR: attribute value with unknown ID is skipped (line 144)
+func TestGenerateCR_UnknownAttrIDSkipped(t *testing.T) {
+	et := &models.EntityType{ID: "et1", Name: "Model"}
+	inst := &models.EntityInstance{ID: "i1", Name: "inst"}
+	attrs := []*models.Attribute{
+		{ID: "a1", Name: "hostname", Type: models.AttributeTypeString},
+	}
+	values := []*models.InstanceAttributeValue{
+		{AttributeID: "a1", ValueString: "localhost"},
+		{AttributeID: "unknown-id", ValueString: "should be skipped"},
+	}
+
+	cr, err := crdgen.GenerateCR(et, inst, values, attrs)
+	require.NoError(t, err)
+	assert.Equal(t, "localhost", cr.Spec["hostname"])
+	_, exists := cr.Spec["unknown-id"]
+	assert.False(t, exists)
+}
+
+// GenerateCR: enum attribute value (line 154)
+func TestGenerateCR_EnumAttribute(t *testing.T) {
+	et := &models.EntityType{ID: "et1", Name: "Model"}
+	inst := &models.EntityInstance{ID: "i1", Name: "inst"}
+	attrs := []*models.Attribute{
+		{ID: "a1", Name: "status", Type: models.AttributeTypeEnum},
+	}
+	values := []*models.InstanceAttributeValue{
+		{AttributeID: "a1", ValueEnum: "active"},
+	}
+
+	cr, err := crdgen.GenerateCR(et, inst, values, attrs)
+	require.NoError(t, err)
+	assert.Equal(t, "active", cr.Spec["status"])
+}

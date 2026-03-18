@@ -111,10 +111,10 @@ func TestT11_35_CreateInstance(t *testing.T) {
 		`{"name":"my-inst","description":"desc","attributes":{"hostname":"myhost"}}`, apimw.RoleRW)
 
 	assert.Equal(t, http.StatusCreated, rec.Code)
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, "my-inst", resp["name"])
-	attrs := resp["attributes"].([]interface{})
+	attrs := resp["attributes"].([]any)
 	assert.Len(t, attrs, 1)
 }
 
@@ -202,7 +202,7 @@ func TestT11_41_ListInstances(t *testing.T) {
 	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model", "", apimw.RoleRO)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, float64(1), resp["total"])
 }
@@ -222,10 +222,10 @@ func TestT11_42_GetInstance(t *testing.T) {
 	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model/i1", "", apimw.RoleRO)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, "inst-a", resp["name"])
-	attrs := resp["attributes"].([]interface{})
+	attrs := resp["attributes"].([]any)
 	assert.Len(t, attrs, 1)
 }
 
@@ -259,7 +259,7 @@ func TestT11_44_UpdateInstance(t *testing.T) {
 		`{"version":1,"attributes":{"hostname":"newhost"}}`, apimw.RoleRW)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, float64(2), resp["version"])
 }
@@ -270,7 +270,7 @@ func TestT11_45_UpdateVersionMismatch(t *testing.T) {
 	m.mockPinResolution()
 
 	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
-		ID: "i1", Version: 3,
+		ID: "i1", CatalogID: "cat1", Version: 3,
 	}, nil)
 
 	rec := doInstanceRequest(e, http.MethodPut, "/api/data/v1/catalogs/my-catalog/model/i1",
@@ -284,6 +284,9 @@ func TestT11_46_DeleteInstance(t *testing.T) {
 	e, m := setupInstanceServer()
 	m.mockPinResolution()
 
+	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
+		ID: "i1", CatalogID: "cat1",
+	}, nil)
 	m.instRepo.On("ListByParent", mock.Anything, "i1", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
 	m.linkRepo.On("DeleteByInstance", mock.Anything, "i1").Return(nil)
 	m.instRepo.On("SoftDelete", mock.Anything, "i1").Return(nil)
@@ -475,7 +478,7 @@ func TestT12_37_CreateContainedInstance(t *testing.T) {
 		`{"name":"my-tool","description":"desc"}`, apimw.RoleRW)
 
 	assert.Equal(t, http.StatusCreated, rec.Code)
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, "my-tool", resp["name"])
 	assert.Equal(t, "p1", resp["parent_instance_id"])
@@ -520,9 +523,9 @@ func TestT12_41_ListContainedInstances(t *testing.T) {
 	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/server/p1/tool", "", apimw.RoleRO)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	items := resp["items"].([]interface{})
+	items := resp["items"].([]any)
 	assert.Len(t, items, 1)
 }
 
@@ -611,7 +614,7 @@ func TestT12_51_GetForwardRefs(t *testing.T) {
 	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/server/inst1/references", "", apimw.RoleRO)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	var refs []map[string]interface{}
+	var refs []map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &refs))
 	assert.Len(t, refs, 1)
 	assert.Equal(t, "uses", refs[0]["association_name"])
@@ -640,7 +643,7 @@ func TestT12_52_GetReverseRefs(t *testing.T) {
 	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/tool/inst2/referenced-by", "", apimw.RoleRO)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	var refs []map[string]interface{}
+	var refs []map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &refs))
 	assert.Len(t, refs, 1)
 	assert.Equal(t, "my-server", refs[0]["instance_name"])
@@ -664,14 +667,14 @@ func TestGetContainmentTree_Success(t *testing.T) {
 	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/tree", "", apimw.RoleRO)
 	assert.Equal(t, http.StatusOK, rec.Code)
 
-	var tree []map[string]interface{}
+	var tree []map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &tree))
 	require.Len(t, tree, 1)
 	assert.Equal(t, "parent", tree[0]["instance_name"])
 	assert.Equal(t, "Server", tree[0]["entity_type_name"])
-	children := tree[0]["children"].([]interface{})
+	children := tree[0]["children"].([]any)
 	require.Len(t, children, 1)
-	child := children[0].(map[string]interface{})
+	child := children[0].(map[string]any)
 	assert.Equal(t, "child", child["instance_name"])
 }
 
@@ -695,7 +698,7 @@ func TestGetContainmentTree_EmptyCatalog(t *testing.T) {
 	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/empty/tree", "", apimw.RoleRO)
 	assert.Equal(t, http.StatusOK, rec.Code)
 
-	var tree []map[string]interface{}
+	var tree []map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &tree))
 	assert.Len(t, tree, 0)
 }
@@ -820,7 +823,7 @@ func TestGetInstance_RootNoParentChain(t *testing.T) {
 	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model/root1", "", apimw.RoleRO)
 	assert.Equal(t, http.StatusOK, rec.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	// parent_chain should be absent or null for root instances
 	chain, exists := resp["parent_chain"]
@@ -845,7 +848,7 @@ func TestGetContainmentTree_TreeStructure(t *testing.T) {
 	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/tree", "", apimw.RoleRO)
 	assert.Equal(t, http.StatusOK, rec.Code)
 
-	var tree []map[string]interface{}
+	var tree []map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &tree))
 	require.Len(t, tree, 1)
 
@@ -858,15 +861,15 @@ func TestGetContainmentTree_TreeStructure(t *testing.T) {
 	assert.NotNil(t, root["children"])
 
 	// Verify child node structure
-	children := root["children"].([]interface{})
+	children := root["children"].([]any)
 	require.Len(t, children, 1)
-	child := children[0].(map[string]interface{})
+	child := children[0].(map[string]any)
 	assert.NotEmpty(t, child["instance_id"])
 	assert.Equal(t, "child", child["instance_name"])
 	assert.Equal(t, "Tool", child["entity_type_name"])
 	assert.Equal(t, "child desc", child["description"])
 	// Leaf node should have empty children
-	childChildren := child["children"].([]interface{})
+	childChildren := child["children"].([]any)
 	assert.Len(t, childChildren, 0)
 }
 
@@ -890,11 +893,21 @@ func TestGetInstance_IncludesParentChain(t *testing.T) {
 	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model/child1", "", apimw.RoleRO)
 	assert.Equal(t, http.StatusOK, rec.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	chain, ok := resp["parent_chain"].([]interface{})
+	chain, ok := resp["parent_chain"].([]any)
 	require.True(t, ok)
 	require.Len(t, chain, 1)
-	entry := chain[0].(map[string]interface{})
+	entry := chain[0].(map[string]any)
 	assert.Equal(t, "parent", entry["instance_name"])
+}
+
+// TD-34: SetParent with empty parent_type returns 400
+func TestSetParent_EmptyParentType(t *testing.T) {
+	e, _ := setupInstanceServer()
+
+	body := `{"parent_type":"","parent_instance_id":"p1"}`
+	rec := doInstanceRequest(e, http.MethodPut, "/api/data/v1/catalogs/my-catalog/model/i1/parent", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "parent_type is required")
 }

@@ -926,3 +926,32 @@ func TestGetVersionSnapshot_SkipsOldVersionAssociations(t *testing.T) {
 	// Old version association should be filtered out
 	assert.Empty(t, snapshot.Associations)
 }
+
+// TD-29: Reserved entity type names
+func TestCreateEntityType_ReservedNameRejected(t *testing.T) {
+	etRepo := new(mocks.MockEntityTypeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	assocRepo := new(mocks.MockAssociationRepo)
+	svc := meta.NewEntityTypeService(etRepo, etvRepo, attrRepo, assocRepo)
+
+	for _, name := range []string{"links", "references", "referenced-by", "copy", "replace", "tree", "validate", "publish", "unpublish"} {
+		_, _, err := svc.CreateEntityType(context.Background(), name, "")
+		require.Error(t, err, "name=%s should be rejected", name)
+		assert.True(t, domainerrors.IsValidation(err))
+		assert.Contains(t, err.Error(), "reserved")
+	}
+}
+
+func TestRenameEntityType_ReservedNameRejected(t *testing.T) {
+	etRepo := new(mocks.MockEntityTypeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	assocRepo := new(mocks.MockAssociationRepo)
+	svc := meta.NewEntityTypeService(etRepo, etvRepo, attrRepo, assocRepo)
+
+	_, err := svc.RenameEntityType(context.Background(), "et1", "links", false)
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "reserved")
+}

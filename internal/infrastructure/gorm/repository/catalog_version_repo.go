@@ -90,7 +90,7 @@ func (r *CatalogVersionGormRepo) List(ctx context.Context, params models.ListPar
 func (r *CatalogVersionGormRepo) UpdateLifecycle(ctx context.Context, id string, stage models.LifecycleStage) error {
 	result := r.db.WithContext(ctx).Model(&gormmodels.CatalogVersion{}).
 		Where("id = ?", id).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"lifecycle_stage": string(stage),
 			"updated_at":      time.Now(),
 		})

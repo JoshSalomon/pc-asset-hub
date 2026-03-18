@@ -313,14 +313,14 @@ type ValidationResultResponse struct {
 type CreateInstanceRequest struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
-	Attributes  map[string]interface{} `json:"attributes"`
+	Attributes  map[string]any `json:"attributes"`
 }
 
 type UpdateInstanceRequest struct {
 	Version     int                    `json:"version"`
 	Name        *string                `json:"name,omitempty"`
 	Description *string                `json:"description,omitempty"`
-	Attributes  map[string]interface{} `json:"attributes,omitempty"`
+	Attributes  map[string]any `json:"attributes,omitempty"`
 }
 
 type InstanceResponse struct {
@@ -340,7 +340,7 @@ type InstanceResponse struct {
 type AttributeValueResponse struct {
 	Name  string      `json:"name"`
 	Type  string      `json:"type"`
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // === Association Link DTOs ===
@@ -393,7 +393,7 @@ type ParentChainEntryResponse struct {
 // === List Response ===
 
 type ListResponse struct {
-	Items interface{} `json:"items"`
+	Items any `json:"items"`
 	Total int         `json:"total"`
 }
 

@@ -29,6 +29,7 @@ test-live:
 	"$(PROJECT_ROOT)scripts/test-data-viewer.sh"
 	"$(PROJECT_ROOT)scripts/test-validation.sh"
 	"$(PROJECT_ROOT)scripts/test-publishing.sh"
+	"$(PROJECT_ROOT)scripts/test-copy-replace.sh"
 
 test-all: test-backend test-browser test-system test-live
 

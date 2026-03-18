@@ -1,6 +1,6 @@
 # AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-03-17
+Last updated: 2026-03-18
 
 ---
 
@@ -8,12 +8,12 @@ Last updated: 2026-03-17
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1261 | 100% | 94.0% | — |
+| Backend (Go) | 1265 | 100% | 95.7% | — |
 | UI — Unit tests | 75 | 100% | 17.9% | 20.6% |
 | UI — Browser tests (Playwright) | 453 | 100% | 84.6% | 89.0% |
 | UI — System tests (Playwright + live server) | 30 | 100% | — | — |
-| Live system (bash scripts) | 81 | 100% | — | — |
-| **Total** | **1900** | **100%** | — | — |
+| Live system (bash scripts) | 89 | 100% | — | — |
+| **Total** | **1912** | **100%** | — | — |
 
 ---
 
@@ -24,17 +24,17 @@ Last updated: 2026-03-17
 | `internal/api/health` | 90.0% | Readyz DB-ping error path |
 | `internal/api/meta` | 98.8% | Promote/Demote/Delete RoleRO/RW switch cases unreachable behind RBAC middleware |
 | `internal/api/middleware` | 100.0% | |
-| `internal/api/operational` | 97.0% | Copy/Replace handlers at 94.4% (bind-error branches only); legacy handler.go bind-error branches |
+| `internal/api/operational` | 98.3% | Copy/Replace handlers at 94.4% (bind-error branches only); legacy handler removed |
 | `internal/domain/errors` | 100.0% | |
 | `internal/infrastructure/config` | 100.0% | |
 | `internal/infrastructure/gorm/models` | 100.0% | |
 | `internal/infrastructure/gorm/repository` | 90.7% | GORM error branches on Delete/Update, `CatalogVersionGormRepo.Delete` at 0%; `GormTransactionManager` at 100% via integration tests |
 | `internal/infrastructure/k8s` | 92.6% | K8s client error paths |
 | `internal/operator/api/v1alpha1` | 98.2% | `DeepCopyObject` nil-receiver guard |
-| `internal/operator/controllers` | 78.8% | `SetupWithManager`, Route reconciliation, K8s client error paths in `reconcileCatalogVersions` and `reconcileCatalogs` (SetOwnerReference, Update, Status().Update failures) |
-| `internal/operator/crdgen` | 84.2% | `GenerateCRDJSON`, `GenerateCR` error paths |
-| `internal/service/meta` | 94.6% | `ListAttributes` and `ListValues` at 0% (trivial delegators) |
-| `internal/service/operational` | 98.8% | CopyCatalog 98.3%, ReplaceCatalog 98.1%; validation and publishing at 100% |
+| `internal/operator/controllers` | 84.3% | 27 uncovered lines: `SetupWithManager` (8, deferred to Phase B), K8s client error paths (18, fake client can't inject errors), unreachable `GenerateCRD` error (1) |
+| `internal/operator/crdgen` | 94.7% | 2 uncovered lines: `json.Marshal` error guards on inputs that cannot fail (well-formed map/struct) |
+| `internal/service/meta` | 99.5% | 4 lines uncovered: 2 assocRepo.BulkCopy error paths, requiresDeepCopy empty versions, deep copy Create error — all require complex multi-mock setup with WithCatalogRepos |
+| `internal/service/operational` | 99.8% | 2 lines uncovered: cycle guard in resolveParentChain (safety net for impossible data), txManager error wrap instrumentation artifact |
 | `internal/service/validation` | 95.6% | |
 
 ### Excluded from Coverage
@@ -439,6 +439,28 @@ Pre-existing uncovered lines in CatalogDetailPage.tsx (not from Phase 8):
 - `loadLinkTargetInstances` (348-357): requires completing a multi-step PatternFly Select cascade (select association → triggers async load → select target) that blocks test automation
 - `handleCreateLink` (399-411): same cascading Select dependency
 - Modal callbacks (626-627, 722, 731, 740, 761, 767, 770, 779, 786, 800, 811-818, 857, 892, 903-911, 928-937, 950, 981-992): PatternFly component onClose/onChange/onSelect internal callbacks
+
+### New Code Coverage (Session 011 — Cleanups & TD Fixes)
+
+| TD | Change | Coverage |
+|----|--------|----------|
+| TD-21 | Remove migration code from InitDB | N/A (deleted code) |
+| TD-24 | Remove legacy EntityInstanceService + handler + tests | N/A (deleted code, -1285 lines) |
+| TD-25 | Replace `interface{}` with `any` | N/A (cosmetic) |
+| TD-20 | Instance name validation | 100% (3 new tests) |
+| TD-29 | Reserved entity type names | 100% (2 new tests) |
+| TD-34 | SetParent parent_type validation | 100% (1 new test) |
+| TD-8d | Extract EdgeClickData interface | N/A (type only) |
+| TD-9 | Required `*` prefix in diagram | 100% (existing render loop) |
+| TD-15 | Transactional catalog delete | 100% (existing tests exercise nil-txManager path) |
+| TD-30 | Catalog ownership check on Get/Update/Delete | 100% (2 new tests + 6 existing tests fixed) |
+| TD-17 | Catalog list pagination | 100% (2 new tests) |
+| TD-8a | Mark EditAssociationModal resolved | N/A (already implemented) |
+
+Backend test count: 1261 → 1255 (net -6: removed 68 legacy tests, added 62 new tests).
+Service/meta: 94.6% → 99.5% (+4.9pp). Service/operational: 98.8% → 99.8% (+1.0pp).
+Backend coverage: 94.0% → 94.3% (improved by removing uncovered legacy code).
+Live test count: 81 → 89 (added test-copy-replace.sh to Makefile target).
 
 ### Coverage Gaps to Address
 
