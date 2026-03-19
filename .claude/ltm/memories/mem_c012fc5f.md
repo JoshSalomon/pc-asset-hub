@@ -19,7 +19,7 @@ Used Approach B (API-level merge): Name and Description remain as fields on `Ent
 
 ### Key Design Decisions
 - System attrs injected in 3 handler locations: `instanceDetailToDTO`, `VersionSnapshot`, `AttributeHandler.List`
-- Constants extracted to `dto` package: `SystemAttrName`, `SystemAttrDescription`, `SystemAttrType`, `SystemAttrNameOrdinal(-2)`, `SystemAttrDescOrdinal(-1)`, `IsSystemAttributeName()` helper
+- Constants in `domain/models` package (NOT `dto` — avoids service→API layer inversion): `SystemAttrName`, `SystemAttrDescription`, `SystemAttrType`, `SystemAttrNameOrdinal(-2)`, `SystemAttrDescOrdinal(-1)`, `IsSystemAttributeName()` helper
 - Reserved name rejection at both handler AND service layer (defense in depth)
 - `CopyAttributesFromType` filters system names before any DB calls
 - Validation service checks `strings.TrimSpace(inst.Name) == ""` with ID fallback for empty names
@@ -28,7 +28,7 @@ Used Approach B (API-level merge): Name and Description remain as fields on `Ent
 
 ### Quality Review Lessons
 - **Case mismatch bug caught**: Backend sends lowercase `"name"`/`"description"`, UI initially checked for `"Name"`/`"Description"` — would have silently broken create/edit modals
-- **DRY**: Extract shared constants to `dto` package instead of repeating string literals across 5+ locations
+- **DRY**: Extract shared constants to `domain/models` package (not `dto` — keeps dependency direction correct) instead of repeating string literals across 5+ locations
 - **Reorder buttons**: Must check `attributes[idx-1]?.system` to prevent swapping custom attrs with system attrs
 - **React keys**: System attrs have empty `id` — use `attr.id || attr.name` as key
 - **Remove handler**: Needs reserved-name guard same as Add/Edit
