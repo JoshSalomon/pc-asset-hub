@@ -155,6 +155,7 @@ export default function CatalogListPage({ role }: { role: Role }) {
           <Thead>
             <Tr>
               <Th>Name</Th>
+              <Th>Description</Th>
               <Th>Catalog Version</Th>
               <Th>Status</Th>
               <Th>Created</Th>
@@ -168,6 +169,9 @@ export default function CatalogListPage({ role }: { role: Role }) {
                   <Button variant="link" isInline onClick={() => navigate(`/catalogs/${cat.name}`)}>
                     {cat.name}
                   </Button>
+                </Td>
+                <Td style={{ maxWidth: '30rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {cat.description || ''}
                 </Td>
                 <Td>{cat.catalog_version_label || cat.catalog_version_id.slice(0, 8) + '...'}</Td>
                 <Td>

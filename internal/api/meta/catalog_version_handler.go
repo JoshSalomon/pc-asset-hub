@@ -170,6 +170,7 @@ func (h *CatalogVersionHandler) ListPins(c echo.Context) error {
 			EntityTypeID:        p.EntityTypeID,
 			EntityTypeVersionID: p.EntityTypeVersionID,
 			Version:             p.Version,
+			Description:         p.Description,
 		}
 	}
 	return c.JSON(http.StatusOK, dto.ListResponse{Items: resp, Total: len(resp)})

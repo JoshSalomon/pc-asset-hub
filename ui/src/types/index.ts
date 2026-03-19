@@ -3,6 +3,7 @@ export type Role = 'RO' | 'RW' | 'Admin' | 'SuperAdmin'
 export interface EntityType {
   id: string
   name: string
+  description?: string
   created_at: string
   updated_at: string
 }
@@ -21,6 +22,7 @@ export interface Attribute {
   description: string
   type: 'string' | 'number' | 'enum'
   enum_id?: string
+  enum_name?: string
   ordinal: number
   required: boolean
   system?: boolean
@@ -80,6 +82,7 @@ export interface CatalogVersionPin {
   entity_type_id: string
   entity_type_version_id: string
   version: number
+  description?: string
 }
 
 export interface LifecycleTransition {
