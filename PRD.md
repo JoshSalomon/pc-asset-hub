@@ -1253,6 +1253,7 @@ Acceptance Criteria:
 - Instance detail shows all attribute values (with resolved enum names), description, version, and timestamps.
 - Instance detail shows forward references ("References") and reverse references ("Referenced By") with clickable links that navigate to the referenced instance in the tree.
 - Breadcrumb navigation shows the containment path from catalog root to the current instance.
+- The operational catalog detail page includes a "Schema Diagram" tab showing the catalog version's entity type diagram (same `EntityTypeDiagram` component used in the meta UI). The diagram shows all pinned entity types with their attributes, associations, and cardinality — read-only, no edit interactions. This helps operational users understand the data model without needing meta UI access.
 - The backend supports attribute-based filtering (US-17), column sorting, and pagination via API query parameters, available for future use by the operational editing UI (FF-6).
 - The operational UI shares types, API client, and utility code with the meta UI — no duplication of shared infrastructure.
 - The meta UI's catalog detail page includes a link to open the same catalog in the operational data viewer, providing a seamless transition from editing to browsing.
@@ -1368,6 +1369,23 @@ Acceptance Criteria:
 
 ---
 
+**US-47: Permission-aware landing page**
+As a user, I want a landing page at the root URL (`/`) that shows me available actions based on my permissions, so that I can navigate directly to the meta UI or to a specific catalog without memorizing URL paths.
+
+**Why**: The current root URL goes directly to the meta UI (entity type list), which is irrelevant for users who only have catalog access and confusing as a first experience for all users. A landing page that adapts to the user's permissions provides a clear, role-appropriate entry point — schema architects see meta tools, data operators see their catalogs, and users with both see everything in one place.
+
+Acceptance Criteria:
+- The root URL (`/`) renders a landing page instead of the meta UI directly. The meta UI moves to a sub-path (e.g., `/meta`).
+- **Schema Management section**: Visible only if the user has any meta role (Meta Viewer or above). Provides navigation to the meta UI.
+- **Catalogs section**: Shows a card or list entry for each catalog the user has access to. Catalogs the user cannot access are not shown. Each entry displays: catalog name, description, pinned CV label, validation status, and published indicator. Clicking navigates to the operational catalog detail page (`/operational/{catalog-name}`).
+- A user with no meta role and no catalog access sees an appropriate empty state (e.g., "No resources available. Contact your administrator.").
+- In development mode, the landing page shows all sections (meta + all catalogs) since the global role grants access to everything.
+- The landing page loads quickly — catalog list is fetched with a single API call and filtered by access on the server side (see US-39).
+
+**Open:** The exact content and layout of the landing page is TBD. Options include: (A) minimal — just navigation cards/links, (B) dashboard — aggregate info (entity type count, catalog count, recent activity), (C) hybrid — navigation cards with summary stats. This will be decided based on user feedback after the initial implementation.
+
+---
+
 ## 10. Open Design Decisions
 
 The following items are acknowledged but not yet fully specified:
@@ -1384,6 +1402,7 @@ The following items are acknowledged but not yet fully specified:
 | Entity instance versioning depth | Whether full version history is retained or only N recent versions |
 | Technology choices | Backend language/framework, UI framework, API style (REST vs. GraphQL) |
 | Centralized hub topology | Hub-and-spoke deployment where consuming clusters sync CatalogVersion CRs from a central API. See Section 8.4. |
+| Landing page content | Minimal navigation cards vs. dashboard with aggregate stats vs. hybrid. See US-47. |
 
 ## 11. Technical Debt
 
