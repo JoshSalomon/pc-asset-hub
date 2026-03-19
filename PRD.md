@@ -377,16 +377,107 @@ The meta operations UI is the primary workspace for Admins to define and manage 
 
 ## 7. Access Control and Roles
 
-The system leverages OpenShift's native RBAC — no duplication of OCP access control functionality.
+The system leverages OpenShift's native RBAC — no duplication of OCP access control functionality. Access control is two-dimensional: **meta** (schema) and **catalog** (data) access are controlled independently, with catalog access granular to individual catalogs.
 
-### Roles
+### 7.1 Two Access Domains
 
-| Role         | Permissions |
-|--------------|-------------|
-| **RO**       | Read-only access to entities and configuration. No lifecycle changes. |
-| **RW**       | Create, update, and delete entity instances. Create catalog versions in development. Promote dev→test. Demote test→dev. |
-| **Admin**    | Modify meta configuration while the catalog version is not in production. All RW lifecycle permissions plus promote test→production. |
-| **Super Admin** | Modify meta configuration even when the catalog version is in production. All Admin lifecycle permissions plus demote from production (to test or dev). |
+| Domain | Scope | K8s Resource | Granularity |
+|--------|-------|-------------|-------------|
+| **Meta** | Entity types, attributes, associations, enums, catalog versions, lifecycle | `entitytypes` | All-or-nothing (all entity types) |
+| **Catalog** | Instances, attribute values, links, validation, publishing | `catalogs` | Per-catalog via `resourceNames` |
+
+A user can have different roles in each domain. For example, user X can be Admin on meta (manages schema) but have no catalog access. User Y can be RO on meta (browses schema) but Admin on catalog "team-alpha-prod" and have no access to catalog "team-beta-staging".
+
+### 7.2 Role Definitions
+
+#### Meta Roles
+
+| Role | Permissions |
+|------|-------------|
+| **Meta Viewer** | Read-only access to entity types, attributes, associations, enums, catalog versions, version history. |
+| **Meta Editor** | Create, update, and delete entity types, attributes, associations, enums. Create catalog versions in development. |
+| **Meta Admin** | All Meta Editor permissions plus lifecycle management: promote dev→test→production, demote test→dev. |
+| **Meta Super Admin** | All Meta Admin permissions plus demote from production (production→test, production→dev). Modify meta configuration even when the catalog version is in production. |
+
+#### Catalog Roles (per-catalog)
+
+| Role | Permissions |
+|------|-------------|
+| **Catalog Viewer** | Read-only access to instances, tree, references, attribute values. Can browse but not modify. |
+| **Catalog Editor** | Create, update, and delete instances, links. Set parent. All viewer permissions. |
+| **Catalog Admin** | All editor permissions plus validate and publish/unpublish. |
+| **Catalog Super Admin** | All admin permissions plus modify published catalogs (bypasses write protection). Intended for emergency fixes, security patches, and regulatory changes on specific catalogs. |
+
+There is no global "super admin" role at the application level. Each catalog may be managed by a different team for a different workload — a Catalog Super Admin on catalog X has no implicit access to catalog Y. Platform-wide administrative access (e.g., for disaster recovery) is handled by the K8s cluster-admin role, which bypasses all RBAC checks at the infrastructure level.
+
+### 7.3 K8s RBAC Mapping
+
+Each role maps to a K8s ClusterRole (for meta, which is namespace-independent) or Role (for catalogs, scoped to the AssetHub namespace):
+
+```yaml
+# Meta Viewer — browse schema
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: assethub-meta-viewer
+rules:
+  - apiGroups: ["assethub.example.com"]
+    resources: ["entitytypes", "catalogversions", "enums"]
+    verbs: ["get", "list"]
+
+# Catalog Editor on specific catalogs — uses resourceNames
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: user-y-catalog-access
+  namespace: assethub
+rules:
+  - apiGroups: ["assethub.example.com"]
+    resources: ["catalogs"]
+    resourceNames: ["team-alpha-prod"]
+    verbs: ["get", "create", "update", "delete"]
+  - apiGroups: ["assethub.example.com"]
+    resources: ["catalogs"]
+    resourceNames: ["team-beta-staging"]
+    verbs: ["get"]
+```
+
+### 7.4 Application Access
+
+Applications (pipelines, dashboards, monitoring) access catalogs via K8s ServiceAccounts. The same RBAC model applies — a ServiceAccount gets a RoleBinding with `resourceNames` restricting it to specific catalogs:
+
+```yaml
+# ML pipeline ServiceAccount: read-only access to "ml-models" catalog only
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ml-pipeline-catalog-access
+  namespace: assethub
+subjects:
+  - kind: ServiceAccount
+    name: ml-pipeline
+    namespace: ml-team
+roleRef:
+  kind: Role
+  name: assethub-catalog-viewer-ml-models
+```
+
+This ensures application isolation — an application with access to catalog X cannot see or modify any other catalog.
+
+### 7.5 Development Mode
+
+In development mode (`RBAC_MODE=header`), the `X-User-Role` header sets a single global role (RO/RW/Admin/SuperAdmin) that applies to both meta and all catalogs. Per-catalog restrictions are not enforced in development mode. This preserves the existing development workflow.
+
+### 7.6 Example Scenarios
+
+| User | Meta Role | Catalog Access | Result |
+|------|-----------|---------------|--------|
+| Schema architect | Meta Admin | No catalog access | Can design entity types, promote CVs. Cannot see or modify any catalog data. |
+| Data operator | Meta Viewer | Catalog Editor on "prod-catalog" | Can browse schema (read-only). Can create/edit instances in "prod-catalog" only. |
+| Dashboard app (SA) | None | Catalog Viewer on "ml-models" | Can read instances from "ml-models". Cannot see schema or other catalogs. |
+| Workload owner | Meta Viewer | Catalog Super Admin on "team-a-prod" | Can browse schema. Can modify "team-a-prod" even when published (emergency fixes). Cannot touch any other catalog. |
+| Team lead | Meta Viewer | Catalog Admin on "team-a-staging", Catalog Viewer on "team-b-prod" | Can browse schema. Can publish "team-a-staging". Can browse but not modify "team-b-prod". |
+| K8s cluster-admin | (bypasses all RBAC) | (bypasses all RBAC) | Full access everywhere via K8s infrastructure role. Not an application-level role. |
 
 The role model is designed to be extensible for future additional roles.
 
@@ -860,29 +951,36 @@ Acceptance Criteria:
 ### Access Control
 
 **US-22: Read-only access**
-As an RO user, I want to browse entities and configuration without being able to modify anything, so that I can consume asset information safely.
+As a Meta Viewer or Catalog Viewer, I want to browse entities, configuration, and catalog data without being able to modify anything, so that I can consume asset information safely.
 
 **Why**: Many consumers of the asset hub (dashboards, monitoring systems, downstream services) only need read access. Enforcing read-only access prevents accidental modifications from non-privileged users.
 
 Acceptance Criteria:
-- RO users can perform all GET operations on both Meta and Operational APIs.
-- RO users receive a 403 on any POST, PUT, PATCH, or DELETE operation.
-- RO access is enforced at the API layer via OpenShift RBAC, not application-level checks.
+- Meta Viewers can perform all GET operations on the Meta API (entity types, attributes, associations, enums, catalog versions). They receive 403 on any POST, PUT, PATCH, or DELETE operation on meta resources.
+- Catalog Viewers can perform all GET operations on catalogs they are authorized to access. They receive 403 on any POST, PUT, PATCH, or DELETE operation on catalog data.
+- A user with Meta Viewer role and no catalog role cannot access any catalog data (receives 403 on all `/api/data/v1/catalogs/*` requests).
+- A user with Catalog Viewer role and no meta role cannot access any meta data (receives 403 on all `/api/meta/v1/*` requests).
+- Read-only access is enforced via OpenShift RBAC (SubjectAccessReview), not application-level checks.
 
 ---
 
-**US-23: Role-based access enforcement**
-As a platform administrator, I want access control enforced via OpenShift's native RBAC, so that there is no duplication of OCP identity and access management.
+**US-23: Role-based access enforcement via OpenShift RBAC**
+As a platform administrator, I want access control enforced via OpenShift's native RBAC with independent meta and catalog roles, so that there is no duplication of OCP identity and access management and users get the minimum privileges they need.
 
-**Why**: OpenShift already provides a mature, audited RBAC system. Duplicating it would create security gaps (two systems to maintain), inconsistency (different permissions in OCP vs. the hub), and operational overhead.
+**Why**: OpenShift already provides a mature, audited RBAC system. Duplicating it would create security gaps. Separating meta and catalog roles allows schema architects to work without accessing production data, and data operators to work without modifying the schema.
 
 Acceptance Criteria:
-- All four roles (RO, RW, Admin, Super Admin) map to OpenShift RBAC roles/bindings.
+- Meta roles (Meta Viewer, Meta Editor, Meta Admin) map to K8s ClusterRoles on the `entitytypes`, `catalogversions`, and `enums` resources in the `assethub.example.com` API group.
+- Catalog roles (Catalog Viewer, Catalog Editor, Catalog Admin) map to K8s Roles with per-catalog granularity via `resourceNames` on the `catalogs` resource.
+- There is no application-level global super admin. Catalog Super Admin is per-catalog, scoped via `resourceNames`. Platform-wide access uses the K8s cluster-admin role.
+- A user can hold different roles in meta vs catalogs (e.g., Meta Viewer + Catalog Admin on "prod-catalog").
+- A user can hold different catalog roles on different catalogs (e.g., Catalog Admin on "team-a", Catalog Viewer on "team-b").
 - Authentication is handled by OpenShift (no separate user database or login system).
-- Authorization decisions use the OCP RBAC API (SubjectAccessReview or equivalent).
-- Adding or removing users from roles is done via standard OpenShift tooling (oc, console).
+- Authorization decisions use the OCP RBAC API (SubjectAccessReview). The API server checks both the resource type (`entitytypes` or `catalogs`) and the resource name (catalog name) for each request.
+- Adding or removing users from roles is done via standard OpenShift tooling (`oc`, `kubectl`, or the OCP console) by creating/modifying RoleBindings.
 - No custom user management UI or API exists in the hub.
-- Per-catalog access control is enforced using K8s RBAC `resourceNames` on the `catalogs` resource (see US-39).
+- The operator ships predefined ClusterRoles/Roles for all role levels. Cluster admins only need to create RoleBindings to assign users.
+- In development mode (`RBAC_MODE=header`), the `X-User-Role` header sets a single global role (RO/RW/Admin/SuperAdmin) that applies to both meta and all catalogs. Per-catalog and per-domain restrictions are not enforced in development mode.
 
 ---
 
@@ -1107,34 +1205,37 @@ Acceptance Criteria:
 ---
 
 **US-38: Role-aware UI controls**
-As a user of the meta operations UI, I want the interface to show or hide controls based on my role, so that I only see actions I am authorized to perform.
+As a user of the meta and operational UIs, I want the interface to show or hide controls based on my effective role in each domain (meta and per-catalog), so that I only see actions I am authorized to perform.
 
-**Why**: Showing controls that the user cannot use (and returning 403s when clicked) is a poor user experience. Role-aware controls reduce confusion, prevent wasted clicks, and make the UI feel intentional rather than restrictive.
+**Why**: Showing controls that the user cannot use (and returning 403s when clicked) is a poor user experience. Role-aware controls reduce confusion, prevent wasted clicks, and make the UI feel intentional rather than restrictive. With the two-domain role model, the UI must adapt to the user's meta role AND their per-catalog role independently.
 
 Acceptance Criteria:
-- RO users see all meta configuration in read-only mode. No create, edit, delete, or promote buttons are visible.
-- RW users see the same as RO for meta operations (RW only applies to entity instances, not meta configuration).
-- Admin users see all edit controls except those restricted to Super Admin (e.g., modifying production catalog versions, demoting from production).
-- Super Admin users see all controls.
+- **Meta UI**: Controls adapt to the user's meta role. Meta Viewers see all configuration in read-only mode (no create/edit/delete/promote buttons). Meta Editors see schema editing controls but not lifecycle management. Meta Admins see all controls except Super Admin actions.
+- **Operational UI**: Controls adapt to the user's catalog role for the current catalog. Catalog Viewers see browse-only interface (no create/edit/delete). Catalog Editors see instance CRUD controls. Catalog Admins see validate and publish buttons. Catalog Super Admins see all controls including editing published catalog data.
+- A user with no meta role sees an empty or inaccessible meta UI. A user with no catalog access sees an empty catalog list.
 - When a control is hidden due to role restrictions, no placeholder or "locked" indicator is shown — the control simply does not exist in the UI.
-- When a control is disabled due to state restrictions (e.g., entity type in production, not a role issue), the control is visible but grayed out with a tooltip explaining why.
+- When a control is disabled due to state restrictions (e.g., entity type in production, published catalog), the control is visible but grayed out with a tooltip explaining why.
+- In development mode, the role dropdown continues to set a single global role that applies to both meta and all catalogs.
 
 ---
 
-**US-39: Catalog-level access control**
-As a platform administrator, I want to grant users read or write access to specific catalogs (not all catalogs globally), so that teams can only access the data they own or are responsible for.
+**US-39: Per-catalog access control for users and applications**
+As a platform administrator, I want to grant users and application ServiceAccounts read or write access to specific catalogs (not all catalogs globally), so that teams and applications can only access the data they own or are authorized to use.
 
-**Why**: In a multi-team environment, different teams manage different catalogs (e.g., "team-alpha-prod", "team-beta-staging"). A global RW role that grants write access to all catalogs violates the principle of least privilege. Catalog-level access control ensures data isolation between teams without requiring separate Asset Hub deployments.
+**Why**: In a multi-team environment, different teams manage different catalogs (e.g., "team-alpha-prod", "team-beta-staging"). A global RW role that grants write access to all catalogs violates the principle of least privilege. Catalog-level access control ensures data isolation between teams and between applications without requiring separate Asset Hub deployments.
 
 Acceptance Criteria:
-- Per-catalog access is controlled via K8s RBAC using `resourceNames` on the `catalogs` resource. No custom ACL tables or user management APIs are introduced.
-- Cluster admins can grant a user read or write access to specific catalogs by creating a RoleBinding with `resourceNames` listing the allowed catalog names.
+- Per-catalog access is controlled via K8s RBAC using `resourceNames` on the `catalogs` resource in the `assethub.example.com` API group. No custom ACL tables or user management APIs are introduced.
+- Cluster admins can grant a user or ServiceAccount read, write, or admin access to specific catalogs by creating a RoleBinding with the appropriate catalog role and `resourceNames` listing the allowed catalog names.
 - Users without a `resourceNames` restriction (i.e., a Role that grants access to all `catalogs` resources) retain access to all catalogs, preserving backward compatibility.
-- The catalog list API (`GET /api/data/v1/catalogs`) returns only catalogs the requesting user is authorized to access.
-- Accessing a catalog the user is not authorized for returns 403 with a clear error message.
-- All sub-resource operations (instance CRUD, links, references) under a catalog inherit the catalog's access check — no separate per-instance authorization.
+- The catalog list API (`GET /api/data/v1/catalogs`) returns only catalogs the requesting user/ServiceAccount is authorized to access. The API server performs a SubjectAccessReview for each catalog and filters the result set. Catalogs the user cannot access are excluded silently (not returned with 403).
+- Accessing a specific catalog the user is not authorized for returns 403 with a clear error message.
+- All sub-resource operations (instance CRUD, links, references, validation, publishing) under a catalog inherit the catalog's access check — no separate per-instance authorization.
+- **Application isolation**: A ServiceAccount bound to a catalog role with `resourceNames: ["catalog-x"]` can only access catalog X. It cannot list, read, or modify any other catalog. This is the standard pattern for granting API access to pipelines, dashboards, and downstream services.
+- The API server maps HTTP verbs to K8s verbs for SAR checks: GET → `get`, POST → `create`, PUT/PATCH → `update`, DELETE → `delete`. Validate maps to `create` on the `catalogs/validate` sub-resource. Publish/unpublish maps to `create` on `catalogs/publish`.
 - In development mode (`RBAC_MODE=header`), the global role header applies to all catalogs (no per-catalog restriction), preserving the existing development workflow.
 - No catalog-level permission management UI exists in the hub — admins use `oc`, `kubectl`, or the OCP console to manage RoleBindings.
+- The operator ships predefined Roles for each catalog access level (Catalog Viewer, Catalog Editor, Catalog Admin). Cluster admins create RoleBindings that bind users/ServiceAccounts to these roles with `resourceNames` for the specific catalogs.
 
 ---
 
@@ -1152,6 +1253,7 @@ Acceptance Criteria:
 - Instance detail shows all attribute values (with resolved enum names), description, version, and timestamps.
 - Instance detail shows forward references ("References") and reverse references ("Referenced By") with clickable links that navigate to the referenced instance in the tree.
 - Breadcrumb navigation shows the containment path from catalog root to the current instance.
+- The operational catalog detail page includes a "Schema Diagram" tab showing the catalog version's entity type diagram (same `EntityTypeDiagram` component used in the meta UI). The diagram shows all pinned entity types with their attributes, associations, and cardinality — read-only, no edit interactions. This helps operational users understand the data model without needing meta UI access.
 - The backend supports attribute-based filtering (US-17), column sorting, and pagination via API query parameters, available for future use by the operational editing UI (FF-6).
 - The operational UI shares types, API client, and utility code with the meta UI — no duplication of shared infrastructure.
 - The meta UI's catalog detail page includes a link to open the same catalog in the operational data viewer, providing a seamless transition from editing to browsing.
@@ -1178,9 +1280,9 @@ Acceptance Criteria:
 ---
 
 **US-43: Published catalog write protection**
-As a platform administrator, I want data mutations on published catalogs restricted to SuperAdmin only, so that production data is protected from accidental edits by regular RW users.
+As a platform administrator, I want data mutations on published catalogs restricted to Catalog Super Admin only, so that production data is protected from accidental edits by Catalog Editors and Catalog Admins.
 
-**Why**: Published catalogs serve as the source of truth for external consumers. Accidental edits by RW users could corrupt production data. Restricting writes to SuperAdmin ensures that only deliberate, authorized changes are made. For routine catalog updates, the Copy & Replace workflow (FF-8) provides a safe staging pattern that doesn't require SuperAdmin access.
+**Why**: Published catalogs serve as the source of truth for external consumers. Accidental edits could corrupt production data. Restricting writes to Catalog Super Admin ensures that only deliberate, authorized changes are made — and only by users who are Super Admin on that specific catalog (not globally). For routine catalog updates, the Copy & Replace workflow (FF-8) provides a safe staging pattern that doesn't require Super Admin access. Note: Catalog Super Admin is per-catalog — being Super Admin on catalog X grants no privileges on catalog Y.
 
 Acceptance Criteria:
 - Data mutations (create/update/delete instance, create/delete link, set parent) on a published catalog require SuperAdmin role. RW and Admin users receive 403.
@@ -1267,6 +1369,23 @@ Acceptance Criteria:
 
 ---
 
+**US-47: Permission-aware landing page**
+As a user, I want a landing page at the root URL (`/`) that shows me available actions based on my permissions, so that I can navigate directly to the meta UI or to a specific catalog without memorizing URL paths.
+
+**Why**: The current root URL goes directly to the meta UI (entity type list), which is irrelevant for users who only have catalog access and confusing as a first experience for all users. A landing page that adapts to the user's permissions provides a clear, role-appropriate entry point — schema architects see meta tools, data operators see their catalogs, and users with both see everything in one place.
+
+Acceptance Criteria:
+- The root URL (`/`) renders a landing page instead of the meta UI directly. The meta UI moves to a sub-path (e.g., `/meta`).
+- **Schema Management section**: Visible only if the user has any meta role (Meta Viewer or above). Provides navigation to the meta UI.
+- **Catalogs section**: Shows a card or list entry for each catalog the user has access to. Catalogs the user cannot access are not shown. Each entry displays: catalog name, description, pinned CV label, validation status, and published indicator. Clicking navigates to the operational catalog detail page (`/operational/{catalog-name}`).
+- A user with no meta role and no catalog access sees an appropriate empty state (e.g., "No resources available. Contact your administrator.").
+- In development mode, the landing page shows all sections (meta + all catalogs) since the global role grants access to everything.
+- The landing page loads quickly — catalog list is fetched with a single API call and filtered by access on the server side (see US-39).
+
+**Open:** The exact content and layout of the landing page is TBD. Options include: (A) minimal — just navigation cards/links, (B) dashboard — aggregate info (entity type count, catalog count, recent activity), (C) hybrid — navigation cards with summary stats. This will be decided based on user feedback after the initial implementation.
+
+---
+
 ## 10. Open Design Decisions
 
 The following items are acknowledged but not yet fully specified:
@@ -1283,6 +1402,7 @@ The following items are acknowledged but not yet fully specified:
 | Entity instance versioning depth | Whether full version history is retained or only N recent versions |
 | Technology choices | Backend language/framework, UI framework, API style (REST vs. GraphQL) |
 | Centralized hub topology | Hub-and-spoke deployment where consuming clusters sync CatalogVersion CRs from a central API. See Section 8.4. |
+| Landing page content | Minimal navigation cards vs. dashboard with aggregate stats vs. hybrid. See US-47. |
 
 ## 11. Technical Debt
 
