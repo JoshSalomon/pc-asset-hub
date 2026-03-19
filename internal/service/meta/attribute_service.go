@@ -5,7 +5,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/project-catalyst/pc-asset-hub/internal/api/dto"
 	domainerrors "github.com/project-catalyst/pc-asset-hub/internal/domain/errors"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/repository"
@@ -40,7 +39,7 @@ func (s *AttributeService) AddAttribute(ctx context.Context, entityTypeID string
 	if name == "" {
 		return nil, domainerrors.NewValidation("attribute name is required")
 	}
-	if dto.IsSystemAttributeName(name) {
+	if models.IsSystemAttributeName(name) {
 		return nil, domainerrors.NewValidation("attribute name \"" + name + "\" is reserved for system attributes")
 	}
 
@@ -162,7 +161,7 @@ func (s *AttributeService) CopyAttributesFromType(ctx context.Context, targetEnt
 	// Filter out system attribute names (Name, Description are synthetic, not real DB attrs)
 	var filteredNames []string
 	for _, name := range attributeNames {
-		if dto.IsSystemAttributeName(name) {
+		if models.IsSystemAttributeName(name) {
 			continue
 		}
 		filteredNames = append(filteredNames, name)
@@ -256,7 +255,7 @@ func (s *AttributeService) CopyAttributesFromType(ctx context.Context, targetEnt
 // EditAttribute edits an attribute on an entity type, creating a new version (copy-on-write).
 // Only non-nil fields are updated. The attribute is identified by currentName.
 func (s *AttributeService) EditAttribute(ctx context.Context, entityTypeID, currentName string, newName, newDesc *string, newType *models.AttributeType, newEnumID *string, newRequired *bool) (*models.EntityTypeVersion, error) {
-	if newName != nil && dto.IsSystemAttributeName(*newName) {
+	if newName != nil && models.IsSystemAttributeName(*newName) {
 		return nil, domainerrors.NewValidation("attribute name \"" + *newName + "\" is reserved for system attributes")
 	}
 	// Validate enum reference if changing type to enum

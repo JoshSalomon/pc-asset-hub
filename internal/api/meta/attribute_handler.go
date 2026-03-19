@@ -27,8 +27,8 @@ func (h *AttributeHandler) List(c echo.Context) error {
 
 	// Prepend system attributes (Name — required, Description — optional)
 	systemAttrs := []dto.AttributeResponse{
-		{Name: dto.SystemAttrName, Type: dto.SystemAttrType, Ordinal: dto.SystemAttrNameOrdinal, Required: true, System: true},
-		{Name: dto.SystemAttrDescription, Type: dto.SystemAttrType, Ordinal: dto.SystemAttrDescOrdinal, Required: false, System: true},
+		{Name: models.SystemAttrName, Type: models.SystemAttrType, Ordinal: models.SystemAttrNameOrdinal, Required: true, System: true},
+		{Name: models.SystemAttrDescription, Type: models.SystemAttrType, Ordinal: models.SystemAttrDescOrdinal, Required: false, System: true},
 	}
 	resp := make([]dto.AttributeResponse, 0, len(systemAttrs)+len(attrs))
 	resp = append(resp, systemAttrs...)
@@ -50,7 +50,7 @@ func (h *AttributeHandler) Add(c echo.Context) error {
 	if req.Name == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "name is required")
 	}
-	if dto.IsSystemAttributeName(req.Name) {
+	if models.IsSystemAttributeName(req.Name) {
 		return echo.NewHTTPError(http.StatusBadRequest, "attribute name \""+req.Name+"\" is reserved for system attributes")
 	}
 	if req.Type == "" {
@@ -72,7 +72,7 @@ func (h *AttributeHandler) Remove(c echo.Context) error {
 	entityTypeID := c.Param("entityTypeId")
 	name := c.Param("name")
 
-	if dto.IsSystemAttributeName(name) {
+	if models.IsSystemAttributeName(name) {
 		return echo.NewHTTPError(http.StatusBadRequest, "cannot remove system attribute \""+name+"\"")
 	}
 
@@ -108,7 +108,7 @@ func (h *AttributeHandler) Edit(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
-	if req.Name != nil && dto.IsSystemAttributeName(*req.Name) {
+	if req.Name != nil && models.IsSystemAttributeName(*req.Name) {
 		return echo.NewHTTPError(http.StatusBadRequest, "attribute name \""+*req.Name+"\" is reserved for system attributes")
 	}
 

@@ -142,13 +142,9 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 	for _, inst := range instances {
 		if strings.TrimSpace(inst.Name) == "" {
 			etName := resolveETName(inst.EntityTypeID)
-			instanceName := inst.Name
-			if strings.TrimSpace(instanceName) == "" {
-				instanceName = "(id: " + inst.ID + ")"
-			}
 			validationErrors = append(validationErrors, ValidationError{
 				EntityType:   etName,
-				InstanceName: instanceName,
+				InstanceName: "(id: " + inst.ID + ")",
 				Field:        "name",
 				Violation:    "required system attribute \"name\" is missing a value",
 			})

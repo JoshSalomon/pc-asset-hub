@@ -200,8 +200,8 @@ func (h *EntityTypeHandler) VersionSnapshot(c echo.Context) error {
 
 	// Prepend system attributes (Name — required, Description — optional)
 	systemAttrs := []dto.SnapshotAttributeResponse{
-		{Name: dto.SystemAttrName, Type: dto.SystemAttrType, Ordinal: dto.SystemAttrNameOrdinal, Required: true, System: true},
-		{Name: dto.SystemAttrDescription, Type: dto.SystemAttrType, Ordinal: dto.SystemAttrDescOrdinal, Required: false, System: true},
+		{Name: models.SystemAttrName, Type: models.SystemAttrType, Ordinal: models.SystemAttrNameOrdinal, Required: true, System: true},
+		{Name: models.SystemAttrDescription, Type: models.SystemAttrType, Ordinal: models.SystemAttrDescOrdinal, Required: false, System: true},
 	}
 	attrs := make([]dto.SnapshotAttributeResponse, 0, len(systemAttrs)+len(snapshot.Attributes))
 	attrs = append(attrs, systemAttrs...)

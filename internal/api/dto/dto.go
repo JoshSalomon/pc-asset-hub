@@ -407,18 +407,3 @@ type ErrorResponse struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
-
-// === System Attributes ===
-
-const (
-	SystemAttrName        = "name"
-	SystemAttrDescription = "description"
-	SystemAttrType        = "string"
-	SystemAttrNameOrdinal = -2
-	SystemAttrDescOrdinal = -1
-)
-
-// IsSystemAttributeName returns true if the given name is reserved for a system attribute.
-func IsSystemAttributeName(name string) bool {
-	return name == SystemAttrName || name == SystemAttrDescription
-}

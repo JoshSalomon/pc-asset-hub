@@ -149,8 +149,8 @@ func (h *InstanceHandler) DeleteInstance(c echo.Context) error {
 func instanceDetailToDTO(d *svcop.InstanceDetail) dto.InstanceResponse {
 	// Prepend system attributes (Name — required, Description — optional)
 	systemAttrs := []dto.AttributeValueResponse{
-		{Name: dto.SystemAttrName, Type: dto.SystemAttrType, Value: d.Instance.Name, System: true, Required: true},
-		{Name: dto.SystemAttrDescription, Type: dto.SystemAttrType, Value: d.Instance.Description, System: true, Required: false},
+		{Name: models.SystemAttrName, Type: models.SystemAttrType, Value: d.Instance.Name, System: true, Required: true},
+		{Name: models.SystemAttrDescription, Type: models.SystemAttrType, Value: d.Instance.Description, System: true, Required: false},
 	}
 	attrs := make([]dto.AttributeValueResponse, 0, len(systemAttrs)+len(d.Attributes))
 	attrs = append(attrs, systemAttrs...)
