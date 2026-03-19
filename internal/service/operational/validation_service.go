@@ -138,6 +138,19 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 		assocCache[etvID] = assocs
 	}
 
+	// Validate system attribute: Name must be non-empty for all instances
+	for _, inst := range instances {
+		if strings.TrimSpace(inst.Name) == "" {
+			etName := resolveETName(inst.EntityTypeID)
+			validationErrors = append(validationErrors, ValidationError{
+				EntityType:   etName,
+				InstanceName: "(id: " + inst.ID + ")",
+				Field:        "name",
+				Violation:    "required system attribute \"name\" is missing a value",
+			})
+		}
+	}
+
 	// Validate each entity type group
 	for etID, etInstances := range instancesByET {
 		etvID, ok := etToETV[etID]

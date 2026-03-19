@@ -2188,6 +2188,123 @@ Phase 8 of the catalog implementation plan. Copy Catalog deep-clones all data fr
 
 ---
 
+## 18. System Attributes — Common Attributes as Schema-Level Attributes (TD-22)
+
+Common attributes (Name — required, Description — optional) are hardcoded fields on `EntityInstance` but are surfaced as synthetic system attributes (`system: true`) in all API responses via Approach B (API-level merge). No DB schema changes.
+
+### Instance DTO — System Attribute Injection
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-18.01 | instanceDetailToDTO prepends Name system attr (type=string, required=true, system=true) | Unit | First attr: name="name", type="string", required=true, system=true |
+| T-18.02 | instanceDetailToDTO prepends Description system attr (type=string, required=false, system=true) | Unit | Second attr: name="description", type="string", required=false, system=true |
+| T-18.03 | System attr values match instance Name and Description fields | Unit | name attr value = inst.Name, description attr value = inst.Description |
+| T-18.04 | Custom attributes follow system attrs and have system=false | Unit | Custom attrs start at index 2, system=false |
+| T-18.05 | Instance with zero custom attrs still has 2 system attrs | Unit | Attributes array length = 2 |
+| T-18.06 | System attrs injected in list instances response (each item) | Unit | Every item in list has system attrs prepended |
+
+### Version Snapshot — System Attribute Injection
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-18.07 | Version snapshot prepends Name system attr (ordinal=-2, system=true, required=true) | Unit | First attr in snapshot |
+| T-18.08 | Version snapshot prepends Description system attr (ordinal=-1, system=true, required=false) | Unit | Second attr in snapshot |
+| T-18.09 | Custom attrs in snapshot retain original ordinals (>= 0) | Unit | Custom attr ordinals unchanged |
+
+### Attribute List — System Attribute Injection
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-18.10 | Attribute list endpoint prepends Name and Description system attrs | Unit | First two entries are system attrs |
+| T-18.11 | System attrs in attribute list have correct types and required flags | Unit | name: required=true, description: required=false |
+
+### Reserved Name Rejection
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-18.12 | Create attribute with name "name" is rejected | Unit | Validation error returned |
+| T-18.13 | Create attribute with name "description" is rejected | Unit | Validation error returned |
+| T-18.14 | Create attribute with name "Name" (uppercase) is allowed | Unit | Attribute created (names are case-sensitive) |
+| T-18.15 | Rename attribute to "name" is rejected | Unit | Validation error returned |
+| T-18.16 | Rename attribute to "description" is rejected | Unit | Validation error returned |
+| T-18.17 | Create attribute "name" returns 400 via API | API | HTTP 400 with error message |
+| T-18.18 | Create attribute "description" returns 400 via API | API | HTTP 400 with error message |
+
+### Copy Attributes — System Attribute Exclusion
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-18.19 | CopyAttributes with "name" in list silently skips it | Unit | No error, only custom attrs copied |
+| T-18.20 | CopyAttributes with "description" in list silently skips it | Unit | No error, only custom attrs copied |
+| T-18.21 | CopyAttributes with mix of system and custom names copies only custom | Unit | Custom attrs copied, system skipped |
+
+### Catalog Validation — Name Non-Empty Check
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-18.22 | Validate returns error for instance with empty Name | Unit | ValidationError: field="name", violation contains "required" |
+| T-18.23 | Validate returns error for instance with whitespace-only Name | Unit | ValidationError: field="name" |
+| T-18.24 | Validate passes for instance with non-empty Name | Unit | No name-related error |
+| T-18.25 | Validation error includes correct entity type name | Unit | EntityType field resolved to name |
+| T-18.26 | Validate empty-named instance end-to-end in SQLite | Integration | Status = invalid, error for name field |
+
+### Instance CRUD API — System Attrs in Response
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-18.27 | POST create instance response includes system attrs in attributes array | API | System attrs present with correct values |
+| T-18.28 | GET instance response includes system attrs | API | System attrs present |
+| T-18.29 | GET list instances includes system attrs per item | API | Every item has system attrs |
+| T-18.30 | PUT update instance response reflects updated name/description in system attrs | API | System attr values match updated fields |
+
+### Meta API — Snapshot and Attribute List
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-18.31 | GET version snapshot includes system attrs at start of attributes array | API | First two attrs are system, system=true |
+| T-18.32 | GET attribute list includes system attrs at start | API | First two entries are system attrs |
+
+### Meta UI — Attribute List with System Badge
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-18.33 | Entity type detail shows "Name" system attribute with System badge | Browser | Row with "Name" and badge visible |
+| T-18.34 | Entity type detail shows "Description" system attribute with System badge | Browser | Row with "Description" and badge visible |
+| T-18.35 | System attributes appear before custom attributes | Browser | Name and Description rows first |
+| T-18.36 | Delete button disabled/hidden for system attributes | Browser | No delete action for system rows |
+| T-18.37 | Edit button disabled/hidden for system attributes | Browser | No edit action for system rows |
+
+### Meta UI — Copy Attributes Picker
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-18.38 | Copy attributes picker excludes system attributes from source list | Browser | "Name" and "Description" not in picker |
+
+### Operational UI — Create Instance Modal
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-18.39 | Create modal renders Name field from schema attrs (not hardcoded) | Browser | Name field rendered with required indicator |
+| T-18.40 | Create modal renders Description field from schema attrs | Browser | Description field rendered without required indicator |
+| T-18.41 | Create modal renders custom attributes after system attributes | Browser | System attrs first, then custom |
+| T-18.42 | Create submits name and description as top-level request fields | Browser | API called with {name, description, attributes} |
+
+### Operational UI — Edit Instance Modal
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-18.43 | Edit modal shows Name and Description from schema attrs | Browser | Fields populated with instance values |
+| T-18.44 | Edit submits updated name/description as top-level request fields | Browser | API called with correct body structure |
+
+### API Client — System Attribute Passthrough
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-18.45 | getSnapshot client function returns system attrs in response | Browser | mockFetch response includes system attrs |
+| T-18.46 | listAttributes client function returns system attrs in response | Browser | mockFetch response includes system attrs |
+
+---
+
 ## Coverage Criteria
 
 ### Pass Rate
@@ -2224,7 +2341,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 802 test cases (T-1.01 through T-17.88; T-13.78 through T-13.85 retired) pass
+- All 848 test cases (T-1.01 through T-18.46; T-13.78 through T-13.85 retired) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

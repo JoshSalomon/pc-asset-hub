@@ -47,6 +47,8 @@ const mockEntityType = {
 }
 
 const mockAttributes = [
+  { id: '', name: 'name', description: 'Instance name', type: 'string', ordinal: -2, required: true, system: true },
+  { id: '', name: 'description', description: 'Instance description', type: 'string', ordinal: -1, required: false, system: true },
   { id: 'a1', name: 'hostname', description: 'The host', type: 'string', ordinal: 0, required: false },
   { id: 'a2', name: 'cpu_count', description: '', type: 'number', ordinal: 1, required: false },
   { id: 'a3', name: 'status', description: '', type: 'enum', enum_id: 'enum1', ordinal: 2, required: false },
@@ -83,7 +85,7 @@ beforeEach(() => {
   ;(api.entityTypes.list as Mock).mockResolvedValue({ items: mockOtherEntityTypes, total: 2 })
   ;(api.entityTypes.copy as Mock).mockResolvedValue({ entity_type: { id: 'et-copy' }, version: { version: 1 } })
   ;(api.entityTypes.delete as Mock).mockResolvedValue(undefined)
-  ;(api.attributes.list as Mock).mockResolvedValue({ items: mockAttributes, total: 3 })
+  ;(api.attributes.list as Mock).mockResolvedValue({ items: mockAttributes, total: 5 })
   ;(api.attributes.add as Mock).mockResolvedValue({ id: 'v3', version: 3 })
   ;(api.attributes.remove as Mock).mockResolvedValue(undefined)
   ;(api.attributes.reorder as Mock).mockResolvedValue({ status: 'reordered' })
@@ -321,9 +323,9 @@ test('T-C.37: reorder attributes with down button', async () => {
   await page.getByRole('tab', { name: /Attributes/i }).click()
   await expect.element(page.getByText('hostname')).toBeVisible()
 
-  // Click "Move down" on first attribute
+  // Click "Move down" on first custom attribute (hostname)
   await page.getByRole('button', { name: 'Move down' }).first().click()
-  expect(api.attributes.reorder).toHaveBeenCalledWith('et-1', ['a2', 'a1', 'a3'])
+  expect(api.attributes.reorder).toHaveBeenCalledWith('et-1', ['', '', 'a2', 'a1', 'a3'])
 })
 
 test('T-C.45: RO hides add/remove controls on attributes tab', async () => {
@@ -1356,7 +1358,7 @@ test('copy attributes shows source attributes after selection', async () => {
   ]
   ;(api.attributes.list as Mock).mockImplementation((etId: string) => {
     if (etId === 'et-2') return Promise.resolve({ items: sourceAttrs, total: 2 })
-    return Promise.resolve({ items: mockAttributes, total: 3 })
+    return Promise.resolve({ items: mockAttributes, total: 5 })
   })
   ;(api.versions.list as Mock).mockResolvedValue({ items: mockVersions, total: 2 })
 
@@ -1385,7 +1387,7 @@ test('copy attributes submits selected attributes', async () => {
   ]
   ;(api.attributes.list as Mock).mockImplementation((etId: string) => {
     if (etId === 'et-2') return Promise.resolve({ items: sourceAttrs, total: 1 })
-    return Promise.resolve({ items: mockAttributes, total: 3 })
+    return Promise.resolve({ items: mockAttributes, total: 5 })
   })
   ;(api.versions.list as Mock).mockResolvedValue({ items: mockVersions, total: 2 })
 
@@ -1421,7 +1423,7 @@ test('copy attributes error shown in modal', async () => {
   ]
   ;(api.attributes.list as Mock).mockImplementation((etId: string) => {
     if (etId === 'et-2') return Promise.resolve({ items: sourceAttrs, total: 1 })
-    return Promise.resolve({ items: mockAttributes, total: 3 })
+    return Promise.resolve({ items: mockAttributes, total: 5 })
   })
   ;(api.versions.list as Mock).mockResolvedValue({ items: mockVersions, total: 2 })
 
@@ -1447,11 +1449,22 @@ test('reorder attributes with up button', async () => {
   await page.getByRole('tab', { name: /Attributes/i }).click()
   await expect.element(page.getByText('hostname')).toBeVisible()
 
-  // Click "Move up" on the second attribute (cpu_count)
+  // Click "Move up" on the second custom attribute (cpu_count)
   const upButtons = page.getByRole('button', { name: 'Move up' })
-  // First Move up button is on the first row (disabled), second is on the second row
+  // First Move up button is on the first custom row (hostname), second is on the second custom row (cpu_count)
   await upButtons.nth(1).click()
-  expect(api.attributes.reorder).toHaveBeenCalledWith('et-1', ['a2', 'a1', 'a3'])
+  expect(api.attributes.reorder).toHaveBeenCalledWith('et-1', ['', '', 'a2', 'a1', 'a3'])
+})
+
+// I1: Move up disabled for first custom attr (right after system attrs)
+test('I1: move up disabled for first custom attribute after system attrs', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await expect.element(page.getByText('hostname')).toBeVisible()
+
+  // The first Move up button (on hostname, the first custom attr) should be disabled
+  const upButtons = page.getByRole('button', { name: 'Move up' })
+  await expect.element(upButtons.first()).toHaveAttribute('disabled')
 })
 
 // SuperAdmin can also edit
@@ -1461,6 +1474,96 @@ test('SuperAdmin can see edit controls', async () => {
   await expect.element(page.getByRole('button', { name: 'Copy' })).toBeVisible()
   await expect.element(page.getByRole('button', { name: 'Delete' })).toBeVisible()
   await expect.element(page.getByText('Rename', { exact: true })).toBeVisible()
+})
+
+// === System Attributes ===
+
+// T-18.33: Entity type detail shows "Name" system attribute with System badge
+test('T-18.33: Name system attribute shows System badge', async () => {
+  // mockAttributes already includes system attrs (name, description)
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  // Name row should have "System" label
+  const nameCell = page.getByRole('gridcell', { name: /name.*System/ })
+  await expect.element(nameCell).toBeVisible()
+})
+
+// T-18.34: Entity type detail shows "Description" system attribute with System badge
+test('T-18.34: Description system attribute shows System badge', async () => {
+  // mockAttributes already includes system attrs (name, description)
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  const descCell = page.getByRole('gridcell', { name: /description.*System/ })
+  await expect.element(descCell).toBeVisible()
+})
+
+// T-18.35: System attributes appear before custom attributes
+test('T-18.35: system attributes appear before custom attributes', async () => {
+  // mockAttributes already includes system attrs (name, description) before custom attrs
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  // System attrs with System badge appear, then custom attrs follow
+  await expect.element(page.getByRole('gridcell', { name: /name.*System/ })).toBeVisible()
+  await expect.element(page.getByRole('gridcell', { name: /description.*System/ })).toBeVisible()
+  await expect.element(page.getByRole('gridcell', { name: 'hostname' })).toBeVisible()
+  // System attrs have ordinal -2 and -1, custom start at 0 — backend provides them in order
+  // Verify ordinals: Name=-2, Description=-1, hostname=0
+  await expect.element(page.getByRole('gridcell', { name: '-2' })).toBeVisible()
+  await expect.element(page.getByRole('gridcell', { name: '-1' })).toBeVisible()
+})
+
+// T-18.36: Delete button hidden for system attributes
+test('T-18.36: Remove button hidden for system attributes', async () => {
+  // mockAttributes already includes system attrs (name, description)
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await expect.element(page.getByRole('gridcell', { name: /name.*System/ })).toBeVisible()
+  // System rows should not have Remove buttons — only custom rows have them
+  // There are 3 custom attributes, each with a Remove button = 3 Remove buttons total
+  const removeButtons = page.getByRole('button', { name: 'Remove' })
+  await expect.element(removeButtons.first()).toBeVisible()
+  // Count: we expect exactly 3 Remove buttons (not 5)
+  await expect.element(removeButtons.nth(2)).toBeVisible()
+})
+
+// T-18.37: Edit button hidden for system attributes
+test('T-18.37: Edit button hidden for system attributes', async () => {
+  // mockAttributes already includes system attrs (name, description)
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await expect.element(page.getByRole('gridcell', { name: /name.*System/ })).toBeVisible()
+  // Only 3 Edit buttons for the 3 custom attributes
+  const editButtons = page.getByRole('button', { name: 'Edit' })
+  await expect.element(editButtons.first()).toBeVisible()
+  await expect.element(editButtons.nth(2)).toBeVisible()
+})
+
+// T-18.38: Copy attributes picker excludes system attributes
+test('T-18.38: copy attributes picker excludes system attributes', async () => {
+  const sourceAttrs = [
+    { id: '', name: 'name', description: 'Instance name', type: 'string', ordinal: -2, required: true, system: true },
+    { id: '', name: 'description', description: 'Instance description', type: 'string', ordinal: -1, required: false, system: true },
+    { id: 'sa1', name: 'region', description: 'Region', type: 'string', ordinal: 0, required: false },
+  ]
+  ;(api.attributes.list as Mock).mockImplementation((etId: string) => {
+    if (etId === 'et-2') return Promise.resolve({ items: sourceAttrs, total: 3 })
+    return Promise.resolve({ items: mockAttributes, total: 5 })
+  })
+  ;(api.versions.list as Mock).mockResolvedValue({ items: mockVersions, total: 2 })
+
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Copy from...' }).click()
+  await expect.element(page.getByText('Copy Attributes from Another Type')).toBeVisible()
+
+  // Select source entity type
+  await page.getByRole('dialog').getByRole('button', { name: 'Select source type' }).click()
+  await page.getByText('Dataset').first().click()
+
+  // Only "region" should be shown (system attrs filtered out)
+  await expect.element(page.getByText('region').first()).toBeVisible()
+  // System attrs should NOT appear in the picker list
+  await expect.element(page.getByRole('dialog').getByRole('gridcell', { name: /^Name/ })).not.toBeInTheDocument()
 })
 
 // Cardinality display for incoming association: target → source

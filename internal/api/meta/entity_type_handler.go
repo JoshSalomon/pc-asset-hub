@@ -198,13 +198,19 @@ func (h *EntityTypeHandler) VersionSnapshot(c echo.Context) error {
 		return mapError(err)
 	}
 
-	attrs := make([]dto.SnapshotAttributeResponse, len(snapshot.Attributes))
-	for i, a := range snapshot.Attributes {
-		attrs[i] = dto.SnapshotAttributeResponse{
+	// Prepend system attributes (Name — required, Description — optional)
+	systemAttrs := []dto.SnapshotAttributeResponse{
+		{Name: models.SystemAttrName, Type: models.SystemAttrType, Ordinal: models.SystemAttrNameOrdinal, Required: true, System: true},
+		{Name: models.SystemAttrDescription, Type: models.SystemAttrType, Ordinal: models.SystemAttrDescOrdinal, Required: false, System: true},
+	}
+	attrs := make([]dto.SnapshotAttributeResponse, 0, len(systemAttrs)+len(snapshot.Attributes))
+	attrs = append(attrs, systemAttrs...)
+	for _, a := range snapshot.Attributes {
+		attrs = append(attrs, dto.SnapshotAttributeResponse{
 			ID: a.ID, Name: a.Name, Description: a.Description,
 			Type: string(a.Type), EnumID: a.EnumID, EnumName: snapshot.EnumNames[a.EnumID],
 			Ordinal: a.Ordinal, Required: a.Required,
-		}
+		})
 	}
 
 	assocs := make([]dto.SnapshotAssociationResponse, len(snapshot.Associations))

@@ -25,12 +25,18 @@ func (h *AttributeHandler) List(c echo.Context) error {
 		return mapError(err)
 	}
 
-	resp := make([]dto.AttributeResponse, len(attrs))
-	for i, a := range attrs {
-		resp[i] = dto.AttributeResponse{
+	// Prepend system attributes (Name — required, Description — optional)
+	systemAttrs := []dto.AttributeResponse{
+		{Name: models.SystemAttrName, Type: models.SystemAttrType, Ordinal: models.SystemAttrNameOrdinal, Required: true, System: true},
+		{Name: models.SystemAttrDescription, Type: models.SystemAttrType, Ordinal: models.SystemAttrDescOrdinal, Required: false, System: true},
+	}
+	resp := make([]dto.AttributeResponse, 0, len(systemAttrs)+len(attrs))
+	resp = append(resp, systemAttrs...)
+	for _, a := range attrs {
+		resp = append(resp, dto.AttributeResponse{
 			ID: a.ID, Name: a.Name, Description: a.Description,
 			Type: string(a.Type), EnumID: a.EnumID, Ordinal: a.Ordinal, Required: a.Required,
-		}
+		})
 	}
 	return c.JSON(http.StatusOK, dto.ListResponse{Items: resp, Total: len(resp)})
 }
@@ -43,6 +49,9 @@ func (h *AttributeHandler) Add(c echo.Context) error {
 	}
 	if req.Name == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "name is required")
+	}
+	if models.IsSystemAttributeName(req.Name) {
+		return echo.NewHTTPError(http.StatusBadRequest, "attribute name \""+req.Name+"\" is reserved for system attributes")
 	}
 	if req.Type == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "type is required")
@@ -62,6 +71,10 @@ func (h *AttributeHandler) Add(c echo.Context) error {
 func (h *AttributeHandler) Remove(c echo.Context) error {
 	entityTypeID := c.Param("entityTypeId")
 	name := c.Param("name")
+
+	if models.IsSystemAttributeName(name) {
+		return echo.NewHTTPError(http.StatusBadRequest, "cannot remove system attribute \""+name+"\"")
+	}
 
 	_, err := h.svc.RemoveAttribute(c.Request().Context(), entityTypeID, name)
 	if err != nil {
@@ -93,6 +106,10 @@ func (h *AttributeHandler) Edit(c echo.Context) error {
 	var req dto.UpdateAttributeRequest
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+
+	if req.Name != nil && models.IsSystemAttributeName(*req.Name) {
+		return echo.NewHTTPError(http.StatusBadRequest, "attribute name \""+*req.Name+"\" is reserved for system attributes")
 	}
 
 	var newType *models.AttributeType

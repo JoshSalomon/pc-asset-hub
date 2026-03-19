@@ -107,3 +107,21 @@ func TestListParams(t *testing.T) {
 		t.Fatal("ListParams fields not set correctly")
 	}
 }
+
+func TestIsSystemAttributeName(t *testing.T) {
+	if !IsSystemAttributeName("name") {
+		t.Fatal("expected 'name' to be a system attribute")
+	}
+	if !IsSystemAttributeName("description") {
+		t.Fatal("expected 'description' to be a system attribute")
+	}
+	if IsSystemAttributeName("hostname") {
+		t.Fatal("expected 'hostname' to NOT be a system attribute")
+	}
+	if IsSystemAttributeName("Name") {
+		t.Fatal("expected 'Name' (uppercase) to NOT be a system attribute")
+	}
+	if IsSystemAttributeName("") {
+		t.Fatal("expected empty string to NOT be a system attribute")
+	}
+}

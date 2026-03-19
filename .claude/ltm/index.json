@@ -392,6 +392,19 @@
       "phase": 0,
       "difficulty": 0.7,
       "created_at": "2026-03-16T17:25:32.656628+00:00"
+    },
+    "mem_c012fc5f": {
+      "topic": "TD-22: System Attributes — Approach B (API-level merge)",
+      "tags": [
+        "td-22",
+        "system-attributes",
+        "api-merge",
+        "architecture",
+        "quality-review"
+      ],
+      "phase": 0,
+      "difficulty": 0.6,
+      "created_at": "2026-03-18T17:19:07.697574+00:00"
     }
   }
 }

@@ -184,6 +184,13 @@ Each feature area is tested at the appropriate layers:
 | Replace Catalog — published state transfer + CR sync | X | X | X | | X |
 | Copy & Replace — RBAC (RW+ copy, Admin+ replace) | X | | X | X | |
 | Copy & Replace — validation & error cases | X | X | X | | |
+| System attributes — API injection (instance responses) | X | | X | | |
+| System attributes — API injection (snapshot + attr list) | X | | X | X | |
+| System attributes — reserved name rejection | X | | X | X | |
+| System attributes — copy-attributes exclusion | X | | X | X | |
+| System attributes — catalog validation (Name non-empty) | X | X | X | | |
+| System attributes — UI unified rendering (create/edit) | | | | X | |
+| System attributes — UI system badge + edit protection | | | | X | |
 
 ---
 
@@ -481,3 +488,26 @@ Copy Catalog deep-clones all data (instances, attribute values, association link
 - **UI tests (browser — replace modal)**: Verify "Replace" button visible on `valid` staging catalogs for Admin+ users. Verify Replace button hidden for RW and RO. Verify Replace button hidden for `draft` or `invalid` catalogs. Verify replace modal shows target catalog dropdown. Verify optional archive name input with DNS-label validation. Verify successful replace refreshes catalog list. Verify replace error shows alert.
 - **Operator tests**: Verify Catalog CR DataVersion bumped after replace (via SyncCR → CreateOrUpdate with incremented SyncVersion, then operator reconciliation increments DataVersion).
 - **Live system test**: Verify full staging workflow — copy published catalog, edit staging copy, validate, replace back. Verify original data archived. Verify rollback by replacing from archive.
+
+### 5.31 System Attributes — Common Attributes as Schema-Level Attributes (TD-22)
+
+Common attributes (Name — required, Description — optional) are hardcoded fields on `EntityInstance` but are surfaced as synthetic system attributes (`system: true`) in all API responses. This makes them visible in attribute lists, UML diagrams, version snapshots, and instance create/edit modals. The API layer injects them; no DB schema changes are made (Approach B).
+
+**What is tested at each layer:**
+
+- **Unit tests (handler — instance DTO injection)**: Verify `instanceDetailToDTO` prepends two system attributes (name, description) before custom attributes. Verify system attrs have `system: true`, correct types (`string`), and correct required flags (name=required, description=optional). Verify system attr values match the instance's `Name` and `Description` fields. Verify custom attributes retain `system: false` (or omitted). Verify injection works for instances with zero custom attributes.
+- **Unit tests (handler — snapshot injection)**: Verify version snapshot response includes system attributes (name, description) at the start of the attributes array with `system: true`. Verify ordinals are negative (name=-2, description=-1) to sort before custom attrs (ordinal >= 0).
+- **Unit tests (handler — attribute list injection)**: Verify attribute list endpoint for an entity type version prepends system attributes. Verify system attrs have `system: true`, correct names, types, and required flags.
+- **Unit tests (handler — reserved name rejection)**: Verify creating an attribute named "name" returns 409/validation error. Verify creating an attribute named "description" returns 409/validation error. Verify creating an attribute named "Name" (case variation) is allowed (names are case-sensitive). Verify renaming an attribute to "name" or "description" is rejected.
+- **Unit tests (service — copy attributes exclusion)**: Verify `CopyAttributes` with "name" in the attribute list silently skips it. Verify `CopyAttributes` with "description" in the list silently skips it. Verify `CopyAttributes` with a mix of system and custom names copies only the custom ones.
+- **Unit tests (service — validation Name check)**: Verify `Validate` returns an error for instances with empty Name. Verify `Validate` returns an error for instances with whitespace-only Name. Verify `Validate` passes for instances with non-empty Name. Verify the validation error has field="name", entity type name resolved, and a clear violation message.
+- **Integration tests (validation Name check)**: Verify end-to-end validation against real SQLite with an empty-named instance returns `invalid` status with the name error.
+- **API tests (instance CRUD — system attrs in response)**: Verify `POST` create instance response includes system attrs in the attributes array. Verify `GET` instance response includes system attrs. Verify `GET` list instances response includes system attrs per instance. Verify `PUT` update instance response includes system attrs with updated values.
+- **API tests (meta — reserved name rejection)**: Verify `POST` create attribute with name "name" returns 400/409. Verify `POST` create attribute with name "description" returns 400/409.
+- **API tests (meta — snapshot includes system attrs)**: Verify `GET` version snapshot includes system attrs at the start of the attributes array.
+- **UI tests (browser — meta attribute list)**: Verify entity type detail page shows "Name" and "Description" system attributes with a "System" badge. Verify system attributes appear before custom attributes. Verify delete/edit controls are disabled for system attributes.
+- **UI tests (browser — meta copy attributes picker)**: Verify copy-attributes dialog excludes system attributes from the source list.
+- **UI tests (browser — operational create modal)**: Verify create instance modal renders Name and Description fields from schema attributes (not hardcoded). Verify Name field is required. Verify Description field is optional. Verify custom attributes render after system attributes.
+- **UI tests (browser — operational edit modal)**: Verify edit instance modal shows Name and Description as editable fields from schema. Verify saving updates Name and Description via top-level request fields.
+- **UI tests (browser — API client)**: Verify `client.ts` functions pass system attribute data correctly in requests and responses.
+- **Live system test**: Verify end-to-end — create entity type, view its attributes (system attrs visible), create instance with name/description, verify instance response includes system attrs, validate catalog with empty-named instance fails, verify UML diagram shows system attrs.

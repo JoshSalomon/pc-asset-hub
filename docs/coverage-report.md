@@ -8,12 +8,12 @@ Last updated: 2026-03-18
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1265 | 100% | 95.7% | — |
+| Backend (Go) | 1295 | 100% | 95.7% | — |
 | UI — Unit tests | 75 | 100% | 17.9% | 20.6% |
-| UI — Browser tests (Playwright) | 453 | 100% | 84.6% | 89.0% |
-| UI — System tests (Playwright + live server) | 30 | 100% | — | — |
-| Live system (bash scripts) | 89 | 100% | — | — |
-| **Total** | **1912** | **100%** | — | — |
+| UI — Browser tests (Playwright) | 468 | 100% | 84.6% | 89.0% |
+| UI — System tests (Playwright + live server) | 27 | 100% | — | — |
+| Live system (bash scripts) | 217 | 100% | — | — |
+| **Total** | **2082** | **100%** | — | — |
 
 ---
 
@@ -22,7 +22,8 @@ Last updated: 2026-03-18
 | Package | Coverage | Notes |
 |---------|----------|-------|
 | `internal/api/health` | 90.0% | Readyz DB-ping error path |
-| `internal/api/meta` | 98.8% | Promote/Demote/Delete RoleRO/RW switch cases unreachable behind RBAC middleware |
+| `internal/api/dto` | 100.0% | |
+| `internal/api/meta` | 99.1% | Promote/Demote/Delete RoleRO/RW switch cases unreachable behind RBAC middleware |
 | `internal/api/middleware` | 100.0% | |
 | `internal/api/operational` | 98.3% | Copy/Replace handlers at 94.4% (bind-error branches only); legacy handler removed |
 | `internal/domain/errors` | 100.0% | |

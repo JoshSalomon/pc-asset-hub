@@ -23,6 +23,7 @@ export interface Attribute {
   enum_id?: string
   ordinal: number
   required: boolean
+  system?: boolean
 }
 
 export interface Association {
@@ -111,6 +112,7 @@ export interface SnapshotAttribute {
   enum_name?: string
   ordinal: number
   required: boolean
+  system?: boolean
 }
 
 export interface SnapshotAssociation {
@@ -166,6 +168,8 @@ export interface AttributeValueResponse {
   name: string
   type: string
   value: string | number | null
+  required?: boolean
+  system?: boolean
 }
 
 export interface AssociationLink {

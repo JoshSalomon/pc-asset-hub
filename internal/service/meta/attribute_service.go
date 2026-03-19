@@ -39,6 +39,9 @@ func (s *AttributeService) AddAttribute(ctx context.Context, entityTypeID string
 	if name == "" {
 		return nil, domainerrors.NewValidation("attribute name is required")
 	}
+	if models.IsSystemAttributeName(name) {
+		return nil, domainerrors.NewValidation("attribute name \"" + name + "\" is reserved for system attributes")
+	}
 
 	// Validate enum reference
 	if attrType == models.AttributeTypeEnum {
@@ -155,6 +158,19 @@ func (s *AttributeService) RemoveAttribute(ctx context.Context, entityTypeID, at
 
 // CopyAttributesFromType copies selected attributes from a source entity type to a target.
 func (s *AttributeService) CopyAttributesFromType(ctx context.Context, targetEntityTypeID, sourceEntityTypeID string, sourceVersion int, attributeNames []string) (*models.EntityTypeVersion, error) {
+	// Filter out system attribute names (Name, Description are synthetic, not real DB attrs)
+	var filteredNames []string
+	for _, name := range attributeNames {
+		if models.IsSystemAttributeName(name) {
+			continue
+		}
+		filteredNames = append(filteredNames, name)
+	}
+	if len(filteredNames) == 0 {
+		return nil, domainerrors.NewValidation("no custom attributes to copy (system attributes are excluded)")
+	}
+	attributeNames = filteredNames
+
 	sourceETV, err := s.etvRepo.GetByEntityTypeAndVersion(ctx, sourceEntityTypeID, sourceVersion)
 	if err != nil {
 		return nil, err
@@ -239,6 +255,9 @@ func (s *AttributeService) CopyAttributesFromType(ctx context.Context, targetEnt
 // EditAttribute edits an attribute on an entity type, creating a new version (copy-on-write).
 // Only non-nil fields are updated. The attribute is identified by currentName.
 func (s *AttributeService) EditAttribute(ctx context.Context, entityTypeID, currentName string, newName, newDesc *string, newType *models.AttributeType, newEnumID *string, newRequired *bool) (*models.EntityTypeVersion, error) {
+	if newName != nil && models.IsSystemAttributeName(*newName) {
+		return nil, domainerrors.NewValidation("attribute name \"" + *newName + "\" is reserved for system attributes")
+	}
 	// Validate enum reference if changing type to enum
 	if newType != nil && *newType == models.AttributeTypeEnum {
 		if newEnumID == nil || *newEnumID == "" {

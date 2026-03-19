@@ -61,6 +61,7 @@ type AttributeResponse struct {
 	EnumID      string `json:"enum_id,omitempty"`
 	Ordinal     int    `json:"ordinal"`
 	Required    bool   `json:"required"`
+	System      bool   `json:"system"`
 }
 
 type UpdateAttributeRequest struct {
@@ -214,6 +215,7 @@ type SnapshotAttributeResponse struct {
 	EnumName    string `json:"enum_name,omitempty"`
 	Ordinal     int    `json:"ordinal"`
 	Required    bool   `json:"required"`
+	System      bool   `json:"system"`
 }
 
 type SnapshotAssociationResponse struct {
@@ -338,9 +340,11 @@ type InstanceResponse struct {
 }
 
 type AttributeValueResponse struct {
-	Name  string      `json:"name"`
-	Type  string      `json:"type"`
-	Value any `json:"value"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Value    any    `json:"value"`
+	System   bool   `json:"system"`
+	Required bool   `json:"required"`
 }
 
 // === Association Link DTOs ===

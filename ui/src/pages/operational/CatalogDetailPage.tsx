@@ -238,6 +238,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
     setEditDesc(inst.description)
     const attrs: Record<string, string> = {}
     for (const av of inst.attributes || []) {
+      if (av.system) continue
       attrs[av.name] = av.value != null ? String(av.value) : ''
     }
     setEditAttrs(attrs)
@@ -553,7 +554,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
                       <Tr>
                         <Th>Name</Th>
                         <Th>Description</Th>
-                        {schemaAttrs.map(attr => (
+                        {schemaAttrs.filter(attr => !attr.system).map(attr => (
                           <Th key={attr.name}>{attr.name}</Th>
                         ))}
                         <Th>Version</Th>
@@ -565,7 +566,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
                         <Tr key={inst.id}>
                           <Td>{inst.name}</Td>
                           <Td>{inst.description}</Td>
-                          {schemaAttrs.map(attr => (
+                          {schemaAttrs.filter(attr => !attr.system).map(attr => (
                             <Td key={attr.name}>{getAttrValue(inst, attr.name)}</Td>
                           ))}
                           <Td>{inst.version}</Td>
@@ -724,31 +725,41 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
         <ModalBody>
           {createError && <Alert variant="danger" title={createError} isInline style={{ marginBottom: '1rem' }} />}
           <Form>
-            <FormGroup label="Name" isRequired fieldId="inst-name">
-              <TextInput id="inst-name" value={newInstName} onChange={(_e, v) => setNewInstName(v)} isRequired />
-            </FormGroup>
-            <FormGroup label="Description" fieldId="inst-desc">
-              <TextInput id="inst-desc" value={newInstDesc} onChange={(_e, v) => setNewInstDesc(v)} />
-            </FormGroup>
-            {schemaAttrs.map(attr => (
-              <FormGroup key={attr.name} label={`${attr.name}${attr.required ? ' *' : ''}`} fieldId={`attr-${attr.name}`}>
-                {attr.type === 'enum' && attr.enum_id && enumValues[attr.enum_id] ? (
-                  <EnumSelect
-                    id={`attr-${attr.name}`}
-                    value={newInstAttrs[attr.name] || ''}
-                    options={enumValues[attr.enum_id]}
-                    onChange={(v) => setNewInstAttrs(prev => ({ ...prev, [attr.name]: v }))}
-                  />
-                ) : (
-                  <TextInput
-                    id={`attr-${attr.name}`}
-                    type={attr.type === 'number' ? 'number' : 'text'}
-                    value={newInstAttrs[attr.name] || ''}
-                    onChange={(_e, v) => setNewInstAttrs(prev => ({ ...prev, [attr.name]: v }))}
-                  />
-                )}
-              </FormGroup>
-            ))}
+            {schemaAttrs.map(attr => {
+              if (attr.system && attr.name === 'name') {
+                return (
+                  <FormGroup key={attr.name} label="Name" isRequired fieldId="inst-name">
+                    <TextInput id="inst-name" value={newInstName} onChange={(_e, v) => setNewInstName(v)} isRequired />
+                  </FormGroup>
+                )
+              }
+              if (attr.system && attr.name === 'description') {
+                return (
+                  <FormGroup key={attr.name} label="Description" fieldId="inst-desc">
+                    <TextInput id="inst-desc" value={newInstDesc} onChange={(_e, v) => setNewInstDesc(v)} />
+                  </FormGroup>
+                )
+              }
+              return (
+                <FormGroup key={attr.name} label={`${attr.name}${attr.required ? ' *' : ''}`} fieldId={`attr-${attr.name}`}>
+                  {attr.type === 'enum' && attr.enum_id && enumValues[attr.enum_id] ? (
+                    <EnumSelect
+                      id={`attr-${attr.name}`}
+                      value={newInstAttrs[attr.name] || ''}
+                      options={enumValues[attr.enum_id]}
+                      onChange={(v) => setNewInstAttrs(prev => ({ ...prev, [attr.name]: v }))}
+                    />
+                  ) : (
+                    <TextInput
+                      id={`attr-${attr.name}`}
+                      type={attr.type === 'number' ? 'number' : 'text'}
+                      value={newInstAttrs[attr.name] || ''}
+                      onChange={(_e, v) => setNewInstAttrs(prev => ({ ...prev, [attr.name]: v }))}
+                    />
+                  )}
+                </FormGroup>
+              )
+            })}
           </Form>
         </ModalBody>
         <ModalFooter>
@@ -763,31 +774,41 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
         <ModalBody>
           {editError && <Alert variant="danger" title={editError} isInline style={{ marginBottom: '1rem' }} />}
           <Form>
-            <FormGroup label="Name" isRequired fieldId="edit-name">
-              <TextInput id="edit-name" value={editName} onChange={(_e, v) => setEditName(v)} isRequired />
-            </FormGroup>
-            <FormGroup label="Description" fieldId="edit-desc">
-              <TextInput id="edit-desc" value={editDesc} onChange={(_e, v) => setEditDesc(v)} />
-            </FormGroup>
-            {schemaAttrs.map(attr => (
-              <FormGroup key={attr.name} label={`${attr.name}${attr.required ? ' *' : ''}`} fieldId={`edit-attr-${attr.name}`}>
-                {attr.type === 'enum' && attr.enum_id && enumValues[attr.enum_id] ? (
-                  <EnumSelect
-                    id={`edit-attr-${attr.name}`}
-                    value={editAttrs[attr.name] || ''}
-                    options={enumValues[attr.enum_id]}
-                    onChange={(v) => setEditAttrs(prev => ({ ...prev, [attr.name]: v }))}
-                  />
-                ) : (
-                  <TextInput
-                    id={`edit-attr-${attr.name}`}
-                    type={attr.type === 'number' ? 'number' : 'text'}
-                    value={editAttrs[attr.name] || ''}
-                    onChange={(_e, v) => setEditAttrs(prev => ({ ...prev, [attr.name]: v }))}
-                  />
-                )}
-              </FormGroup>
-            ))}
+            {schemaAttrs.map(attr => {
+              if (attr.system && attr.name === 'name') {
+                return (
+                  <FormGroup key={attr.name} label="Name" isRequired fieldId="edit-name">
+                    <TextInput id="edit-name" value={editName} onChange={(_e, v) => setEditName(v)} isRequired />
+                  </FormGroup>
+                )
+              }
+              if (attr.system && attr.name === 'description') {
+                return (
+                  <FormGroup key={attr.name} label="Description" fieldId="edit-desc">
+                    <TextInput id="edit-desc" value={editDesc} onChange={(_e, v) => setEditDesc(v)} />
+                  </FormGroup>
+                )
+              }
+              return (
+                <FormGroup key={attr.name} label={`${attr.name}${attr.required ? ' *' : ''}`} fieldId={`edit-attr-${attr.name}`}>
+                  {attr.type === 'enum' && attr.enum_id && enumValues[attr.enum_id] ? (
+                    <EnumSelect
+                      id={`edit-attr-${attr.name}`}
+                      value={editAttrs[attr.name] || ''}
+                      options={enumValues[attr.enum_id]}
+                      onChange={(v) => setEditAttrs(prev => ({ ...prev, [attr.name]: v }))}
+                    />
+                  ) : (
+                    <TextInput
+                      id={`edit-attr-${attr.name}`}
+                      type={attr.type === 'number' ? 'number' : 'text'}
+                      value={editAttrs[attr.name] || ''}
+                      onChange={(_e, v) => setEditAttrs(prev => ({ ...prev, [attr.name]: v }))}
+                    />
+                  )}
+                </FormGroup>
+              )
+            })}
           </Form>
         </ModalBody>
         <ModalFooter>
