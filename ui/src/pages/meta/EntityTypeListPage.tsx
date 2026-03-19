@@ -65,7 +65,6 @@ export function EntityTypeListPage({
         <Thead>
           <Tr>
             <Th>Name</Th>
-            <Th>Description</Th>
             <Th>Created</Th>
           </Tr>
         </Thead>
@@ -77,7 +76,6 @@ export function EntityTypeListPage({
               isClickable
             >
               <Td>{et.name}</Td>
-              <Td>{et.id}</Td>
               <Td>{new Date(et.created_at).toLocaleDateString()}</Td>
             </Tr>
           ))}

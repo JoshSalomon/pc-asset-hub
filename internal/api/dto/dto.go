@@ -177,6 +177,7 @@ type CatalogVersionPinResponse struct {
 	EntityTypeID        string `json:"entity_type_id"`
 	EntityTypeVersionID string `json:"entity_type_version_id"`
 	Version             int    `json:"version"`
+	Description         string `json:"description,omitempty"`
 }
 
 type LifecycleTransitionResponse struct {

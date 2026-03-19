@@ -269,6 +269,7 @@ export default function CatalogVersionDetailPage({ role }: Props) {
                 <Thead>
                   <Tr>
                     <Th>Entity Type</Th>
+                    <Th>Description</Th>
                     <Th>Version</Th>
                     <Th>Entity Type ID</Th>
                   </Tr>
@@ -280,6 +281,9 @@ export default function CatalogVersionDetailPage({ role }: Props) {
                         <Button variant="link" isInline onClick={() => handleOpenSnapshot(pin)}>
                           {pin.entity_type_name}
                         </Button>
+                      </Td>
+                      <Td style={{ maxWidth: '30rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {pin.description || ''}
                       </Td>
                       <Td>V{pin.version}</Td>
                       <Td><code>{pin.entity_type_id.slice(0, 8)}...</code></Td>

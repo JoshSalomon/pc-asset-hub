@@ -95,6 +95,8 @@ test('RW hides Create and Copy buttons', async () => {
   await expect.element(page.getByText('Copy Entity Type')).not.toBeInTheDocument()
 })
 
+// TD-43: Description column deferred — API does not return entity type description yet
+
 test('renders empty table when no entity types', async () => {
   render(
     <MemoryRouter>

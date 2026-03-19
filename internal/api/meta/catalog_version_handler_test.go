@@ -298,6 +298,32 @@ func TestTE25_ListPins(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), `"version":2`)
 }
 
+// TD-44: ListPins includes version description
+func TestTD44_ListPinsIncludesDescription(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etRepo := new(mocks.MockEntityTypeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, pinRepo, nil, etRepo, etvRepo)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 2, Description: "ML model definition",
+	}, nil)
+	etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{
+		ID: "et1", Name: "Model",
+	}, nil)
+
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/catalog-versions/cv1/pins", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"description":"ML model definition"`)
+}
+
 // T-E.26: GET /catalog-versions/:id/pins for nonexistent CV → 404
 func TestTE26_ListPinsNotFound(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)

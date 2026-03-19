@@ -1178,7 +1178,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
                         />
                       </Td>
                       <Td>{sa.name}{sa.required ? ' *' : ''}</Td>
-                      <Td><Label color={sa.type === 'enum' ? 'purple' : sa.type === 'number' ? 'blue' : 'grey'}>{sa.type === 'enum' && sa.enum_id ? `enum (${enums.find((en) => en.id === sa.enum_id)?.name || sa.enum_id.slice(0, 8)})` : sa.type}</Label></Td>
+                      <Td><Label color={sa.type === 'enum' ? 'purple' : sa.type === 'number' ? 'blue' : 'grey'}>{sa.type === 'enum' && (sa.enum_name || sa.enum_id) ? `enum (${sa.enum_name || enums.find((en) => en.id === sa.enum_id)?.name || sa.enum_id?.slice(0, 8)})` : sa.type}</Label></Td>
                       <Td>{sa.description || '-'}</Td>
                       <Td>{conflict ? <Label color="red">Conflict</Label> : <Label color="green">Available</Label>}</Td>
                     </Tr>

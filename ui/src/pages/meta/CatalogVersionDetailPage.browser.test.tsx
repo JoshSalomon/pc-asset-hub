@@ -173,6 +173,20 @@ test('BOM tab shows empty state when no pins', async () => {
   await expect.element(page.getByText('No entity types pinned to this catalog version.')).toBeVisible()
 })
 
+// TD-44: BOM tab shows description column for pins
+test('TD-44: BOM tab shows description column', async () => {
+  ;(api.catalogVersions.listPins as Mock).mockResolvedValue({
+    items: [
+      { entity_type_name: 'Model', entity_type_id: 'et-1', entity_type_version_id: 'etv-1', version: 3, description: 'ML model type' },
+      { entity_type_name: 'Tool', entity_type_id: 'et-2', entity_type_version_id: 'etv-2', version: 1 },
+    ],
+    total: 2,
+  })
+  renderDetail()
+  await page.getByRole('tab', { name: 'Bill of Materials' }).click()
+  await expect.element(page.getByRole('gridcell', { name: 'ML model type' })).toBeVisible()
+})
+
 // T-E.64: Clicking entity type in BOM opens read-only modal
 test('T-E.64: BOM entity type click opens read-only modal', async () => {
   renderDetail()

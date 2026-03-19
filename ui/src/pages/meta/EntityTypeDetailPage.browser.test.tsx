@@ -1566,6 +1566,33 @@ test('T-18.38: copy attributes picker excludes system attributes', async () => {
   await expect.element(page.getByRole('dialog').getByRole('gridcell', { name: /^Name/ })).not.toBeInTheDocument()
 })
 
+// TD-4: Copy attributes picker shows enum name for enum attributes
+test('TD-4: copy picker shows enum (EnumName) using enum_name field', async () => {
+  // Source attrs have enum_name directly (simulating snapshot-style data)
+  const sourceAttrs = [
+    { id: 'sa1', name: 'priority', description: 'Priority level', type: 'enum', enum_id: 'enum-prio', enum_name: 'MonthName', ordinal: 0, required: false },
+  ]
+  ;(api.attributes.list as Mock).mockImplementation((etId: string) => {
+    if (etId === 'et-2') return Promise.resolve({ items: sourceAttrs, total: 1 })
+    return Promise.resolve({ items: mockAttributes, total: 5 })
+  })
+  ;(api.versions.list as Mock).mockResolvedValue({ items: mockVersions, total: 2 })
+  // Return empty enums list — enum_name on the attr itself should be used
+  ;(api.enums.list as Mock).mockResolvedValue({ items: [], total: 0 })
+
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Copy from...' }).click()
+  await expect.element(page.getByText('Copy Attributes from Another Type')).toBeVisible()
+
+  // Select source entity type
+  await page.getByRole('dialog').getByRole('button', { name: 'Select source type' }).click()
+  await page.getByText('Dataset').first().click()
+
+  // The enum attribute should show "enum (MonthName)" using enum_name directly
+  await expect.element(page.getByText('enum (MonthName)')).toBeVisible()
+})
+
 // Cardinality display for incoming association: target → source
 test('incoming association shows inverted cardinality', async () => {
   ;(api.associations.list as Mock).mockResolvedValue({

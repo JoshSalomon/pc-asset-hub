@@ -51,6 +51,16 @@ const mockReverseRefs = [
   { link_id: 'link2', association_name: 'depends-on', association_type: 'directional', instance_id: 'i3', instance_name: 'source-inst', entity_type_name: 'server' },
 ]
 
+const mockToolSnapshot = {
+  entity_type: { id: 'et2', name: 'tool' },
+  version: { id: 'etv2', version: 1 },
+  attributes: [
+    { id: 'sys-name', name: 'name', type: 'string', ordinal: -2, required: true, system: true },
+    { id: 'sys-desc', name: 'description', type: 'string', ordinal: -1, required: false, system: true },
+  ],
+  associations: [],
+}
+
 const mockInstances = [
   {
     id: 'i1', entity_type_id: 'et1', catalog_id: 'cat1', name: 'inst-a', description: 'First',
@@ -79,7 +89,10 @@ beforeEach(() => {
   vi.clearAllMocks()
   ;(api.catalogs.get as Mock).mockResolvedValue(mockCatalog)
   ;(api.catalogVersions.listPins as Mock).mockResolvedValue({ items: mockPins, total: 2 })
-  ;(api.versions.snapshot as Mock).mockResolvedValue(mockSnapshot)
+  ;(api.versions.snapshot as Mock).mockImplementation((etId: string) => {
+    if (etId === 'et2') return Promise.resolve(mockToolSnapshot)
+    return Promise.resolve(mockSnapshot)
+  })
   ;(api.instances.list as Mock).mockResolvedValue({ items: mockInstances, total: 1 })
   ;(api.instances.create as Mock).mockResolvedValue({ id: 'i2', name: 'new-inst' })
   ;(api.instances.update as Mock).mockResolvedValue({ id: 'i1', name: 'inst-a', version: 2 })
@@ -482,6 +495,135 @@ test('add contained child in create mode calls createContained', async () => {
     name: 'new-child-tool',
     description: undefined,
   })
+})
+
+// TD-42: Add contained instance modal shows child type's custom attributes
+test('TD-42: add contained modal shows child type schema attributes', async () => {
+  const toolSnapshot = {
+    entity_type: { id: 'et2', name: 'tool' },
+    version: { id: 'etv2', version: 1 },
+    attributes: [
+      { id: 'sys-name', name: 'name', type: 'string', ordinal: -2, required: true, system: true },
+      { id: 'sys-desc', name: 'description', type: 'string', ordinal: -1, required: false, system: true },
+      { id: 'ta1', name: 'tool-version', type: 'string', ordinal: 1, required: false },
+      { id: 'ta2', name: 'weight', type: 'number', ordinal: 2, required: true },
+    ],
+    associations: [],
+  }
+  ;(api.versions.snapshot as Mock).mockImplementation((etId: string) => {
+    if (etId === 'et2') return Promise.resolve(toolSnapshot)
+    return Promise.resolve(mockSnapshot)
+  })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await expect.element(page.getByRole('heading', { name: 'Contained Instances' }).first()).toBeVisible()
+  await page.getByRole('button', { name: 'Add Contained Instance' }).first().click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  // Child type pre-selected as "tool"
+  await expect.element(page.getByRole('dialog').getByText('tool', { exact: true })).toBeVisible()
+
+  // Custom attributes from the tool schema should appear as form fields
+  await expect.element(page.getByRole('dialog').getByText('tool-version')).toBeVisible()
+  await expect.element(page.getByRole('dialog').getByText('weight *')).toBeVisible()
+})
+
+// TD-42: Add contained instance modal submits custom attributes
+test('TD-42: add contained modal submits custom attributes', async () => {
+  const toolSnapshot = {
+    entity_type: { id: 'et2', name: 'tool' },
+    version: { id: 'etv2', version: 1 },
+    attributes: [
+      { id: 'sys-name', name: 'name', type: 'string', ordinal: -2, required: true, system: true },
+      { id: 'sys-desc', name: 'description', type: 'string', ordinal: -1, required: false, system: true },
+      { id: 'ta1', name: 'tool-version', type: 'string', ordinal: 1, required: false },
+    ],
+    associations: [],
+  }
+  ;(api.versions.snapshot as Mock).mockImplementation((etId: string) => {
+    if (etId === 'et2') return Promise.resolve(toolSnapshot)
+    return Promise.resolve(mockSnapshot)
+  })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await page.getByRole('button', { name: 'Add Contained Instance' }).first().click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  // Fill name
+  const nameInput = page.getByRole('dialog').getByRole('textbox', { name: /Name/i })
+  await nameInput.fill('new-tool')
+
+  // Fill custom attribute
+  const toolVersionInput = page.getByRole('dialog').getByRole('textbox', { name: /tool-version/i })
+  await toolVersionInput.fill('2.0')
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Create', exact: true }).click()
+  expect(api.instances.createContained).toHaveBeenCalledWith('my-catalog', 'model', 'i1', 'tool', {
+    name: 'new-tool',
+    description: undefined,
+    attributes: { 'tool-version': '2.0' },
+  })
+})
+
+// TD-42 coverage: submit contained instance with number attribute (parseFloat branch)
+test('TD-42: contained modal submits number attribute as parsed float', async () => {
+  const toolSnapshot = {
+    entity_type: { id: 'et2', name: 'tool' },
+    version: { id: 'etv2', version: 1 },
+    attributes: [
+      { id: 'sys-name', name: 'name', type: 'string', ordinal: -2, required: true, system: true },
+      { id: 'sys-desc', name: 'description', type: 'string', ordinal: -1, required: false, system: true },
+      { id: 'ta1', name: 'weight', type: 'number', ordinal: 1, required: false },
+    ],
+    associations: [],
+  }
+  ;(api.versions.snapshot as Mock).mockImplementation((etId: string) => {
+    if (etId === 'et2') return Promise.resolve(toolSnapshot)
+    return Promise.resolve(mockSnapshot)
+  })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await page.getByRole('button', { name: 'Add Contained Instance' }).first().click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  await page.getByRole('dialog').getByRole('textbox', { name: /Name/i }).fill('tool-1')
+  await page.getByRole('dialog').getByRole('spinbutton', { name: /weight/i }).fill('3.14')
+  await page.getByRole('dialog').getByRole('button', { name: 'Create', exact: true }).click()
+  expect(api.instances.createContained).toHaveBeenCalledWith('my-catalog', 'model', 'i1', 'tool', {
+    name: 'tool-1',
+    description: undefined,
+    attributes: { weight: 3.14 },
+  })
+})
+
+// TD-42 coverage: contained modal with enum attribute
+test('TD-42: contained modal shows enum select for enum attributes', async () => {
+  const toolSnapshot = {
+    entity_type: { id: 'et2', name: 'tool' },
+    version: { id: 'etv2', version: 1 },
+    attributes: [
+      { id: 'sys-name', name: 'name', type: 'string', ordinal: -2, required: true, system: true },
+      { id: 'sys-desc', name: 'description', type: 'string', ordinal: -1, required: false, system: true },
+      { id: 'ta1', name: 'status', type: 'enum', enum_id: 'enum1', ordinal: 1, required: false },
+    ],
+    associations: [],
+  }
+  ;(api.versions.snapshot as Mock).mockImplementation((etId: string) => {
+    if (etId === 'et2') return Promise.resolve(toolSnapshot)
+    return Promise.resolve(mockSnapshot)
+  })
+  ;(api.enums.listValues as Mock).mockResolvedValue({ items: [{ value: 'active' }, { value: 'inactive' }] })
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await page.getByRole('button', { name: 'Add Contained Instance' }).first().click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  // Enum attribute should render with a select toggle
+  await expect.element(page.getByRole('dialog').getByText('status')).toBeVisible()
 })
 
 // Add contained child error shows in modal

@@ -1,6 +1,6 @@
 # AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-03-18
+Last updated: 2026-03-19
 
 ---
 
@@ -8,12 +8,12 @@ Last updated: 2026-03-18
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1295 | 100% | 95.7% | — |
+| Backend (Go) | 1296 | 100% | 95.7% | — |
 | UI — Unit tests | 75 | 100% | 17.9% | 20.6% |
-| UI — Browser tests (Playwright) | 468 | 100% | 84.6% | 89.0% |
+| UI — Browser tests (Playwright) | 477 | 100% | 84.6% (1843/2179) | 89.0% (1673/1879) |
 | UI — System tests (Playwright + live server) | 27 | 100% | — | — |
 | Live system (bash scripts) | 217 | 100% | — | — |
-| **Total** | **2082** | **100%** | — | — |
+| **Total** | **2091** | **100%** | — | — |
 
 ---
 

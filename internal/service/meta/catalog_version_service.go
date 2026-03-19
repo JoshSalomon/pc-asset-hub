@@ -340,6 +340,7 @@ type ResolvedPin struct {
 	EntityTypeID        string
 	EntityTypeVersionID string
 	Version             int
+	Description         string
 }
 
 // ListPins returns resolved pins for a catalog version.
@@ -368,6 +369,7 @@ func (s *CatalogVersionService) ListPins(ctx context.Context, cvID string) ([]Re
 			EntityTypeID:        et.ID,
 			EntityTypeVersionID: pin.EntityTypeVersionID,
 			Version:             etv.Version,
+			Description:         etv.Description,
 		})
 	}
 	return resolved, nil

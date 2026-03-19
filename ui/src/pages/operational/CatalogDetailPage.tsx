@@ -98,6 +98,9 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
   const [childTypeSelectOpen, setChildTypeSelectOpen] = useState(false)
   const [adoptSelectOpen, setAdoptSelectOpen] = useState(false)
   const [modeSelectOpen, setModeSelectOpen] = useState(false)
+  const [childSchemaAttrs, setChildSchemaAttrs] = useState<SnapshotAttribute[]>([])
+  const [childEnumValues, setChildEnumValues] = useState<Record<string, string[]>>({})
+  const [newChildAttrs, setNewChildAttrs] = useState<Record<string, string>>({})
 
   // Link modal
   const [linkOpen, setLinkOpen] = useState(false)
@@ -344,6 +347,28 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
     } catch { setAvailableInstances([]) }
   }
 
+  // Load child type schema attributes when child type is selected
+  const loadChildSchema = async (typeName: string) => {
+    if (!typeName || !pins.length) { setChildSchemaAttrs([]); return }
+    const pin = pins.find(p => p.entity_type_name === typeName)
+    if (!pin) { setChildSchemaAttrs([]); return }
+    try {
+      const snapshot = await api.versions.snapshot(pin.entity_type_id, pin.version)
+      setChildSchemaAttrs(snapshot.attributes || [])
+      // Load enum values for enum attributes
+      const cache: Record<string, string[]> = {}
+      for (const attr of snapshot.attributes || []) {
+        if (attr.type === 'enum' && attr.enum_id && !cache[attr.enum_id]) {
+          try {
+            const res = await api.enums.listValues(attr.enum_id)
+            cache[attr.enum_id] = (res.items || []).map((v: { value: string }) => v.value)
+          } catch { /* ignore */ }
+        }
+      }
+      setChildEnumValues(cache)
+    } catch { setChildSchemaAttrs([]) }
+  }
+
   // Load target instances when association selected in link modal
   const loadLinkTargetInstances = async (assocName: string) => {
     if (!name) return
@@ -377,9 +402,21 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
           parent_instance_id: selectedInstance.id,
         })
       } else if (addChildMode === 'create' && newChildName.trim()) {
+        const childAttrs: Record<string, unknown> = {}
+        for (const [k, v] of Object.entries(newChildAttrs)) {
+          if (v !== '') {
+            const sa = childSchemaAttrs.find(a => a.name === k)
+            if (sa?.type === 'number') {
+              childAttrs[k] = parseFloat(v)
+            } else {
+              childAttrs[k] = v
+            }
+          }
+        }
         await api.instances.createContained(name, activeTab, selectedInstance.id, childTypeName, {
           name: newChildName.trim(),
           description: newChildDesc.trim() || undefined,
+          ...(Object.keys(childAttrs).length > 0 ? { attributes: childAttrs } : {}),
         })
       } else {
         return
@@ -387,6 +424,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
       setAddChildOpen(false)
       setNewChildName('')
       setNewChildDesc('')
+      setNewChildAttrs({})
       setChildTypeName('')
       setAdoptInstanceId('')
       setAddChildMode('create')
@@ -618,14 +656,17 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
                           setAddChildMode('create')
                           setNewChildName('')
                           setNewChildDesc('')
+                          setNewChildAttrs({})
                           setAdoptInstanceId('')
                           const containmentAssocs = schemaAssocs.filter(a => a.type === 'containment' && a.direction === 'outgoing')
                           if (containmentAssocs.length === 1) {
                             setChildTypeName(containmentAssocs[0].target_entity_type_name)
                             loadAvailableInstances(containmentAssocs[0].target_entity_type_name)
+                            loadChildSchema(containmentAssocs[0].target_entity_type_name)
                           } else {
                             setChildTypeName('')
                             setAvailableInstances([])
+                            setChildSchemaAttrs([])
                           }
                           setAddChildOpen(true)
                         }} style={{ marginBottom: '0.5rem' }}>
@@ -832,7 +873,9 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
                   const v = val as string
                   setChildTypeName(v)
                   setChildTypeSelectOpen(false)
+                  setNewChildAttrs({})
                   loadAvailableInstances(v)
+                  loadChildSchema(v)
                 }}
                 onOpenChange={setChildTypeSelectOpen}
                 toggle={(ref: React.Ref<MenuToggleElement>) => (
@@ -877,6 +920,25 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
                 <FormGroup label="Description" fieldId="child-desc">
                   <TextInput id="child-desc" value={newChildDesc} onChange={(_e, v) => setNewChildDesc(v)} />
                 </FormGroup>
+                {childSchemaAttrs.filter(a => !a.system).map(attr => (
+                  <FormGroup key={attr.name} label={`${attr.name}${attr.required ? ' *' : ''}`} fieldId={`child-attr-${attr.name}`}>
+                    {attr.type === 'enum' && attr.enum_id && childEnumValues[attr.enum_id] ? (
+                      <EnumSelect
+                        id={`child-attr-${attr.name}`}
+                        value={newChildAttrs[attr.name] || ''}
+                        options={childEnumValues[attr.enum_id]}
+                        onChange={(v) => setNewChildAttrs(prev => ({ ...prev, [attr.name]: v }))}
+                      />
+                    ) : (
+                      <TextInput
+                        id={`child-attr-${attr.name}`}
+                        type={attr.type === 'number' ? 'number' : 'text'}
+                        value={newChildAttrs[attr.name] || ''}
+                        onChange={(_e, v) => setNewChildAttrs(prev => ({ ...prev, [attr.name]: v }))}
+                      />
+                    )}
+                  </FormGroup>
+                ))}
               </>
             ) : (
               <FormGroup label="Select Instance" isRequired fieldId="adopt-instance">

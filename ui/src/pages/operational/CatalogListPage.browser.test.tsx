@@ -225,6 +225,14 @@ test('name too long shows validation error', async () => {
   await expect.element(page.getByText('Name must be at most 63 characters')).toBeVisible()
 })
 
+// TD-41: Description column in catalog list
+test('TD-41: catalog list shows description column', async () => {
+  renderList()
+  await expect.element(page.getByText('production-app-a')).toBeVisible()
+  // Catalog description should appear in a table cell
+  await expect.element(page.getByRole('gridcell', { name: 'Prod A' })).toBeVisible()
+})
+
 // T-16.64: Published badge shown in catalog list
 test('T-16.64: published badge shown in catalog list', async () => {
   renderList()
