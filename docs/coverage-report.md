@@ -8,12 +8,12 @@ Last updated: 2026-03-19
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1296 | 100% | 95.7% | — |
+| Backend (Go) | 1315 | 100% | 96.7% | — |
 | UI — Unit tests | 75 | 100% | 17.9% | 20.6% |
-| UI — Browser tests (Playwright) | 477 | 100% | 84.6% (1843/2179) | 89.0% (1673/1879) |
+| UI — Browser tests (Playwright) | 537 | 100% | 91.7% (2051/2235) | — |
 | UI — System tests (Playwright + live server) | 27 | 100% | — | — |
 | Live system (bash scripts) | 217 | 100% | — | — |
-| **Total** | **2091** | **100%** | — | — |
+| **Total** | **2170** | **100%** | — | — |
 
 ---
 
@@ -28,11 +28,11 @@ Last updated: 2026-03-19
 | `internal/api/operational` | 98.3% | Copy/Replace handlers at 94.4% (bind-error branches only); legacy handler removed |
 | `internal/domain/errors` | 100.0% | |
 | `internal/infrastructure/config` | 100.0% | |
-| `internal/infrastructure/gorm/models` | 100.0% | |
+| `internal/infrastructure/gorm/models` | 100.0% (12/12) | Removed legacy association name migration code (was 66.7%); added InitDB idempotency, AutoMigrate error, and containment cardinality fix tests |
 | `internal/infrastructure/gorm/repository` | 90.7% | GORM error branches on Delete/Update, `CatalogVersionGormRepo.Delete` at 0%; `GormTransactionManager` at 100% via integration tests |
 | `internal/infrastructure/k8s` | 92.6% | K8s client error paths |
 | `internal/operator/api/v1alpha1` | 98.2% | `DeepCopyObject` nil-receiver guard |
-| `internal/operator/controllers` | 84.3% | 27 uncovered lines: `SetupWithManager` (8, deferred to Phase B), K8s client error paths (18, fake client can't inject errors), unreachable `GenerateCRD` error (1) |
+| `internal/operator/controllers` | 94.3% (124/134) | Remaining: `SetupWithManager` (8 lines, requires envtest — deferred to Phase B), `SetOwnerReference` error branches (4 lines, unreachable defensive code) |
 | `internal/operator/crdgen` | 94.7% | 2 uncovered lines: `json.Marshal` error guards on inputs that cannot fail (well-formed map/struct) |
 | `internal/service/meta` | 99.5% | 4 lines uncovered: 2 assocRepo.BulkCopy error paths, requiresDeepCopy empty versions, deep copy Create error — all require complex multi-mock setup with WithCatalogRepos |
 | `internal/service/operational` | 99.8% | 2 lines uncovered: cycle guard in resolveParentChain (safety net for impossible data), txManager error wrap instrumentation artifact |
@@ -44,8 +44,7 @@ These packages are not counted toward coverage because they contain no business 
 
 | Package | Reason |
 |---------|--------|
-| `internal/api/dto` | Pure struct definitions, no test files |
-| `internal/domain/models` | Pure struct definitions, no statements |
+| `internal/domain/models` | Pure struct definitions (coverage tracked separately for `IsSystemAttributeName` helper) |
 | `internal/domain/repository` | Interface definitions only |
 | `internal/domain/repository/mocks` | Test infrastructure, not production code |
 | `internal/infrastructure/gorm/database` | DB driver bootstrap, covered in Phase B |
@@ -92,6 +91,31 @@ These methods are single-line delegations to the repository layer with no branch
 | `service/meta/attribute_service.go` | `ListAttributes` | Delegates to `etvRepo.GetLatestByEntityType` + `attrRepo.ListByVersion` |
 | `service/meta/enum_service.go` | `ListValues` | Delegates to `evRepo.ListByEnum` |
 
+### UI: Defensive guard clauses (unreachable via UI interaction)
+
+These are `if (!x) return` early returns in event handlers and callbacks. They are unreachable because the UI prevents the conditions from occurring: buttons are disabled when preconditions aren't met, state variables are set before dependent handlers can fire, and Select components always pass non-empty values.
+
+**CatalogDetailPage.tsx** (16 statements):
+
+| Line | Code | Why unreachable |
+|------|------|-----------------|
+| L186 | `if (!pin) return` | `activeTab` set from pin names; tabs generated from pins, mismatch impossible |
+| L209 | `if (!name \|\| !activeTab \|\| !newInstName.trim()) return` | Create button `isDisabled={!newInstName.trim()}` |
+| L252 | `if (!name \|\| !activeTab \|\| !editTarget) return` | `editTarget` always set before edit modal opens |
+| L278 | `if (!name \|\| !activeTab \|\| !deleteTarget) return` | `deleteTarget` always set before delete modal opens |
+| L319 | `setChildren([])` | Outer catch wraps loop with inner try/catch; only fires if Array.filter or setState throws |
+| L342 | `if (!name \|\| !typeName) return` | Called from Select onSelect which always passes selected value |
+| L352 | `if (!typeName \|\| !pins.length) return` | Called from Select with non-empty value; pins loaded before modal |
+| L374 | `if (!name) return` | `name` always provided by route when component is interactive |
+| L376 | `if (!assoc) return` | Association options come from schemaAssocs; selected value always matches |
+| L379 | `if (!targetPin) return` | Assoc target entity type always has a matching pin |
+| L388 | `if (!name \|\| !typeName) return` | Called from Select onSelect with value |
+| L396 | `if (!name \|\| ... \|\| !childTypeName) return` | Button disabled when `!childTypeName` |
+| L422 | `return` (else branch) | Button disabled when neither adopt nor create conditions met |
+| L438 | `if (... \|\| !linkTargetId \|\| !linkAssocName) return` | Button disabled when `!linkTargetId \|\| !linkAssocName` |
+| L455 | `if (... \|\| !parentTypeName) return` | Button disabled when `!parentTypeName` |
+| L473 | `if (!name \|\| !activeTab \|\| !selectedInstance) return` | `selectedInstance` always set before handler fires |
+
 ---
 
 ## UI Test Coverage
@@ -110,18 +134,18 @@ These methods are single-line delegations to the repository layer with no branch
 |-----------|-------|--------|
 | `App.browser.test.tsx` | 51 | Pass |
 | `client.browser.test.ts` | 61 | Pass |
-| `EntityTypeDetailPage.browser.test.tsx` | 77 | Pass |
+| `EntityTypeDetailPage.browser.test.tsx` | 135 | Pass |
 | `EntityTypeListPage.browser.test.tsx` | 12 | Pass |
 | `EnumDetailPage.browser.test.tsx` | 24 | Pass |
 | `EnumListPage.browser.test.tsx` | 14 | Pass |
-| `CatalogVersionDetailPage.browser.test.tsx` | 27 | Pass |
-| `CatalogListPage.browser.test.tsx` | 19 | Pass |
-| `CatalogDetailPage.browser.test.tsx` | 95 | Pass |
+| `CatalogVersionDetailPage.browser.test.tsx` | 28 | Pass |
+| `CatalogListPage.browser.test.tsx` | 20 | Pass |
+| `CatalogDetailPage.browser.test.tsx` | 131 | Pass |
 | `OperationalCatalogDetailPage.browser.test.tsx` | 36 | Pass |
 | `OperationalCatalogListPage.browser.test.tsx` | 13 | Pass |
 | `OperationalApp.browser.test.tsx` | 3 | Pass |
 | `useValidation.browser.test.tsx` | 6 | Pass |
-| **Total** | **453** | **100% pass** |
+| **Total** | **537** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
