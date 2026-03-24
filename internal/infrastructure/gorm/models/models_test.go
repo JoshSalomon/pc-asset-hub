@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -161,4 +162,83 @@ func TestInitDB(t *testing.T) {
 	// Verify tables exist by running a query
 	var count int64
 	assert.NoError(t, db.Table("entity_types").Count(&count).Error)
+}
+
+// InitDB skips pre-migration when name column already exists (current state of all databases)
+func TestInitDB_SkipsPreMigrationWhenNameExists(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	require.NoError(t, err)
+
+	// First InitDB creates all tables including associations with name column
+	require.NoError(t, InitDB(db))
+
+	// Insert an association
+	err = db.Exec(`INSERT INTO associations (id, entity_type_version_id, target_entity_type_id, type, name, source_cardinality, target_cardinality, created_at)
+		VALUES ('a1', 'etv1', 'et2', 'directional', 'uses', '0..n', '0..n', datetime('now'))`).Error
+	require.NoError(t, err)
+
+	// Second InitDB should skip the pre-migration (name column exists) and not error
+	require.NoError(t, InitDB(db))
+
+	// Verify the association is unchanged
+	var assoc Association
+	require.NoError(t, db.First(&assoc, "id = ?", "a1").Error)
+	assert.Equal(t, "uses", assoc.Name)
+}
+
+// InitDB AutoMigrate error path — use an invalid DB to trigger AutoMigrate failure
+func TestInitDB_AutoMigrateError(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	require.NoError(t, err)
+
+	// Close the underlying connection to make AutoMigrate fail
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.Close()
+
+	err = InitDB(db)
+	assert.Error(t, err)
+}
+
+// InitDB is idempotent — running twice should not error
+func TestInitDB_Idempotent(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	require.NoError(t, err)
+	require.NoError(t, InitDB(db))
+	// Second call should also succeed
+	require.NoError(t, InitDB(db))
+}
+
+// InitDB containment cardinality fix — verifies containment associations get "0..1" source cardinality
+func TestInitDB_ContainmentCardinalityFix(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	require.NoError(t, err)
+	require.NoError(t, InitDB(db))
+
+	// Insert a containment association with empty source_cardinality
+	assoc := Association{
+		ID:                  "fix-test",
+		EntityTypeVersionID: "etv1",
+		TargetEntityTypeID:  "et2",
+		Type:                "containment",
+		Name:                "contains",
+		SourceCardinality:   "",
+		TargetCardinality:   "0..n",
+	}
+	require.NoError(t, db.Create(&assoc).Error)
+
+	// Run InitDB again — should fix source_cardinality to "0..1"
+	require.NoError(t, InitDB(db))
+
+	var fixed Association
+	require.NoError(t, db.First(&fixed, "id = ?", "fix-test").Error)
+	assert.Equal(t, "0..1", fixed.SourceCardinality)
 }

@@ -1566,6 +1566,616 @@ test('T-18.38: copy attributes picker excludes system attributes', async () => {
   await expect.element(page.getByRole('dialog').getByRole('gridcell', { name: /^Name/ })).not.toBeInTheDocument()
 })
 
+// === Additional coverage: modal form interactions ===
+
+// Add association success: fill all fields and submit successfully, verify form resets
+test('add association success resets form state', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Add Association' }).click()
+
+  // Fill name
+  await page.getByRole('textbox', { name: /Name/i }).fill('my-assoc')
+  // Fill source/target roles
+  await page.getByRole('textbox', { name: /Source Role/i }).fill('owner')
+  await page.getByRole('textbox', { name: /Target Role/i }).fill('owned')
+  // Select target
+  await page.getByRole('button', { name: 'Select target' }).click()
+  await page.getByText('Dataset', { exact: true }).click()
+  // Submit
+  await page.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
+
+  expect(api.associations.create).toHaveBeenCalledWith('et-1', expect.objectContaining({
+    target_entity_type_id: 'et-2',
+    type: 'containment',
+    name: 'my-assoc',
+    source_role: 'owner',
+    target_role: 'owned',
+  }))
+  // Modal should be closed after successful create
+  await expect.element(page.getByRole('dialog')).not.toBeInTheDocument()
+})
+
+// Add attribute modal: fill description and select type
+test('add attribute modal with description field', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Add Attribute' }).click()
+  const dialog = page.getByRole('dialog')
+
+  // Fill name and description
+  await dialog.getByRole('textbox', { name: /Name/i }).fill('myattr')
+  const descInput = dialog.getByLabelText('Description')
+  await descInput.fill('A test description')
+
+  // Submit
+  await dialog.getByRole('button', { name: 'Add' }).click()
+  expect(api.attributes.add).toHaveBeenCalledWith('et-1', expect.objectContaining({
+    name: 'myattr',
+    description: 'A test description',
+    type: 'string',
+  }))
+})
+
+// Add attribute modal: change type to enum and select an enum
+test('add attribute modal select enum type and enum value', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Add Attribute' }).click()
+  const dialog = page.getByRole('dialog')
+
+  await dialog.getByRole('textbox', { name: /Name/i }).fill('color')
+  // Open type selector (PatternFly Select with MenuToggle showing "string")
+  await dialog.getByRole('button', { name: 'string' }).click()
+  // Select "enum"
+  await page.getByText('enum', { exact: true }).click()
+  // Now enum selector should appear - click it
+  await dialog.getByRole('button', { name: 'Select enum' }).click()
+  // Select the "Status" enum
+  await page.getByText('Status', { exact: true }).click()
+
+  // Submit
+  await dialog.getByRole('button', { name: 'Add' }).click()
+  expect(api.attributes.add).toHaveBeenCalledWith('et-1', expect.objectContaining({
+    name: 'color',
+    type: 'enum',
+    enum_id: 'enum1',
+  }))
+})
+
+// Add attribute success resets form
+test('add attribute success closes modal', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Add Attribute' }).click()
+  await page.getByRole('textbox', { name: /Name/i }).fill('newone')
+  await page.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
+  // Modal should close after success
+  await expect.element(page.getByRole('dialog')).not.toBeInTheDocument()
+})
+
+// Edit attribute modal: change type to enum
+test('edit attribute change type to enum', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await expect.element(page.getByText('hostname')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit' }).first().click()
+  const dialog = page.getByRole('dialog')
+
+  // Change type from string to enum
+  await dialog.getByRole('button', { name: 'string' }).click()
+  await page.getByText('enum', { exact: true }).click()
+  // Enum selector should appear
+  await dialog.getByRole('button', { name: 'Select enum' }).click()
+  await page.getByText('Status', { exact: true }).click()
+
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  expect(api.attributes.edit).toHaveBeenCalledWith('et-1', 'hostname', expect.objectContaining({
+    type: 'enum',
+    enum_id: 'enum1',
+  }))
+})
+
+// Edit attribute modal: edit description field
+test('edit attribute changes description', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await expect.element(page.getByText('hostname')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit' }).first().click()
+  const dialog = page.getByRole('dialog')
+
+  const descInput = dialog.getByLabelText('Description')
+  await descInput.fill('Updated description')
+
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  expect(api.attributes.edit).toHaveBeenCalledWith('et-1', 'hostname', expect.objectContaining({
+    description: 'Updated description',
+  }))
+})
+
+// Add association modal: fill target cardinality custom min/max
+test('add association target custom cardinality min/max inputs', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Add Association' }).click()
+
+  // Switch to directional
+  await page.getByRole('button', { name: 'containment' }).click()
+  await page.getByText('directional', { exact: true }).click()
+
+  // Select custom target cardinality
+  await userEvent.selectOptions(page.getByLabelText('Target Cardinality', { exact: true }), 'custom')
+  // Fill custom target min/max
+  const mins = await page.getByPlaceholder('min').all()
+  const maxes = await page.getByPlaceholder('max or n').all()
+  // Target min/max are the last set (or only set if source is standard)
+  const tgtMin = mins[mins.length - 1]
+  const tgtMax = maxes[maxes.length - 1]
+  await userEvent.type(tgtMin, '2')
+  await userEvent.type(tgtMax, '5')
+
+  // Fill required fields and submit
+  await page.getByRole('textbox', { name: /Name/i }).fill('test-assoc')
+  await page.getByRole('button', { name: 'Select target' }).click()
+  await page.getByText('Dataset', { exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
+
+  expect(api.associations.create).toHaveBeenCalledWith('et-1', expect.objectContaining({
+    target_cardinality: '2..5',
+  }))
+})
+
+// Add association modal: source cardinality custom min/max for directional
+test('add association source custom cardinality submission', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Add Association' }).click()
+
+  // Switch to directional
+  await page.getByRole('button', { name: 'containment' }).click()
+  await page.getByText('directional', { exact: true }).click()
+
+  // Select custom source cardinality
+  await userEvent.selectOptions(page.getByLabelText('Source Cardinality', { exact: true }), 'custom')
+  await userEvent.type(page.getByPlaceholder('min'), '1')
+  await userEvent.type(page.getByPlaceholder('max or n'), 'n')
+
+  // Fill required fields and submit
+  await page.getByRole('textbox', { name: /Name/i }).fill('test-assoc')
+  await page.getByRole('button', { name: 'Select target' }).click()
+  await page.getByText('Dataset', { exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
+
+  expect(api.associations.create).toHaveBeenCalledWith('et-1', expect.objectContaining({
+    source_cardinality: '1..n',
+  }))
+})
+
+// Add association: select bidirectional type
+test('add association select bidirectional type', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Add Association' }).click()
+
+  // Switch type to bidirectional
+  await page.getByRole('button', { name: 'containment' }).click()
+  await page.getByText('bidirectional', { exact: true }).click()
+
+  // Fill required fields and submit
+  await page.getByRole('textbox', { name: /Name/i }).fill('bidir-assoc')
+  await page.getByRole('button', { name: 'Select target' }).click()
+  await page.getByText('Dataset', { exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
+
+  expect(api.associations.create).toHaveBeenCalledWith('et-1', expect.objectContaining({
+    type: 'bidirectional',
+  }))
+})
+
+// Add association: containment source cardinality change to '1'
+test('add association containment source cardinality set to 1', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Add Association' }).click()
+
+  // Default type is containment - change source cardinality to "1"
+  await userEvent.selectOptions(page.getByLabelText('Source Cardinality', { exact: true }), '1')
+
+  // Fill required fields and submit
+  await page.getByRole('textbox', { name: /Name/i }).fill('cont-assoc')
+  await page.getByRole('button', { name: 'Select target' }).click()
+  await page.getByText('Dataset', { exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
+
+  expect(api.associations.create).toHaveBeenCalledWith('et-1', expect.objectContaining({
+    source_cardinality: '1',
+  }))
+})
+
+// Add association: switch type from directional back to containment resets cardinality
+test('add association switch to containment resets non-containment source cardinality', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Add Association' }).click()
+
+  // Switch to directional first
+  await page.getByRole('button', { name: 'containment' }).click()
+  await page.getByText('directional', { exact: true }).click()
+  // Set source cardinality to "1..n" (not valid for containment)
+  await userEvent.selectOptions(page.getByLabelText('Source Cardinality', { exact: true }), '1..n')
+
+  // Switch back to containment
+  await page.getByRole('button', { name: 'directional' }).click()
+  await page.getByText('containment', { exact: true }).click()
+
+  // Source cardinality should be reset to "0..1"
+  const srcSelect = page.getByLabelText('Source Cardinality', { exact: true })
+  await expect.element(srcSelect).toHaveValue('0..1')
+})
+
+// Add association: directional standard target cardinality change
+test('add association directional target cardinality standard select', async () => {
+  ;(api.associations.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Add Association' }).click()
+
+  // Switch to directional
+  await page.getByRole('button', { name: 'containment' }).click()
+  await page.getByText('directional', { exact: true }).click()
+
+  // Change target cardinality from default to "1"
+  await userEvent.selectOptions(page.getByLabelText('Target Cardinality', { exact: true }), '1')
+
+  // Fill required fields and submit
+  await page.getByRole('textbox', { name: /Name/i }).fill('test')
+  await page.getByRole('button', { name: 'Select target' }).click()
+  await page.getByText('Dataset', { exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
+
+  expect(api.associations.create).toHaveBeenCalledWith('et-1', expect.objectContaining({
+    target_cardinality: '1',
+  }))
+})
+
+// Copy attributes: uncheck a selected attribute
+test('copy attributes uncheck deselects attribute', async () => {
+  const sourceAttrs = [
+    { id: 'sa1', name: 'region', description: 'Region', type: 'string', ordinal: 0, required: false },
+    { id: 'sa2', name: 'zone', description: 'Zone', type: 'string', ordinal: 1, required: false },
+  ]
+  ;(api.attributes.list as Mock).mockImplementation((etId: string) => {
+    if (etId === 'et-2') return Promise.resolve({ items: sourceAttrs, total: 2 })
+    return Promise.resolve({ items: mockAttributes, total: 5 })
+  })
+  ;(api.versions.list as Mock).mockResolvedValue({ items: mockVersions, total: 2 })
+
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Copy from...' }).click()
+
+  // Select source
+  await page.getByRole('dialog').getByRole('button', { name: 'Select source type' }).click()
+  await page.getByText('Dataset').first().click()
+  await expect.element(page.getByText('region').first()).toBeVisible()
+
+  // Check both, then uncheck first
+  const checkboxes = page.getByRole('dialog').getByRole('checkbox')
+  await checkboxes.nth(0).click() // check region
+  await checkboxes.nth(1).click() // check zone
+  await checkboxes.nth(0).click() // uncheck region
+
+  // Submit - only zone should be selected
+  await page.getByRole('dialog').getByRole('button', { name: 'Copy Selected' }).click()
+  expect(api.attributes.copyFrom).toHaveBeenCalledWith('et-1', expect.objectContaining({
+    attribute_names: ['zone'],
+  }))
+})
+
+// Rename modal: renders form fields (covers modal rendering lines)
+test('rename modal renders New Name field with current name', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByText('Rename', { exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  // The name field should be pre-filled with the current entity type name
+  await expect.element(dialog.getByRole('textbox', { name: /New Name/i })).toHaveValue('MLModel')
+})
+
+// Edit attribute success closes modal
+test('edit attribute success closes modal', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await expect.element(page.getByText('hostname')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit' }).first().click()
+  await expect.element(page.getByText('Edit Attribute')).toBeVisible()
+
+  await page.getByRole('textbox', { name: /Name/i }).fill('newhost')
+  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
+
+  // Modal should close after success
+  await expect.element(page.getByText('Edit Attribute')).not.toBeInTheDocument()
+})
+
+// Rename success reloads entity type (non-deep-copy path)
+test('rename success with non-deep-copy reloads', async () => {
+  ;(api.entityTypes.rename as Mock).mockResolvedValue({
+    entity_type: { ...mockEntityType, name: 'RenamedModel' },
+    was_deep_copy: false,
+  })
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByText('Rename', { exact: true }).click()
+  await page.getByRole('textbox', { name: /New Name/i }).fill('RenamedModel')
+  await page.getByRole('dialog').getByRole('button', { name: 'Rename' }).click()
+
+  // Rename modal should close
+  await expect.element(page.getByText('Rename Entity Type')).not.toBeInTheDocument()
+  // entityType should be reloaded
+  expect(api.entityTypes.get).toHaveBeenCalled()
+})
+
+// Rename success with deep copy navigates to new entity
+test('rename deep copy success navigates to new entity', async () => {
+  ;(api.entityTypes.rename as Mock)
+    .mockRejectedValueOnce(new Error('409: DEEP_COPY_REQUIRED'))
+    .mockResolvedValueOnce({
+      entity_type: { id: 'et-new', name: 'NewName' },
+      was_deep_copy: true,
+    })
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByText('Rename', { exact: true }).click()
+  await page.getByRole('textbox', { name: /New Name/i }).fill('NewName')
+  await page.getByRole('dialog').getByRole('button', { name: 'Rename' }).click()
+
+  await expect.element(page.getByText('Deep Copy Required')).toBeVisible()
+  await page.getByRole('button', { name: 'Create Copy' }).click()
+
+  // Should navigate away (deep copy was true)
+  expect(api.entityTypes.rename).toHaveBeenCalledWith('et-1', 'NewName', true)
+})
+
+// Copy entity type success navigates to home
+test('copy entity type success navigates to home', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Copy' }).click()
+  await page.getByRole('textbox', { name: /New Name/i }).fill('CopiedModel')
+  await page.getByRole('dialog').getByRole('button', { name: 'Copy' }).click()
+
+  expect(api.entityTypes.copy).toHaveBeenCalledWith('et-1', { source_version: 1, new_name: 'CopiedModel' })
+  // Should navigate to home page
+  await expect.element(page.getByText('Home Page')).toBeVisible()
+})
+
+// Delete entity type success navigates to home
+test('delete entity type success navigates to home', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Delete' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
+
+  expect(api.entityTypes.delete).toHaveBeenCalledWith('et-1')
+  await expect.element(page.getByText('Home Page')).toBeVisible()
+})
+
+// Add attribute with required=true
+test('add attribute with required checked', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Add Attribute' }).click()
+  const dialog = page.getByRole('dialog')
+
+  await dialog.getByRole('textbox', { name: /Name/i }).fill('reqattr')
+  // Check the required checkbox
+  await dialog.getByLabelText('Required').click()
+
+  await dialog.getByRole('button', { name: 'Add' }).click()
+  expect(api.attributes.add).toHaveBeenCalledWith('et-1', expect.objectContaining({
+    name: 'reqattr',
+    required: true,
+  }))
+})
+
+// Add attribute: type selector opens (covers toggle rendering on line 821)
+test('add attribute type selector opens and shows options', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Add Attribute' }).click()
+  const dialog = page.getByRole('dialog')
+
+  // Open type selector - the button should show "string" (default)
+  const typeToggle = dialog.getByRole('button', { name: 'string' })
+  await expect.element(typeToggle).toBeVisible()
+  await typeToggle.click()
+  // The dropdown should show string, number, enum options
+  await expect.element(page.getByText('string', { exact: true }).last()).toBeVisible()
+})
+
+// Edit attribute: edit the enum attribute (status) - covers openEditAttr enum preload
+test('edit enum attribute pre-fills enum selector', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await expect.element(page.getByText('status', { exact: true })).toBeVisible()
+
+  // Click Edit on the 3rd custom attribute (status, which is enum type)
+  const editButtons = page.getByRole('button', { name: 'Edit' })
+  await editButtons.nth(2).click()
+  const dialog = page.getByRole('dialog')
+
+  // Type should show "enum"
+  await expect.element(dialog.getByRole('button', { name: 'enum' })).toBeVisible()
+  // Enum selector should show "Status"
+  await expect.element(dialog.getByRole('button', { name: 'Status' })).toBeVisible()
+})
+
+// handleLoadSourceAttrs error path
+test('copy attrs source load error clears source attributes', async () => {
+  ;(api.attributes.list as Mock).mockImplementation((etId: string) => {
+    if (etId === 'et-2') return Promise.reject(new Error('500: load failed'))
+    return Promise.resolve({ items: mockAttributes, total: 5 })
+  })
+  ;(api.versions.list as Mock).mockImplementation((etId: string) => {
+    if (etId === 'et-2') return Promise.reject(new Error('500: versions failed'))
+    return Promise.resolve({ items: mockVersions, total: 2 })
+  })
+
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Copy from...' }).click()
+
+  // Select source - it will fail
+  await page.getByRole('dialog').getByRole('button', { name: 'Select source type' }).click()
+  await page.getByText('Dataset').first().click()
+
+  // Should not crash; no source attributes table should appear
+  // The "Copy Selected" button should be disabled (no attrs selected)
+  await expect.element(page.getByRole('dialog').getByRole('button', { name: 'Copy Selected' })).toBeDisabled()
+})
+
+// Edit attribute modal: toggle required checkbox
+test('edit attribute toggle required checkbox', async () => {
+  // Use an attribute that is not required initially
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await expect.element(page.getByText('hostname')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit' }).first().click()
+  const dialog = page.getByRole('dialog')
+
+  // Required checkbox should be unchecked (hostname has required: false)
+  const checkbox = dialog.getByRole('checkbox', { name: /Required/i })
+  await expect.element(checkbox).not.toBeChecked()
+  // Toggle it
+  await checkbox.click()
+  await expect.element(checkbox).toBeChecked()
+
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  expect(api.attributes.edit).toHaveBeenCalledWith('et-1', 'hostname', expect.objectContaining({
+    required: true,
+  }))
+})
+
+// Modal close via X button (onClose) — Add Attribute modal
+test('add attribute modal close via X button', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Add Attribute' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  // Click the close button (PatternFly modal X)
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
+  await expect.element(page.getByRole('dialog')).not.toBeInTheDocument()
+})
+
+// Modal close via X button — Add Association modal
+test('add association modal close via X button', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await page.getByRole('button', { name: 'Add Association' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
+  await expect.element(page.getByRole('dialog')).not.toBeInTheDocument()
+})
+
+// Modal close via X button — Copy modal
+test('copy modal close via X button', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+  await page.getByRole('button', { name: 'Copy' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
+  await expect.element(page.getByRole('dialog')).not.toBeInTheDocument()
+})
+
+// Modal close via X button — Delete confirmation modal
+test('delete modal close via X button', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+  await page.getByRole('button', { name: 'Delete' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
+  await expect.element(page.getByRole('dialog')).not.toBeInTheDocument()
+})
+
+// Modal close via X button — Edit Attribute modal
+test('edit attribute modal close via X button', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await expect.element(page.getByText('hostname')).toBeVisible()
+  await page.getByRole('button', { name: 'Edit' }).first().click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
+  await expect.element(page.getByRole('dialog')).not.toBeInTheDocument()
+})
+
+// Modal close via X button — Rename modal
+test('rename modal close via X button', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+  await page.getByText('Rename', { exact: true }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
+  await expect.element(page.getByRole('dialog')).not.toBeInTheDocument()
+})
+
+// Modal close via X button — Deep copy warning modal
+test('deep copy warning modal close via X button', async () => {
+  ;(api.entityTypes.rename as Mock).mockRejectedValueOnce(new Error('409: DEEP_COPY_REQUIRED'))
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+
+  await page.getByText('Rename', { exact: true }).click()
+  await page.getByRole('textbox', { name: /New Name/i }).fill('NewName')
+  await page.getByRole('dialog').getByRole('button', { name: 'Rename' }).click()
+
+  await expect.element(page.getByText('Deep Copy Required')).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
+  await expect.element(page.getByText('Deep Copy Required')).not.toBeInTheDocument()
+})
+
+// Modal close via X button — Copy Attributes modal
+test('copy attributes modal close via X button', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+  await page.getByRole('button', { name: 'Copy from...' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
+  await expect.element(page.getByRole('dialog')).not.toBeInTheDocument()
+})
+
+// Edit association modal close via X button
+test('edit association modal close via X button', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: /Associations/i }).click()
+  await expect.element(page.getByText('Dataset')).toBeVisible()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await expect.element(page.getByText('Edit Association')).toBeVisible()
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
+  await expect.element(page.getByText('Edit Association')).not.toBeInTheDocument()
+})
+
 // TD-4: Copy attributes picker shows enum name for enum attributes
 test('TD-4: copy picker shows enum (EnumName) using enum_name field', async () => {
   // Source attrs have enum_name directly (simulating snapshot-style data)

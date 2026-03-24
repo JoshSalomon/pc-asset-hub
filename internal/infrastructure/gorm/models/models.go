@@ -449,33 +449,6 @@ func AllModels() []any {
 
 // InitDB initializes the database with auto-migration and data fixups.
 func InitDB(db *gorm.DB) error {
-	// Pre-migration: if associations table exists but has no name column, add it
-	// as nullable first, populate names, then let AutoMigrate add the NOT NULL constraint.
-	if db.Migrator().HasTable(&Association{}) && !db.Migrator().HasColumn(&Association{}, "Name") {
-		// Add column as nullable
-		if err := db.Exec("ALTER TABLE associations ADD COLUMN name VARCHAR(255) DEFAULT ''").Error; err != nil {
-			return err
-		}
-		// Populate names from target_role, then source_role, then type
-		var unnamed []Association
-		if err := db.Where("name = ''").Find(&unnamed).Error; err != nil {
-			return err
-		}
-		for i := range unnamed {
-			n := unnamed[i].TargetRole
-			if n == "" {
-				n = unnamed[i].SourceRole
-			}
-			if n == "" {
-				n = unnamed[i].Type + "_assoc"
-			}
-			unnamed[i].Name = n
-			if err := db.Save(&unnamed[i]).Error; err != nil {
-				return err
-			}
-		}
-	}
-
 	if err := db.AutoMigrate(AllModels()...); err != nil {
 		return err
 	}

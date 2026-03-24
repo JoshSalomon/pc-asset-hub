@@ -2,6 +2,7 @@ package controllers_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,11 +10,15 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/project-catalyst/pc-asset-hub/internal/operator/api/v1alpha1"
 	"github.com/project-catalyst/pc-asset-hub/internal/operator/controllers"
@@ -662,6 +667,529 @@ func TestReconcile_CRNotFound(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, ctrl.Result{}, result)
+}
+
+// === Error Path Tests (interceptor-based) ===
+
+// Line 42: r.Get returns non-NotFound error
+func TestReconcile_GetCRError(t *testing.T) {
+	s := testScheme()
+	cr := newTestCR(1, "development")
+
+	cl := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(cr).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if _, ok := obj.(*v1alpha1.AssetHub); ok && key.Name == "test-hub" {
+					return fmt.Errorf("injected Get error")
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+		}).
+		Build()
+
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: s}
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "injected Get error")
+}
+
+// Lines 69-70: reconcileConfigMap fails — error recorded in status
+func TestReconcile_ConfigMapError(t *testing.T) {
+	s := testScheme()
+	cr := newTestCR(1, "development")
+
+	cl := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(cr).
+		WithStatusSubresource(cr).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if _, ok := obj.(*corev1.ConfigMap); ok {
+					return fmt.Errorf("injected ConfigMap create error")
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: s}
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	// updateStatus records the error in status and returns nil
+	require.NoError(t, err)
+	updated := &v1alpha1.AssetHub{}
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "test-hub", Namespace: "default"}, updated)
+	require.NoError(t, err)
+	assert.False(t, updated.Status.Ready)
+	assert.Contains(t, updated.Status.Message, "failed to reconcile configmap")
+}
+
+// Lines 76-77: reconcileDeployment fails — error recorded in status
+func TestReconcile_DeploymentError(t *testing.T) {
+	s := testScheme()
+	cr := newTestCR(1, "development")
+
+	cl := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(cr).
+		WithStatusSubresource(cr).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if _, ok := obj.(*appsv1.Deployment); ok {
+					return fmt.Errorf("injected Deployment create error")
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: s}
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	require.NoError(t, err)
+	updated := &v1alpha1.AssetHub{}
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "test-hub", Namespace: "default"}, updated)
+	require.NoError(t, err)
+	assert.False(t, updated.Status.Ready)
+	assert.Contains(t, updated.Status.Message, "failed to reconcile deployment")
+}
+
+// Lines 83-84: reconcileService fails — error recorded in status
+func TestReconcile_ServiceError(t *testing.T) {
+	s := testScheme()
+	cr := newTestCR(1, "development")
+
+	cl := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(cr).
+		WithStatusSubresource(cr).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if _, ok := obj.(*corev1.Service); ok {
+					return fmt.Errorf("injected Service create error")
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: s}
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	require.NoError(t, err)
+	updated := &v1alpha1.AssetHub{}
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "test-hub", Namespace: "default"}, updated)
+	require.NoError(t, err)
+	assert.False(t, updated.Status.Ready)
+	assert.Contains(t, updated.Status.Message, "failed to reconcile service")
+}
+
+// Lines 90-91 + 285-286: reconcileRoute fails (route Get returns non-NotFound error)
+func TestReconcile_RouteGetError(t *testing.T) {
+	s := testScheme()
+	cr := newTestCR(1, "openshift")
+	cr.Spec.APIHostname = "api.example.com"
+
+	cl := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(cr).
+		WithStatusSubresource(cr).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if u, ok := obj.(*unstructured.Unstructured); ok {
+					gvk := u.GroupVersionKind()
+					if gvk.Kind == "Route" && gvk.Group == "route.openshift.io" {
+						return fmt.Errorf("injected Route Get error")
+					}
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+		}).
+		Build()
+
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: s}
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	// updateStatus records route error in status
+	require.NoError(t, err)
+	updated := &v1alpha1.AssetHub{}
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "test-hub", Namespace: "default"}, updated)
+	require.NoError(t, err)
+	assert.False(t, updated.Status.Ready)
+	assert.Contains(t, updated.Status.Message, "failed to reconcile route")
+}
+
+// Lines 290-293: reconcileRoute — route already exists, update path
+func TestReconcile_RouteAlreadyExists_Updates(t *testing.T) {
+	s := testScheme()
+	cr := newTestCR(1, "openshift")
+	cr.Spec.APIHostname = "api.example.com"
+	cr.Spec.UIHostname = "ui.example.com"
+
+	// Pre-create route as unstructured object
+	existingRoute := &unstructured.Unstructured{}
+	existingRoute.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "route.openshift.io",
+		Version: "v1",
+		Kind:    "Route",
+	})
+	existingRoute.SetName("assethub-api-route")
+	existingRoute.SetNamespace("default")
+	existingRoute.Object["spec"] = map[string]any{
+		"host": "old-host.example.com",
+		"to":   map[string]any{"kind": "Service", "name": "assethub-api-svc"},
+		"port": map[string]any{"targetPort": int64(8080)},
+	}
+
+	existingRoute2 := &unstructured.Unstructured{}
+	existingRoute2.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "route.openshift.io",
+		Version: "v1",
+		Kind:    "Route",
+	})
+	existingRoute2.SetName("assethub-ui-route")
+	existingRoute2.SetNamespace("default")
+	existingRoute2.Object["spec"] = map[string]any{
+		"host": "old-ui.example.com",
+		"to":   map[string]any{"kind": "Service", "name": "assethub-ui-svc"},
+		"port": map[string]any{"targetPort": int64(80)},
+	}
+
+	cl := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(cr, existingRoute, existingRoute2).
+		WithStatusSubresource(cr).
+		Build()
+
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: s}
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	require.NoError(t, err)
+
+	// Verify route was updated with new hostname
+	updated := &unstructured.Unstructured{}
+	updated.SetGroupVersionKind(schema.GroupVersionKind{
+		Group: "route.openshift.io", Version: "v1", Kind: "Route",
+	})
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "assethub-api-route", Namespace: "default"}, updated)
+	require.NoError(t, err)
+	spec := updated.Object["spec"].(map[string]any)
+	assert.Equal(t, "api.example.com", spec["host"])
+}
+
+// Lines 96-97: reconcileCatalogVersions fails (List error)
+func TestReconcile_CatalogVersionsListError(t *testing.T) {
+	s := testScheme()
+	cr := newTestCR(1, "development")
+
+	cl := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(cr).
+		WithStatusSubresource(cr).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+				if _, ok := list.(*v1alpha1.CatalogVersionList); ok {
+					return fmt.Errorf("injected CatalogVersion list error")
+				}
+				return c.List(ctx, list, opts...)
+			},
+		}).
+		Build()
+
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: s}
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	require.NoError(t, err)
+	updated := &v1alpha1.AssetHub{}
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "test-hub", Namespace: "default"}, updated)
+	require.NoError(t, err)
+	assert.False(t, updated.Status.Ready)
+	assert.Contains(t, updated.Status.Message, "failed to reconcile catalog versions")
+}
+
+// Lines 101-102: reconcileCatalogs fails (List error)
+func TestReconcile_CatalogsListError(t *testing.T) {
+	s := testScheme()
+	cr := newTestCR(1, "development")
+
+	cl := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(cr).
+		WithStatusSubresource(cr).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+				if _, ok := list.(*v1alpha1.CatalogList); ok {
+					return fmt.Errorf("injected Catalog list error")
+				}
+				return c.List(ctx, list, opts...)
+			},
+		}).
+		Build()
+
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: s}
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	require.NoError(t, err)
+	updated := &v1alpha1.AssetHub{}
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "test-hub", Namespace: "default"}, updated)
+	require.NoError(t, err)
+	assert.False(t, updated.Status.Ready)
+	assert.Contains(t, updated.Status.Message, "failed to reconcile catalogs")
+}
+
+// Line 105: updateStatus final call fails
+func TestReconcile_FinalUpdateStatusError(t *testing.T) {
+	s := testScheme()
+	cr := newTestCR(1, "development")
+
+	statusUpdateCount := 0
+	cl := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(cr).
+		WithStatusSubresource(cr).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourceUpdate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+				if _, ok := obj.(*v1alpha1.AssetHub); ok {
+					statusUpdateCount++
+					// Fail the first (and only, in success path) status update
+					return fmt.Errorf("injected status update error")
+				}
+				return c.SubResource(subResourceName).Update(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: s}
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "injected status update error")
+}
+
+// Line 298: updateStatus — Get fails when fetching latest CR
+func TestReconcile_UpdateStatusGetError(t *testing.T) {
+	s := testScheme()
+	cr := newTestCR(1, "development")
+
+	getCount := 0
+	cl := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(cr).
+		WithStatusSubresource(cr).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if _, ok := obj.(*v1alpha1.AssetHub); ok {
+					getCount++
+					// First Get succeeds (line 37), second Get in updateStatus (line 298) fails
+					if getCount >= 2 {
+						return fmt.Errorf("injected updateStatus Get error")
+					}
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+		}).
+		Build()
+
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: s}
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "injected updateStatus Get error")
+}
+
+// Lines 317-320: reconcileCatalogVersions — Update fails after setting owner ref
+func TestReconcile_CVUpdateOwnerRefError(t *testing.T) {
+	s := testScheme()
+	cr := newTestCR(1, "development")
+	cr.UID = "test-uid-456"
+
+	cv := &v1alpha1.CatalogVersion{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cv",
+			Namespace: "default",
+		},
+		Spec: v1alpha1.CatalogVersionSpec{
+			LifecycleStage: "testing",
+		},
+	}
+
+	cl := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(cr, cv).
+		WithStatusSubresource(cr, cv).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+				if _, ok := obj.(*v1alpha1.CatalogVersion); ok {
+					return fmt.Errorf("injected CV update error")
+				}
+				return c.Update(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: s}
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	// reconcileCatalogVersions returns error, updateStatus wraps it in status message
+	require.NoError(t, err)
+	updated := &v1alpha1.AssetHub{}
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "test-hub", Namespace: "default"}, updated)
+	require.NoError(t, err)
+	assert.False(t, updated.Status.Ready)
+	assert.Contains(t, updated.Status.Message, "failed to reconcile catalog versions")
+}
+
+// Line 330: reconcileCatalogVersions — Status().Update fails
+func TestReconcile_CVStatusUpdateError(t *testing.T) {
+	s := testScheme()
+	cr := newTestCR(1, "development")
+	cr.UID = "test-uid-789"
+
+	cv := &v1alpha1.CatalogVersion{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cv",
+			Namespace: "default",
+			OwnerReferences: []metav1.OwnerReference{
+				{UID: "test-uid-789", Name: "test-hub", APIVersion: "v1alpha1", Kind: "AssetHub"},
+			},
+		},
+		Spec: v1alpha1.CatalogVersionSpec{
+			LifecycleStage: "production",
+		},
+		// Status is empty so it will need an update
+	}
+
+	cl := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(cr, cv).
+		WithStatusSubresource(cr, cv).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourceUpdate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+				if _, ok := obj.(*v1alpha1.CatalogVersion); ok {
+					return fmt.Errorf("injected CV status update error")
+				}
+				return c.SubResource(subResourceName).Update(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: s}
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	// reconcileCatalogVersions error is wrapped by updateStatus; if the CV status update fails,
+	// the error propagates up to reconcileCatalogVersions, then updateStatus is called.
+	// But updateStatus also calls SubResourceUpdate on AssetHub, which should succeed.
+	require.NoError(t, err)
+	updated := &v1alpha1.AssetHub{}
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "test-hub", Namespace: "default"}, updated)
+	require.NoError(t, err)
+	assert.False(t, updated.Status.Ready)
+	assert.Contains(t, updated.Status.Message, "failed to reconcile catalog versions")
+}
+
+// Lines 350-353: reconcileCatalogs — Update fails after setting owner ref
+func TestReconcile_CatalogUpdateOwnerRefError(t *testing.T) {
+	s := testScheme()
+	cr := newTestCR(1, "development")
+	cr.UID = "test-uid-cat-1"
+
+	cat := &v1alpha1.Catalog{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-catalog",
+			Namespace: "default",
+		},
+		Spec: v1alpha1.CatalogSpec{
+			CatalogName:      "test-catalog",
+			ValidationStatus: "valid",
+		},
+	}
+
+	cl := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(cr, cat).
+		WithStatusSubresource(cr, cat).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+				if _, ok := obj.(*v1alpha1.Catalog); ok {
+					return fmt.Errorf("injected Catalog update error")
+				}
+				return c.Update(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: s}
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	require.NoError(t, err)
+	updated := &v1alpha1.AssetHub{}
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "test-hub", Namespace: "default"}, updated)
+	require.NoError(t, err)
+	assert.False(t, updated.Status.Ready)
+	assert.Contains(t, updated.Status.Message, "failed to reconcile catalogs")
+}
+
+// Line 366: reconcileCatalogs — Status().Update fails
+func TestReconcile_CatalogStatusUpdateError(t *testing.T) {
+	s := testScheme()
+	cr := newTestCR(1, "development")
+	cr.UID = "test-uid-cat-2"
+
+	cat := &v1alpha1.Catalog{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-catalog",
+			Namespace: "default",
+			OwnerReferences: []metav1.OwnerReference{
+				{UID: "test-uid-cat-2", Name: "test-hub", APIVersion: "v1alpha1", Kind: "AssetHub"},
+			},
+		},
+		Spec: v1alpha1.CatalogSpec{
+			CatalogName:      "test-catalog",
+			ValidationStatus: "valid",
+		},
+		// Status is empty so NeedsUpdate will be true
+	}
+
+	cl := fake.NewClientBuilder().
+		WithScheme(s).
+		WithObjects(cr, cat).
+		WithStatusSubresource(cr, cat).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourceUpdate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+				if _, ok := obj.(*v1alpha1.Catalog); ok {
+					return fmt.Errorf("injected Catalog status update error")
+				}
+				return c.SubResource(subResourceName).Update(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	r := &controllers.AssetHubReconciler{Client: cl, Scheme: s}
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hub", Namespace: "default"},
+	})
+	require.NoError(t, err)
+	updated := &v1alpha1.AssetHub{}
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "test-hub", Namespace: "default"}, updated)
+	require.NoError(t, err)
+	assert.False(t, updated.Status.Ready)
+	assert.Contains(t, updated.Status.Message, "failed to reconcile catalogs")
 }
 
 // CatalogVersion with existing owner ref — hasOwnerRef returns true, skips set (lines 376-377)
