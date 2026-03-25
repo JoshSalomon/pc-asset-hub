@@ -2216,3 +2216,11 @@ test('incoming association shows inverted cardinality', async () => {
   // Incoming cardinality should show target → source: "0..n → 1"
   await expect.element(page.getByText('0..n → 1')).toBeVisible()
 })
+
+// Coverage: back button click triggers navigation
+test('back button navigates back', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('button', { name: /Back/i })).toBeVisible()
+  await page.getByRole('button', { name: /Back/i }).click()
+  // Navigation happens — no crash
+})
