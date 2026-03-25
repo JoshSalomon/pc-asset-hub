@@ -511,3 +511,27 @@ Common attributes (Name — required, Description — optional) are hardcoded fi
 - **UI tests (browser — operational edit modal)**: Verify edit instance modal shows Name and Description as editable fields from schema. Verify saving updates Name and Description via top-level request fields.
 - **UI tests (browser — API client)**: Verify `client.ts` functions pass system attribute data correctly in requests and responses.
 - **Live system test**: Verify end-to-end — create entity type, view its attributes (system attrs visible), create instance with name/description, verify instance response includes system attrs, validate catalog with empty-named instance fails, verify UML diagram shows system attrs.
+
+### 5.32 Component Decomposition (TD-23, TD-35) — Refactoring
+
+Pure refactoring of three oversized page components into custom hooks and modal sub-components. Zero behavior changes. Existing browser tests serve as regression safety net; new hook and component tests improve coverage and testability.
+
+**What is tested at each layer:**
+
+- **Existing browser tests (537+) must pass unchanged.** The refactoring moves code between files but does not change any behavior, API calls, or rendered output. These serve as integration-level regression tests.
+- **New hook unit tests** (`renderHook` with mocked API): Each extracted hook (`useCatalogData`, `useInstances`, `useInstanceDetail`, `useEntityTypeData`, `useAttributeManagement`, `useAssociationManagement`, `useContainmentTree`) is tested in isolation. Tests verify data loading, error handling, state management, and guard clause behavior. Testing hooks in isolation makes previously-uncoverable guard clauses (e.g., `if (!name) return`) coverable — call the hook without providing the dependency.
+- **New modal component tests** (browser): Each extracted modal (`CreateInstanceModal`, `EditInstanceModal`, `AddChildModal`, `LinkModal`, `SetParentModal`, `AddAttributeModal`, `EditAttributeModal`, `AddAssociationModal`, `CopyAttributesModal`, `RenameEntityTypeModal`) is tested in isolation with mock props. Tests verify form rendering, field validation, submit behavior, and close callbacks — without the complex page-level setup currently required.
+- **Coverage must not regress** for any affected file. Per-file coverage deltas are reported. Target: coverage improvement due to simplified, isolated testability.
+
+### 5.33 Modal State Internalization + Shared Components (TD-23 Phase 4)
+
+Modals internalize their form state (own `useState`, pass values up via `onSubmit`). Shared `AttributeFormFields` component and `buildTypedAttrs` utility extracted. Copy/Replace modals extracted from CatalogDetailPage.
+
+**What is tested at each layer:**
+
+- **Existing page-level browser tests (671+) must pass unchanged.** Modal interface changes are internal — page tests interact with the rendered UI, not prop interfaces.
+- **Updated modal component tests** (browser): All 10 modal tests rewritten to match the new interface — modals own form state, tests fill form fields and verify `onSubmit` callback receives correct typed values.
+- **New `AttributeFormFields` component tests** (browser): Renders system attrs with required indicators, custom attrs from schema, enum selects, number inputs. Tests `includeSystem` prop to control system attr visibility. Verifies `onChange` callback.
+- **New `buildTypedAttrs` utility tests** (unit): Converts string→number for number-type attrs, passes through string/enum, skips empty values, handles edge cases.
+- **New `CopyCatalogModal` component tests** (browser): DNS-label name validation, disabled submit when empty, `onSubmit` with correct args, error display.
+- **New `ReplaceCatalogModal` component tests** (browser): Target catalog dropdown, archive name input, disabled submit when target not selected, `onSubmit` with correct args, error display.

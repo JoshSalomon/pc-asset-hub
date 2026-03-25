@@ -2305,6 +2305,184 @@ Common attributes (Name — required, Description — optional) are hardcoded fi
 
 ---
 
+## 19. Component Decomposition — CatalogDetailPage (TD-23, Phase 1)
+
+Pure refactoring of `CatalogDetailPage.tsx` into 3 custom hooks + 5 modal components. Zero behavior changes.
+
+### useCatalogData Hook
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-19.01 | Loads catalog and pins on mount | Hook | `catalog`, `pins` populated from mock API |
+| T-19.02 | Sets first pin as activeTab when no tab selected | Hook | `activeTab` = first pin's entity_type_name |
+| T-19.03 | Loads schema attrs when activeTab changes | Hook | `schemaAttrs`, `schemaAssocs` populated from snapshot |
+| T-19.04 | Loads enum values for enum-type attributes | Hook | `enumValues` populated for each enum attr |
+| T-19.05 | Returns early when name is undefined | Hook | No API calls, no errors |
+| T-19.06 | Handles catalog load error | Hook | `error` set, `loading` false |
+| T-19.07 | Handles schema load error gracefully | Hook | `schemaAttrs` stays empty, no crash |
+| T-19.08 | Reloads on loadCatalog call | Hook | API called again, state refreshed |
+
+### useInstances Hook
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-19.09 | Loads instances for active entity type | Hook | `instances`, `instTotal` populated |
+| T-19.10 | Returns early when catalogName is undefined | Hook | No API calls |
+| T-19.11 | handleCreate calls API with name, description, attributes | Hook | `api.instances.create` called with correct args |
+| T-19.12 | handleCreate with number attribute passes parseFloat value | Hook | Number attribute submitted as float |
+| T-19.13 | handleCreate error sets createError | Hook | `createError` contains message |
+| T-19.14 | handleEdit calls API with version, changed fields | Hook | `api.instances.update` called with correct args |
+| T-19.15 | handleEdit error sets editError | Hook | `editError` contains message |
+| T-19.16 | handleDelete calls API and refreshes list | Hook | `api.instances.delete` called, `loadInstances` triggered |
+| T-19.17 | handleDelete error sets deleteError | Hook | `deleteError` contains message |
+| T-19.18 | openCreate resets form state | Hook | `newInstName`, `newInstDesc`, `newInstAttrs` cleared |
+| T-19.19 | openEdit populates form from instance (skips system attrs) | Hook | `editName`, `editDesc`, `editAttrs` set from instance |
+
+### useInstanceDetail Hook
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-19.20 | selectInstance loads parent name, children, refs | Hook | All three populated from API |
+| T-19.21 | selectInstance with no parent skips parent name load | Hook | `parentName` empty, no parent API call |
+| T-19.22 | selectInstance handles parent name load error (falls back to ID) | Hook | `parentName` = parent UUID |
+| T-19.23 | selectInstance handles children load error | Hook | `children` = empty array |
+| T-19.24 | selectInstance handles refs load error | Hook | `forwardRefs`, `reverseRefs` = empty arrays |
+| T-19.25 | clearSelection resets all detail state | Hook | All detail state cleared |
+| T-19.26 | selectInstance with null clears selection | Hook | `selectedInstance` = null |
+
+### CreateInstanceModal Component
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-19.27 | Renders system attrs (Name required, Description optional) | Browser | Name with required indicator, Description without |
+| T-19.28 | Renders custom attrs from schemaAttrs | Browser | Fields for each non-system attr |
+| T-19.29 | Renders enum select for enum attributes | Browser | Dropdown with enum values |
+| T-19.30 | Submit button disabled when name empty | Browser | Button disabled |
+| T-19.31 | Calls onSubmit with correct args on submit | Browser | name, description, attributes passed |
+| T-19.32 | Shows error when provided | Browser | Alert visible with error message |
+| T-19.33 | Resets form on close | Browser | Fields cleared after close |
+
+### EditInstanceModal Component
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-19.34 | Pre-fills form from instance data | Browser | Name, description, attrs populated |
+| T-19.35 | Calls onSubmit with updated fields | Browser | Changed values passed |
+| T-19.36 | Shows error when provided | Browser | Alert visible |
+| T-19.37 | Closed when instance is null | Browser | Modal not rendered |
+
+### AddChildModal Component
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-19.38 | Shows child type selector from containment assocs | Browser | Dropdown with containment targets |
+| T-19.39 | Loads child schema on type selection | Browser | Attribute fields appear |
+| T-19.40 | Create mode: shows name, description, attr fields | Browser | Form fields rendered |
+| T-19.41 | Adopt mode: shows instance selector | Browser | Instance dropdown visible |
+| T-19.42 | Calls onSubmit with create data | Browser | Type, mode, name, attrs passed |
+| T-19.43 | Calls onSubmit with adopt data | Browser | Type, mode, instanceId passed |
+| T-19.44 | Shows error when provided | Browser | Alert visible |
+
+### LinkModal Component
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-19.45 | Shows association selector from outgoing assocs | Browser | Dropdown with non-containment assocs |
+| T-19.46 | Loads target instances on association selection | Browser | Target dropdown populated |
+| T-19.47 | Submit button disabled until assoc and target selected | Browser | Button disabled |
+| T-19.48 | Calls onSubmit with targetId and assocName | Browser | Correct args passed |
+| T-19.49 | Shows error when provided | Browser | Alert visible |
+
+### SetParentModal Component
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-19.50 | Shows parent type selector from pins | Browser | Dropdown with entity types |
+| T-19.51 | Loads parent instances on type selection | Browser | Instance dropdown populated |
+| T-19.52 | Calls onSubmit with parentType and parentId | Browser | Correct args passed |
+| T-19.53 | Clear parent button calls onClearParent | Browser | Clear handler called |
+| T-19.54 | Shows error when provided | Browser | Alert visible |
+
+### Regression — Existing Page Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-19.55 | All existing CatalogDetailPage browser tests pass | Browser | 131 tests pass unchanged |
+
+---
+
+## 20. Modal State Internalization + Shared Components (TD-23 Phase 4)
+
+Modals internalize form state. Shared `AttributeFormFields` component and `buildTypedAttrs` utility extracted. Copy/Replace modals extracted.
+
+### buildTypedAttrs Utility
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-20.01 | Converts string value to parseFloat for number-type attr | Unit | `{ weight: 3.14 }` |
+| T-20.02 | Passes through string value for string-type attr | Unit | `{ hostname: "foo" }` |
+| T-20.03 | Passes through string value for enum-type attr | Unit | `{ status: "active" }` |
+| T-20.04 | Skips empty string values | Unit | `{}` |
+| T-20.05 | Returns empty object for empty input | Unit | `{}` |
+| T-20.06 | Handles mix of types correctly | Unit | Number parsed, strings kept, empty skipped |
+
+### AttributeFormFields Component
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-20.07 | Renders Name system attr with required indicator when includeSystem=true | Browser | Name field with required marker |
+| T-20.08 | Renders Description system attr without required when includeSystem=true | Browser | Description field, no required |
+| T-20.09 | Does not render system attrs when includeSystem=false | Browser | Only custom attrs visible |
+| T-20.10 | Renders custom text attr with text input | Browser | TextInput rendered |
+| T-20.11 | Renders custom number attr with number input | Browser | Input type=number |
+| T-20.12 | Renders enum attr with EnumSelect dropdown | Browser | Select/dropdown rendered |
+| T-20.13 | Calls onChange when text input changes | Browser | onChange called with (name, value) |
+| T-20.14 | Shows required indicator for required custom attrs | Browser | `*` in label |
+
+### CopyCatalogModal Component
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-20.15 | Renders name and description inputs | Browser | Both fields visible |
+| T-20.16 | Submit disabled when name empty | Browser | Button disabled |
+| T-20.17 | Calls onSubmit with name and description | Browser | Correct values passed |
+| T-20.18 | Shows error alert when error prop set | Browser | Alert visible |
+| T-20.19 | Closes and resets on close | Browser | Modal closed, fields cleared |
+
+### ReplaceCatalogModal Component
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-20.20 | Renders target catalog dropdown | Browser | Dropdown with catalog names |
+| T-20.21 | Submit disabled when target not selected | Browser | Button disabled |
+| T-20.22 | Calls onSubmit with source, target, archiveName | Browser | Correct values passed |
+| T-20.23 | Shows error alert when error prop set | Browser | Alert visible |
+| T-20.24 | Archive name input is optional | Browser | Can submit without archive name |
+
+### Updated Modal Tests — Internalized State
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-20.25 | CreateInstanceModal: fills form and onSubmit receives (name, desc, attrs) | Browser | Typed values in callback |
+| T-20.26 | CreateInstanceModal: resets form on reopen | Browser | Fields cleared |
+| T-20.27 | EditInstanceModal: pre-fills from initialValues prop | Browser | Fields populated |
+| T-20.28 | EditInstanceModal: onSubmit receives updated values | Browser | Changed values in callback |
+| T-20.29 | AddChildModal: onSubmit receives (childType, mode, data) | Browser | Correct typed args |
+| T-20.30 | LinkModal: onSubmit receives (targetId, assocName) | Browser | Correct args |
+| T-20.31 | SetParentModal: onSubmit receives (parentType, parentId) | Browser | Correct args |
+| T-20.32 | AddAttributeModal: onSubmit receives (name, desc, type, enumId, required) | Browser | Correct args |
+| T-20.33 | AddAssociationModal: onSubmit receives all assoc fields | Browser | Name, target, type, roles, cardinality |
+| T-20.34 | CopyAttributesModal: onSubmit receives (sourceId, version, attrNames) | Browser | Correct args |
+| T-20.35 | RenameEntityTypeModal: onSubmit receives (newName, deepCopyAllowed) | Browser | Correct args |
+
+### Regression
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-20.36 | All existing page-level browser tests pass | Browser | 671 tests unchanged |
+
+---
+
 ## Coverage Criteria
 
 ### Pass Rate
@@ -2341,7 +2519,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 848 test cases (T-1.01 through T-18.46; T-13.78 through T-13.85 retired) pass
+- All 939 test cases (T-1.01 through T-20.36; T-13.78 through T-13.85 retired) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

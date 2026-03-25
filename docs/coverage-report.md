@@ -10,10 +10,10 @@ Last updated: 2026-03-19
 |-------|-------|-----------|------------|-------|
 | Backend (Go) | 1315 | 100% | 96.7% | — |
 | UI — Unit tests | 75 | 100% | 17.9% | 20.6% |
-| UI — Browser tests (Playwright) | 537 | 100% | 91.7% (2051/2235) | — |
+| UI — Browser tests (Playwright) | 702 | 100% | 92.9% (2182/2348) | — |
 | UI — System tests (Playwright + live server) | 27 | 100% | — | — |
 | Live system (bash scripts) | 217 | 100% | — | — |
-| **Total** | **2170** | **100%** | — | — |
+| **Total** | **2336** | **100%** | — | — |
 
 ---
 
@@ -95,26 +95,41 @@ These methods are single-line delegations to the repository layer with no branch
 
 These are `if (!x) return` early returns in event handlers and callbacks. They are unreachable because the UI prevents the conditions from occurring: buttons are disabled when preconditions aren't met, state variables are set before dependent handlers can fire, and Select components always pass non-empty values.
 
-**CatalogDetailPage.tsx** (16 statements):
+**useCatalogData.ts** (1 statement):
 
 | Line | Code | Why unreachable |
 |------|------|-----------------|
-| L186 | `if (!pin) return` | `activeTab` set from pin names; tabs generated from pins, mismatch impossible |
-| L209 | `if (!name \|\| !activeTab \|\| !newInstName.trim()) return` | Create button `isDisabled={!newInstName.trim()}` |
-| L252 | `if (!name \|\| !activeTab \|\| !editTarget) return` | `editTarget` always set before edit modal opens |
-| L278 | `if (!name \|\| !activeTab \|\| !deleteTarget) return` | `deleteTarget` always set before delete modal opens |
-| L319 | `setChildren([])` | Outer catch wraps loop with inner try/catch; only fires if Array.filter or setState throws |
-| L342 | `if (!name \|\| !typeName) return` | Called from Select onSelect which always passes selected value |
-| L352 | `if (!typeName \|\| !pins.length) return` | Called from Select with non-empty value; pins loaded before modal |
-| L374 | `if (!name) return` | `name` always provided by route when component is interactive |
-| L376 | `if (!assoc) return` | Association options come from schemaAssocs; selected value always matches |
-| L379 | `if (!targetPin) return` | Assoc target entity type always has a matching pin |
-| L388 | `if (!name \|\| !typeName) return` | Called from Select onSelect with value |
-| L396 | `if (!name \|\| ... \|\| !childTypeName) return` | Button disabled when `!childTypeName` |
-| L422 | `return` (else branch) | Button disabled when neither adopt nor create conditions met |
-| L438 | `if (... \|\| !linkTargetId \|\| !linkAssocName) return` | Button disabled when `!linkTargetId \|\| !linkAssocName` |
-| L455 | `if (... \|\| !parentTypeName) return` | Button disabled when `!parentTypeName` |
-| L473 | `if (!name \|\| !activeTab \|\| !selectedInstance) return` | `selectedInstance` always set before handler fires |
+| L45 | `if (!pin) return` | `activeTab` set from pin names; tabs generated from pins, mismatch impossible |
+
+**useInstances.ts** (3 statements):
+
+| Line | Code | Why unreachable |
+|------|------|-----------------|
+| L45 | `if (!catalogName \|\| !entityTypeName \|\| !newInstName.trim()) return` | Create button `isDisabled={!newInstName.trim()}`; catalogName/entityTypeName always set |
+| L103 | `if (!catalogName \|\| !entityTypeName \|\| !editTarget) return` | `editTarget` always set before edit modal opens |
+| L139 | `if (!catalogName \|\| !entityTypeName \|\| !deleteTarget) return` | `deleteTarget` always set before delete modal opens |
+
+**useInstanceDetail.ts** (1 statement):
+
+| Line | Code | Why unreachable |
+|------|------|-----------------|
+| L44 | `setChildren([])` | Outer catch wraps loop where each iteration has inner try/catch; only fires if Array.filter or setState throws |
+
+**CatalogDetailPage.tsx** (11 statements — page-level handlers for add-child, link, set-parent modals):
+
+| Line | Code | Why unreachable |
+|------|------|-----------------|
+| L114 | `if (!name \|\| !typeName) { setAvailableInstances([]); return }` | Called from Select onSelect which always passes selected value |
+| L124 | `if (!typeName \|\| !pins.length) { setChildSchemaAttrs([]); return }` | Called from Select with non-empty value; pins loaded before modal |
+| L146 | `if (!name) return` | `name` always provided by route |
+| L148 | `if (!assoc) return` | Association Select options generated from schemaAssocs; selected value always matches |
+| L151 | `if (!targetPin) return` | Assoc target entity type always has a matching pin |
+| L160 | `if (!name \|\| !typeName) { setParentInstances([]); return }` | Called from Select onSelect with value |
+| L168 | `if (!name \|\| ... \|\| !childTypeName) return` | Button disabled when `!childTypeName` |
+| L194 | `return` (else branch) | Button disabled when neither adopt nor create conditions met |
+| L210 | `if (... \|\| !linkTargetId \|\| !linkAssocName) return` | Button disabled when `!linkTargetId \|\| !linkAssocName` |
+| L227 | `if (... \|\| !parentTypeName) return` | Button disabled when `!parentTypeName` |
+| L245 | `if (!name \|\| !activeTab \|\| !selectedInstance) return` | `selectedInstance` always set before handler fires |
 
 ---
 
@@ -141,11 +156,29 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | `CatalogVersionDetailPage.browser.test.tsx` | 28 | Pass |
 | `CatalogListPage.browser.test.tsx` | 20 | Pass |
 | `CatalogDetailPage.browser.test.tsx` | 131 | Pass |
+| `useCatalogData.browser.test.tsx` | 8 | Pass |
+| `useInstances.browser.test.tsx` | 11 | Pass |
+| `useInstanceDetail.browser.test.tsx` | 7 | Pass |
+| `CreateInstanceModal.browser.test.tsx` | 7 | Pass |
+| `EditInstanceModal.browser.test.tsx` | 4 | Pass |
+| `AddChildModal.browser.test.tsx` | 7 | Pass |
+| `LinkModal.browser.test.tsx` | 5 | Pass |
+| `SetParentModal.browser.test.tsx` | 5 | Pass |
+| `useEntityTypeData.browser.test.tsx` | 8 | Pass |
+| `useAttributeManagement.browser.test.tsx` | 11 | Pass |
+| `useAssociationManagement.browser.test.tsx` | 7 | Pass |
+| `AddAttributeModal.browser.test.tsx` | 7 | Pass |
+| `EditAttributeModal.browser.test.tsx` | 4 | Pass |
+| `AddAssociationModal.browser.test.tsx` | 7 | Pass |
+| `CopyAttributesModal.browser.test.tsx` | 7 | Pass |
+| `RenameEntityTypeModal.browser.test.tsx` | 4 | Pass |
+| `useContainmentTree.browser.test.tsx` | 11 | Pass |
+| `InstanceDetailPanel.browser.test.tsx` | 14 | Pass |
 | `OperationalCatalogDetailPage.browser.test.tsx` | 36 | Pass |
 | `OperationalCatalogListPage.browser.test.tsx` | 13 | Pass |
 | `OperationalApp.browser.test.tsx` | 3 | Pass |
 | `useValidation.browser.test.tsx` | 6 | Pass |
-| **Total** | **537** | **100% pass** |
+| **Total** | **671** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 

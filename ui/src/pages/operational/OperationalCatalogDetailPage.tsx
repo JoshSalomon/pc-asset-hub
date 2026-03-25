@@ -16,9 +16,11 @@ import {
 } from '@patternfly/react-core'
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
 import { api, setAuthRole } from '../../api/client'
-import type { Catalog, CatalogVersionPin, TreeNodeResponse, EntityInstance, ReferenceDetail, Role } from '../../types'
+import type { Catalog, CatalogVersionPin, TreeNodeResponse, Role } from '../../types'
 import { useValidation } from '../../hooks/useValidation'
+import { useContainmentTree } from '../../hooks/useContainmentTree'
 import ValidationResults from '../../components/ValidationResults'
+import InstanceDetailPanel from '../../components/InstanceDetailPanel'
 
 export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
   const { name } = useParams<{ name: string }>()
@@ -30,18 +32,7 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
   const [pins, setPins] = useState<CatalogVersionPin[]>([])
   const [activeTab, setActiveTab] = useState<string>('overview')
 
-  // Tree state
-  const [tree, setTree] = useState<TreeNodeResponse[]>([])
-  const [treeLoading, setTreeLoading] = useState(false)
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-
-  // Selected instance detail
-  const [selectedInstance, setSelectedInstance] = useState<EntityInstance | null>(null)
-  const [detailLoading, setDetailLoading] = useState(false)
-  const [forwardRefs, setForwardRefs] = useState<ReferenceDetail[]>([])
-  const [reverseRefs, setReverseRefs] = useState<ReferenceDetail[]>([])
-  const [refsLoading, setRefsLoading] = useState(false)
+  const ct = useContainmentTree(name)
 
   const loadCatalog = useCallback(async () => {
     if (!name) return
@@ -64,92 +55,20 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
 
   const validation = useValidation(name, loadCatalog)
 
-  const loadTree = useCallback(async () => {
-    if (!name) return
-    setTreeLoading(true)
-    try {
-      const t = await api.instances.tree(name)
-      setTree(t || [])
-    } catch {
-      setTree([])
-    } finally {
-      setTreeLoading(false)
-    }
-  }, [name])
-
   useEffect(() => {
-    if (activeTab === 'tree') loadTree()
-  }, [activeTab, loadTree])
-
-  const selectTreeNode = async (node: TreeNodeResponse) => {
-    setSelectedNodeId(node.instance_id)
-    setDetailLoading(true)
-    try {
-      const inst = await api.instances.get(name!, node.entity_type_name, node.instance_id)
-      setSelectedInstance(inst)
-    } catch {
-      setSelectedInstance(null)
-    } finally {
-      setDetailLoading(false)
-    }
-
-    // Load references
-    setRefsLoading(true)
-    try {
-      const [fwd, rev] = await Promise.all([
-        api.links.forwardRefs(name!, node.entity_type_name, node.instance_id),
-        api.links.reverseRefs(name!, node.entity_type_name, node.instance_id),
-      ])
-      setForwardRefs(fwd || [])
-      setReverseRefs(rev || [])
-    } catch {
-      setForwardRefs([])
-      setReverseRefs([])
-    } finally {
-      setRefsLoading(false)
-    }
-  }
-
-  const toggleExpand = (nodeId: string) => {
-    setExpandedNodes(prev => {
-      const next = new Set(prev)
-      if (next.has(nodeId)) {
-        next.delete(nodeId)
-      } else {
-        next.add(nodeId)
-      }
-      return next
-    })
-  }
-
-  const navigateToTreeNode = useCallback((instanceId: string) => {
-    const findAndSelect = (nodes: TreeNodeResponse[]): boolean => {
-      for (const n of nodes) {
-        if (n.instance_id === instanceId) {
-          selectTreeNode(n)
-          return true
-        }
-        if (n.children && findAndSelect(n.children)) {
-          setExpandedNodes(prev => new Set([...prev, n.instance_id]))
-          return true
-        }
-      }
-      return false
-    }
-    findAndSelect(tree)
-  }, [tree])
+    if (activeTab === 'tree') ct.loadTree()
+  }, [activeTab, ct.loadTree])
 
   const browseType = (typeName: string) => {
     setActiveTab('tree')
-    // Auto-expand the entity type group
-    setExpandedNodes(prev => new Set([...prev, `__group__${typeName}`]))
+    ct.expandNode(`__group__${typeName}`)
   }
 
   // Recursive tree node renderer for instance nodes
   const renderTreeNode = (node: TreeNodeResponse, depth: number) => {
     const hasChildren = node.children && node.children.length > 0
-    const isExpanded = expandedNodes.has(node.instance_id)
-    const isSelected = selectedNodeId === node.instance_id
+    const isExpanded = ct.expandedNodes.has(node.instance_id)
+    const isSelected = ct.selectedNodeId === node.instance_id
 
     return (
       <div key={node.instance_id}>
@@ -165,14 +84,14 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
             borderRadius: '3px',
             marginBottom: '1px',
           }}
-          onClick={() => selectTreeNode(node)}
+          onClick={() => ct.selectTreeNode(node)}
         >
           {hasChildren && (
             <span
               style={{ marginRight: '6px', cursor: 'pointer', userSelect: 'none', width: '16px', display: 'inline-block' }}
-              onClick={(e) => { e.stopPropagation(); toggleExpand(node.instance_id) }}
+              onClick={(e) => { e.stopPropagation(); ct.toggleNode(node.instance_id) }}
             >
-              {isExpanded ? '▾' : '▸'}
+              {isExpanded ? '\u25BE' : '\u25B8'}
             </span>
           )}
           {!hasChildren && <span style={{ width: '22px', display: 'inline-block' }} />}
@@ -186,7 +105,7 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
   // Group root instances by entity type for the tree view
   const groupedTree = (() => {
     const groups: Record<string, TreeNodeResponse[]> = {}
-    for (const node of tree) {
+    for (const node of ct.tree) {
       if (!groups[node.entity_type_name]) groups[node.entity_type_name] = []
       groups[node.entity_type_name].push(node)
     }
@@ -196,7 +115,7 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
   // Render entity type group header with expandable children
   const renderEntityTypeGroup = (typeName: string, nodes: TreeNodeResponse[]) => {
     const groupKey = `__group__${typeName}`
-    const isExpanded = expandedNodes.has(groupKey)
+    const isExpanded = ct.expandedNodes.has(groupKey)
 
     return (
       <div key={groupKey}>
@@ -210,10 +129,10 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
             borderRadius: '3px',
             marginBottom: '1px',
           }}
-          onClick={() => toggleExpand(groupKey)}
+          onClick={() => ct.toggleNode(groupKey)}
         >
           <span style={{ marginRight: '6px', userSelect: 'none', width: '16px', display: 'inline-block' }}>
-            {isExpanded ? '▾' : '▸'}
+            {isExpanded ? '\u25BE' : '\u25B8'}
           </span>
           {typeName} ({nodes.length})
         </div>
@@ -243,7 +162,7 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
       </Title>
       <p style={{ color: '#6a6e73', marginBottom: '0.5rem' }}>
         Catalog Version: {catalog.catalog_version_label || catalog.catalog_version_id}
-        {catalog.description && ` — ${catalog.description}`}
+        {catalog.description && ` \u2014 ${catalog.description}`}
       </p>
 
       {(role === 'RW' || role === 'Admin' || role === 'SuperAdmin') && (
@@ -295,9 +214,9 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
               {/* Tree panel (left) */}
               <div style={{ width: '300px', minWidth: '250px', borderRight: '1px solid #d2d2d2', paddingRight: '1rem' }}>
                 <Title headingLevel="h4" style={{ marginBottom: '0.5rem' }}>Containment Tree</Title>
-                {treeLoading ? (
+                {ct.treeLoading ? (
                   <Spinner size="md" aria-label="Loading tree" />
-                ) : tree.length === 0 ? (
+                ) : ct.tree.length === 0 ? (
                   <p style={{ color: '#6a6e73' }}>No instances in this catalog.</p>
                 ) : (
                   <div style={{ maxHeight: '600px', overflow: 'auto' }}>
@@ -310,107 +229,17 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
 
               {/* Detail panel (right) */}
               <div style={{ flex: 1 }}>
-                {detailLoading ? (
+                {ct.detailLoading ? (
                   <Spinner aria-label="Loading detail" />
-                ) : selectedInstance ? (
-                  <div>
-                    <Title headingLevel="h3">{selectedInstance.name}</Title>
-
-                    {/* Breadcrumb from parent chain */}
-                    {selectedInstance.parent_chain && selectedInstance.parent_chain.length > 0 && (
-                      <Breadcrumb style={{ marginBottom: '1rem' }}>
-                        <BreadcrumbItem>{catalog.name}</BreadcrumbItem>
-                        {selectedInstance.parent_chain.map(entry => (
-                          <BreadcrumbItem key={entry.instance_id}>
-                            {entry.entity_type_name}: {entry.instance_name}
-                          </BreadcrumbItem>
-                        ))}
-                        <BreadcrumbItem isActive>{selectedInstance.name}</BreadcrumbItem>
-                      </Breadcrumb>
-                    )}
-
-                    <p style={{ color: '#6a6e73', marginBottom: '0.5rem' }}>{selectedInstance.description}</p>
-                    <p style={{ fontSize: '0.85rem', color: '#6a6e73' }}>
-                      Version {selectedInstance.version} · Created {new Date(selectedInstance.created_at).toLocaleString()}
-                    </p>
-
-                    {/* Attributes */}
-                    {selectedInstance.attributes && selectedInstance.attributes.length > 0 && (
-                      <div style={{ marginTop: '1rem' }}>
-                        <Title headingLevel="h4">Attributes</Title>
-                        <Table aria-label="Attributes" variant="compact">
-                          <Thead><Tr><Th>Name</Th><Th>Type</Th><Th>Value</Th></Tr></Thead>
-                          <Tbody>
-                            {selectedInstance.attributes.map(attr => (
-                              <Tr key={attr.name}>
-                                <Td>{attr.name}</Td>
-                                <Td>{attr.type}</Td>
-                                <Td>{attr.value != null ? String(attr.value) : '—'}</Td>
-                              </Tr>
-                            ))}
-                          </Tbody>
-                        </Table>
-                      </div>
-                    )}
-
-                    {/* References */}
-                    <div style={{ marginTop: '1rem' }}>
-                      <Title headingLevel="h4">References</Title>
-                      {refsLoading ? (
-                        <Spinner size="md" aria-label="Loading references" />
-                      ) : (
-                        <>
-                          {forwardRefs.length > 0 && (
-                            <>
-                              <p style={{ fontWeight: 600, marginTop: '0.5rem' }}>Forward References</p>
-                              <Table aria-label="Forward references" variant="compact">
-                                <Thead><Tr><Th>Association</Th><Th>Type</Th><Th>Target</Th><Th>Entity Type</Th></Tr></Thead>
-                                <Tbody>
-                                  {forwardRefs.map(ref => (
-                                    <Tr key={ref.link_id}>
-                                      <Td>{ref.association_name}</Td>
-                                      <Td>{ref.association_type}</Td>
-                                      <Td>
-                                        <Button variant="link" isInline onClick={() => navigateToTreeNode(ref.instance_id)}>
-                                          {ref.instance_name}
-                                        </Button>
-                                      </Td>
-                                      <Td>{ref.entity_type_name}</Td>
-                                    </Tr>
-                                  ))}
-                                </Tbody>
-                              </Table>
-                            </>
-                          )}
-                          {reverseRefs.length > 0 && (
-                            <>
-                              <p style={{ fontWeight: 600, marginTop: '0.5rem' }}>Referenced By</p>
-                              <Table aria-label="Reverse references" variant="compact">
-                                <Thead><Tr><Th>Association</Th><Th>Type</Th><Th>Source</Th><Th>Entity Type</Th></Tr></Thead>
-                                <Tbody>
-                                  {reverseRefs.map(ref => (
-                                    <Tr key={ref.link_id}>
-                                      <Td>{ref.association_name}</Td>
-                                      <Td>{ref.association_type}</Td>
-                                      <Td>
-                                        <Button variant="link" isInline onClick={() => navigateToTreeNode(ref.instance_id)}>
-                                          {ref.instance_name}
-                                        </Button>
-                                      </Td>
-                                      <Td>{ref.entity_type_name}</Td>
-                                    </Tr>
-                                  ))}
-                                </Tbody>
-                              </Table>
-                            </>
-                          )}
-                          {forwardRefs.length === 0 && reverseRefs.length === 0 && (
-                            <p style={{ color: '#6a6e73' }}>No references.</p>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
+                ) : ct.selectedInstance ? (
+                  <InstanceDetailPanel
+                    instance={ct.selectedInstance}
+                    catalogName={catalog.name}
+                    forwardRefs={ct.forwardRefs}
+                    reverseRefs={ct.reverseRefs}
+                    refsLoading={ct.refsLoading}
+                    onNavigateToRef={ct.navigateToTreeNode}
+                  />
                 ) : (
                   <EmptyState>
                     <EmptyStateBody>

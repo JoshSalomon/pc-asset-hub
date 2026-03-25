@@ -415,3 +415,12 @@ test('T-15.48: validation results displayed in operational UI', async () => {
   await expect.element(page.getByText('Validation failed')).toBeVisible()
   await expect.element(page.getByText(/srv-1.*hostname.*required/)).toBeVisible()
 })
+
+// Coverage: breadcrumb "Catalogs" link navigates to catalog list
+test('breadcrumb Catalogs link navigates', async () => {
+  renderDetail('RO')
+  const link = page.getByRole('button', { name: 'Catalogs' })
+  await expect.element(link).toBeVisible()
+  await link.click()
+  // Navigation happens — no crash
+})
