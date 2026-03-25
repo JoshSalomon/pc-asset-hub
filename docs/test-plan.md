@@ -132,6 +132,8 @@ Each feature area is tested at the appropriate layers:
 | ClusterRole / stage filtering | X | | X | | X |
 | Operator reconciliation | | | | | X |
 | Association map visualization | | | | X | |
+| Entity type diagram — UML composition diamond (TD-47) | X | | | X | |
+| Model Diagram tab on catalog pages (US-48) | X | | | X | |
 | Edit attribute (COW) | X | | X | X | |
 | Rename entity type (simple + deep copy) | X | | X | X | |
 | Catalog version pins + transitions | X | | X | X | |
@@ -535,3 +537,13 @@ Modals internalize their form state (own `useState`, pass values up via `onSubmi
 - **New `buildTypedAttrs` utility tests** (unit): Converts string→number for number-type attrs, passes through string/enum, skips empty values, handles edge cases.
 - **New `CopyCatalogModal` component tests** (browser): DNS-label name validation, disabled submit when empty, `onSubmit` with correct args, error display.
 - **New `ReplaceCatalogModal` component tests** (browser): Target catalog dropdown, archive name input, disabled submit when target not selected, `onSubmit` with correct args, error display.
+
+### 5.34 UML Composition Diamond + Model Diagram Tab (TD-47, US-48)
+
+TD-47 adds UML composition notation (filled diamond on parent end) to containment edges in the entity type diagram. US-48 adds a read-only "Model Diagram" tab to both meta and operational catalog detail pages, showing the entity type model from the catalog's pinned CV.
+
+- **Unit tests (TypeScript — buildModel)**: Verify containment edges in the built model include diamond marker data (`markerStart` type). Verify non-containment edges (directional, bidirectional) do not include diamond marker data. Verify bidirectional edges retain their existing marker configuration.
+- **Unit tests (TypeScript — useCatalogDiagram hook)**: Verify hook loads pins and snapshots when tab becomes active. Verify hook returns loading state during fetch. Verify hook returns diagram data after successful fetch. Verify hook does not re-fetch if data is already loaded. Verify hook handles API errors gracefully.
+- **Browser tests (EntityTypeDiagram rendering)**: Verify containment edges render with a filled diamond SVG marker on the source (parent) end. Verify the diamond uses the containment color (`#3e8635`). Verify non-containment edges do not render a diamond. Verify bidirectional edges retain their existing hollow/filled arrow markers.
+- **Browser tests (meta CatalogDetailPage)**: Verify "Model Diagram" tab exists on the catalog detail page. Verify clicking the tab loads and renders the entity type diagram with pinned entity types. Verify diagram shows entity types, attributes, and associations from the CV. Verify the diagram is read-only (no edit interactions). Verify empty state when no entity types are pinned.
+- **Browser tests (operational OperationalCatalogDetailPage)**: Verify "Model Diagram" tab exists on the operational catalog detail page. Verify clicking the tab loads and renders the entity type diagram. Verify the diagram is read-only. Verify empty state when no entity types are pinned.

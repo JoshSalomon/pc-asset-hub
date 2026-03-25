@@ -2483,6 +2483,85 @@ Modals internalize form state. Shared `AttributeFormFields` component and `build
 
 ---
 
+## 21. UML Composition Diamond + Model Diagram Tab (TD-47, US-48)
+
+TD-47 adds UML composition notation (filled diamond marker on parent end) to containment edges in the entity type diagram. US-48 adds a read-only "Model Diagram" tab to both meta and operational catalog detail pages showing the CV's entity type model.
+
+### EntityTypeDiagram — Composition Diamond (TD-47)
+
+#### Unit Tests (buildModel / edge data)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-21.01 | Containment edge data includes diamond marker type | Unit | Edge data has `markerStart: 'diamond'` or equivalent |
+| T-21.02 | Directional (reference) edge data does not include diamond marker | Unit | No diamond marker on reference edges |
+| T-21.03 | Bidirectional edge data retains existing marker configuration | Unit | Hollow source arrow + filled target arrow preserved |
+
+#### Browser Tests (SVG rendering)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-21.04 | Containment edge renders filled diamond SVG marker on source end | Browser | `<path>` element with diamond shape in containment color |
+| T-21.05 | Diamond marker uses containment color (#3e8635) | Browser | Fill attribute is `#3e8635` |
+| T-21.06 | Containment edge renders arrowhead on target end | Browser | Arrow marker present on target |
+| T-21.07 | Reference edge does not render diamond marker | Browser | No diamond `<path>` on reference edges |
+| T-21.08 | Bidirectional edge retains hollow source arrow and filled target arrow | Browser | Existing bidirectional markers unchanged |
+
+### useCatalogDiagram Hook
+
+#### Unit Tests (renderHook)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-21.09 | Returns empty diagramData and loading=false initially | Unit | `{ diagramData: [], diagramLoading: false }` |
+| T-21.10 | Loads pins and snapshots when loadDiagram is called | Unit | API calls made, diagramData populated with DiagramEntityType[] |
+| T-21.11 | Sets diagramLoading=true during fetch | Unit | Loading state true while promises pending |
+| T-21.12 | Returns diagramData after successful fetch | Unit | Array of DiagramEntityType with correct entity types, attributes, associations |
+| T-21.13 | Does not re-fetch if diagramData is already loaded | Unit | Second call to loadDiagram does not trigger API calls |
+| T-21.14 | Handles API error gracefully — sets error, clears loading | Unit | `diagramLoading: false`, error message set |
+| T-21.15 | Handles empty pins list — returns empty diagramData | Unit | `diagramData: []`, no snapshot calls made |
+
+### Meta CatalogDetailPage — Model Diagram Tab
+
+#### Browser Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-21.16 | "Model Diagram" tab exists on catalog detail page | Browser | Tab with text "Model Diagram" rendered |
+| T-21.17 | Clicking Model Diagram tab loads diagram data | Browser | API calls for pins + snapshots triggered |
+| T-21.18 | Diagram renders entity type nodes with names and attributes | Browser | Entity type names visible in diagram area |
+| T-21.19 | Diagram is read-only — no node double-click navigation | Browser | No navigation on double-click |
+| T-21.20 | Empty state shown when no entity types are pinned | Browser | Empty state message displayed |
+
+### Operational OperationalCatalogDetailPage — Model Diagram Tab
+
+#### Browser Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-21.21 | "Model Diagram" tab exists on operational catalog detail page | Browser | Tab with text "Model Diagram" rendered |
+| T-21.22 | Clicking Model Diagram tab loads diagram data | Browser | API calls for pins + snapshots triggered |
+| T-21.23 | Diagram renders entity type nodes from CV | Browser | Entity type names visible in diagram area |
+| T-21.24 | Diagram is read-only — no edit interactions | Browser | No edit callbacks triggered |
+| T-21.25 | Empty state shown when no entity types are pinned | Browser | Empty state message displayed |
+
+### API Client Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-21.26 | Existing client functions (listPins, snapshot) work for diagram data loading | Browser | mockFetch verifies correct URLs called |
+
+### Regression
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-21.27 | All existing EntityTypeDiagram tests pass | Browser | No regressions in diagram rendering |
+| T-21.28 | All existing CatalogDetailPage tests pass | Browser | No regressions in catalog page |
+| T-21.29 | All existing OperationalCatalogDetailPage tests pass | Browser | No regressions in operational page |
+| T-21.30 | All existing CatalogVersionDetailPage diagram tab tests pass | Browser | No regressions in CV detail diagram |
+
+---
+
 ## Coverage Criteria
 
 ### Pass Rate
@@ -2519,7 +2598,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 939 test cases (T-1.01 through T-20.36; T-13.78 through T-13.85 retired) pass
+- All 969 test cases (T-1.01 through T-21.30; T-13.78 through T-13.85 retired) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

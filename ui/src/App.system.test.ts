@@ -413,7 +413,7 @@ test('add and remove attribute on entity type', async () => {
 
   // Go to attributes tab
   await pg.getByRole('tab', { name: /Attributes/i }).click()
-  await visible(pg.getByText('No attributes defined yet.'))
+  await visible(pg.getByRole('columnheader', { name: 'Name' }))
 
   // Add an attribute
   await pg.getByRole('button', { name: 'Add Attribute' }).click()
@@ -430,7 +430,7 @@ test('add and remove attribute on entity type', async () => {
 
   // Remove the attribute
   await pg.getByRole('button', { name: 'Remove' }).click()
-  await visible(pg.getByText('No attributes defined yet.'))
+  await visible(pg.getByRole('columnheader', { name: 'Name' }))
 
   await apiCall('DELETE', `/api/meta/v1/entity-types/${etId}`)
 })
@@ -538,7 +538,7 @@ test('copy attributes from multi-version entity type works correctly', async () 
   // Navigate to target, open copy-from modal, select source, copy the V2 attribute
   await navigateToEntityType(targetName)
   await pg.getByRole('tab', { name: /Attributes/i }).click()
-  await visible(pg.getByText('No attributes defined yet.'))
+  await visible(pg.getByRole('columnheader', { name: 'Name' }))
 
   await pg.getByRole('button', { name: 'Copy from...' }).click()
   await visible(pg.getByText('Copy Attributes from Another Type'))
@@ -599,7 +599,7 @@ test('copy attributes picker shows enum name for enum-type attributes', async ()
   // Navigate to target entity type detail
   await navigateToEntityType(targetName)
   await pg.getByRole('tab', { name: /Attributes/i }).click()
-  await visible(pg.getByText('No attributes defined yet.'))
+  await visible(pg.getByRole('columnheader', { name: 'Name' }))
 
   // Open copy-from modal
   await pg.getByRole('button', { name: 'Copy from...' }).click()

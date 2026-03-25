@@ -111,8 +111,8 @@ test('T-C.32: shows entity type name, ID, and dates on overview', async () => {
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
   await expect.element(page.getByText('et-1')).toBeVisible()
-  await expect.element(page.getByText('Name', { exact: true })).toBeVisible()
-  await expect.element(page.getByText('ID', { exact: true })).toBeVisible()
+  await expect.element(page.getByRole('term').getByText('Name')).toBeVisible()
+  await expect.element(page.getByRole('term').getByText('ID')).toBeVisible()
 })
 
 test('shows back link to entity types list', async () => {
@@ -248,13 +248,19 @@ test('attributes tab shows enum name for enum attributes', async () => {
   await expect.element(page.getByText('enum (Status)')).toBeVisible()
 })
 
-test('attributes empty state', async () => {
-  ;(api.attributes.list as Mock).mockResolvedValue({ items: [], total: 0 })
+test('attributes tab with only system attrs shows table', async () => {
+  ;(api.attributes.list as Mock).mockResolvedValue({
+    items: [
+      { id: '', name: 'name', description: '', type: 'string', ordinal: -2, required: true, system: true },
+      { id: '', name: 'description', description: '', type: 'string', ordinal: -1, required: false, system: true },
+    ],
+    total: 2,
+  })
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
 
   await page.getByRole('tab', { name: /Attributes/i }).click()
-  await expect.element(page.getByText('No attributes defined yet.')).toBeVisible()
+  await expect.element(page.getByText('name * System')).toBeVisible()
 })
 
 test('T-C.34: add string attribute via modal', async () => {

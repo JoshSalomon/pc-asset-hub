@@ -236,10 +236,6 @@ export default function EntityTypeDetailPage({ role }: Props) {
             )}
             {data.attrsLoading ? (
               <Spinner aria-label="Loading" />
-            ) : data.attributes.length === 0 ? (
-              <EmptyState>
-                <EmptyStateBody>No attributes defined yet.</EmptyStateBody>
-              </EmptyState>
             ) : (
               <Table aria-label="Attributes">
                 <Thead>
