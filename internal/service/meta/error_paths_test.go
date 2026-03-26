@@ -681,7 +681,7 @@ func TestCreateCatalogVersion_CvCreateError(t *testing.T) {
 
 	cvRepo.On("Create", mock.Anything, mock.Anything).Return(dbErr)
 
-	_, err := svc.CreateCatalogVersion(context.Background(), "v1.0", nil)
+	_, err := svc.CreateCatalogVersion(context.Background(), "v1.0", "", nil)
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -694,7 +694,7 @@ func TestCreateCatalogVersion_PinCreateError(t *testing.T) {
 	pinRepo.On("Create", mock.Anything, mock.Anything).Return(dbErr)
 
 	pins := []models.CatalogVersionPin{{EntityTypeVersionID: "etv1"}}
-	_, err := svc.CreateCatalogVersion(context.Background(), "v1.0", pins)
+	_, err := svc.CreateCatalogVersion(context.Background(), "v1.0", "", pins)
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -709,7 +709,7 @@ func TestCreateCatalogVersion_LtCreateError(t *testing.T) {
 	ltRepo.On("Create", mock.Anything, mock.Anything).Return(dbErr)
 
 	pins := []models.CatalogVersionPin{{EntityTypeVersionID: "etv1"}}
-	_, err := svc.CreateCatalogVersion(context.Background(), "v1.0", pins)
+	_, err := svc.CreateCatalogVersion(context.Background(), "v1.0", "", pins)
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -721,7 +721,7 @@ func TestCreateCatalogVersion_NoPins_LtCreateError(t *testing.T) {
 	cvRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	ltRepo.On("Create", mock.Anything, mock.Anything).Return(dbErr)
 
-	_, err := svc.CreateCatalogVersion(context.Background(), "v1.0", nil)
+	_, err := svc.CreateCatalogVersion(context.Background(), "v1.0", "", nil)
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -732,7 +732,7 @@ func TestCreateCatalogVersion_NoPins_LtCreateError(t *testing.T) {
 func TestCreateEnum_EmptyName(t *testing.T) {
 	svc := meta.NewEnumService(nil, nil, nil)
 
-	_, err := svc.CreateEnum(context.Background(), "", []string{"a", "b"})
+	_, err := svc.CreateEnum(context.Background(), "", "", []string{"a", "b"})
 	assert.Error(t, err)
 }
 
@@ -742,7 +742,7 @@ func TestCreateEnum_EnumCreateError(t *testing.T) {
 
 	enumRepo.On("Create", mock.Anything, mock.Anything).Return(dbErr)
 
-	_, err := svc.CreateEnum(context.Background(), "Status", []string{"active"})
+	_, err := svc.CreateEnum(context.Background(), "Status", "", []string{"active"})
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -754,7 +754,7 @@ func TestCreateEnum_ValueCreateError(t *testing.T) {
 	enumRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	evRepo.On("Create", mock.Anything, mock.Anything).Return(dbErr)
 
-	_, err := svc.CreateEnum(context.Background(), "Status", []string{"active", "inactive"})
+	_, err := svc.CreateEnum(context.Background(), "Status", "", []string{"active", "inactive"})
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -848,7 +848,7 @@ func TestUpdateEnum_GetByIDError(t *testing.T) {
 
 	enumRepo.On("GetByID", mock.Anything, "e1").Return(nil, dbErr)
 
-	err := svc.UpdateEnum(context.Background(), "e1", "Updated")
+	err := svc.UpdateEnum(context.Background(), "e1", "Updated", "")
 	assert.ErrorIs(t, err, dbErr)
 }
 
@@ -859,7 +859,7 @@ func TestUpdateEnum_UpdateError(t *testing.T) {
 	enumRepo.On("GetByID", mock.Anything, "e1").Return(&models.Enum{ID: "e1", Name: "Old"}, nil)
 	enumRepo.On("Update", mock.Anything, mock.Anything).Return(dbErr)
 
-	err := svc.UpdateEnum(context.Background(), "e1", "Updated")
+	err := svc.UpdateEnum(context.Background(), "e1", "Updated", "")
 	assert.ErrorIs(t, err, dbErr)
 }
 

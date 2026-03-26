@@ -31,6 +31,7 @@ test-live:
 	"$(PROJECT_ROOT)scripts/test-publishing.sh"
 	"$(PROJECT_ROOT)scripts/test-copy-replace.sh"
 	"$(PROJECT_ROOT)scripts/test-system-attributes.sh"
+	"$(PROJECT_ROOT)scripts/test-descriptions.sh"
 
 test-all: test-backend test-browser test-system test-live
 

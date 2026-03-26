@@ -26,7 +26,7 @@ func (h *EnumHandler) List(c echo.Context) error {
 	resp := make([]dto.EnumResponse, len(enums))
 	for i, e := range enums {
 		resp[i] = dto.EnumResponse{
-			ID: e.ID, Name: e.Name, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
+			ID: e.ID, Name: e.Name, Description: e.Description, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
 		}
 	}
 	return c.JSON(http.StatusOK, dto.ListResponse{Items: resp, Total: total})
@@ -41,13 +41,13 @@ func (h *EnumHandler) Create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "name is required")
 	}
 
-	e, err := h.svc.CreateEnum(c.Request().Context(), req.Name, req.Values)
+	e, err := h.svc.CreateEnum(c.Request().Context(), req.Name, req.Description, req.Values)
 	if err != nil {
 		return mapError(err)
 	}
 
 	return c.JSON(http.StatusCreated, dto.EnumResponse{
-		ID: e.ID, Name: e.Name, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
+		ID: e.ID, Name: e.Name, Description: e.Description, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
 	})
 }
 
@@ -59,7 +59,7 @@ func (h *EnumHandler) GetByID(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, dto.EnumResponse{
-		ID: e.ID, Name: e.Name, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
+		ID: e.ID, Name: e.Name, Description: e.Description, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
 	})
 }
 
@@ -73,7 +73,17 @@ func (h *EnumHandler) Update(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "name is required")
 	}
 
-	if err := h.svc.UpdateEnum(c.Request().Context(), id, req.Name); err != nil {
+	// If description is omitted (nil), preserve current value
+	desc := ""
+	if req.Description != nil {
+		desc = *req.Description
+	} else {
+		// Fetch current enum to preserve description
+		if current, err := h.svc.GetEnum(c.Request().Context(), id); err == nil {
+			desc = current.Description
+		}
+	}
+	if err := h.svc.UpdateEnum(c.Request().Context(), id, req.Name, desc); err != nil {
 		return mapError(err)
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "updated"})

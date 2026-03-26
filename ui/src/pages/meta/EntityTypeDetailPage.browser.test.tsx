@@ -10,6 +10,7 @@ vi.mock('../../api/client', () => ({
     entityTypes: {
       get: vi.fn(),
       list: vi.fn(),
+      update: vi.fn(),
       copy: vi.fn(),
       delete: vi.fn(),
       rename: vi.fn(),
@@ -2229,4 +2230,60 @@ test('back button navigates back', async () => {
   await expect.element(page.getByRole('button', { name: /Back/i })).toBeVisible()
   await page.getByRole('button', { name: /Back/i }).click()
   // Navigation happens — no crash
+})
+
+// T-23.19: Description shown in entity type detail overview
+test('T-23.19: description shown in overview', async () => {
+  renderDetail()
+  await expect.element(page.getByText('No description')).toBeVisible()
+})
+
+// T-23.20: Edit description button visible for Admin
+test('T-23.20: edit description button visible for Admin', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('button', { name: 'Edit description' })).toBeVisible()
+})
+
+// T-23.21: Edit description hidden for RO
+test('T-23.21: edit description hidden for RO', async () => {
+  renderDetail('RO')
+  await expect.element(page.getByRole('button', { name: 'Edit description' })).not.toBeInTheDocument()
+})
+
+// T-23.22: Clicking edit shows inline input and save/cancel
+test('T-23.22: clicking edit shows inline edit', async () => {
+  renderDetail()
+  await page.getByRole('button', { name: 'Edit description' }).click()
+  await expect.element(page.getByRole('textbox', { name: 'Description' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Save' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Cancel' })).toBeVisible()
+})
+
+// T-23.23: Saving description calls API
+test('T-23.23: saving description calls PUT API', async () => {
+  ;(api.entityTypes.update as Mock).mockResolvedValue({ id: 'v2', version: 2 })
+  renderDetail()
+  await page.getByRole('button', { name: 'Edit description' }).click()
+  await page.getByRole('textbox', { name: 'Description' }).fill('New desc')
+  await page.getByRole('button', { name: 'Save' }).click()
+  expect(api.entityTypes.update).toHaveBeenCalledWith('et-1', { description: 'New desc' })
+})
+
+// T-23.23c: Save description error shows error
+test('save description error shows error', async () => {
+  ;(api.entityTypes.update as Mock).mockRejectedValue(new Error('500: failed'))
+  renderDetail()
+  await page.getByRole('button', { name: 'Edit description' }).click()
+  await page.getByRole('textbox', { name: 'Description' }).fill('Bad desc')
+  await page.getByRole('button', { name: 'Save' }).click()
+  await expect.element(page.getByText('500: failed')).toBeVisible()
+})
+
+// T-23.23b: Cancel hides inline edit
+test('cancel hides inline description edit', async () => {
+  renderDetail()
+  await page.getByRole('button', { name: 'Edit description' }).click()
+  await expect.element(page.getByRole('textbox', { name: 'Description' })).toBeVisible()
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await expect.element(page.getByRole('textbox', { name: 'Description' })).not.toBeInTheDocument()
 })

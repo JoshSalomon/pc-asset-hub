@@ -1,4 +1,4 @@
-# AI Asset Hub — Test Coverage Report
+e# AI Asset Hub — Test Coverage Report
 
 Last updated: 2026-03-25
 
@@ -8,12 +8,12 @@ Last updated: 2026-03-25
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1315 | 100% | 96.7% | — |
-| UI — Unit tests | 75 | 100% | 17.9% | 20.6% |
-| UI — Browser tests (Playwright) | 717 | 100% | 93.1% (2202/2364) | 96.4% (1998/2072) |
+| Backend (Go) | 1317 | 100% | 92.4% (3489/3774) | — |
+| UI — Unit tests (jsdom) | 75 | 100% | — | — |
+| UI — Browser tests (Playwright) | 728 | 100% | 93.1% (2227/2392) | 96.4% (2022/2097) |
 | UI — System tests (Playwright + live server) | 30 | 100% | — | — |
-| Live system (bash scripts) | 217 | 100% | — | — |
-| **Total** | **2334** | **100%** | — | — |
+| Live system (bash scripts) | 228 | 100% | — | — |
+| **Total** | **2378** | **100%** | — | — |
 
 ---
 
@@ -21,22 +21,22 @@ Last updated: 2026-03-25
 
 | Package | Coverage | Notes |
 |---------|----------|-------|
-| `internal/api/health` | 90.0% | Readyz DB-ping error path |
-| `internal/api/dto` | 100.0% | |
-| `internal/api/meta` | 99.1% | Promote/Demote/Delete RoleRO/RW switch cases unreachable behind RBAC middleware |
-| `internal/api/middleware` | 100.0% | |
-| `internal/api/operational` | 98.3% | Copy/Replace handlers at 94.4% (bind-error branches only); legacy handler removed |
-| `internal/domain/errors` | 100.0% | |
-| `internal/infrastructure/config` | 100.0% | |
-| `internal/infrastructure/gorm/models` | 100.0% (12/12) | Removed legacy association name migration code (was 66.7%); added InitDB idempotency, AutoMigrate error, and containment cardinality fix tests |
-| `internal/infrastructure/gorm/repository` | 90.7% | GORM error branches on Delete/Update, `CatalogVersionGormRepo.Delete` at 0%; `GormTransactionManager` at 100% via integration tests |
-| `internal/infrastructure/k8s` | 92.6% | K8s client error paths |
-| `internal/operator/api/v1alpha1` | 98.2% | `DeepCopyObject` nil-receiver guard |
-| `internal/operator/controllers` | 94.3% (124/134) | Remaining: `SetupWithManager` (8 lines, requires envtest — deferred to Phase B), `SetOwnerReference` error branches (4 lines, unreachable defensive code) |
-| `internal/operator/crdgen` | 94.7% | 2 uncovered lines: `json.Marshal` error guards on inputs that cannot fail (well-formed map/struct) |
-| `internal/service/meta` | 99.5% | 4 lines uncovered: 2 assocRepo.BulkCopy error paths, requiresDeepCopy empty versions, deep copy Create error — all require complex multi-mock setup with WithCatalogRepos |
-| `internal/service/operational` | 99.8% | 2 lines uncovered: cycle guard in resolveParentChain (safety net for impossible data), txManager error wrap instrumentation artifact |
-| `internal/service/validation` | 95.6% | |
+| `internal/api/health` | 90.0% (9/10) | Readyz DB-ping error path |
+| `internal/api/meta` | 99.1% (433/437) | Promote/Demote/Delete RoleRO/RW switch cases unreachable behind RBAC middleware |
+| `internal/api/middleware` | 100.0% (69/69) | |
+| `internal/api/operational` | 98.3% (294/299) | Copy/Replace handlers bind-error branches only |
+| `internal/domain/errors` | 100.0% (32/32) | |
+| `internal/domain/models` | 100.0% (1/1) | |
+| `internal/infrastructure/config` | 100.0% (21/21) | |
+| `internal/infrastructure/gorm/models` | 100.0% (30/30) | |
+| `internal/infrastructure/gorm/repository` | 90.7% (597/658) | GORM error branches on Delete/Update |
+| `internal/infrastructure/k8s` | 92.6% (50/54) | K8s client error paths |
+| `internal/operator/api/v1alpha1` | 97.7% (85/87) | `DeepCopyObject` nil-receiver guard |
+| `internal/operator/controllers` | 94.3% (198/210) | `SetupWithManager` (envtest — deferred to Phase B), `SetOwnerReference` error branches |
+| `internal/operator/crdgen` | 94.7% (36/38) | `json.Marshal` error guards on well-formed inputs |
+| `internal/service/meta` | 99.5% (739/743) | BulkCopy error paths, requiresDeepCopy edge cases |
+| `internal/service/operational` | 99.8% (852/854) | Cycle guard in resolveParentChain (safety net) |
+| `internal/service/validation` | 95.6% (43/45) | |
 
 ### Excluded from Coverage
 

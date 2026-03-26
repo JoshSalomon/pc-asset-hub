@@ -418,6 +418,19 @@
       "phase": 0,
       "difficulty": 0.7,
       "created_at": "2026-03-26T11:52:43.626228+00:00"
+    },
+    "mem_33346a1d": {
+      "topic": "Go API update endpoints: omitted string fields silently erase data",
+      "tags": [
+        "go",
+        "api",
+        "bug-pattern",
+        "data-loss",
+        "dto"
+      ],
+      "phase": 0,
+      "difficulty": 0.8,
+      "created_at": "2026-03-27T09:58:16.594684+00:00"
     }
   }
 }

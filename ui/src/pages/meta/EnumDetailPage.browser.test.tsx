@@ -23,6 +23,7 @@ vi.mock('../../api/client', () => ({
 const mockEnum = {
   id: 'enum-1',
   name: 'Status',
+  description: 'Deployment status values',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-02T00:00:00Z',
 }
@@ -96,7 +97,7 @@ test('shows error when load fails', async () => {
 test('Admin sees Edit, Delete Enum, Add Value, Remove, and reorder buttons', async () => {
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
-  await expect.element(page.getByRole('button', { name: 'Edit' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Edit name' })).toBeVisible()
   await expect.element(page.getByRole('button', { name: 'Delete Enum' })).toBeVisible()
   await expect.element(page.getByRole('button', { name: 'Add Value' })).toBeVisible()
   await expect.element(page.getByRole('button', { name: 'Remove' }).first()).toBeVisible()
@@ -107,7 +108,7 @@ test('RO hides edit controls', async () => {
   await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
   await expect.element(page.getByRole('gridcell', { name: 'active', exact: true })).toBeVisible()
 
-  await expect.element(page.getByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+  await expect.element(page.getByRole('button', { name: 'Edit name' })).not.toBeInTheDocument()
   await expect.element(page.getByRole('button', { name: 'Delete Enum' })).not.toBeInTheDocument()
   await expect.element(page.getByRole('button', { name: 'Add Value' })).not.toBeInTheDocument()
   await expect.element(page.getByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
@@ -120,14 +121,28 @@ test('edit enum name via modal', async () => {
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
 
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit name' }).click()
   await expect.element(page.getByText('Edit Enum Name')).toBeVisible()
 
   await page.getByRole('textbox', { name: /Name/i }).clear()
   await page.getByRole('textbox', { name: /Name/i }).fill('New Status')
   await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
 
-  expect(api.enums.update).toHaveBeenCalledWith('enum-1', { name: 'New Status' })
+  expect(api.enums.update).toHaveBeenCalledWith('enum-1', { name: 'New Status', description: 'Deployment status values' })
+})
+
+test('rename enum with undefined description sends empty string not undefined', async () => {
+  ;(api.enums.get as Mock).mockResolvedValue({ ...mockEnum, description: undefined })
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit name' }).click()
+  await page.getByRole('textbox', { name: /Name/i }).clear()
+  await page.getByRole('textbox', { name: /Name/i }).fill('Renamed')
+  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
+
+  // Must send empty string, not undefined (which JSON.stringify would omit, causing backend to clear description)
+  expect(api.enums.update).toHaveBeenCalledWith('enum-1', { name: 'Renamed', description: '' })
 })
 
 test('edit name error shown in modal', async () => {
@@ -135,7 +150,7 @@ test('edit name error shown in modal', async () => {
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
 
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit name' }).click()
   await page.getByRole('textbox', { name: /Name/i }).clear()
   await page.getByRole('textbox', { name: /Name/i }).fill('Dup')
   await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
@@ -147,7 +162,7 @@ test('edit name cancel closes modal', async () => {
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
 
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit name' }).click()
   await expect.element(page.getByText('Edit Enum Name')).toBeVisible()
 
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
@@ -275,7 +290,7 @@ test('delete referenced enum shows error in modal', async () => {
 test('SuperAdmin sees all edit controls', async () => {
   renderDetail('SuperAdmin')
   await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
-  await expect.element(page.getByRole('button', { name: 'Edit' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Edit name' })).toBeVisible()
   await expect.element(page.getByRole('button', { name: 'Delete Enum' })).toBeVisible()
   await expect.element(page.getByRole('button', { name: 'Add Value' })).toBeVisible()
 })
@@ -298,4 +313,33 @@ test('reorder value error shows alert', async () => {
 
   await page.getByRole('button', { name: 'Move down' }).first().click()
   await expect.element(page.getByText('500: reorder failed')).toBeVisible()
+})
+
+// Enum description edit via prompt
+test('edit enum description via prompt', async () => {
+  const origPrompt = window.prompt
+  window.prompt = vi.fn().mockReturnValue('Updated desc') as typeof window.prompt
+  ;(api.enums.update as Mock).mockResolvedValue({ status: 'updated' })
+
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
+  await page.getByRole('button', { name: 'Edit description' }).click()
+
+  expect(window.prompt).toHaveBeenCalled()
+  expect(api.enums.update).toHaveBeenCalledWith('enum-1', { name: 'Status', description: 'Updated desc' })
+
+  window.prompt = origPrompt
+})
+
+// Fix 5: Enum detail page shows description
+test('enum detail shows description', async () => {
+  renderDetail()
+  await expect.element(page.getByText('Deployment status values')).toBeVisible()
+})
+
+// Fix 6: Empty description shows placeholder
+test('enum detail shows placeholder for empty description', async () => {
+  ;(api.enums.get as Mock).mockResolvedValue({ ...mockEnum, description: '' })
+  renderDetail()
+  await expect.element(page.getByText('No description')).toBeVisible()
 })

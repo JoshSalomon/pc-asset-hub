@@ -38,7 +38,7 @@ func TestTC15_ListEnums(t *testing.T) {
 
 	now := time.Now()
 	enumRepo.On("List", mock.Anything, mock.Anything).Return([]*models.Enum{
-		{ID: "e1", Name: "Status", CreatedAt: now, UpdatedAt: now},
+		{ID: "e1", Name: "Status", Description: "Deploy status", CreatedAt: now, UpdatedAt: now},
 		{ID: "e2", Name: "Priority", CreatedAt: now, UpdatedAt: now},
 	}, 2, nil)
 
@@ -46,6 +46,7 @@ func TestTC15_ListEnums(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), `"Status"`)
 	assert.Contains(t, rec.Body.String(), `"Priority"`)
+	assert.Contains(t, rec.Body.String(), `"Deploy status"`)
 }
 
 // T-C.16: Create enum with values
@@ -58,9 +59,10 @@ func TestTC16_CreateEnum(t *testing.T) {
 	evRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 
 	rec := doRequest(e, http.MethodPost, "/api/meta/v1/enums",
-		`{"name":"Status","values":["active","inactive"]}`, apimw.RoleAdmin)
+		`{"name":"Status","description":"Deploy status","values":["active","inactive"]}`, apimw.RoleAdmin)
 	assert.Equal(t, http.StatusCreated, rec.Code)
 	assert.Contains(t, rec.Body.String(), `"Status"`)
+	assert.Contains(t, rec.Body.String(), `"Deploy status"`)
 }
 
 // T-C.17: Create enum missing name → 400
@@ -90,11 +92,12 @@ func TestTC19_GetEnumByID(t *testing.T) {
 	e := setupEnumServer(enumRepo, nil)
 
 	now := time.Now()
-	enumRepo.On("GetByID", mock.Anything, "e1").Return(&models.Enum{ID: "e1", Name: "Status", CreatedAt: now, UpdatedAt: now}, nil)
+	enumRepo.On("GetByID", mock.Anything, "e1").Return(&models.Enum{ID: "e1", Name: "Status", Description: "Deploy status", CreatedAt: now, UpdatedAt: now}, nil)
 
 	rec := doRequest(e, http.MethodGet, "/api/meta/v1/enums/e1", "", apimw.RoleRO)
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), `"Status"`)
+	assert.Contains(t, rec.Body.String(), `"Deploy status"`)
 }
 
 // T-C.20: Update enum name

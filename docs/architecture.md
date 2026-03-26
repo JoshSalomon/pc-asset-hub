@@ -439,6 +439,8 @@ association_links (
 
 **Copy-on-write versioning**: `entity_type_versions` holds immutable snapshots. When an entity type is mutated, a new version row is created and all attributes and associations are copied to the new version. Past versions remain intact. Catalog versions pinning an older entity type version continue to see that version's attributes and associations unchanged.
 
+**Entity type description is versioned**: The `entity_types` table has no `description` column. The description lives on `entity_type_versions.description`, making it part of the versioned snapshot. When the API returns an entity type list or detail, the handler resolves the description from the latest version via `GetLatestByEntityType`. This means updating a description creates a new version (COW), which is the intended behavior — the description change is tracked in version history.
+
 **Associations are versioned**: Associations are tied to `entity_type_versions`, not `entity_types`. This ensures that adding or removing an association only affects the new version. Without this, modifying an association would retroactively affect older catalog versions that reference previous entity type versions.
 
 **EAV for dynamic data**: The `instance_attribute_values` table stores attribute values using type-specific columns (`value_string`, `value_number`, `value_enum`). The structure of this table never changes when entity types are defined — validation of values against the entity type definition happens at the application layer.

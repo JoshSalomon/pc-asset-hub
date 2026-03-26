@@ -30,13 +30,13 @@ func (h *CatalogVersionHandler) Create(c echo.Context) error {
 		pins = append(pins, models.CatalogVersionPin{EntityTypeVersionID: p.EntityTypeVersionID})
 	}
 
-	cv, err := h.svc.CreateCatalogVersion(c.Request().Context(), req.VersionLabel, pins)
+	cv, err := h.svc.CreateCatalogVersion(c.Request().Context(), req.VersionLabel, req.Description, pins)
 	if err != nil {
 		return mapError(err)
 	}
 
 	return c.JSON(http.StatusCreated, dto.CatalogVersionResponse{
-		ID: cv.ID, VersionLabel: cv.VersionLabel, LifecycleStage: string(cv.LifecycleStage),
+		ID: cv.ID, VersionLabel: cv.VersionLabel, Description: cv.Description, LifecycleStage: string(cv.LifecycleStage),
 		CreatedAt: cv.CreatedAt, UpdatedAt: cv.UpdatedAt,
 	})
 }
@@ -53,7 +53,7 @@ func (h *CatalogVersionHandler) List(c echo.Context) error {
 	resp := make([]dto.CatalogVersionResponse, len(items))
 	for i, cv := range items {
 		resp[i] = dto.CatalogVersionResponse{
-			ID: cv.ID, VersionLabel: cv.VersionLabel, LifecycleStage: string(cv.LifecycleStage),
+			ID: cv.ID, VersionLabel: cv.VersionLabel, Description: cv.Description, LifecycleStage: string(cv.LifecycleStage),
 			CreatedAt: cv.CreatedAt, UpdatedAt: cv.UpdatedAt,
 		}
 	}
@@ -67,7 +67,7 @@ func (h *CatalogVersionHandler) GetByID(c echo.Context) error {
 		return mapError(err)
 	}
 	return c.JSON(http.StatusOK, dto.CatalogVersionResponse{
-		ID: cv.ID, VersionLabel: cv.VersionLabel, LifecycleStage: string(cv.LifecycleStage),
+		ID: cv.ID, VersionLabel: cv.VersionLabel, Description: cv.Description, LifecycleStage: string(cv.LifecycleStage),
 		CreatedAt: cv.CreatedAt, UpdatedAt: cv.UpdatedAt,
 	})
 }

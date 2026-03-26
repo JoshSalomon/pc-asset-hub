@@ -58,10 +58,11 @@ type Association struct {
 }
 
 type Enum struct {
-	ID        string
-	Name      string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID          string
+	Name        string
+	Description string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 type EnumValue struct {
@@ -82,6 +83,7 @@ const (
 type CatalogVersion struct {
 	ID             string
 	VersionLabel   string
+	Description    string
 	LifecycleStage LifecycleStage
 	CreatedAt      time.Time
 	UpdatedAt      time.Time

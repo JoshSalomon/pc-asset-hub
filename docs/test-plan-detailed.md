@@ -2631,6 +2631,121 @@ Merges the two separate SPAs (meta + operational) into a single SPA with route-b
 
 ---
 
+## 23. Description Fields — Entity Type List, Enum, Catalog Version (TD-43, TD-45, TD-46)
+
+Adds description fields to Enum and CatalogVersion models, resolves entity type description from latest version into list API, and adds editable description on entity type detail page.
+
+### Backend — Enum Description (TD-45)
+
+#### Unit Tests (service)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.01 | CreateEnum with description stores it | Unit | Description persisted |
+| T-23.02 | CreateEnum without description defaults to empty | Unit | Empty string stored |
+| T-23.03 | UpdateEnum description updates it | Unit | New description persisted |
+
+#### Integration Tests (repository)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.04 | Enum description stored and retrieved | Integration | Round-trip matches |
+| T-23.05 | Enum with empty description retrieved correctly | Integration | Empty string, not null |
+
+#### API Tests (handler)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.06 | POST /enums with description returns it in response | API | Description in response body |
+| T-23.07 | GET /enums list includes description field | API | Each enum has description |
+| T-23.08 | PUT /enums/:id updates description | API | Updated description returned |
+
+### Backend — CatalogVersion Description
+
+#### Unit Tests (service)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.09 | CreateCatalogVersion with description stores it | Unit | Description persisted |
+| T-23.10 | CreateCatalogVersion without description defaults to empty | Unit | Empty string stored |
+
+#### Integration Tests (repository)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.11 | CatalogVersion description stored and retrieved | Integration | Round-trip matches |
+
+#### API Tests (handler)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.12 | POST /catalog-versions with description returns it | API | Description in response body |
+| T-23.13 | GET /catalog-versions list includes description | API | Each CV has description |
+
+### Backend — Entity Type List Description (TD-43)
+
+#### API Tests (handler)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.14 | GET /entity-types list includes description from latest version | API | Description matches latest EntityTypeVersion.Description |
+| T-23.15 | Entity type with no description returns empty string | API | `description: ""` |
+| T-23.16 | Entity type description updates after new version created | API | Description reflects new version |
+
+### UI — Entity Type List Description Column
+
+#### Browser Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.17 | Description column visible in entity type list | Browser | Column header present |
+| T-23.18 | Description text shown for entity types | Browser | Description value in cell |
+
+### UI — Entity Type Detail Editable Description (TD-46)
+
+#### Browser Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.19 | Description shown in entity type detail overview | Browser | Current version description visible |
+| T-23.20 | Edit description button visible for Admin | Browser | Edit button present |
+| T-23.21 | Edit description hidden for RO | Browser | No edit button |
+| T-23.22 | Editing description calls PUT API | Browser | API called with new description |
+| T-23.23 | Description updates after successful edit | Browser | New description visible |
+
+### UI — Enum Description
+
+#### Browser Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.24 | Description column visible in enum list | Browser | Column header present |
+| T-23.25 | Create enum modal has description field | Browser | Description input visible |
+| T-23.26 | Creating enum with description shows it in list | Browser | Description in table cell |
+| T-23.27 | Enum detail page shows description | Browser | Description in overview |
+
+### UI — Catalog Version Description
+
+#### Browser Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.28 | Description column visible in CV list | Browser | Column header present |
+| T-23.29 | Create CV modal has description field | Browser | Description input visible |
+| T-23.30 | Creating CV with description shows it in list | Browser | Description in table cell |
+| T-23.31 | CV detail page shows description in overview | Browser | Description in overview section |
+
+### Regression
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.32 | All existing entity type tests pass | Browser | No regressions |
+| T-23.33 | All existing enum tests pass | Browser | No regressions |
+| T-23.34 | All existing CV tests pass | Browser | No regressions |
+| T-23.35 | All existing backend tests pass | Unit/API | No regressions |
+
+---
+
 ## Coverage Criteria
 
 ### Pass Rate
@@ -2667,7 +2782,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 1003 test cases (T-1.01 through T-22.34; T-13.78 through T-13.85 retired) pass
+- All 1038 test cases (T-1.01 through T-23.35; T-13.78 through T-13.85 retired) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

@@ -1,6 +1,6 @@
 import '@patternfly/patternfly/patternfly.css'
 import { useEffect, useState, useCallback } from 'react'
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import {
   Page,
   Masthead,
@@ -161,6 +161,7 @@ function App() {
   // Create Catalog Version modal
   const [createCvOpen, setCreateCvOpen] = useState(false)
   const [newCvLabel, setNewCvLabel] = useState('')
+  const [newCvDesc, setNewCvDesc] = useState('')
   const [createCvError, setCreateCvError] = useState<string | null>(null)
   const [cvTree, setCvTree] = useState<ContainmentTreeNode[]>([])
   const [cvSelectedVersions, setCvSelectedVersions] = useState<Record<string, string>>({})
@@ -406,9 +407,10 @@ function App() {
       const pins = Object.values(cvSelectedVersions)
         .filter(Boolean)
         .map((versionId) => ({ entity_type_version_id: versionId }))
-      await api.catalogVersions.create({ version_label: newCvLabel.trim(), pins: pins.length > 0 ? pins : undefined })
+      await api.catalogVersions.create({ version_label: newCvLabel.trim(), description: newCvDesc.trim() || undefined, pins: pins.length > 0 ? pins : undefined })
       setCreateCvOpen(false)
       setNewCvLabel('')
+      setNewCvDesc('')
       setCvSelectedVersions({})
       loadCatalogVersions()
     } catch (e) {
@@ -522,6 +524,7 @@ function App() {
           <Thead>
             <Tr>
               <Th>Name</Th>
+              <Th>Description</Th>
               <Th>ID</Th>
               <Th>Created</Th>
               {canCreate && <Th>Actions</Th>}
@@ -535,6 +538,7 @@ function App() {
                     {et.name}
                   </Button>
                 </Td>
+                <Td style={{ maxWidth: '20rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{et.description || '-'}</Td>
                 <Td><code>{et.id.slice(0, 8)}...</code></Td>
                 <Td>{new Date(et.created_at).toLocaleString()}</Td>
                 {canCreate && (
@@ -600,6 +604,7 @@ function App() {
           <Thead>
             <Tr>
               <Th>Label</Th>
+              <Th>Description</Th>
               <Th>Stage</Th>
               <Th>Created</Th>
               {canCreate && <Th>Actions</Th>}
@@ -613,6 +618,7 @@ function App() {
                     {cv.version_label}
                   </Button>
                 </Td>
+                <Td style={{ maxWidth: '20rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cv.description || '-'}</Td>
                 <Td><Label color={stageColor(cv.lifecycle_stage)}>{cv.lifecycle_stage}</Label></Td>
                 <Td>{new Date(cv.created_at).toLocaleString()}</Td>
                 {canCreate && (
@@ -725,6 +731,7 @@ function App() {
 
         {/* Catalog data viewer (operational) */}
         <Route path="/catalogs/:name" element={<OperationalCatalogDetailPage role={role} />} />
+        <Route path="/catalogs" element={<Navigate to="/" replace />} />
       </Routes>
 
       {/* Create Entity Type Modal */}
@@ -779,6 +786,9 @@ function App() {
           <Form>
             <FormGroup label="Version Label" isRequired fieldId="cv-label">
               <TextInput id="cv-label" value={newCvLabel} onChange={(_e, v) => setNewCvLabel(v)} isRequired placeholder="e.g. v1.0" />
+            </FormGroup>
+            <FormGroup label="Description" fieldId="cv-desc">
+              <TextInput id="cv-desc" value={newCvDesc} onChange={(_e, v) => setNewCvDesc(v)} placeholder="Optional description" />
             </FormGroup>
           </Form>
           <Title headingLevel="h4" style={{ marginTop: '1.5rem', marginBottom: '0.5rem' }}>Entity Types to Include</Title>

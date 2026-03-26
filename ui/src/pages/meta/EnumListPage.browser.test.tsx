@@ -82,10 +82,11 @@ test('T-C.47: create enum with initial values', async () => {
   await expect.element(page.getByRole('dialog')).toBeVisible()
 
   await page.getByRole('textbox', { name: /Name/i }).fill('NewEnum')
+  await page.getByPlaceholder('Optional description').fill('Test enum desc')
   await page.getByPlaceholder('e.g. active, inactive, pending').fill('a, b, c')
   await page.getByRole('dialog').getByRole('button', { name: 'Create' }).click()
 
-  expect(api.enums.create).toHaveBeenCalledWith({ name: 'NewEnum', values: ['a', 'b', 'c'] })
+  expect(api.enums.create).toHaveBeenCalledWith({ name: 'NewEnum', description: 'Test enum desc', values: ['a', 'b', 'c'] })
 })
 
 test('create enum without values', async () => {

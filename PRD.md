@@ -404,8 +404,7 @@ A user can have different roles in each domain. For example, user X can be Admin
 | Role | Permissions |
 |------|-------------|
 | **Catalog Viewer** | Read-only access to instances, tree, references, attribute values. Can browse but not modify. |
-| **Catalog Editor** | Create, update, and delete ins
-tances, links. Set parent. All viewer permissions. |
+| **Catalog Editor** | Create, update, and delete instances, links. Set parent. All viewer permissions. |
 | **Catalog Admin** | All editor permissions plus validate and publish/unpublish. |
 | **Catalog Super Admin** | All admin permissions plus modify published catalogs (bypasses write protection). Intended for emergency fixes, security patches, and regulatory changes on specific catalogs. |
 
@@ -662,8 +661,8 @@ As an Admin, I want to define enum value sets as reusable objects and assign the
 **Why**: Without centralized enum management, the same set of values (e.g., supported languages, deployment targets) would be duplicated across entity types. Updates would require finding and changing every copy, risking inconsistency.
 
 Acceptance Criteria:
-- Admin can create a named enum with an ordered list of allowed values.
-- Admin can update an enum's values (add, remove, reorder).
+- Admin can create a named enum with an optional description and an ordered list of allowed values.
+- Admin can update an enum's description and values (add, remove, reorder).
 - Enums can be assigned as the type of any custom attribute on any entity type.
 - Multiple attributes across different entity types can reference the same enum.
 - When an enum is updated, all attributes referencing it reflect the updated values.
@@ -707,9 +706,9 @@ As an RW user, I want to create a catalog version that pins specific entity defi
 **Why**: Without a pinning mechanism, deployments would be subject to schema drift as entity definitions evolve. Catalog versions provide the stability guarantee that deployed systems need.
 
 Acceptance Criteria:
-- RW (and above) users can create a new catalog version by selecting specific entity definition versions to include.
+- RW (and above) users can create a new catalog version by specifying a version label, an optional description, and selecting specific entity definition versions to include.
 - The catalog version records the exact `(entity type name, version)` tuples it contains.
-- Once created, the catalog version's entity version pins cannot be changed (immutable snapshot).
+- Once created, the catalog version's entity version pins cannot be changed (immutable snapshot). The description can be updated.
 - The catalog version is created in the Development lifecycle stage.
 - The catalog version has a unique identifier.
 - RO users cannot create catalog versions; the API returns a 403.
@@ -1131,9 +1130,9 @@ As an Admin, I want a dedicated view to create, edit, and delete enums, and I wa
 **Why**: Enums are shared across entity types. Without a central management view, Admins would not know where an enum is used, risking unintended side effects when modifying or deleting values.
 
 Acceptance Criteria:
-- An enum list view displays all enums with: name, number of values, and a list of referencing entity types and attributes.
-- Admin can create a new enum with a name and an ordered list of values.
-- Admin can edit an enum: add, remove, or reorder values.
+- An enum list view displays all enums with: name, description, number of values, and a list of referencing entity types and attributes.
+- Admin can create a new enum with a name, optional description, and an ordered list of values.
+- Admin can edit an enum: update description, add, remove, or reorder values.
 - When removing a value, the UI warns if existing entity instances may use that value.
 - Admin can delete an enum only if no attributes reference it. If references exist, the UI lists them and blocks deletion.
 - Enum creation is also available inline from the attribute type dropdown (without navigating away from the entity type view).
@@ -1146,6 +1145,7 @@ As an Admin, I want to create a catalog version by selecting specific entity def
 **Why**: The catalog version is what gets deployed. The selection interface must make it easy to choose the right versions and review the complete snapshot before committing, to avoid deploying unintended entity definition versions.
 
 Acceptance Criteria:
+- The creation modal includes a version label (required) and an optional description.
 - A creation interface shows all entity types with their available versions.
 - The latest version of each entity type is pre-selected as the default.
 - Admin can change the selected version for any entity type via a version dropdown.
@@ -1163,7 +1163,7 @@ As an Admin, I want to see a catalog version's full bill of materials and promot
 **Why**: Lifecycle promotion is a critical operation with real cluster-side effects (CR generation and application). The UI must provide clear context and confirmation to prevent accidental promotions and help Admins understand the current state.
 
 Acceptance Criteria:
-- The detail view shows: catalog version identifier, current lifecycle stage (visually indicated with color-coded badge), creation date, and the full bill of materials (entity type name + pinned version).
+- The detail view shows: catalog version identifier, description, current lifecycle stage (visually indicated with color-coded badge), creation date, and the full bill of materials (entity type name + pinned version).
 - Clicking an entity type name in the bill of materials opens a read-only modal showing the pinned version's attributes and associations. The modal displays the entity type name, pinned version number, and two sections. Attributes show name, type (with resolved enum name for enum types, e.g., "boolean (enum)"), and description. Associations show both outgoing and incoming with contextual relationship labels: "contains"/"contained by" for containment, "references"/"referenced by" for directional, "references (mutual)" for bidirectional — each color-coded. The other entity type name and the perspective-correct role are shown (target role for outgoing, source role for incoming). No edit controls are shown — the modal is purely informational.
 - The view shows a history of lifecycle transitions (who promoted/demoted, when).
 - Available actions are displayed based on current stage and user role:
@@ -1496,9 +1496,14 @@ Items where the current implementation diverges from the intended behavior descr
 | TD-53 | Diagram tab JSX duplicated across catalog pages | The Model Diagram tab rendering (loading spinner, error alert, empty state, diagram component) is duplicated between `CatalogDetailPage.tsx` and `OperationalCatalogDetailPage.tsx` (~10 lines each). | Extract a `DiagramTabContent` component that accepts the `useCatalogDiagram` hook return value and renders the loading/error/empty/diagram states. Both pages import and use this component. |
 | TD-54 | `CatalogVersionDetailPage` does not use `useCatalogDiagram` hook | `CatalogVersionDetailPage.tsx` manually manages `diagramData` and `diagramLoading` state with ~25 lines of inline fetch-pins-then-snapshots logic. This duplicates the exact pattern now encapsulated in `useCatalogDiagram`. | Refactor `CatalogVersionDetailPage` to use `useCatalogDiagram(id)` and remove the duplicated state and logic. |
 | TD-55 | Edge click handler object construction duplicated in `AssociationEdge` | The `onClick` handler in `AssociationEdge` (EntityTypeDiagram.tsx) constructs an identical `EdgeClickData` object at two locations (transparent clickable path and label group). Each has ~10 fields with `|| ''` fallbacks. | Extract a helper function (e.g., `buildEdgeClickData(data)`) within the component scope that both click handlers call. |
-| TD-57 | Move `CatalogDetailPage` and `CatalogListPage` from `pages/operational/` to `pages/meta/` | Both `CatalogDetailPage.tsx` (schema catalog detail with instance CRUD) and `CatalogListPage.tsx` (schema catalog list) live in `pages/operational/` but serve schema-management functions and are rendered under `/schema/*` routes. All other schema pages (EntityTypeDetailPage, EnumDetailPage, CatalogVersionDetailPage) are in `pages/meta/`. | Move both files and their test files to `pages/meta/`. Update imports in `App.tsx`. This is a pure file-move refactor with no behavior changes. |
 | TD-56 | Operational catalog viewer Overview tab removed — consider re-adding with useful content | The Overview tab on `OperationalCatalogDetailPage` was hidden because it showed only entity type names/versions with no actionable information. If a meaningful Overview tab is designed later (e.g., catalog stats, instance counts per entity type, last-modified timestamps, data quality summary), the tab should be re-added with useful content. | Design and implement a useful Overview tab, or confirm it is not needed and clean up any remaining dead code. |
+| TD-57 | Move `CatalogDetailPage` and `CatalogListPage` from `pages/operational/` to `pages/meta/` | Both `CatalogDetailPage.tsx` (schema catalog detail with instance CRUD) and `CatalogListPage.tsx` (schema catalog list) live in `pages/operational/` but serve schema-management functions and are rendered under `/schema/*` routes. All other schema pages (EntityTypeDetailPage, EnumDetailPage, CatalogVersionDetailPage) are in `pages/meta/`. | Move both files and their test files to `pages/meta/`. Update imports in `App.tsx`. This is a pure file-move refactor with no behavior changes. |
+| TD-59 | N+1 query in entity type list description resolution | The entity type list handler calls `GetLatestByEntityType()` once per entity type in a loop to resolve descriptions. With many entity types, this generates N additional database queries. | Add a batch method `GetLatestByEntityTypes(ctx, entityTypeIDs []string) (map[string]*EntityTypeVersion, error)` to resolve all descriptions in a single query. |
+| TD-60 | Enum description edit uses `window.prompt()` instead of inline edit | The enum detail page description edit uses `window.prompt()`, while the entity type detail page uses a proper inline TextInput with Save/Cancel buttons. This is inconsistent UX and makes the enum edit untestable in browser tests (Playwright cannot mock native `window.prompt`). | Replace `window.prompt()` with inline TextInput edit (same pattern as EntityTypeDetailPage description edit). This also makes the catch block coverable in tests. |
+| TD-61 | CatalogVersion description is not editable after creation | The CV description is set at creation but there is no `PUT /catalog-versions/:id` endpoint to update it. The CV detail page shows the description but has no edit control. | Add `UpdateCatalogVersion(ctx, id, description)` to service, `PUT /catalog-versions/:id` handler accepting `{description}`, and inline edit on the CV detail page (same pattern as EntityTypeDetailPage). |
+| TD-58 | Enum values are not versioned — mutations are destructive | Enum values (add, remove, reorder) mutate in place. If an enum is referenced by attributes across multiple catalog versions, changing its values affects all of them retroactively. Entity types use copy-on-write versioning for attributes and associations, but enums have no equivalent mechanism. Removing an enum value that is in use by existing entity instances could leave invalid data. | Options: (A) Add versioning to enums (copy-on-write on mutation, enum versions pinned in CVs alongside entity type versions). (B) Add validation that prevents removing enum values that are in use. (C) Accept the current behavior and document it as a known limitation. Option B is the minimum viable fix. |
 | ~~TD-42~~ | ~~[IMPORTANT] Add Contained Instance modal missing custom attributes~~ | **RESOLVED.** Add Contained Instance modal now loads child entity type schema attributes when child type is selected. Renders attribute fields (string, number, enum) same as root-level Create Instance modal. Attributes passed in API request body. |
+| TD-62 | [IMPORTANT] Audit all update/PUT endpoints for omitted-field data loss | The `UpdateEnum` handler was silently erasing the `description` field when the caller omitted it from the JSON body, because the DTO used `string` (zero value `""`) rather than `*string` (nil = omitted). This was fixed for enums by switching to `*string` and preserving the current value when nil. **The same bug pattern may exist on other update endpoints** — any PUT/PATCH handler that unconditionally overwrites a field from a DTO `string` will erase data when the caller omits that field. | Audit every update endpoint in the Meta and Operational APIs. For each optional field on an update DTO, verify that omitting the field in the JSON request body does NOT erase the current value. Use `*string` (pointer) for optional fields and preserve current values when nil. Endpoints to check: `UpdateEntityType`, `UpdateInstance`, `SetParent`, catalog update (if added), CV update (TD-61), and any future update handlers. |
 | ~~TD-22~~ | ~~[CRITICAL] Common attributes as schema-level attributes~~ | **RESOLVED (Approach B — API-level merge).** Common attributes — Name (required) and Description (optional) — are injected as synthetic system attributes (`system: true`) into all API responses: instance detail, attribute lists, version snapshots, and UML diagrams. The UI renders them uniformly alongside custom attributes. System attributes cannot be created, edited, renamed, or deleted by users. Custom attribute names "name"/"description" are rejected. Copy-attributes excludes system attributes. Catalog validation checks Name is non-empty. No DB schema changes — common attributes remain as fields on `EntityInstance`, with the API layer handling the merge. |
 
 ## 12. Future Features

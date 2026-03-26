@@ -220,6 +220,10 @@ export default function CatalogVersionDetailPage({ role }: Props) {
                 <DescriptionListDescription>{cv.version_label}</DescriptionListDescription>
               </DescriptionListGroup>
               <DescriptionListGroup>
+                <DescriptionListTerm>Description</DescriptionListTerm>
+                <DescriptionListDescription>{cv.description || <span style={{ color: '#6a6e73' }}>No description</span>}</DescriptionListDescription>
+              </DescriptionListGroup>
+              <DescriptionListGroup>
                 <DescriptionListTerm>Lifecycle Stage</DescriptionListTerm>
                 <DescriptionListDescription>
                   <Label color={stageColor(cv.lifecycle_stage)}>{cv.lifecycle_stage}</Label>

@@ -8,16 +8,18 @@ import (
 
 	"github.com/project-catalyst/pc-asset-hub/internal/api/dto"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
+	"github.com/project-catalyst/pc-asset-hub/internal/domain/repository"
 	svcmeta "github.com/project-catalyst/pc-asset-hub/internal/service/meta"
 	"github.com/project-catalyst/pc-asset-hub/internal/service/validation"
 )
 
 type EntityTypeHandler struct {
-	svc *svcmeta.EntityTypeService
+	svc     *svcmeta.EntityTypeService
+	etvRepo repository.EntityTypeVersionRepository
 }
 
-func NewEntityTypeHandler(svc *svcmeta.EntityTypeService) *EntityTypeHandler {
-	return &EntityTypeHandler{svc: svc}
+func NewEntityTypeHandler(svc *svcmeta.EntityTypeService, etvRepo repository.EntityTypeVersionRepository) *EntityTypeHandler {
+	return &EntityTypeHandler{svc: svc, etvRepo: etvRepo}
 }
 
 func (h *EntityTypeHandler) Create(c echo.Context) error {
@@ -63,6 +65,12 @@ func (h *EntityTypeHandler) List(c echo.Context) error {
 		resp[i] = dto.EntityTypeResponse{
 			ID: et.ID, Name: et.Name, CreatedAt: et.CreatedAt, UpdatedAt: et.UpdatedAt,
 		}
+		// Resolve latest version description (TD-43)
+		if h.etvRepo != nil {
+			if latestV, err := h.etvRepo.GetLatestByEntityType(c.Request().Context(), et.ID); err == nil {
+				resp[i].Description = latestV.Description
+			}
+		}
 	}
 	return c.JSON(http.StatusOK, dto.ListResponse{Items: resp, Total: total})
 }
@@ -74,9 +82,15 @@ func (h *EntityTypeHandler) GetByID(c echo.Context) error {
 		return mapError(err)
 	}
 
-	return c.JSON(http.StatusOK, dto.EntityTypeResponse{
+	resp := dto.EntityTypeResponse{
 		ID: et.ID, Name: et.Name, CreatedAt: et.CreatedAt, UpdatedAt: et.UpdatedAt,
-	})
+	}
+	if h.etvRepo != nil {
+		if latestV, err := h.etvRepo.GetLatestByEntityType(c.Request().Context(), et.ID); err == nil {
+			resp.Description = latestV.Description
+		}
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 func (h *EntityTypeHandler) Update(c echo.Context) error {

@@ -86,6 +86,21 @@ export default function EntityTypeDetailPage({ role }: Props) {
   const [deepCopyWarningOpen, setDeepCopyWarningOpen] = useState(false)
   const [pendingNewName, setPendingNewName] = useState('')
 
+  // Description editing
+  const [editingDesc, setEditingDesc] = useState(false)
+  const [editDescValue, setEditDescValue] = useState('')
+
+  const handleSaveDescription = async () => {
+    if (!id) return
+    try {
+      await api.entityTypes.update(id, { description: editDescValue })
+      setEditingDesc(false)
+      data.loadEntityType()
+    } catch (e) {
+      data.setError(e instanceof Error ? e.message : 'Failed to update description')
+    }
+  }
+
   // Copy modal
   const [copyOpen, setCopyOpen] = useState(false)
   const [copyName, setCopyName] = useState('')
@@ -188,6 +203,30 @@ export default function EntityTypeDetailPage({ role }: Props) {
                   {data.entityType.name}
                   {canEdit && (
                     <Button variant="link" size="sm" onClick={() => { setEditNameError(null); setEditNameOpen(true) }} style={{ marginLeft: '0.5rem' }} aria-label="Edit name">Rename</Button>
+                  )}
+                </DescriptionListDescription>
+              </DescriptionListGroup>
+              <DescriptionListGroup>
+                <DescriptionListTerm>Description</DescriptionListTerm>
+                <DescriptionListDescription>
+                  {editingDesc ? (
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <TextInput
+                        value={editDescValue}
+                        onChange={(_e, v) => setEditDescValue(v)}
+                        aria-label="Description"
+                        style={{ maxWidth: '300px' }}
+                      />
+                      <Button variant="primary" size="sm" onClick={handleSaveDescription}>Save</Button>
+                      <Button variant="link" size="sm" onClick={() => setEditingDesc(false)}>Cancel</Button>
+                    </div>
+                  ) : (
+                    <>
+                      {data.entityType.description || <span style={{ color: '#6a6e73' }}>No description</span>}
+                      {canEdit && (
+                        <Button variant="link" size="sm" onClick={() => { setEditDescValue(data.entityType?.description || ''); setEditingDesc(true) }} style={{ marginLeft: '0.5rem' }} aria-label="Edit description">Edit</Button>
+                      )}
+                    </>
                   )}
                 </DescriptionListDescription>
               </DescriptionListGroup>

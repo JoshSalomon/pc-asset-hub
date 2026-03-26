@@ -39,8 +39,8 @@ vi.mock('./api/client', () => ({
 }))
 
 const mockEntityTypes = [
-  { id: 'et-1', name: 'MLModel', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-  { id: 'et-2', name: 'Dataset', created_at: '2026-01-02T00:00:00Z', updated_at: '2026-01-02T00:00:00Z' },
+  { id: 'et-1', name: 'MLModel', description: 'A machine learning model', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+  { id: 'et-2', name: 'Dataset', description: '', created_at: '2026-01-02T00:00:00Z', updated_at: '2026-01-02T00:00:00Z' },
 ]
 
 const mockCatalogVersions = [
@@ -437,9 +437,10 @@ test('creates catalog version via modal', async () => {
 
   await page.getByRole('button', { name: 'Create Catalog Version' }).click()
   await page.getByPlaceholder('e.g. v1.0').fill('v4.0')
+  await page.getByPlaceholder('Optional description').first().fill('Test CV description')
   await page.getByRole('dialog').getByRole('button', { name: 'Create' }).click()
 
-  expect(api.catalogVersions.create).toHaveBeenCalledWith({ version_label: 'v4.0' })
+  expect(api.catalogVersions.create).toHaveBeenCalledWith({ version_label: 'v4.0', description: 'Test CV description' })
 })
 
 test('shows error when catalog version create fails', async () => {
@@ -726,6 +727,19 @@ test('T-E.58: Version dropdown shows all versions, defaults to latest', async ()
   const toolSelect = page.getByRole('dialog').getByRole('combobox', { name: 'Version for Tool' })
   await expect.element(toolSelect).toBeVisible()
   await expect.element(toolSelect).toHaveValue('vt2')
+})
+
+// /catalogs without :name redirects to landing page
+test('/catalogs redirects to landing page', async () => {
+  ;(api.catalogs.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderApp('/catalogs')
+  await expect.element(page.getByRole('heading', { name: 'Schema Management' })).toBeVisible()
+})
+
+// T-23.17: Entity type list shows description
+test('T-23.17: entity type list shows description', async () => {
+  renderApp()
+  await expect.element(page.getByText('A machine learning model')).toBeVisible()
 })
 
 // === Model Diagram Tab ===
