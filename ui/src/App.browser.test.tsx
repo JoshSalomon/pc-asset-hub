@@ -20,6 +20,9 @@ vi.mock('./api/client', () => ({
       demote: vi.fn(),
       delete: vi.fn(),
     },
+    catalogs: {
+      list: vi.fn(),
+    },
     enums: {
       list: vi.fn(),
     },
@@ -87,7 +90,7 @@ const mockContainmentTree = [
   },
 ]
 
-function renderApp(initialPath = '/') {
+function renderApp(initialPath = '/schema') {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <App />
@@ -105,6 +108,7 @@ beforeEach(() => {
   ;(api.catalogVersions.promote as Mock).mockResolvedValue({ status: 'promoted' })
   ;(api.catalogVersions.demote as Mock).mockResolvedValue({ status: 'demoted' })
   ;(api.catalogVersions.delete as Mock).mockResolvedValue(undefined)
+  ;(api.catalogs.list as Mock).mockResolvedValue({ items: [], total: 0 })
   if (api.enums?.list) {
     ;(api.enums.list as Mock).mockResolvedValue({ items: [], total: 0 })
   }

@@ -108,7 +108,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
       setEditNameOpen(false)
       setDeepCopyWarningOpen(false)
       if (result.was_deep_copy) {
-        navigate(`/entity-types/${result.entity_type.id}`)
+        navigate(`/schema/entity-types/${result.entity_type.id}`)
       } else {
         data.loadEntityType()
       }
@@ -132,7 +132,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
       await api.entityTypes.copy(id, { source_version: latestVersion, new_name: copyName.trim() })
       setCopyOpen(false)
       setCopyName('')
-      navigate('/')
+      navigate('/schema')
     } catch (e) {
       setCopyError(e instanceof Error ? e.message : 'Failed to copy')
     }
@@ -142,7 +142,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
     if (!id) return
     try {
       await api.entityTypes.delete(id)
-      navigate('/')
+      navigate('/schema')
     } catch (e) {
       data.setError(e instanceof Error ? e.message : 'Failed to delete')
       setDeleteOpen(false)
@@ -169,7 +169,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
 
   return (
     <PageSection>
-      <Button variant="link" onClick={() => navigate(-1)} style={{ marginBottom: '1rem' }}>
+      <Button variant="link" onClick={() => navigate('/schema')} style={{ marginBottom: '1rem' }}>
         &larr; Back
       </Button>
 

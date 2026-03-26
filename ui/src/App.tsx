@@ -46,6 +46,8 @@ import EnumDetailPage from './pages/meta/EnumDetailPage'
 import CatalogVersionDetailPage from './pages/meta/CatalogVersionDetailPage'
 import CatalogListPage from './pages/operational/CatalogListPage'
 import CatalogDetailPage from './pages/operational/CatalogDetailPage'
+import OperationalCatalogDetailPage from './pages/operational/OperationalCatalogDetailPage'
+import LandingPage from './pages/LandingPage'
 
 const ROLES: Role[] = ['RO', 'RW', 'Admin', 'SuperAdmin']
 
@@ -110,13 +112,21 @@ function App() {
   const [role, setRole] = useState<Role>('Admin')
   const [roleSelectOpen, setRoleSelectOpen] = useState(false)
 
-  // Determine active tab from URL
+  // Determine active tab from URL (schema routes have /schema prefix)
   const getActiveTab = () => {
-    if (location.pathname.startsWith('/catalog-versions')) return 'catalogVersions'
-    if (location.pathname.startsWith('/catalogs')) return 'catalogs'
-    if (location.pathname.startsWith('/enums')) return 'enums'
-    if (location.pathname.startsWith('/model-diagram')) return 'modelDiagram'
+    if (!location.pathname.startsWith('/schema')) return ''
+    if (location.pathname.startsWith('/schema/catalog-versions')) return 'catalogVersions'
+    if (location.pathname.startsWith('/schema/catalogs')) return 'catalogs'
+    if (location.pathname.startsWith('/schema/enums')) return 'enums'
+    if (location.pathname.startsWith('/schema/model-diagram')) return 'modelDiagram'
     return 'entityTypes'
+  }
+
+  // Context-aware masthead title
+  const getMastheadTitle = () => {
+    if (location.pathname.startsWith('/schema')) return 'AI Asset Hub — Schema'
+    if (location.pathname.startsWith('/catalogs')) return 'AI Asset Hub — Data Viewer'
+    return 'AI Asset Hub'
   }
 
   // Entity Types state
@@ -195,8 +205,8 @@ function App() {
   const activeTab = getActiveTab()
   useEffect(() => {
     setAuthRole(role)
-    if (activeTab === 'entityTypes' && location.pathname === '/') loadEntityTypes()
-    if (activeTab === 'catalogVersions' && location.pathname === '/catalog-versions') loadCatalogVersions()
+    if (activeTab === 'entityTypes' && (location.pathname === '/schema' || location.pathname === '/schema/')) loadEntityTypes()
+    if (activeTab === 'catalogVersions' && location.pathname === '/schema/catalog-versions') loadCatalogVersions()
   }, [activeTab, role, location.pathname, loadEntityTypes, loadCatalogVersions])
 
   // Model diagram state
@@ -268,7 +278,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (activeTab === 'modelDiagram' && location.pathname === '/model-diagram') loadDiagramData()
+    if (activeTab === 'modelDiagram' && location.pathname === '/schema/model-diagram') loadDiagramData()
   }, [activeTab, location.pathname, loadDiagramData])
 
   // Create entity type
@@ -462,11 +472,11 @@ function App() {
   }
 
   const handleTabSelect = (_e: React.MouseEvent<HTMLElement>, key: string | number) => {
-    if (key === 'entityTypes') navigate('/')
-    else if (key === 'catalogVersions') navigate('/catalog-versions')
-    else if (key === 'catalogs') navigate('/catalogs')
-    else if (key === 'enums') navigate('/enums')
-    else if (key === 'modelDiagram') navigate('/model-diagram')
+    if (key === 'entityTypes') navigate('/schema')
+    else if (key === 'catalogVersions') navigate('/schema/catalog-versions')
+    else if (key === 'catalogs') navigate('/schema/catalogs')
+    else if (key === 'enums') navigate('/schema/enums')
+    else if (key === 'modelDiagram') navigate('/schema/model-diagram')
   }
 
   // Entity types list content
@@ -521,7 +531,7 @@ function App() {
             {filteredEntityTypes.map((et) => (
               <Tr key={et.id}>
                 <Td>
-                  <Button variant="link" isInline onClick={() => navigate(`/entity-types/${et.id}`)}>
+                  <Button variant="link" isInline onClick={() => navigate(`/schema/entity-types/${et.id}`)}>
                     {et.name}
                   </Button>
                 </Td>
@@ -599,7 +609,7 @@ function App() {
             {catalogVersions.map((cv) => (
               <Tr key={cv.id}>
                 <Td>
-                  <Button variant="link" isInline onClick={() => navigate(`/catalog-versions/${cv.id}`)}>
+                  <Button variant="link" isInline onClick={() => navigate(`/schema/catalog-versions/${cv.id}`)}>
                     {cv.version_label}
                   </Button>
                 </Td>
@@ -641,7 +651,7 @@ function App() {
       masthead={
         <Masthead>
           <MastheadMain>
-            <MastheadBrand>AI Asset Hub</MastheadBrand>
+            <MastheadBrand onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>{getMastheadTitle()}</MastheadBrand>
           </MastheadMain>
           <MastheadContent>
             <Toolbar>
@@ -673,11 +683,15 @@ function App() {
       }
     >
       <Routes>
-        <Route path="/entity-types/:id" element={<EntityTypeDetailPage role={role} />} />
-        <Route path="/catalogs/:name" element={<CatalogDetailPage role={role} />} />
-        <Route path="/catalog-versions/:id" element={<CatalogVersionDetailPage role={role} />} />
-        <Route path="/enums/:id" element={<EnumDetailPage role={role} />} />
-        <Route path="*" element={
+        {/* Landing page */}
+        <Route path="/" element={<LandingPage role={role} />} />
+
+        {/* Schema management routes */}
+        <Route path="/schema/entity-types/:id" element={<EntityTypeDetailPage role={role} />} />
+        <Route path="/schema/catalogs/:name" element={<CatalogDetailPage role={role} />} />
+        <Route path="/schema/catalog-versions/:id" element={<CatalogVersionDetailPage role={role} />} />
+        <Route path="/schema/enums/:id" element={<EnumDetailPage role={role} />} />
+        <Route path="/schema/*" element={
           <PageSection>
             <Tabs activeKey={activeTab} onSelect={handleTabSelect}>
               <Tab eventKey="entityTypes" title={<TabTitleText>Entity Types</TabTitleText>}>
@@ -699,7 +713,7 @@ function App() {
                   ) : (
                     <EntityTypeDiagram
                       entityTypes={diagramData}
-                      onNodeDoubleClick={(entityTypeId) => navigate(`/entity-types/${entityTypeId}`)}
+                      onNodeDoubleClick={(entityTypeId) => navigate(`/schema/entity-types/${entityTypeId}`)}
                       onEdgeClick={handleDiagramEdgeClick}
                     />
                   )}
@@ -708,6 +722,9 @@ function App() {
             </Tabs>
           </PageSection>
         } />
+
+        {/* Catalog data viewer (operational) */}
+        <Route path="/catalogs/:name" element={<OperationalCatalogDetailPage role={role} />} />
       </Routes>
 
       {/* Create Entity Type Modal */}

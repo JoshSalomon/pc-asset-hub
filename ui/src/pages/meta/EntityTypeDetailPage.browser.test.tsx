@@ -70,10 +70,10 @@ const mockOtherEntityTypes = [
 
 function renderDetail(role: 'Admin' | 'RO' | 'SuperAdmin' = 'Admin') {
   return render(
-    <MemoryRouter initialEntries={['/entity-types/et-1']}>
+    <MemoryRouter initialEntries={['/schema/entity-types/et-1']}>
       <Routes>
-        <Route path="/entity-types/:id" element={<EntityTypeDetailPage role={role} />} />
-        <Route path="/" element={<div>Home Page</div>} />
+        <Route path="/schema/entity-types/:id" element={<EntityTypeDetailPage role={role} />} />
+        <Route path="/schema" element={<div>Home Page</div>} />
       </Routes>
     </MemoryRouter>
   )

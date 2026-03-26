@@ -23,10 +23,10 @@ const mockEnums = [
 
 function renderList(role: 'Admin' | 'RO' = 'Admin') {
   return render(
-    <MemoryRouter initialEntries={['/enums']}>
+    <MemoryRouter initialEntries={['/schema/enums']}>
       <Routes>
-        <Route path="/enums" element={<EnumListPage role={role} />} />
-        <Route path="/enums/:id" element={<div>Enum Detail</div>} />
+        <Route path="/schema/enums" element={<EnumListPage role={role} />} />
+        <Route path="/schema/enums/:id" element={<div>Enum Detail</div>} />
       </Routes>
     </MemoryRouter>
   )

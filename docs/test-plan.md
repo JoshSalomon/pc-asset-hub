@@ -134,6 +134,7 @@ Each feature area is tested at the appropriate layers:
 | Association map visualization | | | | X | |
 | Entity type diagram — UML composition diamond (TD-47) | X | | | X | |
 | Model Diagram tab on catalog pages (US-48) | X | | | X | |
+| Landing page + unified SPA routing (US-47) | X | | | X | |
 | Edit attribute (COW) | X | | X | X | |
 | Rename entity type (simple + deep copy) | X | | X | X | |
 | Catalog version pins + transitions | X | | X | X | |
@@ -547,3 +548,13 @@ TD-47 adds UML composition notation (filled diamond on parent end) to containmen
 - **Browser tests (EntityTypeDiagram rendering)**: Verify containment edges render with a filled diamond SVG marker on the source (parent) end. Verify the diamond uses the containment color (`#3e8635`). Verify non-containment edges do not render a diamond. Verify bidirectional edges retain their existing hollow/filled arrow markers.
 - **Browser tests (meta CatalogDetailPage)**: Verify "Model Diagram" tab exists on the catalog detail page. Verify clicking the tab loads and renders the entity type diagram with pinned entity types. Verify diagram shows entity types, attributes, and associations from the CV. Verify the diagram is read-only (no edit interactions). Verify empty state when no entity types are pinned.
 - **Browser tests (operational OperationalCatalogDetailPage)**: Verify "Model Diagram" tab exists on the operational catalog detail page. Verify clicking the tab loads and renders the entity type diagram. Verify the diagram is read-only. Verify empty state when no entity types are pinned.
+
+### 5.35 Landing Page + Unified SPA (US-47)
+
+US-47 merges the two separate SPAs (meta + operational) into a single SPA with route-based views. A landing page at `/` provides navigation to schema management (`/schema`) and catalog data viewers (`/catalogs/:name`).
+
+- **Unit tests (TypeScript — catalog card rendering)**: Verify catalog card displays name, CV label, validation status badge (draft/valid/invalid with correct colors), published indicator. Verify card with no description renders cleanly. Verify card with long name/description truncates or wraps.
+- **Browser tests (LandingPage)**: Verify landing page renders at root URL. Verify Schema Management card is visible and links to `/schema`. Verify catalog cards are rendered for each accessible catalog with name, CV label, validation status, and published indicator. Verify clicking a catalog card navigates to `/catalogs/:name`. Verify empty state when no catalogs are accessible. Verify loading state while fetching catalogs. Verify error state on API failure.
+- **Browser tests (App routing)**: Verify `/schema` renders the schema management tabs (entity types, catalog versions, enums, model diagram). Verify `/schema/entity-types/:id` renders entity type detail page. Verify `/schema/catalog-versions/:id` renders CV detail page. Verify `/schema/catalogs/:name` renders catalog detail page. Verify `/catalogs/:name` renders the operational catalog data viewer. Verify masthead shows "Schema" on schema pages. Verify masthead shows "Data Viewer" on catalog viewer pages. Verify masthead brand link navigates back to landing page.
+- **Browser tests (regression)**: All existing App.tsx tests pass with updated `/schema` routes. All existing OperationalCatalogDetailPage tests pass at the new `/catalogs/:name` route. All existing CatalogDetailPage tests pass at `/schema/catalogs/:name`.
+- **System tests**: Verify landing page loads in live deployment. Verify navigation from landing page to schema management works end-to-end. Verify navigation from landing page to catalog data viewer works end-to-end. Verify `/schema` routes serve correctly through nginx. Verify `/catalogs/:name` routes serve correctly through nginx (no separate `operational.html`).

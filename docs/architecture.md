@@ -36,7 +36,7 @@ The system consists of four major components:
 └──────────────────────────────────────────────────────────┘
 ```
 
-- **UI**: React + PatternFly frontend. Communicates exclusively through the API server. Never accesses the database or cluster directly.
+- **UI**: React + PatternFly single-page application. A unified SPA serves all views: landing page (`/`), schema management (`/schema/*`), and catalog data viewer (`/catalogs/:name`). Communicates exclusively through the API server. Never accesses the database or cluster directly.
 - **API Server**: Go backend exposing two API sets (Meta API and Operational API). Creates/updates/deletes `CatalogVersion` CRs on catalog version promotion and demotion. Enforces RBAC via OpenShift SubjectAccessReview.
 - **Database**: PostgreSQL (production) or SQLite (development). Source of truth for all data.
 - **Operator**: Built with operator-sdk. Manages hub installation. Watches `CatalogVersion` CRs, sets owner references to the AssetHub CR for garbage collection, and updates status conditions.
@@ -130,13 +130,14 @@ pc-asset-hub/
     types/                   # Shared type definitions (cross-cutting)
   ui/
     src/
-      api/                   # TypeScript API client (generated from OpenAPI)
+      api/                   # TypeScript API client
       components/            # Reusable UI components
       pages/
-        meta/                # Meta operations pages
-        operational/         # Entity instance pages
+        LandingPage.tsx      # Landing page (root URL)
+        meta/                # Schema management pages (entity types, CVs, enums)
+        operational/         # Catalog data viewer pages + catalog CRUD
       hooks/                 # Custom React hooks
-      context/               # React context providers (auth, catalog version)
+      utils/                 # Shared utilities
       types/                 # TypeScript types
   config/
     operator/                # Operator bundle, CRDs, RBAC manifests

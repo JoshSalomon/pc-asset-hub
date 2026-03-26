@@ -165,7 +165,7 @@ export default function CatalogListPage({ role }: { role: Role }) {
             {catalogs.map((cat) => (
               <Tr key={cat.id}>
                 <Td>
-                  <Button variant="link" isInline onClick={() => navigate(`/catalogs/${cat.name}`)}>
+                  <Button variant="link" isInline onClick={() => navigate(`/schema/catalogs/${cat.name}`)}>
                     {cat.name}
                   </Button>
                 </Td>

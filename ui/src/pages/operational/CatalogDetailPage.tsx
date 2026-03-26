@@ -232,7 +232,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
     try {
       await api.catalogs.copy({ source: catalog.name, name: copyName, description: copyDesc || undefined })
       setCopyOpen(false)
-      navigate(`/catalogs/${copyName}`)
+      navigate(`/schema/catalogs/${copyName}`)
     } catch (e) {
       setCopyError(e instanceof Error ? e.message : 'Failed to copy catalog')
     } finally {
@@ -247,7 +247,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
     try {
       await api.catalogs.replace({ source: catalog.name, target, archive_name: archiveNameVal || undefined })
       setReplaceOpen(false)
-      navigate('/catalogs')
+      navigate('/schema/catalogs')
     } catch (e) {
       setReplaceError(e instanceof Error ? e.message : 'Failed to replace catalog')
     } finally {
@@ -263,7 +263,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
 
   return (
     <PageSection>
-      <Button variant="link" onClick={() => navigate('/catalogs')} style={{ marginBottom: '1rem' }}>
+      <Button variant="link" onClick={() => navigate('/schema/catalogs')} style={{ marginBottom: '1rem' }}>
         &larr; Back to Catalogs
       </Button>
 
@@ -288,7 +288,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
       )}
 
       <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
-        <Button variant="link" isInline component="a" href={`/operational/catalogs/${catalog.name}`}>
+        <Button variant="link" isInline onClick={() => navigate(`/catalogs/${catalog.name}`)}>
           Open in Data Viewer →
         </Button>
         {canWrite && (

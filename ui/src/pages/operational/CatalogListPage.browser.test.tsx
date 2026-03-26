@@ -39,9 +39,9 @@ const mockCVs = [
 
 function renderList(role: 'Admin' | 'RW' | 'RO' = 'Admin') {
   return render(
-    <MemoryRouter initialEntries={['/catalogs']}>
+    <MemoryRouter initialEntries={['/schema/catalogs']}>
       <Routes>
-        <Route path="/catalogs" element={<CatalogListPage role={role} />} />
+        <Route path="/schema/catalogs" element={<CatalogListPage role={role} />} />
       </Routes>
     </MemoryRouter>
   )

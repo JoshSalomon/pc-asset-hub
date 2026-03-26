@@ -133,7 +133,7 @@ export default function EnumDetailPage({ role }: Props) {
     setDeleteError(null)
     try {
       await api.enums.delete(id)
-      navigate('/enums')
+      navigate('/schema/enums')
     } catch (e) {
       setDeleteError(e instanceof Error ? e.message : 'Failed to delete')
     }
@@ -145,7 +145,7 @@ export default function EnumDetailPage({ role }: Props) {
 
   return (
     <PageSection>
-      <Button variant="link" onClick={() => navigate('/enums')} style={{ marginBottom: '1rem' }}>
+      <Button variant="link" onClick={() => navigate('/schema/enums')} style={{ marginBottom: '1rem' }}>
         &larr; Back to Enums
       </Button>
 

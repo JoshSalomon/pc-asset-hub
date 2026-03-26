@@ -138,7 +138,7 @@ afterAll(async () => {
 })
 
 async function navigateToUI() {
-  await pg.goto(UI_URL)
+  await pg.goto(`${UI_URL}/schema`)
   await pg.waitForLoadState('networkidle')
   await visible(pg.getByText('AI Asset Hub'))
 }

@@ -10,10 +10,10 @@ Last updated: 2026-03-25
 |-------|-------|-----------|------------|-------|
 | Backend (Go) | 1315 | 100% | 96.7% | — |
 | UI — Unit tests | 75 | 100% | 17.9% | 20.6% |
-| UI — Browser tests (Playwright) | 721 | 100% | 93.1% (2219/2384) | 96.4% (2014/2090) |
+| UI — Browser tests (Playwright) | 717 | 100% | 93.1% (2202/2364) | 96.4% (1998/2072) |
 | UI — System tests (Playwright + live server) | 30 | 100% | — | — |
 | Live system (bash scripts) | 217 | 100% | — | — |
-| **Total** | **2358** | **100%** | — | — |
+| **Total** | **2334** | **100%** | — | — |
 
 ---
 

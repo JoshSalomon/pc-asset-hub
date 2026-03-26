@@ -2562,6 +2562,75 @@ TD-47 adds UML composition notation (filled diamond marker on parent end) to con
 
 ---
 
+## 22. Landing Page + Unified SPA (US-47)
+
+Merges the two separate SPAs (meta + operational) into a single SPA with route-based views. Landing page at `/` provides navigation to schema management (`/schema`) and catalog data viewers (`/catalogs/:name`).
+
+### LandingPage Component
+
+#### Unit Tests (catalog card rendering)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-22.01 | Catalog card shows name, CV label, validation status badge | Unit | Name, label, colored badge visible |
+| T-22.02 | Draft status badge renders blue | Unit | Blue badge with "draft" text |
+| T-22.03 | Valid status badge renders green | Unit | Green badge with "valid" text |
+| T-22.04 | Invalid status badge renders red | Unit | Red badge with "invalid" text |
+| T-22.05 | Published catalog shows published indicator | Unit | Published badge or icon visible |
+| T-22.06 | Card with no description renders cleanly | Unit | No crash, no empty description area |
+
+#### Browser Tests (LandingPage)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-22.07 | Landing page renders at root URL | Browser | Landing page content visible |
+| T-22.08 | Schema Management card is visible | Browser | Card with "Schema Management" text |
+| T-22.09 | Schema Management card links to /schema | Browser | Click navigates to /schema |
+| T-22.10 | Catalog cards rendered for each accessible catalog | Browser | One card per catalog from API |
+| T-22.11 | Catalog card shows name, CV label, status badge | Browser | All fields visible on card |
+| T-22.12 | Clicking catalog card navigates to /catalogs/:name | Browser | URL changes to /catalogs/{name} |
+| T-22.13 | Empty state when no catalogs accessible | Browser | "No catalogs" message displayed |
+| T-22.14 | Loading state while fetching catalogs | Browser | Spinner visible during fetch |
+| T-22.15 | Error state on API failure | Browser | Error alert displayed |
+
+### Unified SPA Routing
+
+#### Browser Tests (App routing)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-22.16 | /schema renders schema management tabs | Browser | Entity Types, Catalog Versions, Enums, Model Diagram tabs visible |
+| T-22.17 | /schema/entity-types/:id renders entity type detail | Browser | Entity type detail page content |
+| T-22.18 | /schema/catalog-versions/:id renders CV detail | Browser | CV detail page content |
+| T-22.19 | /schema/catalogs/:name renders catalog detail (meta) | Browser | Catalog detail page with instance CRUD |
+| T-22.20 | /catalogs/:name renders catalog data viewer | Browser | Catalog data viewer with tree browser |
+| T-22.21 | Masthead shows "Schema" on /schema pages | Browser | "Schema" text in masthead |
+| T-22.22 | Masthead shows "Data Viewer" on /catalogs pages | Browser | "Data Viewer" text in masthead |
+| T-22.23 | Masthead brand link navigates to landing page | Browser | Click navigates to / |
+
+### Regression Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-22.24 | All existing App.tsx tests pass with /schema routes | Browser | No regressions |
+| T-22.25 | All existing OperationalCatalogDetailPage tests pass at /catalogs/:name | Browser | No regressions |
+| T-22.26 | All existing CatalogDetailPage tests pass at /schema/catalogs/:name | Browser | No regressions |
+| T-22.27 | All existing EntityTypeDetailPage tests pass at /schema/entity-types/:id | Browser | No regressions |
+| T-22.28 | All existing CatalogVersionDetailPage tests pass at /schema/catalog-versions/:id | Browser | No regressions |
+
+### System Tests (Live Deployment)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-22.29 | Landing page loads at root URL in live deployment | System | Page renders with catalog cards |
+| T-22.30 | Navigate from landing page to schema management | System | /schema loads, tabs visible |
+| T-22.31 | Navigate from landing page to catalog data viewer | System | /catalogs/:name loads, tree browser visible |
+| T-22.32 | /schema routes serve correctly through nginx | System | No 404, SPA routing works |
+| T-22.33 | /catalogs/:name routes serve correctly through nginx | System | No 404, SPA routing works |
+| T-22.34 | Masthead brand link returns to landing page | System | Navigation works end-to-end |
+
+---
+
 ## Coverage Criteria
 
 ### Pass Rate
@@ -2598,7 +2667,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 969 test cases (T-1.01 through T-21.30; T-13.78 through T-13.85 retired) pass
+- All 1003 test cases (T-1.01 through T-22.34; T-13.78 through T-13.85 retired) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

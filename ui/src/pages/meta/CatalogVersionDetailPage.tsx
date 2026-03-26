@@ -200,7 +200,7 @@ export default function CatalogVersionDetailPage({ role }: Props) {
 
   return (
     <PageSection>
-      <Button variant="link" onClick={() => navigate('/catalog-versions')} style={{ marginBottom: '1rem' }}>
+      <Button variant="link" onClick={() => navigate('/schema/catalog-versions')} style={{ marginBottom: '1rem' }}>
         &larr; Back to Catalog Versions
       </Button>
 

@@ -1370,20 +1370,34 @@ Acceptance Criteria:
 
 ---
 
-**US-47: Permission-aware landing page**
-As a user, I want a landing page at the root URL (`/`) that shows me available actions based on my permissions, so that I can navigate directly to the meta UI or to a specific catalog without memorizing URL paths.
+**US-47: Landing page + unified SPA**
+As a user, I want a landing page at the root URL (`/`) that shows me available actions based on my permissions, so that I can navigate directly to schema management or to a specific catalog without memorizing URL paths.
 
 **Why**: The current root URL goes directly to the meta UI (entity type list), which is irrelevant for users who only have catalog access and confusing as a first experience for all users. A landing page that adapts to the user's permissions provides a clear, role-appropriate entry point — schema architects see meta tools, data operators see their catalogs, and users with both see everything in one place.
 
+**Architecture decision (resolved):** Merge the two separate SPAs (meta `App.tsx` + operational `OperationalApp.tsx`) into a single SPA with route-based views. The separate `operational.html` entry point, `OperationalApp.tsx`, and `main-operational.tsx` are removed. The nginx config simplifies to API proxy + single SPA catch-all. This eliminates the artificial meta/operational split and gives users a unified experience.
+
+**Design decision (resolved):** Minimal navigation cards (Option A). Dashboard stats deferred to future iteration.
+
+URL structure:
+- `/` — Landing page
+- `/schema` — Schema management (entity types, catalog versions, enums, model diagram)
+- `/schema/entity-types/:id` — Entity type detail
+- `/schema/catalog-versions/:id` — Catalog version detail
+- `/schema/catalogs/:name` — Catalog detail (with instance CRUD)
+- `/catalogs/:name` — Catalog data viewer (read-only tree browser + model diagram)
+
 Acceptance Criteria:
-- The root URL (`/`) renders a landing page instead of the meta UI directly. The meta UI moves to a sub-path (e.g., `/meta`).
-- **Schema Management section**: Visible only if the user has any meta role (Meta Viewer or above). Provides navigation to the meta UI.
-- **Catalogs section**: Shows a card or list entry for each catalog the user has access to. Catalogs the user cannot access are not shown. Each entry displays: catalog name, description, pinned CV label, validation status, and published indicator. Clicking navigates to the operational catalog detail page (`/operational/{catalog-name}`).
+- The root URL (`/`) renders a landing page with navigation cards.
+- **Schema Management card**: Links to `/schema`. Visible for all roles in development mode. In production mode, visible only if the user has a meta role (future — deferred to RBAC Phase C).
+- **Catalogs section**: Shows a card for each accessible catalog displaying: catalog name, description, pinned CV label, validation status badge, and published indicator. Clicking navigates to `/catalogs/{catalog-name}`.
 - A user with no meta role and no catalog access sees an appropriate empty state (e.g., "No resources available. Contact your administrator.").
 - In development mode, the landing page shows all sections (meta + all catalogs) since the global role grants access to everything.
 - The landing page loads quickly — catalog list is fetched with a single API call and filtered by access on the server side (see US-39).
-
-**Open:** The exact content and layout of the landing page is TBD. Options include: (A) minimal — just navigation cards/links, (B) dashboard — aggregate info (entity type count, catalog count, recent activity), (C) hybrid — navigation cards with summary stats. This will be decided based on user feedback after the initial implementation.
+- The separate operational SPA (`OperationalApp.tsx`, `main-operational.tsx`, `operational.html`) is removed. All routes are served by a single SPA.
+- The masthead shows "AI Asset Hub" with a role selector. On schema pages, the masthead shows "AI Asset Hub — Schema". On catalog viewer pages, the masthead shows "AI Asset Hub — Data Viewer". A home icon or "AI Asset Hub" link in the masthead navigates back to the landing page.
+- Nginx config simplifies to: `/api/` proxy + `try_files $uri $uri/ /index.html` catch-all.
+- Vite build produces a single `index.html` entry point (no `operational.html`).
 
 ---
 
@@ -1418,7 +1432,7 @@ The following items are acknowledged but not yet fully specified:
 | Entity instance versioning depth | Whether full version history is retained or only N recent versions |
 | Technology choices | Backend language/framework, UI framework, API style (REST vs. GraphQL) |
 | Centralized hub topology | Hub-and-spoke deployment where consuming clusters sync CatalogVersion CRs from a central API. See Section 8.4. |
-| Landing page content | Minimal navigation cards vs. dashboard with aggregate stats vs. hybrid. See US-47. |
+| ~~Landing page content~~ | **RESOLVED.** Minimal navigation cards (Option A). Single unified SPA with route-based views. See US-47. |
 
 ## 11. Technical Debt
 
@@ -1464,7 +1478,7 @@ Items where the current implementation diverges from the intended behavior descr
 | ~~TD-35~~ | ~~Operational catalog detail page too large~~ | **RESOLVED.** Extracted `useContainmentTree` hook + `InstanceDetailPanel` component. 428→257 lines, 15→5 useState. See TD-23 resolution. |
 | TD-37 | Reference direction unclear in tree browser detail panel | In the instance detail panel, directional associations show under "Forward References" and "Referenced By" sections with a "Type" column showing "directional". It is not clear which direction the association goes — the user cannot tell whether the selected instance depends on the target or vice versa. The association name alone may not convey direction (e.g., "uses-model" is clear, but "related-to" is not). | Show an arrow or directional indicator in the reference table: e.g., "my-server → gpt-4" for forward refs and "monitor-1 → my-server" for reverse. Alternatively, use role labels from the association definition (source_role/target_role) to clarify the relationship semantics. Consider replacing the generic "directional" type label with the actual role or a "depends on" / "depended by" phrasing. |
 | TD-38 | Entity type tab selector doesn't scale in meta catalog detail | The meta UI `CatalogDetailPage` uses PatternFly Tabs with one tab per entity type. When a catalog has many entity types (10+), the tabs overflow a single row and become hard to navigate. | Options: (A) Replace tabs with a sidebar or dropdown selector. (B) Add a search/filter input above the tabs. (C) Use PatternFly's scrollable tabs variant (`isOverflowHorizontal`). (D) Switch to a two-pane layout similar to the operational UI's tree browser. |
-| TD-36 | Review usefulness of Overview tab in operational catalog view | The Overview tab shows entity type names, pinned versions, and a "Browse Instances" button per type. With the two-pane tree browser now grouping instances under entity type headers, the Overview tab is largely redundant — the only unique information it provides is the meta entity type version number. | Options: (A) Remove the Overview tab entirely and make the tree browser the default (and only) tab. Show entity type version info in the tree group headers (e.g., "mcp-server V3 (2)"). (B) Repurpose the Overview tab as a catalog dashboard with useful aggregate info: instance counts per type, validation summary, catalog metadata, recent changes. (C) Keep as-is for users who want a quick summary before diving into the tree. |
+| ~~TD-36~~ | ~~Review usefulness of Overview tab in operational catalog view~~ | **RESOLVED.** Overview tab removed (TD-56). Tree Browser is now the default tab. See TD-56 for future re-addition with useful content. |
 | TD-28 | Phase 3 code quality improvements (L1-L5, L7) | Multiple low-severity issues from quality review: (L1) duplicated forward/reverse reference handler conversion logic, (L2) dead `_ = parentInst`/`_ = sourceInst` assignments, (L3) JSON tags on service-layer `ReferenceDetail`, (L4) N+1 queries in `resolveLinks`, (L5) CatalogDetailPage now has ~30 state variables and should be decomposed, (L7) silently swallowed `UpdateValidationStatus` errors. | Extract `refsToDTO` helper in handler. Clean up dead assignments. Remove JSON tags from service types. Add batch fetch for links resolution. Decompose CatalogDetailPage into sub-components. Log validation status update failures. |
 | TD-39 | CopyCatalog sequential instance creation doesn't scale | `CopyCatalog` creates instances one at a time via N individual `instRepo.Create` calls, plus N `GetCurrentValues` and N `GetForwardRefs` calls. For catalogs with 1000+ instances this is slow. | Add `CreateBatch` method to `EntityInstanceRepository` that inserts multiple instances in a single query. Similarly batch `SetValues` and link creation. Low priority — catalogs currently have <100 instances. |
 | TD-40 | `SyncCR` uses unstructured logging | `SyncCR` in `catalog_service.go` uses `log.Printf("warning: ...")` (Go's default logger). In production this produces unstructured text logs that are hard to filter and correlate in centralized logging systems. | Replace `log.Printf` with structured logging (e.g., `slog.Warn` or a project-standard logger) that includes catalog name, error, and operation context as structured fields. Apply the same fix to any other `log.Printf` calls in the codebase. |
@@ -1473,8 +1487,8 @@ Items where the current implementation diverges from the intended behavior descr
 | ~~TD-44~~ | ~~BOM pins table missing description in API response~~ | **RESOLVED.** Added `Description` to `ResolvedPin`, `CatalogVersionPinResponse`, and handler. BOM tab now shows entity type version description. |
 | TD-45 | Enum list page missing description column | The enum list page does not show a Description column. Enums have a `name` but no description field in the model. | Either add a `description` field to the Enum model, or accept that enums don't have descriptions. If adding, update the create/edit API and UI. |
 | TD-46 | No UI to edit entity type version description | The entity type version description is set at creation and carried forward on COW. The backend `UpdateEntityType` endpoint (`PUT /entity-types/:id`) creates a new version with a new description, but the UI has no control to invoke it. Users cannot change the description after initial creation. | Add a "Description" editable field (inline or modal) on the entity type detail page. Editing the description calls `PUT /entity-types/:id` with `{"description": "new desc"}`, which creates a new version via COW. Show the current version's description on the detail page header area. |
-| TD-47 | Diagram: containment edges should use UML composition notation | Containment associations in the entity type diagram use a plain solid line with a generic arrowhead, same visual weight as other edge types. UML composition notation uses a **filled diamond** on the parent (source) end and an **arrowhead** on the child (target) end, which immediately communicates ownership semantics. | Replace the containment edge rendering in `EntityTypeDiagram.tsx` (`AssociationEdge` component) to use a filled diamond SVG marker (`markerStart`) on the source end and a directional arrowhead (`markerEnd`) on the target end. The diamond should be a small filled polygon (e.g., `<path d="M0,5 L5,0 L10,5 L5,10 Z" fill="#3e8635"/>`) in the containment color. Keep the existing solid line style for containment edges. |
-| TD-48 | Duplicate number-parsing logic in attribute submission | The pattern of converting string attribute values to typed values (`parseFloat` for numbers, string otherwise) is duplicated in `useInstances.ts` (handleCreate, handleEdit) and `CatalogDetailPage.tsx` (handleAddChild). | Extract a `buildTypedAttrs(rawAttrs: Record<string, string>, schemaAttrs: SnapshotAttribute[]): Record<string, unknown>` utility function used by all three call sites. |
+| ~~TD-47~~ | ~~Diagram: containment edges should use UML composition notation~~ | **RESOLVED.** Filled diamond SVG marker added on the parent (source) end of containment edges. Arrowhead retained on target end. Non-containment edges unchanged. Implemented in `EntityTypeDiagram.tsx` `AssociationEdge` component. |
+| ~~TD-48~~ | ~~Duplicate number-parsing logic in attribute submission~~ | **RESOLVED.** Extracted `buildTypedAttrs` utility in `utils/buildTypedAttrs.ts`, used by all three call sites. |
 | TD-49 | `useInstanceDetail.selectInstance` missing `setAuthRole` call | `useCatalogData` and `useInstances` both call `setAuthRole(role)` before API requests, but `useInstanceDetail.selectInstance` makes API calls (get parent, list children, get refs) without setting the auth role. If the role changes while an instance is selected, the wrong role could be sent. | Pass `role` to `useInstanceDetail` and call `setAuthRole(role)` at the start of `selectInstance`. |
 | TD-50 | `selectInstance` passes stale instance object after mutations | After mutations (handleAddChild, handleCreateLink, handleSetParent), the code calls `detail.selectInstance(detail.selectedInstance)` with the render-time snapshot. The instance's version may have changed server-side. | Pass only the instance ID and re-fetch the instance inside `selectInstance`, or accept that only `inst.id` is used (current behavior is safe but fragile). |
 | TD-51 | `onRemoveParent` swallows errors silently | The "Remove Container" inline handler uses `.catch(() => {})` which silently discards API errors. The user gets no feedback if the operation fails. | Show an error alert or set `setParentError` in the catch block. |
@@ -1482,6 +1496,7 @@ Items where the current implementation diverges from the intended behavior descr
 | TD-53 | Diagram tab JSX duplicated across catalog pages | The Model Diagram tab rendering (loading spinner, error alert, empty state, diagram component) is duplicated between `CatalogDetailPage.tsx` and `OperationalCatalogDetailPage.tsx` (~10 lines each). | Extract a `DiagramTabContent` component that accepts the `useCatalogDiagram` hook return value and renders the loading/error/empty/diagram states. Both pages import and use this component. |
 | TD-54 | `CatalogVersionDetailPage` does not use `useCatalogDiagram` hook | `CatalogVersionDetailPage.tsx` manually manages `diagramData` and `diagramLoading` state with ~25 lines of inline fetch-pins-then-snapshots logic. This duplicates the exact pattern now encapsulated in `useCatalogDiagram`. | Refactor `CatalogVersionDetailPage` to use `useCatalogDiagram(id)` and remove the duplicated state and logic. |
 | TD-55 | Edge click handler object construction duplicated in `AssociationEdge` | The `onClick` handler in `AssociationEdge` (EntityTypeDiagram.tsx) constructs an identical `EdgeClickData` object at two locations (transparent clickable path and label group). Each has ~10 fields with `|| ''` fallbacks. | Extract a helper function (e.g., `buildEdgeClickData(data)`) within the component scope that both click handlers call. |
+| TD-57 | Move `CatalogDetailPage` and `CatalogListPage` from `pages/operational/` to `pages/meta/` | Both `CatalogDetailPage.tsx` (schema catalog detail with instance CRUD) and `CatalogListPage.tsx` (schema catalog list) live in `pages/operational/` but serve schema-management functions and are rendered under `/schema/*` routes. All other schema pages (EntityTypeDetailPage, EnumDetailPage, CatalogVersionDetailPage) are in `pages/meta/`. | Move both files and their test files to `pages/meta/`. Update imports in `App.tsx`. This is a pure file-move refactor with no behavior changes. |
 | TD-56 | Operational catalog viewer Overview tab removed — consider re-adding with useful content | The Overview tab on `OperationalCatalogDetailPage` was hidden because it showed only entity type names/versions with no actionable information. If a meaningful Overview tab is designed later (e.g., catalog stats, instance counts per entity type, last-modified timestamps, data quality summary), the tab should be re-added with useful content. | Design and implement a useful Overview tab, or confirm it is not needed and clean up any remaining dead code. |
 | ~~TD-42~~ | ~~[IMPORTANT] Add Contained Instance modal missing custom attributes~~ | **RESOLVED.** Add Contained Instance modal now loads child entity type schema attributes when child type is selected. Renders attribute fields (string, number, enum) same as root-level Create Instance modal. Attributes passed in API request body. |
 | ~~TD-22~~ | ~~[CRITICAL] Common attributes as schema-level attributes~~ | **RESOLVED (Approach B — API-level merge).** Common attributes — Name (required) and Description (optional) — are injected as synthetic system attributes (`system: true`) into all API responses: instance detail, attribute lists, version snapshots, and UML diagrams. The UI renders them uniformly alongside custom attributes. System attributes cannot be created, edited, renamed, or deleted by users. Custom attribute names "name"/"description" are rejected. Copy-attributes excludes system attributes. Catalog validation checks Name is non-empty. No DB schema changes — common attributes remain as fields on `EntityInstance`, with the API layer handling the merge. |
@@ -1673,4 +1688,14 @@ Allow editing a catalog's name and description after creation. Currently catalog
 - Name field validates DNS-label format
 
 **Note:** Changing the pinned catalog version (re-pinning to a different CV) is a separate concern tracked in TD-12.
+
+### FF-11: Catalog Import from External Systems
+
+Import catalog data (entity instances, attribute values, association links, containment hierarchy) from external sources into a new or existing catalog. Supports both file-based and API-based import.
+
+**Import sources:**
+- **File import:** Upload YAML or JSON files containing instance data structured according to the catalog's pinned CV schema. The UI provides a file upload dialog; the backend validates the data against the CV's entity type definitions before creating instances.
+- **API import:** Pull data from external systems via configured API endpoints. The import configuration specifies the source URL, authentication, and a mapping from the external data format to the Asset Hub entity model.
+
+**Scope:** Details on file format, API mapping configuration, conflict resolution (merge vs. overwrite), and validation behavior will be discussed and specified in a future design session.
 

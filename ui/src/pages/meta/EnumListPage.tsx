@@ -131,7 +131,7 @@ export default function EnumListPage({ role }: Props) {
             {enums.map((en) => (
               <Tr key={en.id}>
                 <Td>
-                  <Button variant="link" isInline onClick={() => navigate(`/enums/${en.id}`)}>
+                  <Button variant="link" isInline onClick={() => navigate(`/schema/enums/${en.id}`)}>
                     {en.name}
                   </Button>
                 </Td>

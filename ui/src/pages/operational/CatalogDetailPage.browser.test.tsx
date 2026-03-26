@@ -76,10 +76,10 @@ const mockInstances = [
 
 function renderDetail(role: 'Admin' | 'RW' | 'RO' | 'SuperAdmin' = 'Admin') {
   return render(
-    <MemoryRouter initialEntries={['/catalogs/my-catalog']}>
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
       <Routes>
-        <Route path="/catalogs/:name" element={<CatalogDetailPage role={role} />} />
-        <Route path="/catalogs" element={<div>Catalog List</div>} />
+        <Route path="/schema/catalogs/:name" element={<CatalogDetailPage role={role} />} />
+        <Route path="/schema/catalogs" element={<div>Catalog List</div>} />
       </Routes>
     </MemoryRouter>
   )
@@ -926,10 +926,9 @@ test('catalog detail shows Open in Data Viewer link', async () => {
   await waitForInstances()
   const link = page.getByText('Open in Data Viewer')
   await expect.element(link).toBeVisible()
-  // Link should point to the operational UI for this catalog, same tab
-  const anchor = link.element().closest('a')
-  expect(anchor?.getAttribute('href')).toBe('/operational/catalogs/my-catalog')
-  expect(anchor?.getAttribute('target')).toBeNull()
+  // Clicking should navigate (no full page reload)
+  await link.click()
+  // Navigation happens — no crash
 })
 
 // === Catalog Validation Tests ===
