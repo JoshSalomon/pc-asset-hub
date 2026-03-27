@@ -38,6 +38,8 @@ import SetParentModal from '../../components/SetParentModal'
 import CopyCatalogModal from '../../components/CopyCatalogModal'
 import ReplaceCatalogModal from '../../components/ReplaceCatalogModal'
 import { buildTypedAttrs } from '../../utils/buildTypedAttrs'
+import { useCatalogDiagram } from '../../hooks/useCatalogDiagram'
+import EntityTypeDiagram from '../../components/EntityTypeDiagram'
 
 export default function CatalogDetailPage({ role }: { role: Role }) {
   const { name } = useParams<{ name: string }>()
@@ -56,6 +58,11 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
   useEffect(() => { inst.loadInstances() }, [inst.loadInstances])
 
   const validation = useValidation(name, loadCatalog)
+  const diagram = useCatalogDiagram(catalog?.catalog_version_id)
+
+  useEffect(() => {
+    if (activeTab === '__diagram__') diagram.loadDiagram()
+  }, [activeTab, diagram.loadDiagram])
 
   const canWrite = role === 'RW' || role === 'Admin' || role === 'SuperAdmin'
   const isAdmin = role === 'Admin' || role === 'SuperAdmin'
@@ -225,7 +232,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
     try {
       await api.catalogs.copy({ source: catalog.name, name: copyName, description: copyDesc || undefined })
       setCopyOpen(false)
-      navigate(`/catalogs/${copyName}`)
+      navigate(`/schema/catalogs/${copyName}`)
     } catch (e) {
       setCopyError(e instanceof Error ? e.message : 'Failed to copy catalog')
     } finally {
@@ -240,7 +247,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
     try {
       await api.catalogs.replace({ source: catalog.name, target, archive_name: archiveNameVal || undefined })
       setReplaceOpen(false)
-      navigate('/catalogs')
+      navigate('/schema/catalogs')
     } catch (e) {
       setReplaceError(e instanceof Error ? e.message : 'Failed to replace catalog')
     } finally {
@@ -256,7 +263,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
 
   return (
     <PageSection>
-      <Button variant="link" onClick={() => navigate('/catalogs')} style={{ marginBottom: '1rem' }}>
+      <Button variant="link" onClick={() => navigate('/schema/catalogs')} style={{ marginBottom: '1rem' }}>
         &larr; Back to Catalogs
       </Button>
 
@@ -281,7 +288,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
       )}
 
       <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
-        <Button variant="link" isInline component="a" href={`/operational/catalogs/${catalog.name}`}>
+        <Button variant="link" isInline onClick={() => navigate(`/catalogs/${catalog.name}`)}>
           Open in Data Viewer →
         </Button>
         {canWrite && (
@@ -330,7 +337,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
         <EmptyState><EmptyStateBody>No entity types pinned in this catalog's version.</EmptyStateBody></EmptyState>
       ) : (
         <Tabs activeKey={activeTab} onSelect={(_e, key) => { setActiveTab(String(key)); detail.clearSelection() }} style={{ marginTop: '1rem' }}>
-          {pins.map(pin => (
+          {[...pins.map(pin => (
             <Tab key={pin.entity_type_name} eventKey={pin.entity_type_name} title={<TabTitleText>{pin.entity_type_name}</TabTitleText>}>
               <PageSection padding={{ default: 'noPadding' }} style={{ marginTop: '1rem' }}>
                 <Toolbar>
@@ -516,7 +523,22 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
                 <p style={{ marginTop: '0.5rem' }}>Total: {inst.instTotal}</p>
               </PageSection>
             </Tab>
-          ))}
+          )),
+          <Tab key="__diagram__" eventKey="__diagram__" title={<TabTitleText>Model Diagram</TabTitleText>}>
+            <PageSection padding={{ default: 'noPadding' }} style={{ marginTop: '1rem' }}>
+              {diagram.diagramError && (
+                <Alert variant="danger" title={diagram.diagramError} isInline style={{ marginBottom: '1rem' }} />
+              )}
+              {diagram.diagramLoading ? (
+                <Spinner aria-label="Loading diagram" />
+              ) : diagram.diagramData.length === 0 && !diagram.diagramError ? (
+                <EmptyState><EmptyStateBody>No model diagram available. The catalog version has no pinned entity types.</EmptyStateBody></EmptyState>
+              ) : (
+                <EntityTypeDiagram entityTypes={diagram.diagramData} />
+              )}
+            </PageSection>
+          </Tab>,
+          ]}
         </Tabs>
       )}
 

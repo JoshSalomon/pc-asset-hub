@@ -26,7 +26,12 @@ import (
 func setupTestServer(etRepo *mocks.MockEntityTypeRepo, etvRepo *mocks.MockEntityTypeVersionRepo, attrRepo *mocks.MockAttributeRepo, assocRepo *mocks.MockAssociationRepo) *echo.Echo {
 	e := echo.New()
 	svc := svcmeta.NewEntityTypeService(etRepo, etvRepo, attrRepo, assocRepo)
-	handler := apimeta.NewEntityTypeHandler(svc)
+	// For list description resolution, pass etvRepo if provided; otherwise pass nil interface
+	var etvRepoForHandler repository.EntityTypeVersionRepository
+	if etvRepo != nil {
+		etvRepoForHandler = etvRepo
+	}
+	handler := apimeta.NewEntityTypeHandler(svc, etvRepoForHandler)
 
 	g := e.Group("/api/meta/v1")
 	rbac := &apimw.HeaderRBACProvider{}
@@ -153,6 +158,61 @@ func TestT5_12_ListEntityTypes(t *testing.T) {
 	var resp dto.ListResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, 2, resp.Total)
+}
+
+// T-23.14: Entity type list includes description from latest version
+func TestT23_14_ListEntityTypesWithDescription(t *testing.T) {
+	etRepo := new(mocks.MockEntityTypeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupTestServer(etRepo, etvRepo, nil, nil)
+
+	now := time.Now()
+	etRepo.On("List", mock.Anything, mock.Anything).Return([]*models.EntityType{
+		{ID: "et1", Name: "Model", CreatedAt: now, UpdatedAt: now},
+	}, 1, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{
+		ID: "v1", EntityTypeID: "et1", Version: 2, Description: "A machine learning model",
+	}, nil)
+
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	// Parse response and verify description
+	var rawResp struct {
+		Items []struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"items"`
+		Total int `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rawResp))
+	assert.Equal(t, 1, rawResp.Total)
+	assert.Equal(t, "A machine learning model", rawResp.Items[0].Description)
+}
+
+// T-23.16: Entity type get includes description
+func TestT23_16_GetEntityTypeWithDescription(t *testing.T) {
+	etRepo := new(mocks.MockEntityTypeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupTestServer(etRepo, etvRepo, nil, nil)
+
+	now := time.Now()
+	etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{
+		ID: "et1", Name: "Model", CreatedAt: now, UpdatedAt: now,
+	}, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{
+		ID: "v1", EntityTypeID: "et1", Version: 1, Description: "Test desc",
+	}, nil)
+
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types/et1", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var rawResp struct {
+		Description string `json:"description"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rawResp))
+	assert.Equal(t, "Test desc", rawResp.Description)
 }
 
 // T-5.13: GET with name filter
@@ -362,7 +422,7 @@ func setupETServerWithCatalogRepos(
 	e := echo.New()
 	svc := svcmeta.NewEntityTypeService(etRepo, etvRepo, attrRepo, assocRepo)
 	svcmeta.WithCatalogRepos(svc, pinRepo, cvRepo)
-	handler := apimeta.NewEntityTypeHandler(svc)
+	handler := apimeta.NewEntityTypeHandler(svc, etvRepo)
 
 	g := e.Group("/api/meta/v1")
 	rbac := &apimw.HeaderRBACProvider{}

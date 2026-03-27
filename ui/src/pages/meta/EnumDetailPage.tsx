@@ -83,7 +83,7 @@ export default function EnumDetailPage({ role }: Props) {
     if (!id || !editName.trim()) return
     setEditNameError(null)
     try {
-      await api.enums.update(id, { name: editName.trim() })
+      await api.enums.update(id, { name: editName.trim(), description: enumData?.description ?? '' })
       setEditNameOpen(false)
       loadEnum()
     } catch (e) {
@@ -133,7 +133,7 @@ export default function EnumDetailPage({ role }: Props) {
     setDeleteError(null)
     try {
       await api.enums.delete(id)
-      navigate('/enums')
+      navigate('/schema/enums')
     } catch (e) {
       setDeleteError(e instanceof Error ? e.message : 'Failed to delete')
     }
@@ -145,7 +145,7 @@ export default function EnumDetailPage({ role }: Props) {
 
   return (
     <PageSection>
-      <Button variant="link" onClick={() => navigate('/enums')} style={{ marginBottom: '1rem' }}>
+      <Button variant="link" onClick={() => navigate('/schema/enums')} style={{ marginBottom: '1rem' }}>
         &larr; Back to Enums
       </Button>
 
@@ -164,9 +164,29 @@ export default function EnumDetailPage({ role }: Props) {
                 size="sm"
                 onClick={() => { setEditName(enumData.name); setEditNameOpen(true) }}
                 style={{ marginLeft: '0.5rem' }}
+                aria-label="Edit name"
               >
                 Edit
               </Button>
+            )}
+          </DescriptionListDescription>
+        </DescriptionListGroup>
+        <DescriptionListGroup>
+          <DescriptionListTerm>Description</DescriptionListTerm>
+          <DescriptionListDescription>
+            {enumData.description || <span style={{ color: '#6a6e73' }}>No description</span>}
+            {canEdit && (
+              <Button variant="link" size="sm" onClick={async () => {
+                const desc = window.prompt('Enter description:', enumData.description || '')
+                if (desc !== null) {
+                  try {
+                    await api.enums.update(id!, { name: enumData.name, description: desc })
+                    loadEnum()
+                  } catch (e) {
+                    setDeleteError(e instanceof Error ? e.message : 'Failed to update')
+                  }
+                }
+              }} style={{ marginLeft: '0.5rem' }} aria-label="Edit description">Edit</Button>
             )}
           </DescriptionListDescription>
         </DescriptionListGroup>

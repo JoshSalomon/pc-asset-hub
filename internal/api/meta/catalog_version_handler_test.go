@@ -55,9 +55,10 @@ func setupCVServer() *echo.Echo {
 func TestT5_40_CreateCatalogVersion(t *testing.T) {
 	e := setupCVServer()
 	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions",
-		`{"version_label":"v1.0"}`, apimw.RoleRW)
+		`{"version_label":"v1.0","description":"Initial version"}`, apimw.RoleRW)
 	assert.Equal(t, http.StatusCreated, rec.Code)
 	assert.Contains(t, rec.Body.String(), "development")
+	assert.Contains(t, rec.Body.String(), `"Initial version"`)
 }
 
 // T-5.41: POST catalog-versions as RO → 403

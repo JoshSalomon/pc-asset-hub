@@ -140,7 +140,18 @@ const AssociationEdge: React.FunctionComponent<{
         onClick={() => data.onEdgeClick?.({ name: data.name, assocType: data.assocType, sourceRole: data.sourceRole || '', targetRole: data.targetRole || '', sourceCardinality: data.sourceCardinality || '', targetCardinality: data.targetCardinality || '', sourceEntityTypeId: data.sourceEntityTypeId, sourceEntityTypeName: data.sourceEntityTypeName || '', targetEntityTypeName: data.targetEntityTypeName || '' })} />
       <path d={d} fill="none" stroke={strokeColor} strokeWidth={1.5} strokeDasharray={strokeDash}
         markerEnd={isBidirectional ? `url(#arrow-filled-${edge.getId()})` : undefined}
-        markerStart={isBidirectional ? `url(#arrow-hollow-${edge.getId()})` : undefined} />
+        markerStart={isBidirectional ? `url(#arrow-hollow-${edge.getId()})` : isContainment ? `url(#diamond-${edge.getId()})` : undefined} />
+      {/* Diamond marker for containment edges (UML composition notation) */}
+      {isContainment && (
+        <g data-testid="diamond-source">
+          <defs>
+            <marker id={`diamond-${edge.getId()}`} viewBox="0 0 12 8"
+              refX="0" refY="4" markerWidth={12} markerHeight={8} orient="auto">
+              <path d="M 0 4 L 6 0 L 12 4 L 6 8 Z" fill={strokeColor} />
+            </marker>
+          </defs>
+        </g>
+      )}
       {/* Arrowhead markers for bidirectional edges */}
       {isBidirectional && (
         <g data-testid="hollow-arrow-source">
@@ -158,8 +169,10 @@ const AssociationEdge: React.FunctionComponent<{
           </defs>
         </g>
       )}
-      {/* Filled arrowhead for non-bidirectional edges */}
-      {!isBidirectional && <EdgeConnectorArrow edge={edge} terminalType={EdgeTerminalType.directional} />}
+      {/* Filled arrowhead for non-bidirectional, non-containment edges */}
+      {!isBidirectional && !isContainment && <EdgeConnectorArrow edge={edge} terminalType={EdgeTerminalType.directional} />}
+      {/* Arrowhead at target end for containment edges */}
+      {isContainment && <EdgeConnectorArrow edge={edge} terminalType={EdgeTerminalType.directional} />}
       {labelText && (
         <g transform={`translate(${labelPoint.x - labelWidth / 2}, ${labelPoint.y - labelHeight / 2})`}
           style={{ cursor: data.onEdgeClick ? 'pointer' : 'default' }}
@@ -200,7 +213,7 @@ const componentFactory: ComponentFactory = (kind: ModelKind, _type: string): any
 
 // ─── Model Builder ──────────────────────────────────────────────────
 
-function buildModel(
+export function buildModel(
   entityTypes: DiagramEntityType[],
   onNodeDoubleClick?: (id: string) => void,
   onEdgeClick?: EntityTypeDiagramProps['onEdgeClick'],

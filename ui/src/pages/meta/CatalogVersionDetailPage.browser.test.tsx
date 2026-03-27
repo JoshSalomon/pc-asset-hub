@@ -56,11 +56,11 @@ const mockSnapshot = {
 
 function renderDetail(role: 'Admin' | 'RO' | 'RW' | 'SuperAdmin' = 'Admin') {
   return render(
-    <MemoryRouter initialEntries={['/catalog-versions/cv-1']}>
+    <MemoryRouter initialEntries={['/schema/catalog-versions/cv-1']}>
       <Routes>
-        <Route path="/catalog-versions/:id" element={<CatalogVersionDetailPage role={role} />} />
-        <Route path="/catalog-versions" element={<div>CV List</div>} />
-        <Route path="/entity-types/:id" element={<div>ET Detail</div>} />
+        <Route path="/schema/catalog-versions/:id" element={<CatalogVersionDetailPage role={role} />} />
+        <Route path="/schema/catalog-versions" element={<div>CV List</div>} />
+        <Route path="/schema/entity-types/:id" element={<div>ET Detail</div>} />
       </Routes>
     </MemoryRouter>
   )

@@ -128,12 +128,12 @@ export const api = {
   enums: {
     list: () => fetchJSON<ListResponse<Enum>>(`${BASE_URL}/enums`),
     get: (id: string) => fetchJSON<Enum>(`${BASE_URL}/enums/${id}`),
-    create: (data: { name: string; values?: string[] }) =>
+    create: (data: { name: string; description?: string; values?: string[] }) =>
       fetchJSON<Enum>(`${BASE_URL}/enums`, {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    update: (id: string, data: { name: string }) =>
+    update: (id: string, data: { name: string; description?: string }) =>
       fetchJSON(`${BASE_URL}/enums/${id}`, {
         method: 'PUT',
         body: JSON.stringify(data),
@@ -175,7 +175,7 @@ export const api = {
       fetchJSON<ListResponse<CatalogVersionPin>>(`${BASE_URL}/catalog-versions/${id}/pins`),
     listTransitions: (id: string) =>
       fetchJSON<ListResponse<LifecycleTransition>>(`${BASE_URL}/catalog-versions/${id}/transitions`),
-    create: (data: { version_label: string; pins?: { entity_type_version_id: string }[] }) =>
+    create: (data: { version_label: string; description?: string; pins?: { entity_type_version_id: string }[] }) =>
       fetchJSON<CatalogVersion>(`${BASE_URL}/catalog-versions`, {
         method: 'POST',
         body: JSON.stringify(data),

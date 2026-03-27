@@ -93,7 +93,7 @@ func main() {
 	instanceSvc := svcop.NewInstanceService(instRepo, iavRepo, catalogRepo, cvRepo, pinRepo, attrRepo, etvRepo, etRepo, enumValRepo, assocRepo, linkRepo)
 
 	// Handlers
-	etHandler := apimeta.NewEntityTypeHandler(etSvc)
+	etHandler := apimeta.NewEntityTypeHandler(etSvc, etvRepo)
 	attrHandler := apimeta.NewAttributeHandler(attrSvc)
 	assocHandler := apimeta.NewAssociationHandler(assocSvc)
 	enumHandler := apimeta.NewEnumHandler(enumSvc)

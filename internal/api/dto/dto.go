@@ -10,10 +10,11 @@ type CreateEntityTypeRequest struct {
 }
 
 type EntityTypeResponse struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type EntityTypeVersionResponse struct {
@@ -124,19 +125,22 @@ type UpdateAssociationRequest struct {
 // === Enum DTOs ===
 
 type CreateEnumRequest struct {
-	Name   string   `json:"name" validate:"required"`
-	Values []string `json:"values"`
+	Name        string   `json:"name" validate:"required"`
+	Description string   `json:"description"`
+	Values      []string `json:"values"`
 }
 
 type UpdateEnumRequest struct {
-	Name string `json:"name" validate:"required"`
+	Name        string  `json:"name" validate:"required"`
+	Description *string `json:"description"`
 }
 
 type EnumResponse struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type EnumValueResponse struct {
@@ -157,6 +161,7 @@ type ReorderEnumValuesRequest struct {
 
 type CreateCatalogVersionRequest struct {
 	VersionLabel string                 `json:"version_label" validate:"required"`
+	Description  string                 `json:"description"`
 	Pins         []CatalogVersionPinDTO `json:"pins"`
 }
 
@@ -167,6 +172,7 @@ type CatalogVersionPinDTO struct {
 type CatalogVersionResponse struct {
 	ID             string    `json:"id"`
 	VersionLabel   string    `json:"version_label"`
+	Description    string    `json:"description"`
 	LifecycleStage string    `json:"lifecycle_stage"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`

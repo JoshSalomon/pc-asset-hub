@@ -97,7 +97,7 @@ test('CreateInstanceModal skips empty custom attr in onSubmit', async () => {
   await page.getByRole('textbox', { name: 'Name' }).fill('my-inst')
   // Leave hostname empty (default) — buildTypedAttrs should skip it
   await page.getByRole('button', { name: 'Create' }).click()
-  const call = props.onSubmit.mock.calls[0]
+  const call = (props.onSubmit as ReturnType<typeof vi.fn>).mock.calls[0]
   // attrs should NOT contain hostname since it's empty
   expect(call[2]).toEqual({})
 })

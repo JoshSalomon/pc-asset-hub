@@ -16,7 +16,7 @@ export default defineConfig({
     testTimeout: 30000,
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'text-summary', 'json-summary'],
+      reporter: ['text', 'text-summary', 'json-summary', 'json'],
       include: ['src/**/*.{ts,tsx}'],
       exclude: [
         'src/test/**',
@@ -25,7 +25,6 @@ export default defineConfig({
         'src/**/*.system.test.{ts,tsx}',
         'src/vite-env.d.ts',
         'src/main.tsx',
-        'src/main-operational.tsx',
         'src/types/**',
       ],
     },

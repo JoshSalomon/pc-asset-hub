@@ -356,8 +356,13 @@ func TestUpdateEnum(t *testing.T) {
 	enumRepo.On("GetByID", mock.Anything, "e1").Return(&models.Enum{ID: "e1", Name: "Old"}, nil)
 	enumRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
 
-	err := svc.UpdateEnum(context.Background(), "e1", "Updated")
+	err := svc.UpdateEnum(context.Background(), "e1", "Updated", "New description")
 	assert.NoError(t, err)
+
+	// Verify the update was called with the description
+	call := enumRepo.Calls[1] // Second call is Update
+	updatedEnum := call.Arguments[1].(*models.Enum)
+	assert.Equal(t, "New description", updatedEnum.Description)
 }
 
 func TestReorderValues(t *testing.T) {

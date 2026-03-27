@@ -39,6 +39,7 @@ export default function EnumListPage({ role }: Props) {
   // Create modal
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState('')
+  const [newDesc, setNewDesc] = useState('')
   const [newValues, setNewValues] = useState('')
   const [createError, setCreateError] = useState<string | null>(null)
 
@@ -70,9 +71,10 @@ export default function EnumListPage({ role }: Props) {
       const values = newValues.trim()
         ? newValues.split(',').map((v) => v.trim()).filter(Boolean)
         : undefined
-      await api.enums.create({ name: newName.trim(), values })
+      await api.enums.create({ name: newName.trim(), description: newDesc.trim() || undefined, values })
       setCreateOpen(false)
       setNewName('')
+      setNewDesc('')
       setNewValues('')
       loadEnums()
     } catch (e) {
@@ -122,6 +124,7 @@ export default function EnumListPage({ role }: Props) {
           <Thead>
             <Tr>
               <Th>Name</Th>
+              <Th>Description</Th>
               <Th>ID</Th>
               <Th>Created</Th>
               {canEdit && <Th>Actions</Th>}
@@ -131,10 +134,11 @@ export default function EnumListPage({ role }: Props) {
             {enums.map((en) => (
               <Tr key={en.id}>
                 <Td>
-                  <Button variant="link" isInline onClick={() => navigate(`/enums/${en.id}`)}>
+                  <Button variant="link" isInline onClick={() => navigate(`/schema/enums/${en.id}`)}>
                     {en.name}
                   </Button>
                 </Td>
+                <Td style={{ maxWidth: '20rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{en.description || '-'}</Td>
                 <Td><code>{en.id.slice(0, 8)}...</code></Td>
                 <Td>{new Date(en.created_at).toLocaleString()}</Td>
                 {canEdit && (
@@ -156,6 +160,9 @@ export default function EnumListPage({ role }: Props) {
           <Form>
             <FormGroup label="Name" isRequired fieldId="enum-name">
               <TextInput id="enum-name" value={newName} onChange={(_e, v) => setNewName(v)} isRequired />
+            </FormGroup>
+            <FormGroup label="Description" fieldId="enum-desc">
+              <TextInput id="enum-desc" value={newDesc} onChange={(_e, v) => setNewDesc(v)} placeholder="Optional description" />
             </FormGroup>
             <FormGroup label="Initial Values (comma-separated)" fieldId="enum-values">
               <TextInput id="enum-values" value={newValues} onChange={(_e, v) => setNewValues(v)} placeholder="e.g. active, inactive, pending" />

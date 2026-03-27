@@ -200,7 +200,7 @@ export default function CatalogVersionDetailPage({ role }: Props) {
 
   return (
     <PageSection>
-      <Button variant="link" onClick={() => navigate('/catalog-versions')} style={{ marginBottom: '1rem' }}>
+      <Button variant="link" onClick={() => navigate('/schema/catalog-versions')} style={{ marginBottom: '1rem' }}>
         &larr; Back to Catalog Versions
       </Button>
 
@@ -218,6 +218,10 @@ export default function CatalogVersionDetailPage({ role }: Props) {
               <DescriptionListGroup>
                 <DescriptionListTerm>Version Label</DescriptionListTerm>
                 <DescriptionListDescription>{cv.version_label}</DescriptionListDescription>
+              </DescriptionListGroup>
+              <DescriptionListGroup>
+                <DescriptionListTerm>Description</DescriptionListTerm>
+                <DescriptionListDescription>{cv.description || <span style={{ color: '#6a6e73' }}>No description</span>}</DescriptionListDescription>
               </DescriptionListGroup>
               <DescriptionListGroup>
                 <DescriptionListTerm>Lifecycle Stage</DescriptionListTerm>

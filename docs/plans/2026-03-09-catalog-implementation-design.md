@@ -18,18 +18,19 @@ Instances belong to a **Catalog**, not directly to a CatalogVersion. The Catalog
 
 The `EntityInstance.CatalogVersionID` field will be replaced with `EntityInstance.CatalogID`.
 
-### Separate Operational UI
+### Unified SPA (updated from original "Separate Operational UI")
 
-The operational UI (catalog data viewer) runs on a **separate port** from the meta UI:
+**Original design:** Two separate Vite entry points (`main.tsx` + `main-operational.tsx`) producing two SPAs served via nginx path-based routing (`/` for meta, `/operational` for operational).
 
-| | Meta UI | Operational UI |
-|---|---------|---------------|
-| Persona | Admin building schemas | Operator/consumer browsing assets |
-| URL | `http://host:30000/` | `http://host:30000/operational` |
-| API consumed | `/api/meta/v1/...` | `/api/data/v1/...` |
-| RBAC focus | Admin/SuperAdmin | RO-friendly (read-only in v1) |
+**Updated design (US-47):** Merged into a single SPA with route-based views. The landing page at `/` provides navigation to schema management (`/schema`) and catalog data viewers (`/catalogs/:name`). This eliminates the artificial meta/operational split and provides a unified user experience with a clear entry point.
 
-Both UIs live in the same `ui/` codebase with two Vite entry points (`main.tsx` and `main-operational.tsx`), producing two HTML entry points in a single build. Shared types, components, and API client are reused. A single nginx instance serves both UIs using path-based routing (`/` for meta, `/operational` for operational). This avoids the complexity of separate ports, extra kind port mappings, and CORS configuration.
+| View | URL | Persona | API consumed |
+|------|-----|---------|-------------|
+| Landing page | `/` | All users | `/api/data/v1/catalogs` (list) |
+| Schema management | `/schema/*` | Admin building schemas | `/api/meta/v1/...` |
+| Catalog data viewer | `/catalogs/:name` | Operator/consumer browsing assets | `/api/data/v1/...` |
+
+Single Vite entry point (`main.tsx`), single `index.html`, single nginx catch-all. Shared types, components, and API client are reused across all views. The masthead adapts per view: "Schema" on schema pages, "Data Viewer" on catalog pages.
 
 ## Phased Plan
 

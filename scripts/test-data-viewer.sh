@@ -306,20 +306,20 @@ else
   fail "T6.1 Operational UI" "expected 200, got $CODE"
 fi
 
-# T6.2: Operational HTML contains correct title
+# T6.2: Unified SPA title
 TITLE=$(curl -s "${UI_BASE}/operational" | grep -o '<title>.*</title>')
-if echo "$TITLE" | grep -q "Data Viewer"; then
-  pass "T6.2 Operational HTML has 'Data Viewer' in title"
+if echo "$TITLE" | grep -q "AI Asset Hub"; then
+  pass "T6.2 Unified SPA has 'AI Asset Hub' in title"
 else
   fail "T6.2 Title" "got $TITLE"
 fi
 
-# T6.3: Meta UI still works
+# T6.3: Root URL returns unified SPA
 CODE=$(http_code "${UI_BASE}/")
 if [ "$CODE" = "200" ]; then
-  pass "T6.3 Meta UI at / still returns 200"
+  pass "T6.3 Root URL returns 200"
 else
-  fail "T6.3 Meta UI" "expected 200, got $CODE"
+  fail "T6.3 Root URL" "expected 200, got $CODE"
 fi
 
 echo ""

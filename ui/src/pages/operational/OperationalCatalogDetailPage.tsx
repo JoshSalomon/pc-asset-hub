@@ -8,19 +8,21 @@ import {
   TabTitleText,
   Button,
   Label,
+  Alert,
   EmptyState,
   EmptyStateBody,
   Spinner,
   Breadcrumb,
   BreadcrumbItem,
 } from '@patternfly/react-core'
-import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
 import { api, setAuthRole } from '../../api/client'
-import type { Catalog, CatalogVersionPin, TreeNodeResponse, Role } from '../../types'
+import type { Catalog, TreeNodeResponse, Role } from '../../types'
 import { useValidation } from '../../hooks/useValidation'
 import { useContainmentTree } from '../../hooks/useContainmentTree'
+import { useCatalogDiagram } from '../../hooks/useCatalogDiagram'
 import ValidationResults from '../../components/ValidationResults'
 import InstanceDetailPanel from '../../components/InstanceDetailPanel'
+import EntityTypeDiagram from '../../components/EntityTypeDiagram'
 
 export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
   const { name } = useParams<{ name: string }>()
@@ -29,8 +31,7 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [pins, setPins] = useState<CatalogVersionPin[]>([])
-  const [activeTab, setActiveTab] = useState<string>('overview')
+  const [activeTab, setActiveTab] = useState<string>('tree')
 
   const ct = useContainmentTree(name)
 
@@ -42,8 +43,6 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
     try {
       const cat = await api.catalogs.get(name)
       setCatalog(cat)
-      const pinsRes = await api.catalogVersions.listPins(cat.catalog_version_id)
-      setPins(pinsRes.items || [])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load catalog')
     } finally {
@@ -54,15 +53,12 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
   useEffect(() => { loadCatalog() }, [loadCatalog])
 
   const validation = useValidation(name, loadCatalog)
+  const diagram = useCatalogDiagram(catalog?.catalog_version_id)
 
   useEffect(() => {
     if (activeTab === 'tree') ct.loadTree()
-  }, [activeTab, ct.loadTree])
-
-  const browseType = (typeName: string) => {
-    setActiveTab('tree')
-    ct.expandNode(`__group__${typeName}`)
-  }
+    if (activeTab === '__diagram__') diagram.loadDiagram()
+  }, [activeTab, ct.loadTree, diagram.loadDiagram])
 
   // Recursive tree node renderer for instance nodes
   const renderTreeNode = (node: TreeNodeResponse, depth: number) => {
@@ -176,38 +172,6 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
       <ValidationResults errors={validation.errors} ran={validation.ran} error={validation.error} />
 
       <Tabs activeKey={activeTab} onSelect={(_e, key) => setActiveTab(String(key))} style={{ marginTop: '1rem' }}>
-        <Tab eventKey="overview" title={<TabTitleText>Overview</TabTitleText>}>
-          <PageSection padding={{ default: 'noPadding' }} style={{ marginTop: '1rem' }}>
-            <Title headingLevel="h3">Entity Types</Title>
-            {pins.length === 0 ? (
-              <EmptyState><EmptyStateBody>No entity types pinned in this catalog version.</EmptyStateBody></EmptyState>
-            ) : (
-              <Table aria-label="Entity types">
-                <Thead>
-                  <Tr>
-                    <Th>Entity Type</Th>
-                    <Th>Version</Th>
-                    <Th>Actions</Th>
-                  </Tr>
-                </Thead>
-                <Tbody>
-                  {pins.map(pin => (
-                    <Tr key={pin.entity_type_name}>
-                      <Td>{pin.entity_type_name}</Td>
-                      <Td>V{pin.version}</Td>
-                      <Td>
-                        <Button variant="secondary" size="sm" onClick={() => browseType(pin.entity_type_name)}>
-                          Browse Instances
-                        </Button>
-                      </Td>
-                    </Tr>
-                  ))}
-                </Tbody>
-              </Table>
-            )}
-          </PageSection>
-        </Tab>
-
         <Tab eventKey="tree" title={<TabTitleText>Tree Browser</TabTitleText>}>
           <PageSection padding={{ default: 'noPadding' }} style={{ marginTop: '1rem' }}>
             <div style={{ display: 'flex', gap: '1rem' }}>
@@ -249,6 +213,21 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
                 )}
               </div>
             </div>
+          </PageSection>
+        </Tab>
+
+        <Tab eventKey="__diagram__" title={<TabTitleText>Model Diagram</TabTitleText>}>
+          <PageSection padding={{ default: 'noPadding' }} style={{ marginTop: '1rem' }}>
+            {diagram.diagramError && (
+              <Alert variant="danger" title={diagram.diagramError} isInline style={{ marginBottom: '1rem' }} />
+            )}
+            {diagram.diagramLoading ? (
+              <Spinner aria-label="Loading diagram" />
+            ) : diagram.diagramData.length === 0 && !diagram.diagramError ? (
+              <EmptyState><EmptyStateBody>No model diagram available. The catalog version has no pinned entity types.</EmptyStateBody></EmptyState>
+            ) : (
+              <EntityTypeDiagram entityTypes={diagram.diagramData} />
+            )}
           </PageSection>
         </Tab>
       </Tabs>

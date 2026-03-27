@@ -45,6 +45,7 @@ export interface Association {
 export interface Enum {
   id: string
   name: string
+  description?: string
   created_at: string
   updated_at: string
 }
@@ -72,6 +73,7 @@ export interface VersionDiff {
 export interface CatalogVersion {
   id: string
   version_label: string
+  description?: string
   lifecycle_stage: 'development' | 'testing' | 'production'
   created_at: string
   updated_at: string

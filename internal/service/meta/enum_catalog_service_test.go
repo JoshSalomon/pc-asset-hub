@@ -24,10 +24,11 @@ func TestT3_29_CreateEnum(t *testing.T) {
 	enumRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Enum")).Return(nil)
 	evRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EnumValue")).Return(nil)
 
-	e, err := svc.CreateEnum(context.Background(), "Status", []string{"active", "inactive"})
+	e, err := svc.CreateEnum(context.Background(), "Status", "Deploy status", []string{"active", "inactive"})
 	require.NoError(t, err)
 	assert.NotEmpty(t, e.ID)
 	assert.Equal(t, "Status", e.Name)
+	assert.Equal(t, "Deploy status", e.Description)
 }
 
 func TestT3_30_UpdateEnumAddValue(t *testing.T) {
@@ -93,9 +94,10 @@ func TestT3_35_CreateCatalogVersion(t *testing.T) {
 	cvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
 	ltRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.LifecycleTransition")).Return(nil)
 
-	cv, err := svc.CreateCatalogVersion(context.Background(), "v1.0", nil)
+	cv, err := svc.CreateCatalogVersion(context.Background(), "v1.0", "Initial version", nil)
 	require.NoError(t, err)
 	assert.Equal(t, models.LifecycleStageDevelopment, cv.LifecycleStage)
+	assert.Equal(t, "Initial version", cv.Description)
 }
 
 func TestT3_36_CreateCatalogVersionWithPins(t *testing.T) {
@@ -109,7 +111,7 @@ func TestT3_36_CreateCatalogVersionWithPins(t *testing.T) {
 	ltRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 
 	pins := []models.CatalogVersionPin{{EntityTypeVersionID: "etv1"}}
-	cv, err := svc.CreateCatalogVersion(context.Background(), "v1.0", pins)
+	cv, err := svc.CreateCatalogVersion(context.Background(), "v1.0", "", pins)
 	require.NoError(t, err)
 	assert.NotEmpty(t, cv.ID)
 	pinRepo.AssertCalled(t, "Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin"))

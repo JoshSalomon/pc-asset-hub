@@ -16,6 +16,20 @@ vi.mock('../../api/client', () => ({
   setAuthRole: vi.fn(),
 }))
 
+const mockSnapshotServer = {
+  entity_type: { id: 'et1', name: 'mcp-server', created_at: '', updated_at: '' },
+  version: { id: 'etv1', version: 1 },
+  attributes: [{ id: 'a1', name: 'endpoint', description: '', type: 'string', ordinal: 1, required: false }],
+  associations: [],
+}
+
+const mockSnapshotTool = {
+  entity_type: { id: 'et2', name: 'mcp-tool', created_at: '', updated_at: '' },
+  version: { id: 'etv2', version: 1 },
+  attributes: [],
+  associations: [],
+}
+
 const mockCatalog = {
   id: 'cat1', name: 'test-catalog', description: 'Test',
   catalog_version_id: 'cv1', catalog_version_label: 'v1.0',
@@ -98,38 +112,23 @@ beforeEach(() => {
   vi.clearAllMocks()
   ;(api.catalogs.get as Mock).mockResolvedValue(mockCatalog)
   ;(api.catalogVersions.listPins as Mock).mockResolvedValue({ items: mockPins, total: 2 })
+  ;(api.versions.snapshot as Mock).mockImplementation((etId: string) => {
+    if (etId === 'et2') return Promise.resolve(mockSnapshotTool)
+    return Promise.resolve(mockSnapshotServer)
+  })
   ;(api.instances.tree as Mock).mockResolvedValue(mockTree)
   ;(api.instances.get as Mock).mockResolvedValue(mockInstanceDetail)
   ;(api.links.forwardRefs as Mock).mockResolvedValue(mockForwardRefs)
   ;(api.links.reverseRefs as Mock).mockResolvedValue(mockReverseRefs)
 })
 
-// === Catalog Detail Overview (T-13.68 through T-13.71) ===
+// === Catalog Detail Header ===
 
 test('T-13.68: shows catalog header with name, status badge, CV label', async () => {
   renderDetail()
   await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
   await expect.element(page.getByText('draft')).toBeVisible()
   await expect.element(page.getByText(/v1\.0/)).toBeVisible()
-})
-
-test('T-13.69: overview tab lists entity types from pinned CV', async () => {
-  renderDetail()
-  await expect.element(page.getByText('mcp-server')).toBeVisible()
-  await expect.element(page.getByText('mcp-tool')).toBeVisible()
-})
-
-test('T-13.70: entity type rows show name and version', async () => {
-  renderDetail()
-  await expect.element(page.getByText('V1').first()).toBeVisible()
-})
-
-test('T-13.71: Browse Instances switches to tree browser and expands group', async () => {
-  renderDetail()
-  await page.getByRole('button', { name: 'Browse Instances' }).first().click()
-  // Should switch to tree tab and expand the entity type group
-  await expect.element(page.getByText('Containment Tree')).toBeVisible()
-  await expect.element(page.getByText('mcp-server (2)')).toBeVisible()
 })
 
 // === Containment Tree Browser — Two-Pane (T-13.72 through T-13.77) ===
@@ -346,26 +345,10 @@ test('catalog not found shows error', async () => {
   await expect.element(page.getByText('Not found')).toBeVisible()
 })
 
-test('empty pins shows empty state in overview', async () => {
-  ;(api.catalogVersions.listPins as Mock).mockResolvedValue({ items: [], total: 0 })
-  renderDetail()
-  await expect.element(page.getByText('No entity types pinned')).toBeVisible()
-})
-
 test('empty tree shows no instances message', async () => {
   ;(api.instances.tree as Mock).mockResolvedValue([])
   renderDetail()
-  await page.getByText('Tree Browser').click()
   await expect.element(page.getByText('No instances in this catalog.')).toBeVisible()
-})
-
-test('Browse Instances from overview expands entity type group in tree', async () => {
-  renderDetail()
-  await page.getByRole('button', { name: 'Browse Instances' }).first().click()
-  // Should switch to tree tab with the mcp-server group expanded
-  await expect.element(page.getByText('Containment Tree')).toBeVisible()
-  // The group should be auto-expanded, showing instances
-  await expect.element(page.getByText('my-server').first()).toBeVisible()
 })
 
 test('invalid catalog status shows red label', async () => {
@@ -423,4 +406,44 @@ test('breadcrumb Catalogs link navigates', async () => {
   await expect.element(link).toBeVisible()
   await link.click()
   // Navigation happens — no crash
+})
+
+// T-21.21: Model Diagram tab exists on operational catalog detail page
+test('T-21.21: Model Diagram tab exists on operational catalog detail page', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('tab', { name: 'Model Diagram' })).toBeVisible()
+})
+
+// T-21.22: Clicking Model Diagram tab loads diagram data
+test('T-21.22: clicking Model Diagram tab loads diagram data', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: 'Model Diagram' }).click()
+  await vi.waitFor(() => {
+    expect(api.catalogVersions.listPins).toHaveBeenCalledWith('cv1')
+  })
+})
+
+// T-21.23: Diagram renders entity type nodes from CV
+test('T-21.23: diagram renders entity type nodes', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: 'Model Diagram' }).click()
+  await expect.element(page.getByTestId('entity-type-diagram')).toBeVisible()
+})
+
+// T-21.24: Diagram error is displayed
+test('T-21.24: diagram tab shows error alert on API failure', async () => {
+  // Diagram hook calls listPins — reject it
+  ;(api.catalogVersions.listPins as Mock).mockRejectedValue(new Error('Diagram load failed'))
+  renderDetail()
+  await expect.element(page.getByRole('tab', { name: 'Model Diagram' })).toBeVisible()
+  await page.getByRole('tab', { name: 'Model Diagram' }).click()
+  await expect.element(page.getByText('Diagram load failed')).toBeVisible()
+})
+
+// T-21.25: Empty state when diagram has no data
+test('T-21.25: diagram tab shows empty state when no pins', async () => {
+  ;(api.catalogVersions.listPins as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail()
+  await page.getByRole('tab', { name: 'Model Diagram' }).click()
+  await expect.element(page.getByText('No model diagram available')).toBeVisible()
 })

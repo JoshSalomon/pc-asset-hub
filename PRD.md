@@ -404,8 +404,7 @@ A user can have different roles in each domain. For example, user X can be Admin
 | Role | Permissions |
 |------|-------------|
 | **Catalog Viewer** | Read-only access to instances, tree, references, attribute values. Can browse but not modify. |
-| **Catalog Editor** | Create, update, and delete ins
-tances, links. Set parent. All viewer permissions. |
+| **Catalog Editor** | Create, update, and delete instances, links. Set parent. All viewer permissions. |
 | **Catalog Admin** | All editor permissions plus validate and publish/unpublish. |
 | **Catalog Super Admin** | All admin permissions plus modify published catalogs (bypasses write protection). Intended for emergency fixes, security patches, and regulatory changes on specific catalogs. |
 
@@ -662,8 +661,8 @@ As an Admin, I want to define enum value sets as reusable objects and assign the
 **Why**: Without centralized enum management, the same set of values (e.g., supported languages, deployment targets) would be duplicated across entity types. Updates would require finding and changing every copy, risking inconsistency.
 
 Acceptance Criteria:
-- Admin can create a named enum with an ordered list of allowed values.
-- Admin can update an enum's values (add, remove, reorder).
+- Admin can create a named enum with an optional description and an ordered list of allowed values.
+- Admin can update an enum's description and values (add, remove, reorder).
 - Enums can be assigned as the type of any custom attribute on any entity type.
 - Multiple attributes across different entity types can reference the same enum.
 - When an enum is updated, all attributes referencing it reflect the updated values.
@@ -707,9 +706,9 @@ As an RW user, I want to create a catalog version that pins specific entity defi
 **Why**: Without a pinning mechanism, deployments would be subject to schema drift as entity definitions evolve. Catalog versions provide the stability guarantee that deployed systems need.
 
 Acceptance Criteria:
-- RW (and above) users can create a new catalog version by selecting specific entity definition versions to include.
+- RW (and above) users can create a new catalog version by specifying a version label, an optional description, and selecting specific entity definition versions to include.
 - The catalog version records the exact `(entity type name, version)` tuples it contains.
-- Once created, the catalog version's entity version pins cannot be changed (immutable snapshot).
+- Once created, the catalog version's entity version pins cannot be changed (immutable snapshot). The description can be updated.
 - The catalog version is created in the Development lifecycle stage.
 - The catalog version has a unique identifier.
 - RO users cannot create catalog versions; the API returns a 403.
@@ -1131,9 +1130,9 @@ As an Admin, I want a dedicated view to create, edit, and delete enums, and I wa
 **Why**: Enums are shared across entity types. Without a central management view, Admins would not know where an enum is used, risking unintended side effects when modifying or deleting values.
 
 Acceptance Criteria:
-- An enum list view displays all enums with: name, number of values, and a list of referencing entity types and attributes.
-- Admin can create a new enum with a name and an ordered list of values.
-- Admin can edit an enum: add, remove, or reorder values.
+- An enum list view displays all enums with: name, description, number of values, and a list of referencing entity types and attributes.
+- Admin can create a new enum with a name, optional description, and an ordered list of values.
+- Admin can edit an enum: update description, add, remove, or reorder values.
 - When removing a value, the UI warns if existing entity instances may use that value.
 - Admin can delete an enum only if no attributes reference it. If references exist, the UI lists them and blocks deletion.
 - Enum creation is also available inline from the attribute type dropdown (without navigating away from the entity type view).
@@ -1146,6 +1145,7 @@ As an Admin, I want to create a catalog version by selecting specific entity def
 **Why**: The catalog version is what gets deployed. The selection interface must make it easy to choose the right versions and review the complete snapshot before committing, to avoid deploying unintended entity definition versions.
 
 Acceptance Criteria:
+- The creation modal includes a version label (required) and an optional description.
 - A creation interface shows all entity types with their available versions.
 - The latest version of each entity type is pre-selected as the default.
 - Admin can change the selected version for any entity type via a version dropdown.
@@ -1163,7 +1163,7 @@ As an Admin, I want to see a catalog version's full bill of materials and promot
 **Why**: Lifecycle promotion is a critical operation with real cluster-side effects (CR generation and application). The UI must provide clear context and confirmation to prevent accidental promotions and help Admins understand the current state.
 
 Acceptance Criteria:
-- The detail view shows: catalog version identifier, current lifecycle stage (visually indicated with color-coded badge), creation date, and the full bill of materials (entity type name + pinned version).
+- The detail view shows: catalog version identifier, description, current lifecycle stage (visually indicated with color-coded badge), creation date, and the full bill of materials (entity type name + pinned version).
 - Clicking an entity type name in the bill of materials opens a read-only modal showing the pinned version's attributes and associations. The modal displays the entity type name, pinned version number, and two sections. Attributes show name, type (with resolved enum name for enum types, e.g., "boolean (enum)"), and description. Associations show both outgoing and incoming with contextual relationship labels: "contains"/"contained by" for containment, "references"/"referenced by" for directional, "references (mutual)" for bidirectional — each color-coded. The other entity type name and the perspective-correct role are shown (target role for outgoing, source role for incoming). No edit controls are shown — the modal is purely informational.
 - The view shows a history of lifecycle transitions (who promoted/demoted, when).
 - Available actions are displayed based on current stage and user role:
@@ -1370,20 +1370,49 @@ Acceptance Criteria:
 
 ---
 
-**US-47: Permission-aware landing page**
-As a user, I want a landing page at the root URL (`/`) that shows me available actions based on my permissions, so that I can navigate directly to the meta UI or to a specific catalog without memorizing URL paths.
+**US-47: Landing page + unified SPA**
+As a user, I want a landing page at the root URL (`/`) that shows me available actions based on my permissions, so that I can navigate directly to schema management or to a specific catalog without memorizing URL paths.
 
 **Why**: The current root URL goes directly to the meta UI (entity type list), which is irrelevant for users who only have catalog access and confusing as a first experience for all users. A landing page that adapts to the user's permissions provides a clear, role-appropriate entry point — schema architects see meta tools, data operators see their catalogs, and users with both see everything in one place.
 
+**Architecture decision (resolved):** Merge the two separate SPAs (meta `App.tsx` + operational `OperationalApp.tsx`) into a single SPA with route-based views. The separate `operational.html` entry point, `OperationalApp.tsx`, and `main-operational.tsx` are removed. The nginx config simplifies to API proxy + single SPA catch-all. This eliminates the artificial meta/operational split and gives users a unified experience.
+
+**Design decision (resolved):** Minimal navigation cards (Option A). Dashboard stats deferred to future iteration.
+
+URL structure:
+- `/` — Landing page
+- `/schema` — Schema management (entity types, catalog versions, enums, model diagram)
+- `/schema/entity-types/:id` — Entity type detail
+- `/schema/catalog-versions/:id` — Catalog version detail
+- `/schema/catalogs/:name` — Catalog detail (with instance CRUD)
+- `/catalogs/:name` — Catalog data viewer (read-only tree browser + model diagram)
+
 Acceptance Criteria:
-- The root URL (`/`) renders a landing page instead of the meta UI directly. The meta UI moves to a sub-path (e.g., `/meta`).
-- **Schema Management section**: Visible only if the user has any meta role (Meta Viewer or above). Provides navigation to the meta UI.
-- **Catalogs section**: Shows a card or list entry for each catalog the user has access to. Catalogs the user cannot access are not shown. Each entry displays: catalog name, description, pinned CV label, validation status, and published indicator. Clicking navigates to the operational catalog detail page (`/operational/{catalog-name}`).
+- The root URL (`/`) renders a landing page with navigation cards.
+- **Schema Management card**: Links to `/schema`. Visible for all roles in development mode. In production mode, visible only if the user has a meta role (future — deferred to RBAC Phase C).
+- **Catalogs section**: Shows a card for each accessible catalog displaying: catalog name, description, pinned CV label, validation status badge, and published indicator. Clicking navigates to `/catalogs/{catalog-name}`.
 - A user with no meta role and no catalog access sees an appropriate empty state (e.g., "No resources available. Contact your administrator.").
 - In development mode, the landing page shows all sections (meta + all catalogs) since the global role grants access to everything.
 - The landing page loads quickly — catalog list is fetched with a single API call and filtered by access on the server side (see US-39).
+- The separate operational SPA (`OperationalApp.tsx`, `main-operational.tsx`, `operational.html`) is removed. All routes are served by a single SPA.
+- The masthead shows "AI Asset Hub" with a role selector. On schema pages, the masthead shows "AI Asset Hub — Schema". On catalog viewer pages, the masthead shows "AI Asset Hub — Data Viewer". A home icon or "AI Asset Hub" link in the masthead navigates back to the landing page.
+- Nginx config simplifies to: `/api/` proxy + `try_files $uri $uri/ /index.html` catch-all.
+- Vite build produces a single `index.html` entry point (no `operational.html`).
 
-**Open:** The exact content and layout of the landing page is TBD. Options include: (A) minimal — just navigation cards/links, (B) dashboard — aggregate info (entity type count, catalog count, recent activity), (C) hybrid — navigation cards with summary stats. This will be decided based on user feedback after the initial implementation.
+---
+
+**US-48: Model Diagram tab on Catalog Detail Pages**
+As a user viewing a catalog (in either the meta or operational UI), I want a "Model Diagram" tab that shows the entity type model diagram for the catalog's pinned catalog version, so that I can understand the data model without navigating to the catalog version detail page.
+
+**Why**: Catalogs are the primary working context for data operators. The entity type model (entity types, attributes, associations, containment) is essential context when creating or browsing instances. Currently, viewing the model diagram requires navigating away to the catalog version detail page and finding the Diagram tab. A diagram tab directly on the catalog page keeps this context one click away.
+
+Acceptance Criteria:
+- Both the meta catalog detail page (`CatalogDetailPage`) and the operational catalog detail page (`OperationalCatalogDetailPage`) have a "Model Diagram" tab.
+- The tab renders the `EntityTypeDiagram` component showing all entity types pinned in the catalog's catalog version, with their attributes and associations.
+- The diagram is **read-only** — no edit interactions (no node double-click navigation, no edge click editing).
+- Diagram data is loaded on-demand when the tab is first selected (not on page load).
+- The diagram includes the TD-47 UML composition diamond notation for containment edges.
+- If the catalog has no pinned entity types, the tab shows an appropriate empty state.
 
 ---
 
@@ -1403,7 +1432,7 @@ The following items are acknowledged but not yet fully specified:
 | Entity instance versioning depth | Whether full version history is retained or only N recent versions |
 | Technology choices | Backend language/framework, UI framework, API style (REST vs. GraphQL) |
 | Centralized hub topology | Hub-and-spoke deployment where consuming clusters sync CatalogVersion CRs from a central API. See Section 8.4. |
-| Landing page content | Minimal navigation cards vs. dashboard with aggregate stats vs. hybrid. See US-47. |
+| ~~Landing page content~~ | **RESOLVED.** Minimal navigation cards (Option A). Single unified SPA with route-based views. See US-47. |
 
 ## 11. Technical Debt
 
@@ -1449,7 +1478,7 @@ Items where the current implementation diverges from the intended behavior descr
 | ~~TD-35~~ | ~~Operational catalog detail page too large~~ | **RESOLVED.** Extracted `useContainmentTree` hook + `InstanceDetailPanel` component. 428→257 lines, 15→5 useState. See TD-23 resolution. |
 | TD-37 | Reference direction unclear in tree browser detail panel | In the instance detail panel, directional associations show under "Forward References" and "Referenced By" sections with a "Type" column showing "directional". It is not clear which direction the association goes — the user cannot tell whether the selected instance depends on the target or vice versa. The association name alone may not convey direction (e.g., "uses-model" is clear, but "related-to" is not). | Show an arrow or directional indicator in the reference table: e.g., "my-server → gpt-4" for forward refs and "monitor-1 → my-server" for reverse. Alternatively, use role labels from the association definition (source_role/target_role) to clarify the relationship semantics. Consider replacing the generic "directional" type label with the actual role or a "depends on" / "depended by" phrasing. |
 | TD-38 | Entity type tab selector doesn't scale in meta catalog detail | The meta UI `CatalogDetailPage` uses PatternFly Tabs with one tab per entity type. When a catalog has many entity types (10+), the tabs overflow a single row and become hard to navigate. | Options: (A) Replace tabs with a sidebar or dropdown selector. (B) Add a search/filter input above the tabs. (C) Use PatternFly's scrollable tabs variant (`isOverflowHorizontal`). (D) Switch to a two-pane layout similar to the operational UI's tree browser. |
-| TD-36 | Review usefulness of Overview tab in operational catalog view | The Overview tab shows entity type names, pinned versions, and a "Browse Instances" button per type. With the two-pane tree browser now grouping instances under entity type headers, the Overview tab is largely redundant — the only unique information it provides is the meta entity type version number. | Options: (A) Remove the Overview tab entirely and make the tree browser the default (and only) tab. Show entity type version info in the tree group headers (e.g., "mcp-server V3 (2)"). (B) Repurpose the Overview tab as a catalog dashboard with useful aggregate info: instance counts per type, validation summary, catalog metadata, recent changes. (C) Keep as-is for users who want a quick summary before diving into the tree. |
+| ~~TD-36~~ | ~~Review usefulness of Overview tab in operational catalog view~~ | **RESOLVED.** Overview tab removed (TD-56). Tree Browser is now the default tab. See TD-56 for future re-addition with useful content. |
 | TD-28 | Phase 3 code quality improvements (L1-L5, L7) | Multiple low-severity issues from quality review: (L1) duplicated forward/reverse reference handler conversion logic, (L2) dead `_ = parentInst`/`_ = sourceInst` assignments, (L3) JSON tags on service-layer `ReferenceDetail`, (L4) N+1 queries in `resolveLinks`, (L5) CatalogDetailPage now has ~30 state variables and should be decomposed, (L7) silently swallowed `UpdateValidationStatus` errors. | Extract `refsToDTO` helper in handler. Clean up dead assignments. Remove JSON tags from service types. Add batch fetch for links resolution. Decompose CatalogDetailPage into sub-components. Log validation status update failures. |
 | TD-39 | CopyCatalog sequential instance creation doesn't scale | `CopyCatalog` creates instances one at a time via N individual `instRepo.Create` calls, plus N `GetCurrentValues` and N `GetForwardRefs` calls. For catalogs with 1000+ instances this is slow. | Add `CreateBatch` method to `EntityInstanceRepository` that inserts multiple instances in a single query. Similarly batch `SetValues` and link creation. Low priority — catalogs currently have <100 instances. |
 | TD-40 | `SyncCR` uses unstructured logging | `SyncCR` in `catalog_service.go` uses `log.Printf("warning: ...")` (Go's default logger). In production this produces unstructured text logs that are hard to filter and correlate in centralized logging systems. | Replace `log.Printf` with structured logging (e.g., `slog.Warn` or a project-standard logger) that includes catalog name, error, and operation context as structured fields. Apply the same fix to any other `log.Printf` calls in the codebase. |
@@ -1458,13 +1487,23 @@ Items where the current implementation diverges from the intended behavior descr
 | ~~TD-44~~ | ~~BOM pins table missing description in API response~~ | **RESOLVED.** Added `Description` to `ResolvedPin`, `CatalogVersionPinResponse`, and handler. BOM tab now shows entity type version description. |
 | TD-45 | Enum list page missing description column | The enum list page does not show a Description column. Enums have a `name` but no description field in the model. | Either add a `description` field to the Enum model, or accept that enums don't have descriptions. If adding, update the create/edit API and UI. |
 | TD-46 | No UI to edit entity type version description | The entity type version description is set at creation and carried forward on COW. The backend `UpdateEntityType` endpoint (`PUT /entity-types/:id`) creates a new version with a new description, but the UI has no control to invoke it. Users cannot change the description after initial creation. | Add a "Description" editable field (inline or modal) on the entity type detail page. Editing the description calls `PUT /entity-types/:id` with `{"description": "new desc"}`, which creates a new version via COW. Show the current version's description on the detail page header area. |
-| TD-47 | Diagram: containment edges should use UML composition notation |
-| TD-48 | Duplicate number-parsing logic in attribute submission | The pattern of converting string attribute values to typed values (`parseFloat` for numbers, string otherwise) is duplicated in `useInstances.ts` (handleCreate, handleEdit) and `CatalogDetailPage.tsx` (handleAddChild). | Extract a `buildTypedAttrs(rawAttrs: Record<string, string>, schemaAttrs: SnapshotAttribute[]): Record<string, unknown>` utility function used by all three call sites. |
+| ~~TD-47~~ | ~~Diagram: containment edges should use UML composition notation~~ | **RESOLVED.** Filled diamond SVG marker added on the parent (source) end of containment edges. Arrowhead retained on target end. Non-containment edges unchanged. Implemented in `EntityTypeDiagram.tsx` `AssociationEdge` component. |
+| ~~TD-48~~ | ~~Duplicate number-parsing logic in attribute submission~~ | **RESOLVED.** Extracted `buildTypedAttrs` utility in `utils/buildTypedAttrs.ts`, used by all three call sites. |
 | TD-49 | `useInstanceDetail.selectInstance` missing `setAuthRole` call | `useCatalogData` and `useInstances` both call `setAuthRole(role)` before API requests, but `useInstanceDetail.selectInstance` makes API calls (get parent, list children, get refs) without setting the auth role. If the role changes while an instance is selected, the wrong role could be sent. | Pass `role` to `useInstanceDetail` and call `setAuthRole(role)` at the start of `selectInstance`. |
 | TD-50 | `selectInstance` passes stale instance object after mutations | After mutations (handleAddChild, handleCreateLink, handleSetParent), the code calls `detail.selectInstance(detail.selectedInstance)` with the render-time snapshot. The instance's version may have changed server-side. | Pass only the instance ID and re-fetch the instance inside `selectInstance`, or accept that only `inst.id` is used (current behavior is safe but fragile). |
-| TD-51 | `onRemoveParent` swallows errors silently | The "Remove Container" inline handler uses `.catch(() => {})` which silently discards API errors. The user gets no feedback if the operation fails. | Show an error alert or set `setParentError` in the catch block. | Containment associations in the entity type diagram use a plain solid line with a generic arrowhead, same visual weight as other edge types. UML composition notation uses a **filled diamond** on the parent (source) end and an **arrowhead** on the child (target) end, which immediately communicates ownership semantics. | Replace the containment edge rendering in `EntityTypeDiagram.tsx` (`AssociationEdge` component) to use a filled diamond marker (`markerStart`) on the source end and a directional arrowhead (`markerEnd`) on the target end. The diamond should be a small filled polygon (e.g., `<path d="M0,5 L5,0 L10,5 L5,10 Z" fill="..."/>`) in the containment color (`#3e8635`). Keep the existing solid line style for containment edges. |
+| TD-51 | `onRemoveParent` swallows errors silently | The "Remove Container" inline handler uses `.catch(() => {})` which silently discards API errors. The user gets no feedback if the operation fails. | Show an error alert or set `setParentError` in the catch block. |
 | TD-52 | Modal data-loading still managed by page | `AddChildModal`, `LinkModal`, and `SetParentModal` receive dependent data (child schema attrs, enum values, available instances, link target instances, parent instances) as props from the page. The page manages ~60 lines of data-loading orchestration for these modals. | Move data loading into the modals — each modal imports the API client and loads its own data on open/selection change. This eliminates tight coupling and reduces the page by ~60 lines. Modals would accept `catalogName`, `pins`, and `schemaAssocs` as props, then load everything else internally. |
+| TD-53 | Diagram tab JSX duplicated across catalog pages | The Model Diagram tab rendering (loading spinner, error alert, empty state, diagram component) is duplicated between `CatalogDetailPage.tsx` and `OperationalCatalogDetailPage.tsx` (~10 lines each). | Extract a `DiagramTabContent` component that accepts the `useCatalogDiagram` hook return value and renders the loading/error/empty/diagram states. Both pages import and use this component. |
+| TD-54 | `CatalogVersionDetailPage` does not use `useCatalogDiagram` hook | `CatalogVersionDetailPage.tsx` manually manages `diagramData` and `diagramLoading` state with ~25 lines of inline fetch-pins-then-snapshots logic. This duplicates the exact pattern now encapsulated in `useCatalogDiagram`. | Refactor `CatalogVersionDetailPage` to use `useCatalogDiagram(id)` and remove the duplicated state and logic. |
+| TD-55 | Edge click handler object construction duplicated in `AssociationEdge` | The `onClick` handler in `AssociationEdge` (EntityTypeDiagram.tsx) constructs an identical `EdgeClickData` object at two locations (transparent clickable path and label group). Each has ~10 fields with `|| ''` fallbacks. | Extract a helper function (e.g., `buildEdgeClickData(data)`) within the component scope that both click handlers call. |
+| TD-56 | Operational catalog viewer Overview tab removed — consider re-adding with useful content | The Overview tab on `OperationalCatalogDetailPage` was hidden because it showed only entity type names/versions with no actionable information. If a meaningful Overview tab is designed later (e.g., catalog stats, instance counts per entity type, last-modified timestamps, data quality summary), the tab should be re-added with useful content. | Design and implement a useful Overview tab, or confirm it is not needed and clean up any remaining dead code. |
+| TD-57 | Move `CatalogDetailPage` and `CatalogListPage` from `pages/operational/` to `pages/meta/` | Both `CatalogDetailPage.tsx` (schema catalog detail with instance CRUD) and `CatalogListPage.tsx` (schema catalog list) live in `pages/operational/` but serve schema-management functions and are rendered under `/schema/*` routes. All other schema pages (EntityTypeDetailPage, EnumDetailPage, CatalogVersionDetailPage) are in `pages/meta/`. | Move both files and their test files to `pages/meta/`. Update imports in `App.tsx`. This is a pure file-move refactor with no behavior changes. |
+| TD-59 | N+1 query in entity type list description resolution | The entity type list handler calls `GetLatestByEntityType()` once per entity type in a loop to resolve descriptions. With many entity types, this generates N additional database queries. | Add a batch method `GetLatestByEntityTypes(ctx, entityTypeIDs []string) (map[string]*EntityTypeVersion, error)` to resolve all descriptions in a single query. |
+| TD-60 | Enum description edit uses `window.prompt()` instead of inline edit | The enum detail page description edit uses `window.prompt()`, while the entity type detail page uses a proper inline TextInput with Save/Cancel buttons. This is inconsistent UX and makes the enum edit untestable in browser tests (Playwright cannot mock native `window.prompt`). | Replace `window.prompt()` with inline TextInput edit (same pattern as EntityTypeDetailPage description edit). This also makes the catch block coverable in tests. |
+| TD-61 | CatalogVersion description is not editable after creation | The CV description is set at creation but there is no `PUT /catalog-versions/:id` endpoint to update it. The CV detail page shows the description but has no edit control. | Add `UpdateCatalogVersion(ctx, id, description)` to service, `PUT /catalog-versions/:id` handler accepting `{description}`, and inline edit on the CV detail page (same pattern as EntityTypeDetailPage). |
+| TD-58 | Enum values are not versioned — mutations are destructive | Enum values (add, remove, reorder) mutate in place. If an enum is referenced by attributes across multiple catalog versions, changing its values affects all of them retroactively. Entity types use copy-on-write versioning for attributes and associations, but enums have no equivalent mechanism. Removing an enum value that is in use by existing entity instances could leave invalid data. | Options: (A) Add versioning to enums (copy-on-write on mutation, enum versions pinned in CVs alongside entity type versions). (B) Add validation that prevents removing enum values that are in use. (C) Accept the current behavior and document it as a known limitation. Option B is the minimum viable fix. |
 | ~~TD-42~~ | ~~[IMPORTANT] Add Contained Instance modal missing custom attributes~~ | **RESOLVED.** Add Contained Instance modal now loads child entity type schema attributes when child type is selected. Renders attribute fields (string, number, enum) same as root-level Create Instance modal. Attributes passed in API request body. |
+| TD-62 | [IMPORTANT] Audit all update/PUT endpoints for omitted-field data loss | The `UpdateEnum` handler was silently erasing the `description` field when the caller omitted it from the JSON body, because the DTO used `string` (zero value `""`) rather than `*string` (nil = omitted). This was fixed for enums by switching to `*string` and preserving the current value when nil. **The same bug pattern may exist on other update endpoints** — any PUT/PATCH handler that unconditionally overwrites a field from a DTO `string` will erase data when the caller omits that field. | Audit every update endpoint in the Meta and Operational APIs. For each optional field on an update DTO, verify that omitting the field in the JSON request body does NOT erase the current value. Use `*string` (pointer) for optional fields and preserve current values when nil. Endpoints to check: `UpdateEntityType`, `UpdateInstance`, `SetParent`, catalog update (if added), CV update (TD-61), and any future update handlers. |
 | ~~TD-22~~ | ~~[CRITICAL] Common attributes as schema-level attributes~~ | **RESOLVED (Approach B — API-level merge).** Common attributes — Name (required) and Description (optional) — are injected as synthetic system attributes (`system: true`) into all API responses: instance detail, attribute lists, version snapshots, and UML diagrams. The UI renders them uniformly alongside custom attributes. System attributes cannot be created, edited, renamed, or deleted by users. Custom attribute names "name"/"description" are rejected. Copy-attributes excludes system attributes. Catalog validation checks Name is non-empty. No DB schema changes — common attributes remain as fields on `EntityInstance`, with the API layer handling the merge. |
 
 ## 12. Future Features
@@ -1654,4 +1693,14 @@ Allow editing a catalog's name and description after creation. Currently catalog
 - Name field validates DNS-label format
 
 **Note:** Changing the pinned catalog version (re-pinning to a different CV) is a separate concern tracked in TD-12.
+
+### FF-11: Catalog Import from External Systems
+
+Import catalog data (entity instances, attribute values, association links, containment hierarchy) from external sources into a new or existing catalog. Supports both file-based and API-based import.
+
+**Import sources:**
+- **File import:** Upload YAML or JSON files containing instance data structured according to the catalog's pinned CV schema. The UI provides a file upload dialog; the backend validates the data against the CV's entity type definitions before creating instances.
+- **API import:** Pull data from external systems via configured API endpoints. The import configuration specifies the source URL, authentication, and a mapping from the external data format to the Asset Hub entity model.
+
+**Scope:** Details on file format, API mapping configuration, conflict resolution (merge vs. overwrite), and validation behavior will be discussed and specified in a future design session.
 

@@ -2483,6 +2483,269 @@ Modals internalize form state. Shared `AttributeFormFields` component and `build
 
 ---
 
+## 21. UML Composition Diamond + Model Diagram Tab (TD-47, US-48)
+
+TD-47 adds UML composition notation (filled diamond marker on parent end) to containment edges in the entity type diagram. US-48 adds a read-only "Model Diagram" tab to both meta and operational catalog detail pages showing the CV's entity type model.
+
+### EntityTypeDiagram — Composition Diamond (TD-47)
+
+#### Unit Tests (buildModel / edge data)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-21.01 | Containment edge data includes diamond marker type | Unit | Edge data has `markerStart: 'diamond'` or equivalent |
+| T-21.02 | Directional (reference) edge data does not include diamond marker | Unit | No diamond marker on reference edges |
+| T-21.03 | Bidirectional edge data retains existing marker configuration | Unit | Hollow source arrow + filled target arrow preserved |
+
+#### Browser Tests (SVG rendering)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-21.04 | Containment edge renders filled diamond SVG marker on source end | Browser | `<path>` element with diamond shape in containment color |
+| T-21.05 | Diamond marker uses containment color (#3e8635) | Browser | Fill attribute is `#3e8635` |
+| T-21.06 | Containment edge renders arrowhead on target end | Browser | Arrow marker present on target |
+| T-21.07 | Reference edge does not render diamond marker | Browser | No diamond `<path>` on reference edges |
+| T-21.08 | Bidirectional edge retains hollow source arrow and filled target arrow | Browser | Existing bidirectional markers unchanged |
+
+### useCatalogDiagram Hook
+
+#### Unit Tests (renderHook)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-21.09 | Returns empty diagramData and loading=false initially | Unit | `{ diagramData: [], diagramLoading: false }` |
+| T-21.10 | Loads pins and snapshots when loadDiagram is called | Unit | API calls made, diagramData populated with DiagramEntityType[] |
+| T-21.11 | Sets diagramLoading=true during fetch | Unit | Loading state true while promises pending |
+| T-21.12 | Returns diagramData after successful fetch | Unit | Array of DiagramEntityType with correct entity types, attributes, associations |
+| T-21.13 | Does not re-fetch if diagramData is already loaded | Unit | Second call to loadDiagram does not trigger API calls |
+| T-21.14 | Handles API error gracefully — sets error, clears loading | Unit | `diagramLoading: false`, error message set |
+| T-21.15 | Handles empty pins list — returns empty diagramData | Unit | `diagramData: []`, no snapshot calls made |
+
+### Meta CatalogDetailPage — Model Diagram Tab
+
+#### Browser Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-21.16 | "Model Diagram" tab exists on catalog detail page | Browser | Tab with text "Model Diagram" rendered |
+| T-21.17 | Clicking Model Diagram tab loads diagram data | Browser | API calls for pins + snapshots triggered |
+| T-21.18 | Diagram renders entity type nodes with names and attributes | Browser | Entity type names visible in diagram area |
+| T-21.19 | Diagram is read-only — no node double-click navigation | Browser | No navigation on double-click |
+| T-21.20 | Empty state shown when no entity types are pinned | Browser | Empty state message displayed |
+
+### Operational OperationalCatalogDetailPage — Model Diagram Tab
+
+#### Browser Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-21.21 | "Model Diagram" tab exists on operational catalog detail page | Browser | Tab with text "Model Diagram" rendered |
+| T-21.22 | Clicking Model Diagram tab loads diagram data | Browser | API calls for pins + snapshots triggered |
+| T-21.23 | Diagram renders entity type nodes from CV | Browser | Entity type names visible in diagram area |
+| T-21.24 | Diagram is read-only — no edit interactions | Browser | No edit callbacks triggered |
+| T-21.25 | Empty state shown when no entity types are pinned | Browser | Empty state message displayed |
+
+### API Client Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-21.26 | Existing client functions (listPins, snapshot) work for diagram data loading | Browser | mockFetch verifies correct URLs called |
+
+### Regression
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-21.27 | All existing EntityTypeDiagram tests pass | Browser | No regressions in diagram rendering |
+| T-21.28 | All existing CatalogDetailPage tests pass | Browser | No regressions in catalog page |
+| T-21.29 | All existing OperationalCatalogDetailPage tests pass | Browser | No regressions in operational page |
+| T-21.30 | All existing CatalogVersionDetailPage diagram tab tests pass | Browser | No regressions in CV detail diagram |
+
+---
+
+## 22. Landing Page + Unified SPA (US-47)
+
+Merges the two separate SPAs (meta + operational) into a single SPA with route-based views. Landing page at `/` provides navigation to schema management (`/schema`) and catalog data viewers (`/catalogs/:name`).
+
+### LandingPage Component
+
+#### Unit Tests (catalog card rendering)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-22.01 | Catalog card shows name, CV label, validation status badge | Unit | Name, label, colored badge visible |
+| T-22.02 | Draft status badge renders blue | Unit | Blue badge with "draft" text |
+| T-22.03 | Valid status badge renders green | Unit | Green badge with "valid" text |
+| T-22.04 | Invalid status badge renders red | Unit | Red badge with "invalid" text |
+| T-22.05 | Published catalog shows published indicator | Unit | Published badge or icon visible |
+| T-22.06 | Card with no description renders cleanly | Unit | No crash, no empty description area |
+
+#### Browser Tests (LandingPage)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-22.07 | Landing page renders at root URL | Browser | Landing page content visible |
+| T-22.08 | Schema Management card is visible | Browser | Card with "Schema Management" text |
+| T-22.09 | Schema Management card links to /schema | Browser | Click navigates to /schema |
+| T-22.10 | Catalog cards rendered for each accessible catalog | Browser | One card per catalog from API |
+| T-22.11 | Catalog card shows name, CV label, status badge | Browser | All fields visible on card |
+| T-22.12 | Clicking catalog card navigates to /catalogs/:name | Browser | URL changes to /catalogs/{name} |
+| T-22.13 | Empty state when no catalogs accessible | Browser | "No catalogs" message displayed |
+| T-22.14 | Loading state while fetching catalogs | Browser | Spinner visible during fetch |
+| T-22.15 | Error state on API failure | Browser | Error alert displayed |
+
+### Unified SPA Routing
+
+#### Browser Tests (App routing)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-22.16 | /schema renders schema management tabs | Browser | Entity Types, Catalog Versions, Enums, Model Diagram tabs visible |
+| T-22.17 | /schema/entity-types/:id renders entity type detail | Browser | Entity type detail page content |
+| T-22.18 | /schema/catalog-versions/:id renders CV detail | Browser | CV detail page content |
+| T-22.19 | /schema/catalogs/:name renders catalog detail (meta) | Browser | Catalog detail page with instance CRUD |
+| T-22.20 | /catalogs/:name renders catalog data viewer | Browser | Catalog data viewer with tree browser |
+| T-22.21 | Masthead shows "Schema" on /schema pages | Browser | "Schema" text in masthead |
+| T-22.22 | Masthead shows "Data Viewer" on /catalogs pages | Browser | "Data Viewer" text in masthead |
+| T-22.23 | Masthead brand link navigates to landing page | Browser | Click navigates to / |
+
+### Regression Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-22.24 | All existing App.tsx tests pass with /schema routes | Browser | No regressions |
+| T-22.25 | All existing OperationalCatalogDetailPage tests pass at /catalogs/:name | Browser | No regressions |
+| T-22.26 | All existing CatalogDetailPage tests pass at /schema/catalogs/:name | Browser | No regressions |
+| T-22.27 | All existing EntityTypeDetailPage tests pass at /schema/entity-types/:id | Browser | No regressions |
+| T-22.28 | All existing CatalogVersionDetailPage tests pass at /schema/catalog-versions/:id | Browser | No regressions |
+
+### System Tests (Live Deployment)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-22.29 | Landing page loads at root URL in live deployment | System | Page renders with catalog cards |
+| T-22.30 | Navigate from landing page to schema management | System | /schema loads, tabs visible |
+| T-22.31 | Navigate from landing page to catalog data viewer | System | /catalogs/:name loads, tree browser visible |
+| T-22.32 | /schema routes serve correctly through nginx | System | No 404, SPA routing works |
+| T-22.33 | /catalogs/:name routes serve correctly through nginx | System | No 404, SPA routing works |
+| T-22.34 | Masthead brand link returns to landing page | System | Navigation works end-to-end |
+
+---
+
+## 23. Description Fields — Entity Type List, Enum, Catalog Version (TD-43, TD-45, TD-46)
+
+Adds description fields to Enum and CatalogVersion models, resolves entity type description from latest version into list API, and adds editable description on entity type detail page.
+
+### Backend — Enum Description (TD-45)
+
+#### Unit Tests (service)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.01 | CreateEnum with description stores it | Unit | Description persisted |
+| T-23.02 | CreateEnum without description defaults to empty | Unit | Empty string stored |
+| T-23.03 | UpdateEnum description updates it | Unit | New description persisted |
+
+#### Integration Tests (repository)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.04 | Enum description stored and retrieved | Integration | Round-trip matches |
+| T-23.05 | Enum with empty description retrieved correctly | Integration | Empty string, not null |
+
+#### API Tests (handler)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.06 | POST /enums with description returns it in response | API | Description in response body |
+| T-23.07 | GET /enums list includes description field | API | Each enum has description |
+| T-23.08 | PUT /enums/:id updates description | API | Updated description returned |
+
+### Backend — CatalogVersion Description
+
+#### Unit Tests (service)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.09 | CreateCatalogVersion with description stores it | Unit | Description persisted |
+| T-23.10 | CreateCatalogVersion without description defaults to empty | Unit | Empty string stored |
+
+#### Integration Tests (repository)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.11 | CatalogVersion description stored and retrieved | Integration | Round-trip matches |
+
+#### API Tests (handler)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.12 | POST /catalog-versions with description returns it | API | Description in response body |
+| T-23.13 | GET /catalog-versions list includes description | API | Each CV has description |
+
+### Backend — Entity Type List Description (TD-43)
+
+#### API Tests (handler)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.14 | GET /entity-types list includes description from latest version | API | Description matches latest EntityTypeVersion.Description |
+| T-23.15 | Entity type with no description returns empty string | API | `description: ""` |
+| T-23.16 | Entity type description updates after new version created | API | Description reflects new version |
+
+### UI — Entity Type List Description Column
+
+#### Browser Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.17 | Description column visible in entity type list | Browser | Column header present |
+| T-23.18 | Description text shown for entity types | Browser | Description value in cell |
+
+### UI — Entity Type Detail Editable Description (TD-46)
+
+#### Browser Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.19 | Description shown in entity type detail overview | Browser | Current version description visible |
+| T-23.20 | Edit description button visible for Admin | Browser | Edit button present |
+| T-23.21 | Edit description hidden for RO | Browser | No edit button |
+| T-23.22 | Editing description calls PUT API | Browser | API called with new description |
+| T-23.23 | Description updates after successful edit | Browser | New description visible |
+
+### UI — Enum Description
+
+#### Browser Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.24 | Description column visible in enum list | Browser | Column header present |
+| T-23.25 | Create enum modal has description field | Browser | Description input visible |
+| T-23.26 | Creating enum with description shows it in list | Browser | Description in table cell |
+| T-23.27 | Enum detail page shows description | Browser | Description in overview |
+
+### UI — Catalog Version Description
+
+#### Browser Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.28 | Description column visible in CV list | Browser | Column header present |
+| T-23.29 | Create CV modal has description field | Browser | Description input visible |
+| T-23.30 | Creating CV with description shows it in list | Browser | Description in table cell |
+| T-23.31 | CV detail page shows description in overview | Browser | Description in overview section |
+
+### Regression
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-23.32 | All existing entity type tests pass | Browser | No regressions |
+| T-23.33 | All existing enum tests pass | Browser | No regressions |
+| T-23.34 | All existing CV tests pass | Browser | No regressions |
+| T-23.35 | All existing backend tests pass | Unit/API | No regressions |
+
+---
+
 ## Coverage Criteria
 
 ### Pass Rate
@@ -2519,7 +2782,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 939 test cases (T-1.01 through T-20.36; T-13.78 through T-13.85 retired) pass
+- All 1038 test cases (T-1.01 through T-23.35; T-13.78 through T-13.85 retired) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

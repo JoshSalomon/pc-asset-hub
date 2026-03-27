@@ -68,11 +68,12 @@ func NewCatalogVersionService(
 	}
 }
 
-func (s *CatalogVersionService) CreateCatalogVersion(ctx context.Context, label string, pins []models.CatalogVersionPin) (*models.CatalogVersion, error) {
+func (s *CatalogVersionService) CreateCatalogVersion(ctx context.Context, label, description string, pins []models.CatalogVersionPin) (*models.CatalogVersion, error) {
 	now := time.Now()
 	cv := &models.CatalogVersion{
 		ID:             uuid.Must(uuid.NewV7()).String(),
 		VersionLabel:   label,
+		Description:    description,
 		LifecycleStage: models.LifecycleStageDevelopment,
 		CreatedAt:      now,
 		UpdatedAt:      now,

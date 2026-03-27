@@ -36,7 +36,7 @@ The system consists of four major components:
 └──────────────────────────────────────────────────────────┘
 ```
 
-- **UI**: React + PatternFly frontend. Communicates exclusively through the API server. Never accesses the database or cluster directly.
+- **UI**: React + PatternFly single-page application. A unified SPA serves all views: landing page (`/`), schema management (`/schema/*`), and catalog data viewer (`/catalogs/:name`). Communicates exclusively through the API server. Never accesses the database or cluster directly.
 - **API Server**: Go backend exposing two API sets (Meta API and Operational API). Creates/updates/deletes `CatalogVersion` CRs on catalog version promotion and demotion. Enforces RBAC via OpenShift SubjectAccessReview.
 - **Database**: PostgreSQL (production) or SQLite (development). Source of truth for all data.
 - **Operator**: Built with operator-sdk. Manages hub installation. Watches `CatalogVersion` CRs, sets owner references to the AssetHub CR for garbage collection, and updates status conditions.
@@ -130,13 +130,14 @@ pc-asset-hub/
     types/                   # Shared type definitions (cross-cutting)
   ui/
     src/
-      api/                   # TypeScript API client (generated from OpenAPI)
+      api/                   # TypeScript API client
       components/            # Reusable UI components
       pages/
-        meta/                # Meta operations pages
-        operational/         # Entity instance pages
+        LandingPage.tsx      # Landing page (root URL)
+        meta/                # Schema management pages (entity types, CVs, enums)
+        operational/         # Catalog data viewer pages + catalog CRUD
       hooks/                 # Custom React hooks
-      context/               # React context providers (auth, catalog version)
+      utils/                 # Shared utilities
       types/                 # TypeScript types
   config/
     operator/                # Operator bundle, CRDs, RBAC manifests
@@ -437,6 +438,8 @@ association_links (
 ### Key Design Decisions in the Schema
 
 **Copy-on-write versioning**: `entity_type_versions` holds immutable snapshots. When an entity type is mutated, a new version row is created and all attributes and associations are copied to the new version. Past versions remain intact. Catalog versions pinning an older entity type version continue to see that version's attributes and associations unchanged.
+
+**Entity type description is versioned**: The `entity_types` table has no `description` column. The description lives on `entity_type_versions.description`, making it part of the versioned snapshot. When the API returns an entity type list or detail, the handler resolves the description from the latest version via `GetLatestByEntityType`. This means updating a description creates a new version (COW), which is the intended behavior — the description change is tracked in version history.
 
 **Associations are versioned**: Associations are tied to `entity_type_versions`, not `entity_types`. This ensures that adding or removing an association only affects the new version. Without this, modifying an association would retroactively affect older catalog versions that reference previous entity type versions.
 

@@ -145,28 +145,31 @@ func AssociationFromModel(m *domain.Association) *Association {
 }
 
 type Enum struct {
-	ID        string `gorm:"primaryKey;size:36"`
-	Name      string `gorm:"uniqueIndex;not null;size:255"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	Values    []EnumValue `gorm:"foreignKey:EnumID;constraint:OnDelete:CASCADE"`
+	ID          string `gorm:"primaryKey;size:36"`
+	Name        string `gorm:"uniqueIndex;not null;size:255"`
+	Description string `gorm:"size:1024"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	Values      []EnumValue `gorm:"foreignKey:EnumID;constraint:OnDelete:CASCADE"`
 }
 
 func (e *Enum) ToModel() *domain.Enum {
 	return &domain.Enum{
-		ID:        e.ID,
-		Name:      e.Name,
-		CreatedAt: e.CreatedAt,
-		UpdatedAt: e.UpdatedAt,
+		ID:          e.ID,
+		Name:        e.Name,
+		Description: e.Description,
+		CreatedAt:   e.CreatedAt,
+		UpdatedAt:   e.UpdatedAt,
 	}
 }
 
 func EnumFromModel(m *domain.Enum) *Enum {
 	return &Enum{
-		ID:        m.ID,
-		Name:      m.Name,
-		CreatedAt: m.CreatedAt,
-		UpdatedAt: m.UpdatedAt,
+		ID:          m.ID,
+		Name:        m.Name,
+		Description: m.Description,
+		CreatedAt:   m.CreatedAt,
+		UpdatedAt:   m.UpdatedAt,
 	}
 }
 
@@ -198,6 +201,7 @@ func EnumValueFromModel(m *domain.EnumValue) *EnumValue {
 type CatalogVersion struct {
 	ID             string `gorm:"primaryKey;size:36"`
 	VersionLabel   string `gorm:"uniqueIndex;not null;size:255"`
+	Description    string `gorm:"size:1024"`
 	LifecycleStage string `gorm:"not null;size:20;default:development"`
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
@@ -209,6 +213,7 @@ func (c *CatalogVersion) ToModel() *domain.CatalogVersion {
 	return &domain.CatalogVersion{
 		ID:             c.ID,
 		VersionLabel:   c.VersionLabel,
+		Description:    c.Description,
 		LifecycleStage: domain.LifecycleStage(c.LifecycleStage),
 		CreatedAt:      c.CreatedAt,
 		UpdatedAt:      c.UpdatedAt,
@@ -219,6 +224,7 @@ func CatalogVersionFromModel(m *domain.CatalogVersion) *CatalogVersion {
 	return &CatalogVersion{
 		ID:             m.ID,
 		VersionLabel:   m.VersionLabel,
+		Description:    m.Description,
 		LifecycleStage: string(m.LifecycleStage),
 		CreatedAt:      m.CreatedAt,
 		UpdatedAt:      m.UpdatedAt,

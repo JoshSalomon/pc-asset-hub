@@ -29,17 +29,18 @@ func NewEnumService(
 	}
 }
 
-func (s *EnumService) CreateEnum(ctx context.Context, name string, values []string) (*models.Enum, error) {
+func (s *EnumService) CreateEnum(ctx context.Context, name, description string, values []string) (*models.Enum, error) {
 	if name == "" {
 		return nil, domainerrors.NewValidation("enum name is required")
 	}
 
 	now := time.Now()
 	e := &models.Enum{
-		ID:        uuid.Must(uuid.NewV7()).String(),
-		Name:      name,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          uuid.Must(uuid.NewV7()).String(),
+		Name:        name,
+		Description: description,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 	if err := s.enumRepo.Create(ctx, e); err != nil {
 		return nil, err
@@ -68,12 +69,13 @@ func (s *EnumService) ListEnums(ctx context.Context, params models.ListParams) (
 	return s.enumRepo.List(ctx, params)
 }
 
-func (s *EnumService) UpdateEnum(ctx context.Context, id string, name string) error {
+func (s *EnumService) UpdateEnum(ctx context.Context, id string, name, description string) error {
 	e, err := s.enumRepo.GetByID(ctx, id)
 	if err != nil {
 		return err
 	}
 	e.Name = name
+	e.Description = description
 	e.UpdatedAt = time.Now()
 	return s.enumRepo.Update(ctx, e)
 }

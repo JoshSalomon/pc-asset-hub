@@ -4,15 +4,15 @@
 # Usage:
 #   ./scripts/ui-uncovered-lines.sh <file-pattern> [coverage-json]
 #   ./scripts/ui-uncovered-lines.sh EntityTypeDetailPage
-#   ./scripts/ui-uncovered-lines.sh CatalogDetailPage ui/coverage-browser/coverage-final.json
+#   ./scripts/ui-uncovered-lines.sh CatalogDetailPage ui/coverage/coverage-final.json
 #
 # Prerequisites:
-#   cd ui && npx vitest run --config vitest.browser.config.ts --coverage --coverage.reporter=json
+#   cd ui && npx vitest run --config vitest.browser.config.ts --coverage
 
 set -uo pipefail
 
 PATTERN="${1:?Usage: $0 <file-pattern> [coverage-json]}"
-COVFILE="${2:-ui/coverage-browser/coverage-final.json}"
+COVFILE="${2:-ui/coverage/coverage-final.json}"
 
 if [ ! -f "$COVFILE" ]; then
   echo "ERROR: Coverage file '$COVFILE' not found."

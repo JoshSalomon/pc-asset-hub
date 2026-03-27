@@ -86,6 +86,21 @@ export default function EntityTypeDetailPage({ role }: Props) {
   const [deepCopyWarningOpen, setDeepCopyWarningOpen] = useState(false)
   const [pendingNewName, setPendingNewName] = useState('')
 
+  // Description editing
+  const [editingDesc, setEditingDesc] = useState(false)
+  const [editDescValue, setEditDescValue] = useState('')
+
+  const handleSaveDescription = async () => {
+    if (!id) return
+    try {
+      await api.entityTypes.update(id, { description: editDescValue })
+      setEditingDesc(false)
+      data.loadEntityType()
+    } catch (e) {
+      data.setError(e instanceof Error ? e.message : 'Failed to update description')
+    }
+  }
+
   // Copy modal
   const [copyOpen, setCopyOpen] = useState(false)
   const [copyName, setCopyName] = useState('')
@@ -108,7 +123,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
       setEditNameOpen(false)
       setDeepCopyWarningOpen(false)
       if (result.was_deep_copy) {
-        navigate(`/entity-types/${result.entity_type.id}`)
+        navigate(`/schema/entity-types/${result.entity_type.id}`)
       } else {
         data.loadEntityType()
       }
@@ -132,7 +147,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
       await api.entityTypes.copy(id, { source_version: latestVersion, new_name: copyName.trim() })
       setCopyOpen(false)
       setCopyName('')
-      navigate('/')
+      navigate('/schema')
     } catch (e) {
       setCopyError(e instanceof Error ? e.message : 'Failed to copy')
     }
@@ -142,7 +157,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
     if (!id) return
     try {
       await api.entityTypes.delete(id)
-      navigate('/')
+      navigate('/schema')
     } catch (e) {
       data.setError(e instanceof Error ? e.message : 'Failed to delete')
       setDeleteOpen(false)
@@ -169,7 +184,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
 
   return (
     <PageSection>
-      <Button variant="link" onClick={() => navigate(-1)} style={{ marginBottom: '1rem' }}>
+      <Button variant="link" onClick={() => navigate('/schema')} style={{ marginBottom: '1rem' }}>
         &larr; Back
       </Button>
 
@@ -188,6 +203,30 @@ export default function EntityTypeDetailPage({ role }: Props) {
                   {data.entityType.name}
                   {canEdit && (
                     <Button variant="link" size="sm" onClick={() => { setEditNameError(null); setEditNameOpen(true) }} style={{ marginLeft: '0.5rem' }} aria-label="Edit name">Rename</Button>
+                  )}
+                </DescriptionListDescription>
+              </DescriptionListGroup>
+              <DescriptionListGroup>
+                <DescriptionListTerm>Description</DescriptionListTerm>
+                <DescriptionListDescription>
+                  {editingDesc ? (
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <TextInput
+                        value={editDescValue}
+                        onChange={(_e, v) => setEditDescValue(v)}
+                        aria-label="Description"
+                        style={{ maxWidth: '300px' }}
+                      />
+                      <Button variant="primary" size="sm" onClick={handleSaveDescription}>Save</Button>
+                      <Button variant="link" size="sm" onClick={() => setEditingDesc(false)}>Cancel</Button>
+                    </div>
+                  ) : (
+                    <>
+                      {data.entityType.description || <span style={{ color: '#6a6e73' }}>No description</span>}
+                      {canEdit && (
+                        <Button variant="link" size="sm" onClick={() => { setEditDescValue(data.entityType?.description || ''); setEditingDesc(true) }} style={{ marginLeft: '0.5rem' }} aria-label="Edit description">Edit</Button>
+                      )}
+                    </>
                   )}
                 </DescriptionListDescription>
               </DescriptionListGroup>
@@ -236,10 +275,6 @@ export default function EntityTypeDetailPage({ role }: Props) {
             )}
             {data.attrsLoading ? (
               <Spinner aria-label="Loading" />
-            ) : data.attributes.length === 0 ? (
-              <EmptyState>
-                <EmptyStateBody>No attributes defined yet.</EmptyStateBody>
-              </EmptyState>
             ) : (
               <Table aria-label="Attributes">
                 <Thead>
