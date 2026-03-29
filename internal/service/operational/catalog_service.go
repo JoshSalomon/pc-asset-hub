@@ -175,8 +175,26 @@ func (s *CatalogService) Delete(ctx context.Context, name string) error {
 		}
 	}
 
-	// Cascade delete instances + catalog in a transaction for atomicity
+	// Cascade delete: IAVs + links per instance, then instances, then catalog
 	doDelete := func(txCtx context.Context) error {
+		if s.iavRepo != nil || s.linkRepo != nil {
+			instances, err := s.instRepo.ListByCatalog(txCtx, catalog.ID)
+			if err != nil {
+				return err
+			}
+			for _, inst := range instances {
+				if s.linkRepo != nil {
+					if err := s.linkRepo.DeleteByInstance(txCtx, inst.ID); err != nil {
+						return err
+					}
+				}
+				if s.iavRepo != nil {
+					if err := s.iavRepo.DeleteByInstanceID(txCtx, inst.ID); err != nil {
+						return err
+					}
+				}
+			}
+		}
 		if err := s.instRepo.DeleteByCatalogID(txCtx, catalog.ID); err != nil {
 			return err
 		}

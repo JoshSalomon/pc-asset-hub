@@ -364,6 +364,7 @@ func TestCatalogService_Delete_WithTxManager(t *testing.T) {
 	ctx := context.Background()
 
 	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{ID: "c1", Name: "my-catalog"}, nil)
+	instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{}, nil)
 	instRepo.On("DeleteByCatalogID", ctx, "c1").Return(nil)
 	catRepo.On("Delete", ctx, "c1").Return(nil)
 
@@ -626,6 +627,80 @@ func TestDelete_PublishedCatalogCleansUpCR(t *testing.T) {
 
 	err := svc.Delete(ctx, "my-catalog")
 	require.NoError(t, err)
+}
+
+// TD-16: Delete catalog cascades to IAVs and links for all instances
+func TestTD16_DeleteCascadesIAVsAndLinks(t *testing.T) {
+	svc, catRepo, _, instRepo, iavRepo, linkRepo := setupCatalogServiceWithCopy()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog",
+	}, nil)
+	// Catalog has two instances
+	instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "i1", CatalogID: "c1"},
+		{ID: "i2", CatalogID: "c1"},
+	}, nil)
+	// Expect IAV and link cleanup for each instance
+	iavRepo.On("DeleteByInstanceID", ctx, "i1").Return(nil)
+	iavRepo.On("DeleteByInstanceID", ctx, "i2").Return(nil)
+	linkRepo.On("DeleteByInstance", ctx, "i1").Return(nil)
+	linkRepo.On("DeleteByInstance", ctx, "i2").Return(nil)
+	instRepo.On("DeleteByCatalogID", ctx, "c1").Return(nil)
+	catRepo.On("Delete", ctx, "c1").Return(nil)
+
+	err := svc.Delete(ctx, "my-catalog")
+	require.NoError(t, err)
+
+	// Verify cascade cleanup was called
+	iavRepo.AssertCalled(t, "DeleteByInstanceID", ctx, "i1")
+	iavRepo.AssertCalled(t, "DeleteByInstanceID", ctx, "i2")
+	linkRepo.AssertCalled(t, "DeleteByInstance", ctx, "i1")
+	linkRepo.AssertCalled(t, "DeleteByInstance", ctx, "i2")
+}
+
+// TD-16: Delete cascade — ListByCatalog error propagates
+func TestTD16_DeleteCascadeListByCatalogError(t *testing.T) {
+	svc, catRepo, _, instRepo, _, _ := setupCatalogServiceWithCopy()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{ID: "c1", Name: "my-catalog"}, nil)
+	instRepo.On("ListByCatalog", ctx, "c1").Return(nil, domainerrors.NewValidation("db error"))
+
+	err := svc.Delete(ctx, "my-catalog")
+	assert.Error(t, err)
+}
+
+// TD-16: Delete cascade — link delete error propagates
+func TestTD16_DeleteCascadeLinkDeleteError(t *testing.T) {
+	svc, catRepo, _, instRepo, _, linkRepo := setupCatalogServiceWithCopy()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{ID: "c1", Name: "my-catalog"}, nil)
+	instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "i1", CatalogID: "c1"},
+	}, nil)
+	linkRepo.On("DeleteByInstance", ctx, "i1").Return(domainerrors.NewValidation("link error"))
+
+	err := svc.Delete(ctx, "my-catalog")
+	assert.Error(t, err)
+}
+
+// TD-16: Delete cascade — IAV delete error propagates
+func TestTD16_DeleteCascadeIAVDeleteError(t *testing.T) {
+	svc, catRepo, _, instRepo, iavRepo, linkRepo := setupCatalogServiceWithCopy()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{ID: "c1", Name: "my-catalog"}, nil)
+	instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "i1", CatalogID: "c1"},
+	}, nil)
+	linkRepo.On("DeleteByInstance", ctx, "i1").Return(nil)
+	iavRepo.On("DeleteByInstanceID", ctx, "i1").Return(domainerrors.NewValidation("iav error"))
+
+	err := svc.Delete(ctx, "my-catalog")
+	assert.Error(t, err)
 }
 
 // IsPublished tests

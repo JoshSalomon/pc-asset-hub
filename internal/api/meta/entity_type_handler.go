@@ -65,13 +65,23 @@ func (h *EntityTypeHandler) List(c echo.Context) error {
 		resp[i] = dto.EntityTypeResponse{
 			ID: et.ID, Name: et.Name, CreatedAt: et.CreatedAt, UpdatedAt: et.UpdatedAt,
 		}
-		// Resolve latest version description (TD-43)
-		if h.etvRepo != nil {
-			if latestV, err := h.etvRepo.GetLatestByEntityType(c.Request().Context(), et.ID); err == nil {
-				resp[i].Description = latestV.Description
+	}
+
+	// Batch-resolve latest version descriptions (TD-59: fix N+1)
+	if h.etvRepo != nil && len(items) > 0 {
+		ids := make([]string, len(items))
+		for i, et := range items {
+			ids[i] = et.ID
+		}
+		if latestMap, err := h.etvRepo.GetLatestByEntityTypes(c.Request().Context(), ids); err == nil {
+			for i, et := range items {
+				if v, ok := latestMap[et.ID]; ok {
+					resp[i].Description = v.Description
+				}
 			}
 		}
 	}
+
 	return c.JSON(http.StatusOK, dto.ListResponse{Items: resp, Total: total})
 }
 
@@ -100,7 +110,19 @@ func (h *EntityTypeHandler) Update(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
-	newVersion, err := h.svc.UpdateEntityType(c.Request().Context(), id, req.Description)
+	var description string
+	if req.Description != nil {
+		description = *req.Description
+	} else if h.etvRepo != nil {
+		// Preserve existing description when field is omitted
+		latest, err := h.etvRepo.GetLatestByEntityType(c.Request().Context(), id)
+		if err != nil {
+			return mapError(err)
+		}
+		description = latest.Description
+	}
+
+	newVersion, err := h.svc.UpdateEntityType(c.Request().Context(), id, description)
 	if err != nil {
 		return mapError(err)
 	}

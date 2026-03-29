@@ -266,6 +266,38 @@ func TestT1_14_CreateDuplicateEnumValue(t *testing.T) {
 	assert.True(t, domainerrors.IsConflict(err))
 }
 
+// TD-59: GetLatestByEntityTypes batch query
+func TestTD59_GetLatestByEntityTypes(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	etRepo := repository.NewEntityTypeGormRepo(db)
+	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
+	ctx := context.Background()
+
+	now := time.Now()
+	et1 := &models.EntityType{ID: newID(), Name: "Server", CreatedAt: now, UpdatedAt: now}
+	et2 := &models.EntityType{ID: newID(), Name: "Tool", CreatedAt: now, UpdatedAt: now}
+	require.NoError(t, etRepo.Create(ctx, et1))
+	require.NoError(t, etRepo.Create(ctx, et2))
+
+	// Server: V1 and V2
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: newID(), EntityTypeID: et1.ID, Version: 1, Description: "V1", CreatedAt: now}))
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: newID(), EntityTypeID: et1.ID, Version: 2, Description: "V2", CreatedAt: now}))
+	// Tool: V1 only
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: newID(), EntityTypeID: et2.ID, Version: 1, Description: "Tool V1", CreatedAt: now}))
+
+	result, err := etvRepo.GetLatestByEntityTypes(ctx, []string{et1.ID, et2.ID})
+	require.NoError(t, err)
+	assert.Len(t, result, 2)
+	assert.Equal(t, "V2", result[et1.ID].Description)
+	assert.Equal(t, 2, result[et1.ID].Version)
+	assert.Equal(t, "Tool V1", result[et2.ID].Description)
+
+	// Empty input
+	empty, err := etvRepo.GetLatestByEntityTypes(ctx, []string{})
+	require.NoError(t, err)
+	assert.Empty(t, empty)
+}
+
 // === Attributes (T-1.15 through T-1.23) ===
 
 func TestT1_15_CreateAttributeString(t *testing.T) {

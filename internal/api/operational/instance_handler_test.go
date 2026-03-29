@@ -529,6 +529,42 @@ func TestT12_41_ListContainedInstances(t *testing.T) {
 	assert.Len(t, items, 1)
 }
 
+// TD-27: ListContainedInstances respects pagination query params
+func TestTD27_ListContainedWithPagination(t *testing.T) {
+	e, m := setupInstanceServer()
+	mockTwoTypePinResolution(m)
+
+	m.instRepo.On("GetByID", mock.Anything, "p1").Return(&models.EntityInstance{
+		ID: "p1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	m.instRepo.On("ListByParent", mock.Anything, "p1", mock.MatchedBy(func(p models.ListParams) bool {
+		return p.Limit == 5 && p.Offset == 10 && p.SortBy == "name" && p.SortDesc == true
+	})).Return([]*models.EntityInstance{}, 0, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet,
+		"/api/data/v1/catalogs/my-catalog/server/p1/tool?limit=5&offset=10&sort=name:desc", "", apimw.RoleRO)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// TD-27: ListContainedInstances respects filter query params
+func TestTD27_ListContainedWithFilter(t *testing.T) {
+	e, m := setupInstanceServer()
+	mockTwoTypePinResolution(m)
+
+	m.instRepo.On("GetByID", mock.Anything, "p1").Return(&models.EntityInstance{
+		ID: "p1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	m.instRepo.On("ListByParent", mock.Anything, "p1", mock.MatchedBy(func(p models.ListParams) bool {
+		return p.Filters != nil && p.Filters["hostname"] == "web"
+	})).Return([]*models.EntityInstance{}, 0, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet,
+		"/api/data/v1/catalogs/my-catalog/server/p1/tool?filter.hostname=web", "", apimw.RoleRO)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
 // T-12.43: POST /{catalog}/{type}/{id}/links → 201
 func TestT12_43_CreateLink(t *testing.T) {
 	e, m := setupInstanceServer()

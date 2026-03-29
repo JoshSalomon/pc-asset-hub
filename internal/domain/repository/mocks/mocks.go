@@ -67,6 +67,13 @@ func (m *MockEntityTypeVersionRepo) GetLatestByEntityType(ctx context.Context, e
 	}
 	return args.Get(0).(*models.EntityTypeVersion), args.Error(1)
 }
+func (m *MockEntityTypeVersionRepo) GetLatestByEntityTypes(ctx context.Context, entityTypeIDs []string) (map[string]*models.EntityTypeVersion, error) {
+	args := m.Called(ctx, entityTypeIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]*models.EntityTypeVersion), args.Error(1)
+}
 func (m *MockEntityTypeVersionRepo) ListByEntityType(ctx context.Context, entityTypeID string) ([]*models.EntityTypeVersion, error) {
 	args := m.Called(ctx, entityTypeID)
 	return args.Get(0).([]*models.EntityTypeVersion), args.Error(1)

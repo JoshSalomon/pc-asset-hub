@@ -1048,3 +1048,31 @@ func TestT13_44_OffsetBeyondTotal(t *testing.T) {
 	assert.Empty(t, results)
 	assert.Equal(t, 3, total)
 }
+
+// TD-16: DeleteByInstanceID removes all IAVs for a given instance
+func TestTD16_DeleteByInstanceID(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	// Create instance with attribute values
+	inst := &models.EntityInstance{
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
+		Name: "test-inst", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	require.NoError(t, tc.instRepo.Create(ctx, inst))
+	require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{
+		{ID: id(), InstanceID: inst.ID, AttributeID: "a1", ValueString: "val1", InstanceVersion: 1},
+	}))
+
+	// Verify values exist
+	vals, err := tc.iavRepo.GetCurrentValues(ctx, inst.ID)
+	require.NoError(t, err)
+	assert.Len(t, vals, 1)
+
+	// Delete IAVs by instance
+	require.NoError(t, tc.iavRepo.DeleteByInstanceID(ctx, inst.ID))
+
+	// Verify values are gone
+	vals, err = tc.iavRepo.GetCurrentValues(ctx, inst.ID)
+	require.NoError(t, err)
+	assert.Empty(t, vals)
+}

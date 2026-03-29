@@ -135,6 +135,10 @@ func (m *MockInstanceAttributeValueRepo) GetValuesForVersion(ctx context.Context
 	return args.Get(0).([]*models.InstanceAttributeValue), args.Error(1)
 }
 
+func (m *MockInstanceAttributeValueRepo) DeleteByInstanceID(ctx context.Context, instanceID string) error {
+	return m.Called(ctx, instanceID).Error(0)
+}
+
 // MockAssociationLinkRepo mocks AssociationLinkRepository.
 type MockAssociationLinkRepo struct{ mock.Mock }
 

@@ -26,7 +26,7 @@ type EntityTypeVersionResponse struct {
 }
 
 type UpdateEntityTypeRequest struct {
-	Description string `json:"description"`
+	Description *string `json:"description"`
 }
 
 type CopyEntityTypeRequest struct {

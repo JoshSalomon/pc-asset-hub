@@ -1,6 +1,6 @@
 e# AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-03-25
+Last updated: 2026-03-29
 
 ---
 
@@ -8,7 +8,7 @@ Last updated: 2026-03-25
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1317 | 100% | 92.4% (3489/3774) | — |
+| Backend (Go) | 1329 | 100% | 97.2% (3531/3632) | — |
 | UI — Unit tests (jsdom) | 75 | 100% | — | — |
 | UI — Browser tests (Playwright) | 728 | 100% | 93.1% (2227/2392) | 96.4% (2022/2097) |
 | UI — System tests (Playwright + live server) | 30 | 100% | — | — |
@@ -22,20 +22,20 @@ Last updated: 2026-03-25
 | Package | Coverage | Notes |
 |---------|----------|-------|
 | `internal/api/health` | 90.0% (9/10) | Readyz DB-ping error path |
-| `internal/api/meta` | 99.1% (433/437) | Promote/Demote/Delete RoleRO/RW switch cases unreachable behind RBAC middleware |
+| `internal/api/meta` | 98.9% (450/455) | Promote/Demote/Delete RoleRO/RW switch cases unreachable behind RBAC middleware |
 | `internal/api/middleware` | 100.0% (69/69) | |
-| `internal/api/operational` | 98.3% (294/299) | Copy/Replace handlers bind-error branches only |
+| `internal/api/operational` | 98.3% (296/301) | Copy/Replace handlers bind-error branches only |
 | `internal/domain/errors` | 100.0% (32/32) | |
 | `internal/domain/models` | 100.0% (1/1) | |
 | `internal/infrastructure/config` | 100.0% (21/21) | |
 | `internal/infrastructure/gorm/models` | 100.0% (30/30) | |
-| `internal/infrastructure/gorm/repository` | 90.7% (597/658) | GORM error branches on Delete/Update |
+| `internal/infrastructure/gorm/repository` | 90.9% (610/672) | GORM error branches on Delete/Update |
 | `internal/infrastructure/k8s` | 92.6% (50/54) | K8s client error paths |
 | `internal/operator/api/v1alpha1` | 97.7% (85/87) | `DeepCopyObject` nil-receiver guard |
 | `internal/operator/controllers` | 94.3% (198/210) | `SetupWithManager` (envtest — deferred to Phase B), `SetOwnerReference` error branches |
 | `internal/operator/crdgen` | 94.7% (36/38) | `json.Marshal` error guards on well-formed inputs |
 | `internal/service/meta` | 99.5% (739/743) | BulkCopy error paths, requiresDeepCopy edge cases |
-| `internal/service/operational` | 99.8% (852/854) | Cycle guard in resolveParentChain (safety net) |
+| `internal/service/operational` | 99.8% (863/865) | Cycle guard in resolveParentChain (safety net) |
 | `internal/service/validation` | 95.6% (43/45) | |
 
 ### Excluded from Coverage
@@ -519,6 +519,30 @@ Backend test count: 1261 → 1255 (net -6: removed 68 legacy tests, added 62 new
 Service/meta: 94.6% → 99.5% (+4.9pp). Service/operational: 98.8% → 99.8% (+1.0pp).
 Backend coverage: 94.0% → 94.3% (improved by removing uncovered legacy code).
 Live test count: 81 → 89 (added test-copy-replace.sh to Makefile target).
+
+### New Code Coverage (Session 012 — Foundation Cleanup Phase 1)
+
+| TD | Change | Coverage |
+|----|--------|----------|
+| TD-62 | Fix UpdateEntityType omitted-field data loss (`*string`) | 100% (3 new tests) |
+| TD-27 | Fix ListContainedInstances pagination (`parseListParams`) | 100% (2 new tests) |
+| TD-2 | Verify CV label uniqueness constraint | 100% (1 verification test) |
+| TD-3 | Verify association name uniqueness | Already covered (TestTE107) |
+| TD-16 | Fix catalog deletion cascade (IAVs + links) | 100% (4 new tests + 1 integration test) |
+| TD-59 | Fix N+1 query in entity type list (batch `GetLatestByEntityTypes`) | 100% (2 new tests + 1 integration test + 1 error branch test) |
+
+New lines: **0 uncovered** (verified by arithmetic check: script reported 0, math confirms).
+
+Per-file coverage deltas (modified files only):
+
+| Package | Before | After | Delta |
+|---------|--------|-------|-------|
+| `api/meta` | 99.1% (433/437) | 98.9% (450/455) | +17 covered, +18 total (pre-existing uncov in unmodified file) |
+| `api/operational` | 98.3% (294/299) | 98.3% (296/301) | +2 covered, +2 total |
+| `gorm/repository` | 90.7% (597/658) | 90.9% (610/672) | +13 covered, +14 total |
+| `service/operational` | 99.8% (852/854) | 99.8% (863/865) | +11 covered, +11 total |
+
+Backend test count: 1255 → 1329 (+74 new tests including sub-tests). Overall: 97.2% (3531/3632).
 
 ### Coverage Gaps to Address
 

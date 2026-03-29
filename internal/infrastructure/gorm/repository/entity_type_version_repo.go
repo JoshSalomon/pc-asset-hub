@@ -66,6 +66,29 @@ func (r *EntityTypeVersionGormRepo) GetLatestByEntityType(ctx context.Context, e
 	return record.ToModel(), nil
 }
 
+func (r *EntityTypeVersionGormRepo) GetLatestByEntityTypes(ctx context.Context, entityTypeIDs []string) (map[string]*models.EntityTypeVersion, error) {
+	if len(entityTypeIDs) == 0 {
+		return map[string]*models.EntityTypeVersion{}, nil
+	}
+	var records []gormmodels.EntityTypeVersion
+	result := r.db.WithContext(ctx).
+		Where("entity_type_id IN ?", entityTypeIDs).
+		Order("version DESC").
+		Find(&records)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	// Keep only the latest (highest version) per entity type
+	latestMap := make(map[string]*models.EntityTypeVersion, len(entityTypeIDs))
+	for i := range records {
+		etID := records[i].EntityTypeID
+		if _, exists := latestMap[etID]; !exists {
+			latestMap[etID] = records[i].ToModel()
+		}
+	}
+	return latestMap, nil
+}
+
 func (r *EntityTypeVersionGormRepo) ListByEntityType(ctx context.Context, entityTypeID string) ([]*models.EntityTypeVersion, error) {
 	var records []gormmodels.EntityTypeVersion
 	result := r.db.WithContext(ctx).Where("entity_type_id = ?", entityTypeID).Order("version ASC").Find(&records)

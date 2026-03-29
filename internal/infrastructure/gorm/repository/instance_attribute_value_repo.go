@@ -66,3 +66,7 @@ func (r *InstanceAttributeValueGormRepo) GetValuesForVersion(ctx context.Context
 	}
 	return values, nil
 }
+
+func (r *InstanceAttributeValueGormRepo) DeleteByInstanceID(ctx context.Context, instanceID string) error {
+	return getDB(ctx, r.db).Where("instance_id = ?", instanceID).Delete(&gormmodels.InstanceAttributeValue{}).Error
+}

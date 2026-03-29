@@ -100,6 +100,30 @@ func TestT3_35_CreateCatalogVersion(t *testing.T) {
 	assert.Equal(t, "Initial version", cv.Description)
 }
 
+// TD-2: Duplicate catalog version label returns conflict error
+func TestTD2_DuplicateCatalogVersionLabel(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	ltRepo := new(mocks.MockLifecycleTransitionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, nil, "", nil, nil, nil, nil)
+
+	// First create succeeds
+	cvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil).Once()
+	ltRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.LifecycleTransition")).Return(nil).Once()
+
+	_, err := svc.CreateCatalogVersion(context.Background(), "v1.0", "First", nil)
+	require.NoError(t, err)
+
+	// Second create with same label — repo returns conflict (DB unique constraint)
+	cvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(
+		domainerrors.NewConflict("CatalogVersion", "version_label already exists: v1.0"),
+	).Once()
+
+	_, err = svc.CreateCatalogVersion(context.Background(), "v1.0", "Duplicate", nil)
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsConflict(err), "expected conflict error for duplicate label")
+}
+
 func TestT3_36_CreateCatalogVersionWithPins(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)
 	pinRepo := new(mocks.MockCatalogVersionPinRepo)
