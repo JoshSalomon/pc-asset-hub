@@ -190,7 +190,7 @@ Before committing any phase, ALL of these must be done:
 - [x] **Step 5:** Deployed to Kind. Live tests: 239/239 pass (8 scripts). System tests: 30/30 pass.
 - [x] **Step 6:** `docs/coverage-report.md` updated with measured numbers
 - [x] **Step 7:** Human approved
-- [ ] **Step 8:** Commit pending — will include with US-53 changes
+- [x] **Step 8:** Committed with US-53 + TD-69: `ee77d65`
 
 ### Task 12: US-53 — CV Pin Management ✅
 
@@ -201,8 +201,23 @@ Before committing any phase, ALL of these must be done:
 - [x] **12e:** Live tests — 3 new tests in `scripts/test-descriptions.sh` (UpdatePin, entity type mismatch 400, duplicate entity type 409)
 - [x] **Coverage:** 0 uncovered new Go lines (verified by arithmetic + 4 error path tests added + 1 integration test). Backend: 97.4% (3716/3815).
 - [x] **Quality review:** Complete. I-1 (pin Update integration test) already fixed. I-2 (version cache) benign. I-3 (toggle race) low severity. S-1 (same-version test) added. TD-67 added to PRD for S-4 (validate tag enforcement).
-- [ ] **Browser tests:** to be run in non-isolated environment
-- [ ] **Deploy + live tests:** to be run in non-isolated environment
+- [x] **Browser tests:** 777/777 pass. Fixed PF6 Select-in-Modal aria-hidden issue (extracted PinEntityTypeSelect/PinVersionSelect wrappers). Fixed test data (added unpinned entity types for Add Pin tests).
+- [x] **Deploy + live tests:** All 242 live tests pass (28 in test-descriptions.sh including 4 TD-69 stage guard tests). System tests 30/30 pass.
+
+### Task 12f: TD-69 — Pin Editing Stage Guards ✅
+
+- [x] Service: `checkPinEditAllowed(cv, role)` — production blocked, testing SuperAdmin only, development RW+
+- [x] Handler: `mapRole` helper + role extraction for AddPin/RemovePin/UpdatePin
+- [x] UI: `canEditPins` flag gates Add Pin / Remove / version dropdown visibility
+- [x] Tests: 7 service + 3 handler + 4 live tests
+- [x] Committed with Phase 2: `ee77d65`
+
+### Phase 2 Final Commit
+
+- **Commit:** `ee77d65` — "Resolve US-49, US-50, US-51, US-52, US-53, TD-69"
+- **Followed by:** `b652df7` — "Extract technical debt log from PRD to docs/td-log.md (TD-64)"
+- **Tests:** 1416 backend, 777 browser, 30 system, 242 live — all pass
+- **Coverage:** backend 97.4% (3737/3838), UI 93.4% (2392/2562)
 
 ### Remaining Steps for Phase 2 + US-53 (to be completed in non-isolated environment)
 
