@@ -206,6 +206,15 @@ func TestCatalogVersion_ErrorBranches(t *testing.T) {
 
 	_, err = ltRepo.ListByCatalogVersion(ctx, "x")
 	assert.Error(t, err)
+
+	err = cvRepo.Update(ctx, &models.CatalogVersion{ID: "x", VersionLabel: "v", LifecycleStage: "development", CreatedAt: time.Now(), UpdatedAt: time.Now()})
+	assert.Error(t, err)
+
+	_, err = pinRepo.GetByID(ctx, "x")
+	assert.Error(t, err)
+
+	_, err = pinRepo.ListByEntityTypeVersionIDs(ctx, []string{"x"})
+	assert.Error(t, err)
 }
 
 func TestEntityInstance_ErrorBranches(t *testing.T) {
@@ -282,5 +291,8 @@ func TestCatalog_ErrorBranches(t *testing.T) {
 	assert.Error(t, err)
 
 	err = repo.UpdateValidationStatus(ctx, "x", models.ValidationStatusValid)
+	assert.Error(t, err)
+
+	err = repo.Update(ctx, &models.Catalog{ID: "x", Name: "n", CatalogVersionID: "cv1", ValidationStatus: models.ValidationStatusDraft, CreatedAt: time.Now(), UpdatedAt: time.Now()})
 	assert.Error(t, err)
 }

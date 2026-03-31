@@ -337,6 +337,7 @@ func (s *CatalogVersionService) Demote(ctx context.Context, id string, role Role
 
 // ResolvedPin represents a catalog version pin with resolved entity type information.
 type ResolvedPin struct {
+	PinID               string
 	EntityTypeName      string
 	EntityTypeID        string
 	EntityTypeVersionID string
@@ -366,6 +367,7 @@ func (s *CatalogVersionService) ListPins(ctx context.Context, cvID string) ([]Re
 			return nil, err
 		}
 		resolved = append(resolved, ResolvedPin{
+			PinID:               pin.ID,
 			EntityTypeName:      et.Name,
 			EntityTypeID:        et.ID,
 			EntityTypeVersionID: pin.EntityTypeVersionID,
@@ -382,6 +384,170 @@ func (s *CatalogVersionService) ListTransitions(ctx context.Context, cvID string
 		return nil, err
 	}
 	return s.ltRepo.ListByCatalogVersion(ctx, cvID)
+}
+
+// UpdateCatalogVersion updates the version label and/or description of a catalog version.
+func (s *CatalogVersionService) UpdateCatalogVersion(ctx context.Context, id string, versionLabel, description *string) (*models.CatalogVersion, error) {
+	cv, err := s.cvRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	changed := false
+
+	if versionLabel != nil && *versionLabel != cv.VersionLabel {
+		// Check uniqueness — propagate non-NotFound DB errors
+		existing, err := s.cvRepo.GetByLabel(ctx, *versionLabel)
+		if err == nil && existing.ID != cv.ID {
+			return nil, domainerrors.NewConflict("CatalogVersion", "version label already exists: "+*versionLabel)
+		} else if err != nil && !domainerrors.IsNotFound(err) {
+			return nil, err
+		}
+		cv.VersionLabel = *versionLabel
+		changed = true
+	}
+
+	if description != nil && *description != cv.Description {
+		cv.Description = *description
+		changed = true
+	}
+
+	if !changed {
+		return cv, nil
+	}
+
+	cv.UpdatedAt = time.Now()
+	if err := s.cvRepo.Update(ctx, cv); err != nil {
+		return nil, err
+	}
+
+	return cv, nil
+}
+
+// AddPin adds a new entity type version pin to a catalog version.
+// checkPinEditAllowed verifies that the CV stage permits pin modifications for the given role.
+// development: RW+ allowed, testing: SuperAdmin only, production: blocked entirely.
+func checkPinEditAllowed(cv *models.CatalogVersion, role Role) error {
+	switch cv.LifecycleStage {
+	case models.LifecycleStageProduction:
+		return domainerrors.NewValidation("pin editing is not allowed on production catalog versions")
+	case models.LifecycleStageTesting:
+		if role != RoleSuperAdmin {
+			return domainerrors.NewValidation("only SuperAdmin can edit pins on testing catalog versions")
+		}
+	}
+	return nil
+}
+
+func (s *CatalogVersionService) AddPin(ctx context.Context, cvID, entityTypeVersionID string, role Role) (*models.CatalogVersionPin, error) {
+	// Verify CV exists and check stage permissions
+	cv, err := s.cvRepo.GetByID(ctx, cvID)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkPinEditAllowed(cv, role); err != nil {
+		return nil, err
+	}
+
+	// Verify ETV exists and get its entity type ID
+	newETV, err := s.etvRepo.GetByID(ctx, entityTypeVersionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check for duplicate pin — reject if ANY version of the same entity type is already pinned
+	existingPins, err := s.pinRepo.ListByCatalogVersion(ctx, cvID)
+	if err != nil {
+		return nil, err
+	}
+	for _, pin := range existingPins {
+		existingETV, err := s.etvRepo.GetByID(ctx, pin.EntityTypeVersionID)
+		if err != nil {
+			return nil, err
+		}
+		if existingETV.EntityTypeID == newETV.EntityTypeID {
+			return nil, domainerrors.NewConflict("CatalogVersionPin", "entity type already pinned; use UpdatePin to change version")
+		}
+	}
+
+	pin := &models.CatalogVersionPin{
+		ID:                  uuid.Must(uuid.NewV7()).String(),
+		CatalogVersionID:    cvID,
+		EntityTypeVersionID: entityTypeVersionID,
+	}
+	if err := s.pinRepo.Create(ctx, pin); err != nil {
+		return nil, err
+	}
+
+	return pin, nil
+}
+
+// UpdatePin changes the pinned entity type version on an existing pin.
+// The new ETV must belong to the same entity type as the current pin.
+func (s *CatalogVersionService) UpdatePin(ctx context.Context, cvID, pinID, newEntityTypeVersionID string, role Role) (*models.CatalogVersionPin, error) {
+	// Verify CV exists and check stage permissions
+	cv, err := s.cvRepo.GetByID(ctx, cvID)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkPinEditAllowed(cv, role); err != nil {
+		return nil, err
+	}
+
+	// Get pin and verify it belongs to this CV
+	pin, err := s.pinRepo.GetByID(ctx, pinID)
+	if err != nil {
+		return nil, err
+	}
+	if pin.CatalogVersionID != cvID {
+		return nil, domainerrors.NewNotFound("CatalogVersionPin", pinID)
+	}
+
+	// Resolve current pin's entity type
+	currentETV, err := s.etvRepo.GetByID(ctx, pin.EntityTypeVersionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Resolve new ETV and verify same entity type
+	newETV, err := s.etvRepo.GetByID(ctx, newEntityTypeVersionID)
+	if err != nil {
+		return nil, err
+	}
+	if newETV.EntityTypeID != currentETV.EntityTypeID {
+		return nil, domainerrors.NewValidation("entity type mismatch: new version must belong to the same entity type")
+	}
+
+	// Update pin
+	pin.EntityTypeVersionID = newEntityTypeVersionID
+	if err := s.pinRepo.Update(ctx, pin); err != nil {
+		return nil, err
+	}
+
+	return pin, nil
+}
+
+// RemovePin removes a pin from a catalog version.
+func (s *CatalogVersionService) RemovePin(ctx context.Context, cvID, pinID string, role Role) error {
+	// Verify CV exists and check stage permissions
+	cv, err := s.cvRepo.GetByID(ctx, cvID)
+	if err != nil {
+		return err
+	}
+	if err := checkPinEditAllowed(cv, role); err != nil {
+		return err
+	}
+
+	// Get pin and verify it belongs to this CV
+	pin, err := s.pinRepo.GetByID(ctx, pinID)
+	if err != nil {
+		return err
+	}
+	if pin.CatalogVersionID != cvID {
+		return domainerrors.NewNotFound("CatalogVersionPin", pinID)
+	}
+
+	return s.pinRepo.Delete(ctx, pinID)
 }
 
 // getEntityTypeNamesForCV resolves entity type names from catalog version pins.

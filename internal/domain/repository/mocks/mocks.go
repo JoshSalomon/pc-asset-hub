@@ -231,6 +231,9 @@ func (m *MockCatalogVersionRepo) List(ctx context.Context, params models.ListPar
 func (m *MockCatalogVersionRepo) UpdateLifecycle(ctx context.Context, id string, stage models.LifecycleStage) error {
 	return m.Called(ctx, id, stage).Error(0)
 }
+func (m *MockCatalogVersionRepo) Update(ctx context.Context, cv *models.CatalogVersion) error {
+	return m.Called(ctx, cv).Error(0)
+}
 func (m *MockCatalogVersionRepo) Delete(ctx context.Context, id string) error {
 	return m.Called(ctx, id).Error(0)
 }
@@ -239,6 +242,16 @@ func (m *MockCatalogVersionRepo) Delete(ctx context.Context, id string) error {
 type MockCatalogVersionPinRepo struct{ mock.Mock }
 
 func (m *MockCatalogVersionPinRepo) Create(ctx context.Context, pin *models.CatalogVersionPin) error {
+	return m.Called(ctx, pin).Error(0)
+}
+func (m *MockCatalogVersionPinRepo) GetByID(ctx context.Context, id string) (*models.CatalogVersionPin, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.CatalogVersionPin), args.Error(1)
+}
+func (m *MockCatalogVersionPinRepo) Update(ctx context.Context, pin *models.CatalogVersionPin) error {
 	return m.Called(ctx, pin).Error(0)
 }
 func (m *MockCatalogVersionPinRepo) ListByCatalogVersion(ctx context.Context, catalogVersionID string) ([]*models.CatalogVersionPin, error) {

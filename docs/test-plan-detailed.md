@@ -30,7 +30,7 @@ Development proceeds through three environment phases, each with increasing infr
 
 **Milestones completed**: 1–12 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired), T-14.01 through T-14.22, T-15.01 through T-15.81, T-16.01 through T-16.69, and T-17.01 through T-17.88 (802 test cases), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired), T-14.01 through T-14.22, T-15.01 through T-15.81, T-16.01 through T-16.69, T-17.01 through T-17.88, T-24.01 through T-24.28, T-25.01 through T-25.39, T-26.01 through T-26.18, and T-27.01 through T-27.27 (914 test cases), using SQLite and mocked/simulated infrastructure.
 
 **Human checkpoint**: After all 802 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
@@ -2746,6 +2746,383 @@ Adds description fields to Enum and CatalogVersion models, resolves entity type 
 
 ---
 
+## 24. Catalog Version Metadata Edit (US-49, TD-61)
+
+Update a catalog version's version label and/or description after creation.
+
+### Backend — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-24.01 | UpdateCatalogVersion updates description when provided | Unit | Description changed, label unchanged |
+| T-24.02 | UpdateCatalogVersion updates version_label when provided | Unit | Label changed, description unchanged |
+| T-24.03 | UpdateCatalogVersion with both fields updates both | Unit | Both fields changed |
+| T-24.04 | UpdateCatalogVersion with nil fields preserves existing values | Unit | No change to either field |
+| T-24.05 | UpdateCatalogVersion with duplicate label returns 409 | Unit | ConflictError |
+| T-24.06 | UpdateCatalogVersion with nonexistent CV returns 404 | Unit | NotFoundError |
+
+### Backend — Integration (Repository)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-24.07 | CV label update persists in real SQLite | Integration | Updated label retrievable |
+| T-24.08 | CV description update persists in real SQLite | Integration | Updated description retrievable |
+| T-24.09 | Duplicate label rejected by DB unique constraint | Integration | Error returned |
+
+### Backend — Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-24.10 | PUT /catalog-versions/:id with {"description":"new"} returns 200 | API | Updated CV in response |
+| T-24.11 | PUT /catalog-versions/:id with {"version_label":"v2.1"} returns 200 | API | Renamed CV in response |
+| T-24.12 | PUT /catalog-versions/:id with {} preserves all fields | API | 200, unchanged values |
+| T-24.13 | PUT /catalog-versions/:id with duplicate label returns 409 | API | ConflictError |
+| T-24.14 | PUT /catalog-versions/:id nonexistent returns 404 | API | NotFoundError |
+| T-24.15 | PUT /catalog-versions/:id as RO returns 403 | API | Forbidden |
+| T-24.16 | PUT /catalog-versions/:id as RW returns 200 | API | Success |
+| T-24.17 | PUT /catalog-versions/:id bind error returns 400 | API | BadRequest |
+
+### Frontend — UI
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-24.18 | CV detail page shows Edit button next to description | Browser | Button visible for RW+ |
+| T-24.19 | Click Edit → TextInput appears with current value | Browser | Inline edit mode |
+| T-24.20 | Type new value → Save → API PUT called | Browser | API call with description |
+| T-24.21 | Cancel restores original value | Browser | No API call, original shown |
+| T-24.22 | CV detail page shows Edit button next to version label | Browser | Button visible for RW+ |
+| T-24.23 | Label edit triggers PUT with version_label | Browser | API call with version_label |
+| T-24.24 | RO user sees no Edit buttons | Browser | Buttons hidden |
+| T-24.25 | client.ts catalogVersions.update calls PUT /catalog-versions/:id | Browser | Correct URL and method |
+
+### Frontend — API Client
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-24.26 | catalogVersions.update(id, {description}) sends PUT | Browser | PUT with JSON body |
+| T-24.27 | catalogVersions.update(id, {version_label}) sends PUT | Browser | PUT with JSON body |
+
+### Regression
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-24.28 | All existing CV tests pass | Unit/API/Browser | No regressions |
+
+---
+
+## 25. Catalog Metadata Edit (US-50, FF-10)
+
+Update a catalog's name and/or description after creation. Published catalogs restrict editing.
+
+### Backend — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-25.01 | UpdateMetadata updates description | Unit | Description changed |
+| T-25.02 | UpdateMetadata updates name with DNS-label validation | Unit | Name changed |
+| T-25.03 | UpdateMetadata with invalid DNS-label name returns 400 | Unit | ValidationError |
+| T-25.04 | UpdateMetadata with duplicate name returns 409 | Unit | ConflictError |
+| T-25.05 | UpdateMetadata with nil fields preserves existing values | Unit | No change |
+| T-25.06 | UpdateMetadata resets validation status to draft | Unit | Status = draft |
+| T-25.07 | UpdateMetadata on published catalog: SuperAdmin can edit description | Unit | Success |
+| T-25.08 | UpdateMetadata on published catalog: rename blocked returns 400 | Unit | "cannot rename published catalog" |
+| T-25.09 | UpdateMetadata on published catalog: non-SuperAdmin returns 403 | Unit | ForbiddenError |
+| T-25.10 | UpdateMetadata on nonexistent catalog returns 404 | Unit | NotFoundError |
+| T-25.11 | UpdateMetadata on published catalog calls SyncCR | Unit | SyncCR invoked |
+
+### Backend — Integration (Repository)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-25.12 | Catalog name update persists, old name no longer resolves | Integration | GetByName(old) = NotFound |
+| T-25.13 | Catalog description update persists | Integration | Updated description retrievable |
+| T-25.14 | Duplicate catalog name rejected by DB unique constraint | Integration | Error returned |
+| T-25.15 | Validation status reset to draft after metadata change | Integration | Status = draft |
+| T-25.16 | Rename preserves instance catalog_id FK references | Integration | Instances still belong to catalog |
+
+### Backend — Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-25.17 | PUT /catalogs/{name} with {"description":"new"} returns 200 | API | Updated catalog |
+| T-25.18 | PUT /catalogs/{name} with {"name":"new-name"} returns 200 | API | Renamed catalog |
+| T-25.19 | PUT /catalogs/{name} with {} preserves all fields | API | 200, unchanged |
+| T-25.20 | PUT /catalogs/{name} invalid DNS-label returns 400 | API | BadRequest |
+| T-25.21 | PUT /catalogs/{name} duplicate name returns 409 | API | ConflictError |
+| T-25.22 | PUT /catalogs/{name} nonexistent returns 404 | API | NotFoundError |
+| T-25.23 | PUT /catalogs/{name} as RO returns 403 | API | Forbidden |
+| T-25.24 | PUT /catalogs/{name} RequireWriteAccess middleware applied | API | Published catalog: 403 for RW |
+| T-25.25 | PUT /catalogs/{name} RequireCatalogAccess middleware applied | API | Access check invoked |
+| T-25.26 | PUT /catalogs/{name} published catalog: SuperAdmin desc edit → 200 | API | Success |
+| T-25.27 | PUT /catalogs/{name} published catalog: SuperAdmin rename → 400 | API | BadRequest |
+| T-25.28 | PUT /catalogs/{name} bind error returns 400 | API | BadRequest |
+
+### Frontend — UI
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-25.29 | Catalog detail page shows Edit button for description | Browser | Button visible for RW+ |
+| T-25.30 | Description edit: click Edit → input → Save → API PUT called | Browser | API call with description |
+| T-25.31 | Description edit: Cancel restores original | Browser | No API call |
+| T-25.32 | RO user sees no Edit button | Browser | Button hidden |
+| T-25.33 | Published catalog: Edit disabled for non-SuperAdmin | Browser | Button disabled with tooltip |
+
+### Frontend — API Client
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-25.34 | catalogs.update(name, {description}) sends PUT | Browser | PUT to /catalogs/{name} |
+| T-25.35 | catalogs.update(name, {name}) sends PUT | Browser | PUT with new name |
+
+### Live System
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-25.36 | Update catalog description via API, verify persisted | Live | GET returns updated description |
+| T-25.37 | Rename catalog via API, verify old name 404 | Live | Old name returns 404 |
+| T-25.38 | Rename published catalog via API returns 400 | Live | Cannot rename published |
+
+### Regression
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-25.39 | All existing catalog tests pass | Unit/API/Browser | No regressions |
+
+---
+
+## 26. Catalog Re-pinning (US-51, TD-12)
+
+Change a catalog's pinned CV via PUT /catalogs/{name}.
+
+### Backend — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-26.01 | Re-pin updates catalog_version_id | Unit | New CV ID set |
+| T-26.02 | Re-pin to nonexistent CV returns 404 | Unit | NotFoundError |
+| T-26.03 | Re-pin resets validation status to draft | Unit | Status = draft |
+| T-26.04 | Re-pin on published catalog returns 400 | Unit | "unpublish first" |
+| T-26.05 | Re-pin on unpublished catalog succeeds | Unit | Success |
+
+### Backend — Integration (Repository)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-26.06 | catalog_version_id FK update persists | Integration | New CV ID retrievable |
+| T-26.07 | Re-pin to nonexistent CV rejected by FK constraint | Integration | Error returned |
+| T-26.08 | Validation status reset to draft after re-pin | Integration | Status = draft |
+| T-26.09 | Instances remain associated with catalog after re-pin | Integration | Instance catalog_id unchanged |
+
+### Backend — Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-26.10 | PUT /catalogs/{name} with {"catalog_version_id":"new-cv"} returns 200 | API | Updated catalog with new CV |
+| T-26.11 | PUT /catalogs/{name} with nonexistent CV returns 404 | API | NotFoundError |
+| T-26.12 | PUT /catalogs/{name} re-pin on published catalog returns 400 | API | BadRequest |
+| T-26.13 | PUT /catalogs/{name} re-pin as RO returns 403 | API | Forbidden |
+
+### Frontend — UI
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-26.14 | Catalog detail page shows CV selector dropdown | Browser | Dropdown with CVs listed |
+| T-26.15 | Selecting new CV triggers PUT with catalog_version_id | Browser | API call with new CV ID |
+| T-26.16 | CV dropdown disabled on published catalogs | Browser | Dropdown disabled |
+| T-26.17 | RO user sees no CV dropdown | Browser | Dropdown hidden |
+
+### Regression
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-26.18 | All existing catalog tests pass | Unit/API/Browser | No regressions |
+
+---
+
+## 27. Catalog Version Pin Editing (US-52, FF-4)
+
+Add or remove entity type pins from a catalog version.
+
+### Backend — Service
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-27.01 | AddPin with valid ETV ID creates pin | Unit | Pin created, linked to CV |
+| T-27.02 | AddPin with nonexistent ETV returns 404 | Unit | NotFoundError |
+| T-27.03 | AddPin with duplicate ETV (already pinned) returns 409 | Unit | ConflictError |
+| T-27.04 | RemovePin with valid pin ID removes pin | Unit | Pin deleted |
+| T-27.05 | RemovePin with nonexistent pin returns 404 | Unit | NotFoundError |
+
+### Backend — Integration (Repository)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-27.06 | Pin creation persists with correct CV ID and ETV ID FKs | Integration | Pin retrievable via ListByCatalogVersion |
+| T-27.07 | Duplicate pin (same ETV on same CV) rejected by DB constraint | Integration | Error returned |
+| T-27.08 | Pin deletion removes the row | Integration | ListByCatalogVersion excludes deleted pin |
+| T-27.09 | Pin with nonexistent ETV ID rejected by FK constraint | Integration | Error returned |
+
+### Backend — Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-27.10 | POST /catalog-versions/:id/pins with {"entity_type_version_id":"etv"} returns 201 | API | Pin in response |
+| T-27.11 | POST /catalog-versions/:id/pins nonexistent ETV returns 404 | API | NotFoundError |
+| T-27.12 | POST /catalog-versions/:id/pins duplicate returns 409 | API | ConflictError |
+| T-27.13 | POST /catalog-versions/:id/pins as RO returns 403 | API | Forbidden |
+| T-27.14 | DELETE /catalog-versions/:id/pins/:pin-id returns 204 | API | No content |
+| T-27.15 | DELETE /catalog-versions/:id/pins/:pin-id nonexistent returns 404 | API | NotFoundError |
+| T-27.16 | DELETE /catalog-versions/:id/pins/:pin-id as RO returns 403 | API | Forbidden |
+| T-27.17 | POST /catalog-versions/:id/pins bind error returns 400 | API | BadRequest |
+
+### Frontend — UI
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-27.18 | BOM tab shows Add Pin button for RW+ users | Browser | Button visible |
+| T-27.19 | Add Pin opens picker with available entity type versions | Browser | Picker/modal with ETV list |
+| T-27.20 | Selecting ETV and confirming triggers POST /pins | Browser | API call, pin added to list |
+| T-27.21 | Remove button visible per pin row for RW+ users | Browser | Button on each row |
+| T-27.22 | Click Remove triggers DELETE /pins/:pin-id | Browser | API call, pin removed from list |
+| T-27.23 | RO user sees no Add/Remove controls | Browser | Controls hidden |
+
+### Frontend — API Client
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-27.24 | catalogVersions.addPin(id, etvId) sends POST | Browser | POST to /catalog-versions/:id/pins |
+| T-27.25 | catalogVersions.removePin(id, pinId) sends DELETE | Browser | DELETE to /catalog-versions/:id/pins/:pin-id |
+
+### Regression
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-27.26 | All existing CV tests pass | Unit/API/Browser | No regressions |
+| T-27.27 | All existing catalog tests pass (pin changes don't break catalogs) | Unit/API | No regressions |
+
+---
+
+## 28. CV Pin Management — Unique Entity Type + Version Change (US-53)
+
+Prevents duplicate entity type pins, adds inline version change in BOM table, and filters Add Pin modal to unpinned entities.
+
+### Backend — AddPin Duplicate Entity Type Check
+
+#### Unit Tests (service)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.01 | AddPin with same entity type (different version) returns 409 | Unit | 409 conflict with entity type name in message |
+| T-28.02 | AddPin with different entity type succeeds | Unit | Pin created successfully |
+| T-28.03 | AddPin with exact same ETV returns 409 (existing behavior) | Unit | 409 conflict |
+
+### Backend — UpdatePin (Change Version)
+
+#### Unit Tests (service)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.04 | UpdatePin changes ETV on existing pin | Unit | Pin updated, new ETV set |
+| T-28.05 | UpdatePin with ETV from different entity type returns 400 | Unit | 400 entity type mismatch |
+| T-28.06 | UpdatePin with nonexistent pin returns 404 | Unit | 404 not found |
+| T-28.07 | UpdatePin with nonexistent ETV returns 404 | Unit | 404 not found |
+| T-28.08 | UpdatePin verifies pin belongs to specified CV | Unit | 404 if pin belongs to different CV |
+
+#### API Tests (handler)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.09 | PUT /catalog-versions/:id/pins/:pin-id returns 200 | API | Updated pin in response |
+| T-28.10 | PUT with entity type mismatch returns 400 | API | 400 error message |
+| T-28.11 | PUT with nonexistent pin returns 404 | API | 404 |
+| T-28.12 | PUT as RO returns 403 | API | 403 forbidden |
+
+#### Integration Tests (repository)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.13 | Pin update persists new ETV ID | Integration | DB reflects new ETV |
+
+### UI — BOM Tab Inline Version Dropdown
+
+#### Browser Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.14 | Version column is dropdown for Admin+ | Browser | Select/dropdown visible per pin row |
+| T-28.15 | Version dropdown lists all versions of entity type | Browser | Versions from API shown |
+| T-28.16 | Selecting different version calls updatePin API | Browser | PUT called with new ETV ID |
+| T-28.17 | Version updates in table after change | Browser | New version shown |
+| T-28.18 | RO user sees plain text, not dropdown | Browser | No dropdown controls |
+
+### UI — Add Pin Modal Entity Type Filtering
+
+#### Browser Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.19 | Add Pin modal only shows unpinned entity types | Browser | Already-pinned types filtered out |
+| T-28.20 | After removing pin, entity type reappears in Add Pin | Browser | Removed type available again |
+
+### API Client Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.21 | catalogVersions.updatePin(id, pinId, etvId) sends PUT | Browser | PUT to correct URL with body |
+
+### Regression
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.22 | All existing CV pin tests pass | Browser/Unit/API | No regressions |
+| T-28.23 | Diagram renders correctly after pin version change | Browser | Diagram shows updated entity types |
+
+## 29. Pin Editing Stage Guards (TD-69)
+
+Pin editing (AddPin, RemovePin, UpdatePin) is restricted by catalog version lifecycle stage:
+- **development**: RW+ allowed (standard permission)
+- **testing**: SuperAdmin only (this policy is provisional and may be relaxed to Admin+ in the future)
+- **production**: blocked entirely, regardless of role
+
+### Backend — Service Stage Guards
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.01 | AddPin on production CV as Admin → rejected | Unit | Validation error mentioning "production" |
+| T-29.02 | AddPin on production CV as SuperAdmin → rejected | Unit | Validation error mentioning "production" |
+| T-29.03 | AddPin on testing CV as RW → rejected | Unit | Validation error mentioning "SuperAdmin" |
+| T-29.04 | AddPin on testing CV as Admin → rejected | Unit | Validation error mentioning "SuperAdmin" |
+| T-29.05 | AddPin on testing CV as SuperAdmin → allowed | Unit | Pin created successfully |
+| T-29.06 | RemovePin on production CV as Admin → rejected | Unit | Validation error mentioning "production" |
+| T-29.07 | UpdatePin on testing CV as RW → rejected | Unit | Validation error mentioning "SuperAdmin" |
+
+### API Handler Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.08 | AddPin as RW on development CV → allowed | API | 201 created |
+| T-29.09 | AddPin as SuperAdmin on testing CV → allowed | API | 201 created |
+| T-29.10 | AddPin as Admin on production CV → blocked | API | 400 with "production" message |
+
+### Live System Tests (`scripts/test-descriptions.sh`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.11 | AddPin on production CV returns 400 | Live | 400 (Admin role) |
+| T-29.12 | AddPin on production CV blocked for SuperAdmin | Live | 400 |
+| T-29.13 | AddPin on testing CV returns 400 for RW | Live | 400 |
+| T-29.14 | AddPin on testing CV allowed for SuperAdmin | Live | 201 with pin_id |
+
+### UI — Pin Control Visibility
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.15 | BOM tab hides Add Pin / Remove / version dropdown for production CV | Browser | No pin editing controls visible |
+| T-29.16 | BOM tab hides pin controls for testing CV as Admin | Browser | No pin editing controls visible |
+| T-29.17 | BOM tab shows pin controls for testing CV as SuperAdmin | Browser | Add Pin, Remove, version dropdown visible |
+
+---
+
 ## Coverage Criteria
 
 ### Pass Rate
@@ -2782,7 +3159,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 1038 test cases (T-1.01 through T-23.35; T-13.78 through T-13.85 retired) pass
+- All 1173 test cases (T-1.01 through T-28.23; T-13.78 through T-13.85 retired) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

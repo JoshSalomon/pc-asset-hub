@@ -63,77 +63,6 @@
       "difficulty": 0.5,
       "created_at": "2026-02-15T21:18:13.316008+00:00"
     },
-    "mem_40a3baaa": {
-      "topic": "Phase A implementation approach and Ralph Loop lessons",
-      "tags": [
-        "methodology",
-        "ralph-loop",
-        "lessons-learned",
-        "phase-a"
-      ],
-      "phase": 0,
-      "difficulty": 0.5,
-      "created_at": "2026-02-15T21:18:30.147024+00:00"
-    },
-    "mem_cbea494d": {
-      "topic": "Deploying to kind with podman - image loading workaround",
-      "tags": [
-        "kubernetes",
-        "kind",
-        "podman",
-        "docker",
-        "deployment",
-        "containers"
-      ],
-      "phase": 0,
-      "difficulty": 0.7,
-      "created_at": "2026-02-16T12:46:23.261893+00:00"
-    },
-    "mem_89515eca": {
-      "topic": "PC Asset Hub - complete testing strategy across all tiers",
-      "tags": [
-        "testing",
-        "vitest",
-        "playwright",
-        "patternfly",
-        "coverage",
-        "jsdom",
-        "browser-mode",
-        "go-testing",
-        "system-tests"
-      ],
-      "phase": 0,
-      "difficulty": 0.8,
-      "created_at": "2026-02-16T15:40:34.480514+00:00"
-    },
-    "mem_4041ec0c": {
-      "topic": "AI Asset Hub - Tech Stack and Architecture (current)",
-      "tags": [
-        "architecture",
-        "tech-stack",
-        "api",
-        "rbac",
-        "project-structure"
-      ],
-      "phase": 0,
-      "difficulty": 0.7,
-      "created_at": "2026-02-16T15:48:17.526342+00:00"
-    },
-    "mem_362537f9": {
-      "topic": "Phase B implementation - Entity Type Management (Backend API + UI)",
-      "tags": [
-        "phase-b",
-        "implementation",
-        "entity-types",
-        "enums",
-        "browser-testing",
-        "patternfly",
-        "react-router"
-      ],
-      "phase": 0,
-      "difficulty": 0.6,
-      "created_at": "2026-02-16T18:15:14.270789+00:00"
-    },
     "mem_94f3205a": {
       "topic": "CatalogVersion CRD and ClusterRole implementation",
       "tags": [
@@ -146,42 +75,6 @@
       "phase": 0,
       "difficulty": 0.7,
       "created_at": "2026-02-18T08:45:19.627233+00:00"
-    },
-    "mem_bfaafe9e": {
-      "topic": "Always use --context=kind-assethub with kubectl",
-      "tags": [
-        "kubectl",
-        "context",
-        "kind",
-        "critical"
-      ],
-      "phase": 0,
-      "difficulty": 0.9,
-      "created_at": "2026-02-18T09:46:53.043938+00:00"
-    },
-    "mem_7410a8e7": {
-      "topic": "Meta Model CRUD Gaps + CV Workflow implementation",
-      "tags": [
-        "meta-model",
-        "crud",
-        "catalog-version",
-        "implementation"
-      ],
-      "phase": 0,
-      "difficulty": 0.7,
-      "created_at": "2026-02-18T19:33:43.097329+00:00"
-    },
-    "mem_0f96fe43": {
-      "topic": "Kind deployment: pods don't pick up new images with rollout restart",
-      "tags": [
-        "deployment",
-        "kind",
-        "kubernetes",
-        "debugging"
-      ],
-      "phase": 0,
-      "difficulty": 0.6,
-      "created_at": "2026-02-19T20:10:02.411145+00:00"
     },
     "mem_5519b786": {
       "topic": "Session 001 lessons learned - process discipline and technical gotchas",
@@ -209,20 +102,6 @@
       "phase": 0,
       "difficulty": 0.6,
       "created_at": "2026-03-01T17:35:13.007013+00:00"
-    },
-    "mem_4cc0673f": {
-      "topic": "Kind cluster deployment and crash recovery for pc-asset-hub",
-      "tags": [
-        "deployment",
-        "kind",
-        "kubectl",
-        "kubernetes",
-        "crash-recovery",
-        "podman"
-      ],
-      "phase": 0,
-      "difficulty": 0.4,
-      "created_at": "2026-03-01T17:35:40.030753+00:00"
     },
     "mem_7a79ce47": {
       "topic": "Containment tree and version snapshot architecture patterns",
@@ -431,6 +310,57 @@
       "phase": 0,
       "difficulty": 0.8,
       "created_at": "2026-03-27T09:58:16.594684+00:00"
+    },
+    "mem_7ae0ad1c": {
+      "topic": "Kind cluster deployment — complete reference (merged)",
+      "tags": [
+        "deployment",
+        "kind",
+        "kubectl",
+        "podman",
+        "crash-recovery",
+        "containers"
+      ],
+      "phase": 0,
+      "difficulty": 0.7,
+      "created_at": "2026-03-30T12:23:10.604559+00:00"
+    },
+    "mem_436d0690": {
+      "topic": "Testing architecture — tiers, commands, and key pitfalls (merged)",
+      "tags": [
+        "testing",
+        "vitest",
+        "playwright",
+        "patternfly",
+        "coverage",
+        "go-testing"
+      ],
+      "phase": 0,
+      "difficulty": 0.6,
+      "created_at": "2026-03-30T12:23:48.588815+00:00"
+    },
+    "mem_3b7f561e": {
+      "topic": "AI Asset Hub — Tech Stack and Project Structure (current as of 2026-03-30)",
+      "tags": [
+        "architecture",
+        "tech-stack",
+        "project-structure"
+      ],
+      "phase": 0,
+      "difficulty": 0.5,
+      "created_at": "2026-03-30T12:24:15.087420+00:00"
+    },
+    "mem_d8406787": {
+      "topic": "Coverage verification: always use arithmetic, never trust scripts alone",
+      "tags": [
+        "coverage",
+        "testing",
+        "verification",
+        "gotcha"
+      ],
+      "phase": 0,
+      "difficulty": 0.7,
+      "created_at": "2026-03-30T12:24:38.402103+00:00"
     }
   }
 }

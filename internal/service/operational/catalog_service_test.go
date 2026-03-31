@@ -1669,6 +1669,315 @@ func TestReplaceCatalog_NilTxManager(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// === UpdateMetadata Tests ===
+
+func TestUpdateMetadata_RenameSuccess(t *testing.T) {
+	svc, catRepo, cvRepo, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "old-name").Return(&models.Catalog{
+		ID: "c1", Name: "old-name", Description: "desc", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	catRepo.On("GetByName", ctx, "new-name").Return(nil, domainerrors.NewNotFound("Catalog", "new-name"))
+	catRepo.On("UpdateName", ctx, "c1", "new-name").Return(nil)
+	catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusDraft).Return(nil)
+	cvRepo.On("GetByID", ctx, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1.0"}, nil)
+
+	newName := "new-name"
+	detail, err := svc.UpdateMetadata(ctx, "old-name", &newName, nil, nil, "RW")
+	require.NoError(t, err)
+	assert.Equal(t, "new-name", detail.Name)
+	assert.Equal(t, "v1.0", detail.CatalogVersionLabel)
+}
+
+func TestUpdateMetadata_UpdateDescription(t *testing.T) {
+	svc, catRepo, cvRepo, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", Description: "old desc", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	catRepo.On("Update", ctx, mock.AnythingOfType("*models.Catalog")).Return(nil)
+	catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusDraft).Return(nil)
+	cvRepo.On("GetByID", ctx, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1.0"}, nil)
+
+	newDesc := "new desc"
+	detail, err := svc.UpdateMetadata(ctx, "my-catalog", nil, &newDesc, nil, "RW")
+	require.NoError(t, err)
+	assert.Equal(t, "new desc", detail.Description)
+}
+
+func TestUpdateMetadata_ChangeCatalogVersion(t *testing.T) {
+	svc, catRepo, cvRepo, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	cvRepo.On("GetByID", ctx, "cv2").Return(&models.CatalogVersion{ID: "cv2", VersionLabel: "v2.0"}, nil)
+	catRepo.On("Update", ctx, mock.AnythingOfType("*models.Catalog")).Return(nil)
+	catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusDraft).Return(nil)
+
+	newCVID := "cv2"
+	detail, err := svc.UpdateMetadata(ctx, "my-catalog", nil, nil, &newCVID, "RW")
+	require.NoError(t, err)
+	assert.Equal(t, "cv2", detail.CatalogVersionID)
+	assert.Equal(t, "v2.0", detail.CatalogVersionLabel)
+}
+
+func TestUpdateMetadata_NotFound(t *testing.T) {
+	svc, catRepo, _, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "nonexistent").Return(nil, domainerrors.NewNotFound("Catalog", "nonexistent"))
+
+	_, err := svc.UpdateMetadata(ctx, "nonexistent", nil, nil, nil, "RW")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestUpdateMetadata_InvalidNewName(t *testing.T) {
+	svc, catRepo, _, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+
+	newName := "INVALID"
+	_, err := svc.UpdateMetadata(ctx, "my-catalog", &newName, nil, nil, "RW")
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+func TestUpdateMetadata_DuplicateName(t *testing.T) {
+	svc, catRepo, _, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	catRepo.On("GetByName", ctx, "existing").Return(&models.Catalog{
+		ID: "c2", Name: "existing",
+	}, nil)
+
+	newName := "existing"
+	_, err := svc.UpdateMetadata(ctx, "my-catalog", &newName, nil, nil, "RW")
+	assert.True(t, domainerrors.IsConflict(err))
+}
+
+func TestUpdateMetadata_GetByNameDBError(t *testing.T) {
+	svc, catRepo, _, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	dbErr := fmt.Errorf("connection refused")
+	catRepo.On("GetByName", ctx, "new-name").Return(nil, dbErr)
+
+	newName := "new-name"
+	_, err := svc.UpdateMetadata(ctx, "my-catalog", &newName, nil, nil, "RW")
+	// Should propagate the DB error, not silently swallow it
+	assert.ErrorIs(t, err, dbErr)
+}
+
+func TestUpdateMetadata_DescOnlyNoValidationReset(t *testing.T) {
+	svc, catRepo, cvRepo, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: "valid", Published: true,
+	}, nil)
+	catRepo.On("Update", ctx, mock.Anything).Return(nil)
+	cvRepo.On("GetByID", ctx, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0",
+	}, nil)
+
+	desc := "Updated desc"
+	cat, err := svc.UpdateMetadata(ctx, "my-catalog", nil, &desc, nil, "SuperAdmin")
+	require.NoError(t, err)
+	// Description-only edit should NOT reset validation status on published catalog
+	assert.Equal(t, "valid", string(cat.ValidationStatus))
+}
+
+func TestUpdateMetadata_PublishedCatalog_OnlyDescriptionAllowed(t *testing.T) {
+	svc, catRepo, cvRepo, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "pub-cat").Return(&models.Catalog{
+		ID: "c1", Name: "pub-cat", Description: "old", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+		Published: true,
+	}, nil)
+	catRepo.On("Update", ctx, mock.AnythingOfType("*models.Catalog")).Return(nil)
+	catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusDraft).Return(nil)
+	cvRepo.On("GetByID", ctx, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1.0"}, nil)
+
+	newDesc := "new desc"
+	detail, err := svc.UpdateMetadata(ctx, "pub-cat", nil, &newDesc, nil, "SuperAdmin")
+	require.NoError(t, err)
+	assert.Equal(t, "new desc", detail.Description)
+}
+
+func TestUpdateMetadata_PublishedCatalog_RenameBlocked(t *testing.T) {
+	svc, catRepo, _, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "pub-cat").Return(&models.Catalog{
+		ID: "c1", Name: "pub-cat", Published: true,
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+
+	newName := "new-name"
+	_, err := svc.UpdateMetadata(ctx, "pub-cat", &newName, nil, nil, "SuperAdmin")
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+func TestUpdateMetadata_PublishedCatalog_NonSuperAdminForbidden(t *testing.T) {
+	svc, catRepo, _, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "pub-cat").Return(&models.Catalog{
+		ID: "c1", Name: "pub-cat", Published: true,
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+
+	newDesc := "new desc"
+	_, err := svc.UpdateMetadata(ctx, "pub-cat", nil, &newDesc, nil, "Admin")
+	assert.True(t, domainerrors.IsForbidden(err))
+}
+
+func TestUpdateMetadata_PublishedCatalog_CVChangeBlocked(t *testing.T) {
+	svc, catRepo, _, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "pub-cat").Return(&models.Catalog{
+		ID: "c1", Name: "pub-cat", CatalogVersionID: "cv1",
+		Published: true, ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+
+	newCVID := "cv2"
+	_, err := svc.UpdateMetadata(ctx, "pub-cat", nil, nil, &newCVID, "SuperAdmin")
+	assert.True(t, domainerrors.IsValidation(err))
+}
+
+func TestUpdateMetadata_CVNotFound(t *testing.T) {
+	svc, catRepo, cvRepo, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	cvRepo.On("GetByID", ctx, "bad-cv").Return(nil, domainerrors.NewNotFound("CatalogVersion", "bad-cv"))
+
+	badCV := "bad-cv"
+	_, err := svc.UpdateMetadata(ctx, "my-catalog", nil, nil, &badCV, "RW")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestUpdateMetadata_NothingChanged(t *testing.T) {
+	svc, catRepo, cvRepo, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", Description: "desc", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	cvRepo.On("GetByID", ctx, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1.0"}, nil)
+
+	detail, err := svc.UpdateMetadata(ctx, "my-catalog", nil, nil, nil, "RW")
+	require.NoError(t, err)
+	assert.Equal(t, "my-catalog", detail.Name)
+	// No Update or UpdateValidationStatus calls
+	catRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+	catRepo.AssertNotCalled(t, "UpdateValidationStatus", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestUpdateMetadata_RenameError(t *testing.T) {
+	svc, catRepo, _, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	catRepo.On("GetByName", ctx, "new-name").Return(nil, domainerrors.NewNotFound("Catalog", "new-name"))
+	catRepo.On("UpdateName", ctx, "c1", "new-name").Return(domainerrors.NewValidation("db error"))
+
+	newName := "new-name"
+	_, err := svc.UpdateMetadata(ctx, "my-catalog", &newName, nil, nil, "RW")
+	assert.Error(t, err)
+}
+
+func TestUpdateMetadata_UpdateError(t *testing.T) {
+	svc, catRepo, _, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", Description: "old", CatalogVersionID: "cv1",
+	}, nil)
+	catRepo.On("Update", ctx, mock.AnythingOfType("*models.Catalog")).Return(domainerrors.NewValidation("db error"))
+
+	newDesc := "new"
+	_, err := svc.UpdateMetadata(ctx, "my-catalog", nil, &newDesc, nil, "RW")
+	assert.Error(t, err)
+}
+
+func TestUpdateMetadata_CVChangeUpdateError(t *testing.T) {
+	svc, catRepo, cvRepo, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	cvRepo.On("GetByID", ctx, "cv2").Return(&models.CatalogVersion{ID: "cv2", VersionLabel: "v2.0"}, nil)
+	catRepo.On("Update", ctx, mock.AnythingOfType("*models.Catalog")).Return(domainerrors.NewValidation("db error"))
+
+	newCVID := "cv2"
+	_, err := svc.UpdateMetadata(ctx, "my-catalog", nil, nil, &newCVID, "RW")
+	assert.Error(t, err)
+}
+
+func TestUpdateMetadata_ValidationStatusResetError(t *testing.T) {
+	svc, catRepo, cvRepo, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	// Use CV re-pin (structural change) to trigger validation reset
+	cvRepo.On("GetByID", ctx, "cv2").Return(&models.CatalogVersion{ID: "cv2"}, nil)
+	catRepo.On("Update", ctx, mock.AnythingOfType("*models.Catalog")).Return(nil)
+	catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusDraft).Return(domainerrors.NewValidation("db error"))
+
+	newCV := "cv2"
+	_, err := svc.UpdateMetadata(ctx, "my-catalog", nil, nil, &newCV, "RW")
+	assert.Error(t, err)
+}
+
+func TestUpdateMetadata_PublishedSyncCR(t *testing.T) {
+	svc, catRepo, cvRepo, _, crMgr := setupCatalogServiceWithCR()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "pub-cat").Return(&models.Catalog{
+		ID: "c1", Name: "pub-cat", Description: "old", CatalogVersionID: "cv1",
+		Published: true, ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	catRepo.On("Update", ctx, mock.AnythingOfType("*models.Catalog")).Return(nil)
+	// No UpdateValidationStatus mock — description-only edit should NOT reset validation
+	cvRepo.On("GetByID", ctx, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1.0"}, nil)
+
+	newDesc := "new desc"
+	cat, err := svc.UpdateMetadata(ctx, "pub-cat", nil, &newDesc, nil, "SuperAdmin")
+	require.NoError(t, err)
+	// Validation status should stay "valid" — description change is cosmetic
+	assert.Equal(t, models.ValidationStatusValid, cat.ValidationStatus)
+	// SyncCR should have been called to refresh the CR with new description
+	assert.NotNil(t, crMgr.createOrUpdateSpec)
+}
+
 // T-17.44: Replace with nil crManager skips CR operations
 func TestT17_44_ReplaceCatalog_NilCRManager(t *testing.T) {
 	svc, catRepo, _, _, _, _ := setupCatalogServiceWithCopy()

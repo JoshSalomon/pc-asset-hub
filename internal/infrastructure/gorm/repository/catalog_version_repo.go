@@ -103,6 +103,18 @@ func (r *CatalogVersionGormRepo) UpdateLifecycle(ctx context.Context, id string,
 	return nil
 }
 
+func (r *CatalogVersionGormRepo) Update(ctx context.Context, cv *models.CatalogVersion) error {
+	record := gormmodels.CatalogVersionFromModel(cv)
+	result := r.db.WithContext(ctx).Save(record)
+	if result.Error != nil {
+		if isUniqueConstraintError(result.Error) {
+			return domainerrors.NewConflict("CatalogVersion", "version label already exists: "+cv.VersionLabel)
+		}
+		return result.Error
+	}
+	return nil
+}
+
 func (r *CatalogVersionGormRepo) Delete(ctx context.Context, id string) error {
 	result := r.db.WithContext(ctx).Delete(&gormmodels.CatalogVersion{}, "id = ?", id)
 	if result.Error != nil {
@@ -134,6 +146,18 @@ func (r *CatalogVersionPinGormRepo) Create(ctx context.Context, pin *models.Cata
 	return nil
 }
 
+func (r *CatalogVersionPinGormRepo) GetByID(ctx context.Context, id string) (*models.CatalogVersionPin, error) {
+	var record gormmodels.CatalogVersionPin
+	result := r.db.WithContext(ctx).First(&record, "id = ?", id)
+	if result.Error != nil {
+		if result.Error == gorm.ErrRecordNotFound {
+			return nil, domainerrors.NewNotFound("CatalogVersionPin", id)
+		}
+		return nil, result.Error
+	}
+	return record.ToModel(), nil
+}
+
 func (r *CatalogVersionPinGormRepo) ListByCatalogVersion(ctx context.Context, catalogVersionID string) ([]*models.CatalogVersionPin, error) {
 	var records []gormmodels.CatalogVersionPin
 	result := r.db.WithContext(ctx).Where("catalog_version_id = ?", catalogVersionID).Find(&records)
@@ -161,6 +185,12 @@ func (r *CatalogVersionPinGormRepo) ListByEntityTypeVersionIDs(ctx context.Conte
 		pins[i] = records[i].ToModel()
 	}
 	return pins, nil
+}
+
+func (r *CatalogVersionPinGormRepo) Update(ctx context.Context, pin *models.CatalogVersionPin) error {
+	record := gormmodels.CatalogVersionPinFromModel(pin)
+	result := r.db.WithContext(ctx).Save(record)
+	return result.Error
 }
 
 func (r *CatalogVersionPinGormRepo) Delete(ctx context.Context, id string) error {

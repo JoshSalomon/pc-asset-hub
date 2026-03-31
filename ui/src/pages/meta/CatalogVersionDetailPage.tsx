@@ -24,11 +24,82 @@ import {
   ModalHeader,
   ModalBody,
   ModalFooter,
+  TextInput,
+  Form,
+  FormGroup,
+  MenuToggle,
+  Select,
+  SelectOption,
+  SelectList,
 } from '@patternfly/react-core'
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
 import { api, setAuthRole } from '../../api/client'
-import type { CatalogVersion, CatalogVersionPin, LifecycleTransition, VersionSnapshot, Role } from '../../types'
+import type { CatalogVersion, CatalogVersionPin, LifecycleTransition, VersionSnapshot, Role, EntityType, EntityTypeVersion } from '../../types'
 import EntityTypeDiagram, { type DiagramEntityType } from '../../components/EntityTypeDiagram'
+
+// Self-contained Select wrappers — manage their own isOpen state so that
+// opening the dropdown does NOT cause the parent (and Modal) to re-render.
+// PF6 Modal's componentDidUpdate sets aria-hidden on ALL body-level siblings
+// whenever it re-renders; if the Select's popper portal (appended to body) is
+// created during a render that also triggers the Modal, it gets aria-hidden
+// and becomes invisible to assistive tech / getByRole queries.
+
+function PinEntityTypeSelect({ entityTypes, pins, selectedEtId, onSelect }: {
+  entityTypes: EntityType[]
+  pins: CatalogVersionPin[]
+  selectedEtId: string
+  onSelect: (etId: string) => void
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  return (
+    <Select
+      id="pin-et"
+      isOpen={isOpen}
+      onOpenChange={setIsOpen}
+      toggle={(toggleRef) => (
+        <MenuToggle ref={toggleRef} onClick={() => setIsOpen(!isOpen)} isExpanded={isOpen} style={{ width: '100%' }}>
+          {selectedEtId ? entityTypes.find(et => et.id === selectedEtId)?.name || selectedEtId : 'Select entity type...'}
+        </MenuToggle>
+      )}
+      onSelect={(_e, val) => { onSelect(String(val)); setIsOpen(false) }}
+      selected={selectedEtId}
+    >
+      <SelectList>
+        {entityTypes.filter(et => !pins.some(p => p.entity_type_id === et.id)).map(et => (
+          <SelectOption key={et.id} value={et.id} data-testid={`pin-et-${et.name}`}>{et.name}</SelectOption>
+        ))}
+      </SelectList>
+    </Select>
+  )
+}
+
+function PinVersionSelect({ versions, selectedEtvId, onSelect }: {
+  versions: EntityTypeVersion[]
+  selectedEtvId: string
+  onSelect: (etvId: string) => void
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  return (
+    <Select
+      id="pin-etv"
+      isOpen={isOpen}
+      onOpenChange={setIsOpen}
+      toggle={(toggleRef) => (
+        <MenuToggle ref={toggleRef} onClick={() => setIsOpen(!isOpen)} isExpanded={isOpen} style={{ width: '100%' }}>
+          {selectedEtvId ? `V${versions.find(v => v.id === selectedEtvId)?.version || '?'}` : 'Select version...'}
+        </MenuToggle>
+      )}
+      onSelect={(_e, val) => { onSelect(String(val)); setIsOpen(false) }}
+      selected={selectedEtvId}
+    >
+      <SelectList>
+        {versions.map(v => (
+          <SelectOption key={v.id} value={v.id} data-testid={`pin-etv-V${v.version}`}>V{v.version}</SelectOption>
+        ))}
+      </SelectList>
+    </Select>
+  )
+}
 
 interface Props {
   role: Role
@@ -62,6 +133,31 @@ export default function CatalogVersionDetailPage({ role }: Props) {
   // Diagram state
   const [diagramData, setDiagramData] = useState<DiagramEntityType[]>([])
   const [diagramLoading, setDiagramLoading] = useState(false)
+
+  // Inline edit state: description
+  const [editingDesc, setEditingDesc] = useState(false)
+  const [editDescValue, setEditDescValue] = useState('')
+
+  // Inline edit state: version label
+  const [editingLabel, setEditingLabel] = useState(false)
+  const [editLabelValue, setEditLabelValue] = useState('')
+
+  // Add pin modal state
+  const [addPinOpen, setAddPinOpen] = useState(false)
+  const [addPinError, setAddPinError] = useState<string | null>(null)
+  const [entityTypes, setEntityTypes] = useState<EntityType[]>([])
+  const [entityTypeVersions, setEntityTypeVersions] = useState<EntityTypeVersion[]>([])
+  const [selectedEtvId, setSelectedEtvId] = useState('')
+  const [selectedEtId, setSelectedEtId] = useState('')
+
+  // Inline version change state (per-pin)
+  const [pinVersionSelectOpen, setPinVersionSelectOpen] = useState<string | null>(null)
+  const [pinVersionOptions, setPinVersionOptions] = useState<Record<string, EntityTypeVersion[]>>({})
+
+  const canEdit = role === 'RW' || role === 'Admin' || role === 'SuperAdmin'
+  // Pin editing: development = RW+, testing = SuperAdmin only, production = blocked
+  // Pin editing: development = RW+, testing = SuperAdmin only, production = blocked
+  const canEditPins = canEdit && cv?.lifecycle_stage !== 'production' && (cv?.lifecycle_stage !== 'testing' || role === 'SuperAdmin')
 
   const loadCV = useCallback(async () => {
     if (!id) return
@@ -179,6 +275,101 @@ export default function CatalogVersionDetailPage({ role }: Props) {
     }
   }
 
+  const handleSaveDescription = async () => {
+    if (!id) return
+    try {
+      await api.catalogVersions.update(id, { description: editDescValue })
+      setEditingDesc(false)
+      loadCV()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update description')
+    }
+  }
+
+  const handleSaveLabel = async () => {
+    if (!id) return
+    try {
+      await api.catalogVersions.update(id, { version_label: editLabelValue })
+      setEditingLabel(false)
+      loadCV()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update version label')
+    }
+  }
+
+  const handleOpenAddPin = async () => {
+    setAddPinError(null)
+    setSelectedEtvId('')
+    setSelectedEtId('')
+    setEntityTypeVersions([])
+    try {
+      const res = await api.entityTypes.list()
+      setEntityTypes(res.items || [])
+    } catch { /* ignore */ }
+    setAddPinOpen(true)
+  }
+
+  const handleSelectEntityType = async (etId: string) => {
+    setSelectedEtId(etId)
+    setSelectedEtvId('')
+    try {
+      const res = await api.versions.list(etId)
+      setEntityTypeVersions(res.items || [])
+    } catch {
+      setEntityTypeVersions([])
+    }
+  }
+
+  const handleAddPin = async () => {
+    if (!id || !selectedEtvId) return
+    setAddPinError(null)
+    try {
+      await api.catalogVersions.addPin(id, selectedEtvId)
+      setAddPinOpen(false)
+      loadPins()
+    } catch (e) {
+      setAddPinError(e instanceof Error ? e.message : 'Failed to add pin')
+    }
+  }
+
+  const handleOpenPinVersionSelect = async (pin: CatalogVersionPin) => {
+    if (pinVersionSelectOpen === pin.pin_id) {
+      setPinVersionSelectOpen(null)
+      return
+    }
+    // Load versions for this entity type if not cached
+    if (!pinVersionOptions[pin.entity_type_id]) {
+      try {
+        const res = await api.versions.list(pin.entity_type_id)
+        setPinVersionOptions(prev => ({ ...prev, [pin.entity_type_id]: res.items || [] }))
+      } catch {
+        setPinVersionOptions(prev => ({ ...prev, [pin.entity_type_id]: [] }))
+      }
+    }
+    setPinVersionSelectOpen(pin.pin_id)
+  }
+
+  const handleUpdatePinVersion = async (pin: CatalogVersionPin, newEtvId: string) => {
+    if (!id) return
+    setPinVersionSelectOpen(null)
+    try {
+      await api.catalogVersions.updatePin(id, pin.pin_id, newEtvId)
+      loadPins()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update pin version')
+    }
+  }
+
+  const handleRemovePin = async (pinId: string) => {
+    if (!id) return
+    try {
+      await api.catalogVersions.removePin(id, pinId)
+      loadPins()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to remove pin')
+    }
+  }
+
   const stageColor = (stage: string) => {
     switch (stage) {
       case 'development': return 'blue'
@@ -217,11 +408,51 @@ export default function CatalogVersionDetailPage({ role }: Props) {
             <DescriptionList>
               <DescriptionListGroup>
                 <DescriptionListTerm>Version Label</DescriptionListTerm>
-                <DescriptionListDescription>{cv.version_label}</DescriptionListDescription>
+                <DescriptionListDescription>
+                  {editingLabel ? (
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <TextInput
+                        value={editLabelValue}
+                        onChange={(_e, v) => setEditLabelValue(v)}
+                        aria-label="Version Label"
+                        style={{ maxWidth: '300px' }}
+                      />
+                      <Button variant="primary" size="sm" onClick={handleSaveLabel}>Save</Button>
+                      <Button variant="link" size="sm" onClick={() => setEditingLabel(false)}>Cancel</Button>
+                    </div>
+                  ) : (
+                    <>
+                      {cv.version_label}
+                      {canEdit && (
+                        <Button variant="link" size="sm" onClick={() => { setEditLabelValue(cv.version_label); setEditingLabel(true) }} style={{ marginLeft: '0.5rem' }} aria-label="Edit version label">Edit</Button>
+                      )}
+                    </>
+                  )}
+                </DescriptionListDescription>
               </DescriptionListGroup>
               <DescriptionListGroup>
                 <DescriptionListTerm>Description</DescriptionListTerm>
-                <DescriptionListDescription>{cv.description || <span style={{ color: '#6a6e73' }}>No description</span>}</DescriptionListDescription>
+                <DescriptionListDescription>
+                  {editingDesc ? (
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <TextInput
+                        value={editDescValue}
+                        onChange={(_e, v) => setEditDescValue(v)}
+                        aria-label="Description"
+                        style={{ maxWidth: '300px' }}
+                      />
+                      <Button variant="primary" size="sm" onClick={handleSaveDescription}>Save</Button>
+                      <Button variant="link" size="sm" onClick={() => setEditingDesc(false)}>Cancel</Button>
+                    </div>
+                  ) : (
+                    <>
+                      {cv.description || <span style={{ color: '#6a6e73' }}>No description</span>}
+                      {canEdit && (
+                        <Button variant="link" size="sm" onClick={() => { setEditDescValue(cv.description || ''); setEditingDesc(true) }} style={{ marginLeft: '0.5rem' }} aria-label="Edit description">Edit</Button>
+                      )}
+                    </>
+                  )}
+                </DescriptionListDescription>
               </DescriptionListGroup>
               <DescriptionListGroup>
                 <DescriptionListTerm>Lifecycle Stage</DescriptionListTerm>
@@ -262,6 +493,15 @@ export default function CatalogVersionDetailPage({ role }: Props) {
         {/* Bill of Materials Tab */}
         <Tab eventKey="bom" title={<TabTitleText>Bill of Materials</TabTitleText>}>
           <PageSection padding={{ default: 'noPadding' }} style={{ marginTop: '1rem' }}>
+            {canEditPins && (
+              <Toolbar>
+                <ToolbarContent>
+                  <ToolbarItem>
+                    <Button variant="primary" onClick={handleOpenAddPin}>Add Pin</Button>
+                  </ToolbarItem>
+                </ToolbarContent>
+              </Toolbar>
+            )}
             {pinsLoading ? (
               <Spinner aria-label="Loading" />
             ) : pins.length === 0 ? (
@@ -276,6 +516,7 @@ export default function CatalogVersionDetailPage({ role }: Props) {
                     <Th>Description</Th>
                     <Th>Version</Th>
                     <Th>Entity Type ID</Th>
+                    {canEditPins && <Th>Actions</Th>}
                   </Tr>
                 </Thead>
                 <Tbody>
@@ -289,8 +530,40 @@ export default function CatalogVersionDetailPage({ role }: Props) {
                       <Td style={{ maxWidth: '30rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {pin.description || ''}
                       </Td>
-                      <Td>V{pin.version}</Td>
+                      <Td>
+                        {canEditPins ? (
+                          <Select
+                            isOpen={pinVersionSelectOpen === pin.pin_id}
+                            onOpenChange={(open) => { if (!open) setPinVersionSelectOpen(null) }}
+                            toggle={(toggleRef) => (
+                              <MenuToggle
+                                ref={toggleRef}
+                                onClick={() => handleOpenPinVersionSelect(pin)}
+                                isExpanded={pinVersionSelectOpen === pin.pin_id}
+                                aria-label={`Version for ${pin.entity_type_name}`}
+                              >
+                                V{pin.version}
+                              </MenuToggle>
+                            )}
+                            onSelect={(_e, val) => handleUpdatePinVersion(pin, String(val))}
+                            selected={pin.entity_type_version_id}
+                          >
+                            <SelectList>
+                              {(pinVersionOptions[pin.entity_type_id] || []).map(v => (
+                                <SelectOption key={v.id} value={v.id}>V{v.version}</SelectOption>
+                              ))}
+                            </SelectList>
+                          </Select>
+                        ) : (
+                          <>V{pin.version}</>
+                        )}
+                      </Td>
                       <Td><code>{pin.entity_type_id.slice(0, 8)}...</code></Td>
+                      {canEditPins && (
+                        <Td>
+                          <Button variant="danger" size="sm" onClick={() => handleRemovePin(pin.pin_id)}>Remove</Button>
+                        </Td>
+                      )}
                     </Tr>
                   ))}
                 </Tbody>
@@ -344,6 +617,41 @@ export default function CatalogVersionDetailPage({ role }: Props) {
           </PageSection>
         </Tab>
       </Tabs>
+
+      {/* Add Pin Modal */}
+      <Modal
+        variant={ModalVariant.small}
+        isOpen={addPinOpen}
+        onClose={() => { setAddPinOpen(false); setAddPinError(null) }}
+      >
+        <ModalHeader title="Add Pin" />
+        <ModalBody>
+          {addPinError && <Alert variant="danger" title={addPinError} isInline style={{ marginBottom: '1rem' }} />}
+          <Form>
+            <FormGroup label="Entity Type" isRequired fieldId="pin-et">
+              <PinEntityTypeSelect
+                entityTypes={entityTypes}
+                pins={pins}
+                selectedEtId={selectedEtId}
+                onSelect={handleSelectEntityType}
+              />
+            </FormGroup>
+            {selectedEtId && (
+              <FormGroup label="Version" isRequired fieldId="pin-etv">
+                <PinVersionSelect
+                  versions={entityTypeVersions}
+                  selectedEtvId={selectedEtvId}
+                  onSelect={(etvId) => setSelectedEtvId(etvId)}
+                />
+              </FormGroup>
+            )}
+          </Form>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="primary" onClick={handleAddPin} isDisabled={!selectedEtvId}>Add</Button>
+          <Button variant="link" onClick={() => { setAddPinOpen(false); setAddPinError(null) }}>Cancel</Button>
+        </ModalFooter>
+      </Modal>
 
       {/* Version Snapshot Modal */}
       <Modal

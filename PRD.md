@@ -23,7 +23,7 @@ This configuration is itself versioned and subject to lifecycle management.
 A **catalog** is a named collection of entity instances that uses a catalog version (CV) as its schema. The CV determines which entity types, attributes, and associations are available; the catalog holds the actual data.
 
 - Multiple catalogs can share the same CV (e.g., "Production App A" and "Staging App B" both use CV v2.0 but contain different assets).
-- A catalog is pinned to a single CV at creation. In v1, this pin is immutable — to use a new CV, create a new catalog. Re-pinning (upgrading a catalog to a newer CV) is a future capability.
+- A catalog is pinned to a single CV at creation. The pin can be changed via re-pinning (`PUT /catalogs/{name}` with `catalog_version_id`), which resets validation status to `draft`. Published catalogs must be unpublished before re-pinning.
 - Each catalog has a **validation status**: `draft` (incomplete, work in progress), `valid` (all constraints satisfied), or `invalid` (constraints violated, e.g., after a CV schema change).
 - Entity instances are created freely in a catalog without immediate validation (draft mode). Validation runs on demand or at lifecycle gates.
 
@@ -708,7 +708,7 @@ As an RW user, I want to create a catalog version that pins specific entity defi
 Acceptance Criteria:
 - RW (and above) users can create a new catalog version by specifying a version label, an optional description, and selecting specific entity definition versions to include.
 - The catalog version records the exact `(entity type name, version)` tuples it contains.
-- Once created, the catalog version's entity version pins cannot be changed (immutable snapshot). The description can be updated.
+- Entity version pins can be added or removed after creation (see US-52). The version label and description can be updated (see US-49).
 - The catalog version is created in the Development lifecycle stage.
 - The catalog version has a unique identifier.
 - RO users cannot create catalog versions; the API returns a 403.
@@ -1289,7 +1289,9 @@ Acceptance Criteria:
 - Data mutations (create/update/delete instance, create/delete link, set parent) on a published catalog require SuperAdmin role. RW and Admin users receive 403.
 - RW users see instance create/edit/delete controls disabled on published catalogs with a tooltip explaining the restriction.
 - Published catalogs show a warning banner: "This catalog is published. Editing requires SuperAdmin privileges."
-- SuperAdmin edits still reset validation status to `draft` (same behavior as unpublished catalogs).
+- SuperAdmin **data mutations** (instance/link changes) reset validation status to `draft` (same behavior as unpublished catalogs).
+- **Catalog metadata edits** (description change) by SuperAdmin are treated as cosmetic changes — they do NOT reset validation status or unpublish the catalog. The Catalog CR is synced to reflect the updated description without disrupting published state. This allows fixing typos or adding context to a published catalog without triggering re-validation.
+- Renaming or re-pinning (CV change) on published catalogs is blocked entirely — these are structural changes that require unpublish → edit → re-validate → republish.
 - Validation (POST .../validate) remains available to RW+ users on published catalogs — it is a read operation.
 - Catalog-level operations (delete catalog, unpublish) require Admin+ regardless of published state.
 
@@ -1416,6 +1418,74 @@ Acceptance Criteria:
 
 ---
 
+**US-49: Edit catalog version metadata**
+As a schema admin, I want to update a catalog version's version label and description after creation, so that I can fix typos or clarify the CV's purpose without recreating it.
+
+**Why**: CV metadata (label and description) is currently immutable after creation. Typos in labels or descriptions require deleting and recreating the CV, which breaks any catalogs pinned to it.
+
+Acceptance Criteria:
+- RW (and above) users can update a CV's version label and/or description via `PUT /api/meta/v1/catalog-versions/:id` with `{version_label?, description?}`.
+- Omitted fields are preserved (use `*string` pattern — nil means "don't change").
+- Version label uniqueness is enforced — duplicate labels return 409.
+- The CV detail page shows inline Edit buttons next to version label and description (same pattern as EntityTypeDetailPage).
+- RO users cannot update; the API returns 403.
+
+---
+
+**US-50: Edit catalog metadata**
+As a catalog owner, I want to rename or update the description of my catalog, so that I can correct metadata without recreating the catalog and losing all instance data.
+
+**Why**: Catalog name and description are set at creation and cannot be changed. Typos or evolving naming conventions force users to copy the catalog to a new name and delete the old one — a disruptive workflow for catalogs with hundreds of instances.
+
+Acceptance Criteria:
+- RW (and above) users can update a catalog's name and/or description via `PUT /api/data/v1/catalogs/{catalog-name}` with `{name?, description?}`.
+- Omitted fields are preserved (`*string` pattern).
+- Name changes require DNS-label validation and uniqueness check (409 on duplicate).
+- Published catalogs: only SuperAdmin can edit, and rename is not allowed (only description can be changed). Returns 403 for non-SuperAdmin, 400 for rename attempt on published catalog.
+- `RequireWriteAccess` + `RequireCatalogAccess` middleware applied to the PUT route.
+- Any change resets validation status to `draft`.
+- The catalog detail page shows an inline Edit button for description (same pattern as EntityTypeDetailPage).
+- RO users cannot update; the API returns 403.
+
+---
+
+**US-51: Catalog re-pinning (change CV)**
+As a catalog owner, I want to switch my catalog to a different catalog version, so that I can upgrade the schema without recreating the catalog.
+
+**Why**: When entity types evolve and a new CV is created with updated pins, existing catalogs are stuck on the old CV. Without re-pinning, the only option is to copy the catalog to a new one pinned to the new CV — losing the original catalog name and requiring manual data migration.
+
+Acceptance Criteria:
+- RW (and above) users can re-pin a catalog by including `catalog_version_id` in `PUT /api/data/v1/catalogs/{catalog-name}`.
+- The new CV must exist; returns 404 if not found.
+- Re-pinning resets validation status to `draft` (instance data may not conform to the new schema).
+- Published catalogs cannot be re-pinned — must unpublish first. Returns 400 with clear error.
+- The catalog detail page shows a CV selector dropdown (list of available CVs) for Admin+ users.
+- RO users cannot re-pin; the API returns 403.
+
+---
+
+**US-52: Edit catalog version pins (add/remove/change version)**
+As a schema admin, I want to add, remove, or change the version of entity type pins in a catalog version, so that I can evolve the bill of materials without recreating the CV.
+
+**Why**: CVs are currently immutable after creation. Adding a new entity type to a schema requires deleting and recreating the CV, which breaks all catalogs pinned to it. Changing the pinned version of an entity type (e.g., upgrading from V1 to V2 after adding attributes) is the most common schema evolution operation.
+
+Acceptance Criteria:
+- **Add pin**: `POST /api/meta/v1/catalog-versions/:id/pins` with `{entity_type_version_id}` adds a pin.
+- The entity type version must exist; returns 404 if not found.
+- **Unique entity type constraint**: A CV cannot have two pins for the same entity type. If the entity type (not just the specific version) is already pinned, AddPin returns 409 with a message identifying the existing pin. The check uses the entity type ID resolved from the ETV, not the ETV ID itself.
+- **Change pin version**: `PUT /api/meta/v1/catalog-versions/:id/pins/:pin-id` with `{entity_type_version_id}` changes the pinned version. The new ETV must belong to the same entity type as the existing pin. Returns 400 if the entity type doesn't match.
+- **Remove pin**: `DELETE /api/meta/v1/catalog-versions/:id/pins/:pin-id` removes a pin.
+- Removing a pin that has instances in catalogs using this CV is allowed but logs a warning.
+- Requires RW+ role; RO returns 403.
+- **Stage guards (TD-69)**: Pin editing is restricted by catalog version lifecycle stage:
+  - **development**: RW+ allowed (standard permission).
+  - **testing**: SuperAdmin only. *Note: this policy is provisional and may be relaxed to Admin+ in the future if operational experience shows it is too restrictive.*
+  - **production**: blocked entirely, regardless of role. Returns validation error.
+- **UI — BOM tab**: The version column is an inline dropdown showing all available versions of the entity type. Selecting a different version calls the change pin endpoint. Pin controls (Add Pin, Remove, version dropdown) are hidden when the CV stage does not permit editing for the current role.
+- **UI — Add Pin modal**: The entity type dropdown filters out entity types that are already pinned in this CV. Only unpinned entity types are shown.
+
+---
+
 ## 10. Open Design Decisions
 
 The following items are acknowledged but not yet fully specified:
@@ -1452,13 +1522,13 @@ Items where the current implementation diverges from the intended behavior descr
 | TD-8c | Extract diagram data loading into a custom hook | `App.tsx` and `CatalogVersionDetailPage.tsx` both have `loadDiagramData` functions that fetch snapshots and build `DiagramEntityType[]` | Extract into `ui/src/hooks/useDiagramData.ts` with `loadFromAllEntityTypes()` and `loadFromPins(pins)` methods. |
 | ~~TD-8d~~ | ~~Extract EdgeClickData interface~~ | **RESOLVED.** Exported `EdgeClickData` interface from `EntityTypeDiagram.tsx`, imported in `App.tsx`. | |
 | ~~TD-9~~ | ~~Show required attributes in diagram~~ | **RESOLVED.** Required attributes prefixed with `*` in diagram UML nodes. | |
-| TD-10 | Mutable CVs in development mode | CV pins are immutable — entity types are pinned at creation and cannot be changed | In development stage, CVs should be mutable: add/remove entity type pins, change pinned versions. Pins are frozen only on promotion to testing. Catalogs cannot be created against a development-stage CV. If a CV with existing catalogs is demoted back to development, modified, and re-promoted, all catalogs pinned to that CV must be re-validated — they may become invalid if entity types were removed or attribute schemas changed. |
+| TD-10 | Mutable CVs in development mode | **PARTIALLY RESOLVED.** CV pins are now mutable via US-52 (add/remove/change version). Stage guards added via TD-69: production = blocked, testing = SuperAdmin only, development = RW+. Remaining: pin changes on demoted CVs should trigger re-validation of pinned catalogs. |
 | TD-11 | Show mandatory associations in UI | Associations with cardinality `1` or `1..n` are not visually distinguished from optional ones | On the entity detail page, BOM modal, and diagram, show a mandatory indicator (e.g., `*` or bold) on the side of the association where cardinality starts with `1`. For example, mcp-tool's containment by mcp-server (cardinality `1` on source) shows as mandatory on the mcp-tool detail screen but NOT on the mcp-server detail screen (where the target cardinality `0..n` is optional). The indicator appears only from the perspective of the entity that is required to have the association. |
-| TD-12 | Catalog re-pinning | A catalog's CV pin is immutable — to use a new CV, create a new catalog | Allow upgrading a catalog to a newer CV. Requires data migration validation: check that all entity instances are still valid under the new CV's schema. Report incompatibilities and let the user resolve them before completing the re-pin. |
+| ~~TD-12~~ | ~~Catalog re-pinning~~ | **RESOLVED.** `PUT /catalogs/{name}` accepts `catalog_version_id` to re-pin. Resets validation to `draft`. Published catalogs must unpublish first. See US-51. |
 | TD-13 | Get catalog version by name | CV can only be retrieved by ID; no lookup by version_label | Add `GET /api/meta/v1/catalog-versions/by-name/:label` endpoint for name-based lookup. The K8s CR already uses the label as its name. |
 | TD-14 | Catalogs using this CV | CatalogVersion detail page does not show which catalogs are pinned to it | Add a "Catalogs" section on the CatalogVersion detail page listing catalogs pinned to that CV, with name, validation status, and link to catalog detail. |
 | ~~TD-15~~ | ~~Catalog cascade delete needs transaction~~ | **RESOLVED.** Wrapped instance soft-delete + catalog hard-delete in `TransactionManager.RunInTransaction`. | |
-| TD-16 | Mixed soft-delete/hard-delete on catalog deletion | Instances are soft-deleted (`deleted_at` set) but the catalog itself is hard-deleted. Soft-deleted instances with no parent catalog accumulate as dead rows. | Either hard-delete instances when the catalog is deleted (since the catalog is hard-deleted, there's no recovery path anyway), or soft-delete the catalog too. Also consider a periodic cleanup job for orphaned soft-deleted instances. |
+| ~~TD-16~~ | ~~Catalog deletion cascade leaves orphaned IAVs and links~~ | **RESOLVED.** `CatalogService.Delete` now lists all instances, deletes their IAVs (`DeleteByInstanceID`) and links (`DeleteByInstance`) before deleting instances and catalog. Added `DeleteByInstanceID` to IAV repo interface. |
 | ~~TD-17~~ | ~~Catalog list pagination~~ | **RESOLVED.** Added `limit` and `offset` query params to `ListCatalogs` handler. Default 20, max 100. Instance list handler already had pagination. | |
 | TD-18 | UI component props style inconsistency | Minor style issue: some components use a named `interface Props { ... }` for their parameter type (e.g., `EnumListPage`), while others use inline destructured types (e.g., `CatalogListPage`: `{ role }: { role: Role }`). Both are functionally identical. | Pick one convention and apply it consistently across all page components. The named `Props` interface is more common in the codebase and scales better when props grow. Low priority — a future style alignment pass. |
 | TD-19 | N+1 query in resolveEntityType | `InstanceService.resolveEntityType` iterates all CV pins and calls `etvRepo.GetByID` for each to find the matching entity type | Replace the per-pin query loop with a batch fetch or a join query that resolves entity type ID → pinned version in one call. Acceptable for now since CVs typically have 3-5 pins; becomes a problem at 20+. |
@@ -1468,7 +1538,7 @@ Items where the current implementation diverges from the intended behavior descr
 | ~~TD-24~~ | ~~Remove legacy EntityInstanceService~~ | **RESOLVED.** Removed `entity_instance_service.go`, `entity_instance_service_test.go`, legacy `Handler` from `handler.go`, `handler_test.go`, `additional_tests_test.go`, `coverage_test.go`, and legacy route registration from `main.go`. | |
 | ~~TD-25~~ | ~~Replace `interface{}` with `any` across codebase~~ | **RESOLVED.** Replaced in 9 files. | |
 | TD-26 | Extract shared instance creation logic (M5) | `CreateInstance` and `CreateContainedInstance` share ~70% of logic (instance model creation, attribute validation, persistence, validation status reset, attribute resolution). | Extract a private `createInstanceInternal` method that both call, passing `parentID` (empty for root) and containment validation as optional steps. |
-| TD-27 | ListContainedInstances pagination broken by in-memory filtering (M7) | `ListContainedInstances` fetches children with `ListByParent` (which respects limit/offset), then filters by entity type in memory. This can return fewer results than limit or miss results entirely when the parent has children of multiple types. | Push the entity type filter into the repository query (add `ListByParentAndType` method), or fetch all children without pagination and paginate after filtering. |
+| ~~TD-27~~ | ~~ListContainedInstances pagination params ignored~~ | **RESOLVED.** Extracted `parseListParams()` helper, reused in both `ListInstances` and `ListContainedInstances`. Pagination, sort, and filter query params now flow through. |
 | ~~TD-29~~ | ~~Reject reserved entity type names~~ | **RESOLVED.** Added `reservedEntityTypeNames` blocklist (`links`, `references`, `referenced-by`, `copy`, `replace`, `tree`, `validate`, `publish`, `unpublish`) checked in both `CreateEntityType` and `RenameEntityType`. | |
 | ~~TD-30~~ | ~~Add catalog ownership check on instance read/update/delete~~ | **RESOLVED.** Added `inst.CatalogID != catalog.ID` check in `GetInstance`, `UpdateInstance`, and `DeleteInstance`. Returns NotFound if mismatch. | |
 | TD-31 | Create new container from contained instance's Set Container modal | The Set Container modal only allows selecting existing parent instances. Users cannot create a new container directly from the child side — they must first create the container via the parent entity type tab, then come back and set it. | Add a "Create New" mode to the Set Container modal (similar to the "Create New / Adopt Existing" toggle in the Add Contained Instance modal). The natural flow is parent-first, so this is a convenience feature, not a critical gap. |
@@ -1499,13 +1569,26 @@ Items where the current implementation diverges from the intended behavior descr
 | TD-56 | Operational catalog viewer Overview tab removed — consider re-adding with useful content | The Overview tab on `OperationalCatalogDetailPage` was hidden because it showed only entity type names/versions with no actionable information. If a meaningful Overview tab is designed later (e.g., catalog stats, instance counts per entity type, last-modified timestamps, data quality summary), the tab should be re-added with useful content. | Design and implement a useful Overview tab, or confirm it is not needed and clean up any remaining dead code. |
 | TD-57 | Move `CatalogDetailPage` and `CatalogListPage` from `pages/operational/` to `pages/meta/` | Both `CatalogDetailPage.tsx` (schema catalog detail with instance CRUD) and `CatalogListPage.tsx` (schema catalog list) live in `pages/operational/` but serve schema-management functions and are rendered under `/schema/*` routes. All other schema pages (EntityTypeDetailPage, EnumDetailPage, CatalogVersionDetailPage) are in `pages/meta/`. | Move both files and their test files to `pages/meta/`. Update imports in `App.tsx`. This is a pure file-move refactor with no behavior changes. |
 | TD-58 | Enum values are not versioned — mutations are destructive | Enum values (add, remove, reorder) mutate in place. If an enum is referenced by attributes across multiple catalog versions, changing its values affects all of them retroactively. Entity types use copy-on-write versioning for attributes and associations, but enums have no equivalent mechanism. Removing an enum value that is in use by existing entity instances could leave invalid data. | Options: (A) Add versioning to enums (copy-on-write on mutation, enum versions pinned in CVs alongside entity type versions). (B) Add validation that prevents removing enum values that are in use. (C) Accept the current behavior and document it as a known limitation. Option B is the minimum viable fix. |
-| TD-59 | N+1 query in entity type list description resolution | The entity type list handler calls `GetLatestByEntityType()` once per entity type in a loop to resolve descriptions. With many entity types, this generates N additional database queries. | Add a batch method `GetLatestByEntityTypes(ctx, entityTypeIDs []string) (map[string]*EntityTypeVersion, error)` to resolve all descriptions in a single query. |
+| ~~TD-59~~ | ~~N+1 query in entity type list description resolution~~ | **RESOLVED.** Added `GetLatestByEntityTypes` batch method to ETV repo. Handler collects all IDs, makes single batch call. App-level dedup by max version (SQLite-compatible). |
 | TD-60 | Enum description edit uses `window.prompt()` instead of inline edit | The enum detail page description edit uses `window.prompt()`, while the entity type detail page uses a proper inline TextInput with Save/Cancel buttons. This is inconsistent UX and makes the enum edit untestable in browser tests (Playwright cannot mock native `window.prompt`). | Replace `window.prompt()` with inline TextInput edit (same pattern as EntityTypeDetailPage description edit). This also makes the catch block coverable in tests. |
-| TD-61 | CatalogVersion description is not editable after creation | The CV description is set at creation but there is no `PUT /catalog-versions/:id` endpoint to update it. The CV detail page shows the description but has no edit control. | Add `UpdateCatalogVersion(ctx, id, description)` to service, `PUT /catalog-versions/:id` handler accepting `{description}`, and inline edit on the CV detail page (same pattern as EntityTypeDetailPage). |
+| ~~TD-61~~ | ~~CatalogVersion metadata not editable after creation~~ | **RESOLVED.** Added `PUT /catalog-versions/:id` with `{version_label?, description?}` using `*string` pattern. Inline edit on CV detail page for both fields. Version label uniqueness enforced (409 on duplicate). See US-49. |
 | TD-63 | Inconsistent edit UX on entity type detail overview | The entity type detail overview tab has two editable fields — Name (rename) and Description — but they use different UI patterns. Rename opens a modal dialog; description uses inline TextInput with Save/Cancel. This is inconsistent and confusing. | Align both fields to the same pattern. Either both use inline edit (simpler, fewer clicks) or both use modals (more consistent with other edit actions in the app). Inline edit is preferred since description already uses it and rename is a simple text field. |
 | TD-64 | Move Technical Debt table from PRD to dedicated `docs/td-log.md` | The TD table in the PRD has grown to 60+ entries (active + resolved), making the PRD file unwieldy. The TDs are operational tracking items, not product requirements. | Extract the entire Technical Debt section (Section 11) to a dedicated `docs/td-log.md` file. The PRD retains a one-line reference: "See [docs/td-log.md](docs/td-log.md) for technical debt tracking." All scripts, skills, and session prompts that reference TDs should be updated to point to the new file. |
+| TD-65 | CV selector on catalog detail is Admin-only, not RW+ | The CV selector dropdown for re-pinning is only visible when the user is Admin or SuperAdmin. RW users can write to catalogs but cannot change the CV. | Consider showing the CV selector for RW+ users, or document this as intentional (CV changes are higher-impact than instance edits, so restricting to Admin+ is a deliberate access control choice). |
+| TD-66 | Duplicated role-to-service-role mapping in CV handler | The `switch role { case middleware.RoleRO: ... }` pattern is repeated in `Promote`, `Demote`, and `Delete` handlers in `catalog_version_handler.go`. | Extract a shared `mapRole(middleware.Role) svcmeta.Role` helper function to eliminate the duplication. |
+| TD-67 | `validate:"required"` struct tags not enforced by handler | DTOs like `AddPinRequest`, `UpdatePinRequest`, `CopyEntityTypeRequest`, `CreateAssociationLinkRequest` have `validate:"required"` tags, but handlers only call `c.Bind` (JSON unmarshalling) — no struct validator runs. An empty required field passes binding as a Go zero value and reaches the service, which returns a confusing 404 instead of a clear 400 "field is required". | Register a struct validator (e.g., `go-playground/validator`) on the Echo instance and call `c.Validate(&req)` after `c.Bind`. Apply consistently across all handlers, not just new ones. Low priority — current behavior is correct (service rejects invalid data), just produces unclear error messages. |
+| TD-68 | Inline edit field size mismatch on CV and Catalog detail pages | On both the CatalogVersionDetailPage (version label, description) and CatalogDetailPage (description), the inline TextInput field size does not match the surrounding DescriptionList frame — it appears narrower/shorter than the container. | Set `style={{ width: '100%' }}` on the inline TextInput, or wrap it to match the DescriptionListDescription width. Low priority — cosmetic only. |
+| ~~TD-69~~ | ~~[BUG] CV BOM pin editing allowed in production stage~~ | **RESOLVED.** Added `checkPinEditAllowed` stage guard to `AddPin`, `RemovePin`, `UpdatePin` service methods. Production = blocked entirely, testing = SuperAdmin only (provisional — may be relaxed to Admin+), development = RW+. UI uses `canEditPins` derived from CV `lifecycle_stage` + role. 7 new service tests. |
+| TD-70 | [BUG] BOM table not sorted; re-pinned entity moves to bottom | After changing a pin's version via the BOM inline dropdown, the modified pin appears at the bottom of the table instead of staying in place. The BOM table should be sorted alphabetically by entity type name (case-insensitive) so pin order is stable and predictable. | Sort `pins` array by `entity_type_name.toLowerCase()` before rendering in the BOM tab. Apply the same sort after `loadPins()` to ensure consistent ordering on initial load, add, remove, and update. |
+| TD-72 | [BUG] Diagram entity node overflows when attribute name + enum type is long | When an attribute has a long name combined with a long enum type name (e.g., `execution-modes : guardrail-invocation`), the `name : type` text is wider than the entity type frame, spilling outside the node boundary. | Compute the node width dynamically from the longest `name : type` attribute label in `EntityTypeDiagram.tsx`. Use a character-based width estimate (e.g., `Math.max(minWidth, longestLabel.length * charWidth + padding)`) to size the node so all attributes fit within the frame. |
+| TD-73 | `mapRole` has unreachable dead code (RoleRO + default cases) | `mapRole` in `catalog_version_handler.go` has 4 unreachable lines: `RoleRO` case (blocked by `requireRW` middleware) and `default` case (middleware only passes known enum values). These are uncovered in tests. | Remove the `RoleRO` case. Change `default` to return an error or panic (fail-fast on unexpected role values) rather than silently defaulting to RO. |
+| TD-74 | CatalogVersionDetailPage growing too large (~620 lines) | The page has 4 `useState` hooks for inline edit state and 5 for pin management state, plus handler functions for each. This makes the component hard to maintain. | Extract inline edit state + handlers into a `useInlineEdit(apiCall, loadFn)` custom hook. Extract pin management state into a `usePinManagement(cvId, role)` hook. Reduces the page to rendering logic only. |
+| TD-75 | `handleOpenPinVersionSelect` mixes UI state toggling and data fetching | The function both toggles the dropdown open/closed state AND loads entity type versions from the API in a single handler. | Split into two concerns: the toggle should be a pure UI state change, and version loading should be a `useEffect` or separate async function triggered by the toggle state change. |
+| TD-76 | Missing browser tests for `canEditPins` visibility (T-29.15/16/17) | Test plan Section 29 defines T-29.15 (production CV hides pin controls), T-29.16 (testing CV as Admin hides pin controls), T-29.17 (testing CV as SuperAdmin shows pin controls) — but none are implemented. | Write browser tests that render CatalogVersionDetailPage with mock CVs at different lifecycle stages and verify Add Pin / Remove / version dropdown visibility based on `canEditPins`. |
+| TD-77 | AddPin O(n) entity type resolution for duplicate check | `AddPin` iterates existing pins and calls `etvRepo.GetByID` for each one to resolve the entity type ID for the uniqueness check. For CVs with many pins (>20), this causes N+1 queries. | Add a batch method (e.g., `GetByIDs(ctx, []string)`) to resolve all existing pin ETVs in a single query, or cache the entity type ID on the pin record itself to avoid the lookup entirely. |
 | ~~TD-42~~ | ~~[IMPORTANT] Add Contained Instance modal missing custom attributes~~ | **RESOLVED.** Add Contained Instance modal now loads child entity type schema attributes when child type is selected. Renders attribute fields (string, number, enum) same as root-level Create Instance modal. Attributes passed in API request body. |
-| TD-62 | [IMPORTANT] Audit all update/PUT endpoints for omitted-field data loss | The `UpdateEnum` handler was silently erasing the `description` field when the caller omitted it from the JSON body, because the DTO used `string` (zero value `""`) rather than `*string` (nil = omitted). This was fixed for enums by switching to `*string` and preserving the current value when nil. **The same bug pattern may exist on other update endpoints** — any PUT/PATCH handler that unconditionally overwrites a field from a DTO `string` will erase data when the caller omits that field. | Audit every update endpoint in the Meta and Operational APIs. For each optional field on an update DTO, verify that omitting the field in the JSON request body does NOT erase the current value. Use `*string` (pointer) for optional fields and preserve current values when nil. Endpoints to check: `UpdateEntityType`, `UpdateInstance`, `SetParent`, catalog update (if added), CV update (TD-61), and any future update handlers. |
+| ~~TD-62~~ | ~~[IMPORTANT] Audit all update/PUT endpoints for omitted-field data loss~~ | **RESOLVED.** Fixed `UpdateEntityTypeRequest.Description` from `string` to `*string`. Handler preserves existing description when field omitted. All other update DTOs already use `*string` pattern. |
+| TD-71 | [IMPORTANT] [SECURITY] UpdateCatalogVersion has no lifecycle stage guard | `PUT /catalog-versions/:id` allows any RW user to change `version_label` and `description` on production/testing CVs. No `checkPinEditAllowed` equivalent. Changing a production CV's label orphans the K8s CatalogVersion CR (name derived from `SanitizeK8sName(label)`), desyncs Catalog CRs that reference the label, and breaks downstream trust. Same class of bug as TD-69 but for CV metadata. | Apply `checkPinEditAllowed` (or a similar stage guard) to `UpdateCatalogVersion`. Add `role` parameter to the service method. Consider allowing description-only edits on all stages (informational) but blocking label changes on testing/production — mirrors the catalog pattern where description edits are allowed on published catalogs but name changes are not. |
 | ~~TD-22~~ | ~~[CRITICAL] Common attributes as schema-level attributes~~ | **RESOLVED (Approach B — API-level merge).** Common attributes — Name (required) and Description (optional) — are injected as synthetic system attributes (`system: true`) into all API responses: instance detail, attribute lists, version snapshots, and UML diagrams. The UI renders them uniformly alongside custom attributes. System attributes cannot be created, edited, renamed, or deleted by users. Custom attribute names "name"/"description" are rejected. Copy-attributes excludes system attributes. Catalog validation checks Name is non-empty. No DB schema changes — common attributes remain as fields on `EntityInstance`, with the API layer handling the merge. |
 
 ## 12. Future Features
@@ -1566,9 +1649,9 @@ A future edit-from-CV workflow could:
 
 **Decision:** Deferred. The v1 read-only BOM view is sufficient. Revisit when user feedback indicates demand for in-place editing from the CV context.
 
-### FF-4: Edit Catalog Version
+### FF-4: Edit Catalog Version (PARTIALLY IMPLEMENTED — see US-52)
 
-Catalog versions are currently immutable after creation — pins (entity type version selections) cannot be changed, and there is no way to add or remove entity types from an existing CV. This forces users to delete and recreate CVs when entity types evolve, which is disruptive when catalogs already reference the CV.
+Add/remove pins implemented via `POST/DELETE /catalog-versions/:id/pins`. Changing pinned version for an entity type and backward-compatibility validation for published CVs are deferred.
 
 **Capabilities:**
 - **Add entity type pin** — pin a new entity type (at a specific version) to an existing CV
@@ -1705,4 +1788,40 @@ Import catalog data (entity instances, attribute values, association links, cont
 - **API import:** Pull data from external systems via configured API endpoints. The import configuration specifies the source URL, authentication, and a mapping from the external data format to the Asset Hub entity model.
 
 **Scope:** Details on file format, API mapping configuration, conflict resolution (merge vs. overwrite), and validation behavior will be discussed and specified in a future design session.
+
+### FF-12: Catalog Export/Import (System Portability)
+
+Export a complete catalog — including its catalog version, pinned entity type definitions (with attributes, associations, enums), and all operational data (instances, attribute values, containment hierarchy, association links) — to a portable file. Import that file into a different Asset Hub deployment to recreate the full catalog.
+
+**Export:**
+- `GET /api/data/v1/catalogs/{name}/export` produces a self-contained JSON (or YAML) file containing:
+  - Catalog metadata (name, description, validation status)
+  - Catalog version (label, description, lifecycle stage)
+  - All pinned entity type definitions (entity types, their versioned attributes with types/enums/required flags, and associations with cardinality)
+  - Enum definitions (names, values) referenced by attributes
+  - All entity instances with attribute values
+  - Containment hierarchy (parent-child relationships)
+  - Association links between instances
+- The file is self-describing: it includes the full schema so the target system doesn't need the same entity types pre-existing.
+
+**Import:**
+- `POST /api/data/v1/catalogs/import` accepts the export file and creates the catalog on the target system. Optional query/body parameters `catalog_name` and `catalog_version_label` override the names in the file, allowing import under a different catalog name or CV label without editing the export file (e.g., `POST /api/data/v1/catalogs/import?catalog_name=my-copy&catalog_version_label=v2.0-imported`).
+- **Idempotent re-import:** If schema entities (entity types, enums, attributes, associations) or operational data (instances) already exist with the same name and are **identical** to the imported version, the import treats them as already-present and skips creation. This supports the workflow: import → delete parts → re-import.
+- **Collision detection:** If a schema entity or instance exists with the same name but is **not identical** to the imported version (different attributes, different enum values, different data), the import **fails** with a detailed error listing all collisions. No partial import — the operation is atomic.
+- **Identical** means structurally equivalent: same attributes (name, type, required, ordinal), same enum values (same set in same order), same association definitions (type, target, cardinality). IDs are not compared — only structural content.
+
+**Collision rules summary:**
+
+| Scenario | Behavior |
+|----------|----------|
+| Entity type with same name, identical schema | Skip (idempotent) |
+| Entity type with same name, different schema | Fail with collision error |
+| Enum with same name, identical values | Skip |
+| Enum with same name, different values | Fail |
+| Instance with same name in same entity type, identical attributes | Skip |
+| Instance with same name, different attribute values | Fail |
+| Catalog with same name already exists | Fail — use `catalog_name` override to rename on import |
+| CV with same label already exists | Fail — use `catalog_version_label` override to rename on import |
+
+**Scope:** File format specification, streaming support for large catalogs, partial import (import schema only vs. schema + data), and compression will be discussed in a future design session.
 

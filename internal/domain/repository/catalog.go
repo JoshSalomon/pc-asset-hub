@@ -15,6 +15,7 @@ type CatalogRepository interface {
 	Delete(ctx context.Context, id string) error
 	UpdateValidationStatus(ctx context.Context, id string, status models.ValidationStatus) error
 	UpdatePublished(ctx context.Context, id string, published bool, publishedAt *time.Time) error
+	Update(ctx context.Context, catalog *models.Catalog) error
 	UpdateName(ctx context.Context, id string, newName string) error
 	ListByCatalogVersionID(ctx context.Context, catalogVersionID string) ([]*models.Catalog, error)
 }

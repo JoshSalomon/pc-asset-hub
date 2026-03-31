@@ -189,6 +189,23 @@ export const api = {
       }),
     delete: (id: string) =>
       fetchJSON(`${BASE_URL}/catalog-versions/${id}`, { method: 'DELETE' }),
+    update: (id: string, data: { version_label?: string; description?: string }) =>
+      fetchJSON<CatalogVersion>(`${BASE_URL}/catalog-versions/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    addPin: (id: string, entityTypeVersionId: string) =>
+      fetchJSON(`${BASE_URL}/catalog-versions/${id}/pins`, {
+        method: 'POST',
+        body: JSON.stringify({ entity_type_version_id: entityTypeVersionId }),
+      }),
+    updatePin: (id: string, pinId: string, entityTypeVersionId: string) =>
+      fetchJSON(`${BASE_URL}/catalog-versions/${id}/pins/${pinId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ entity_type_version_id: entityTypeVersionId }),
+      }),
+    removePin: (id: string, pinId: string) =>
+      fetchJSON<void>(`${BASE_URL}/catalog-versions/${id}/pins/${pinId}`, { method: 'DELETE' }),
   },
 
   catalogs: {
@@ -208,6 +225,11 @@ export const api = {
       }),
     delete: (name: string) =>
       fetchJSON(`${DATA_BASE_URL}/catalogs/${name}`, { method: 'DELETE' }),
+    update: (name: string, data: { name?: string; description?: string; catalog_version_id?: string }) =>
+      fetchJSON<Catalog>(`${DATA_BASE_URL}/catalogs/${name}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
     validate: (name: string) =>
       fetchJSON<ValidationResult>(`${DATA_BASE_URL}/catalogs/${name}/validate`, { method: 'POST' }),
     publish: (name: string) =>

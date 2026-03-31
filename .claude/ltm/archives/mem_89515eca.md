@@ -78,4 +78,3 @@ cd ui && npm run test:browser -- --coverage  # 97.95% statements
 - Duplicate DOM text from PatternFly Tabs hidden panels: use `.first()`.
 - Go cross-package coverage: use `-coverpkg=./internal/...` for aggregate numbers.
 - Go error branches in GORM repos: use `closedDB(t)` to trigger non-ErrRecordNotFound errors.
-

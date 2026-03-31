@@ -20,10 +20,19 @@ import {
   EmptyState,
   EmptyStateBody,
   Spinner,
+  TextInput,
+  MenuToggle,
+  Select,
+  SelectOption,
+  SelectList,
+  DescriptionList,
+  DescriptionListGroup,
+  DescriptionListTerm,
+  DescriptionListDescription,
 } from '@patternfly/react-core'
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
-import { api } from '../../api/client'
-import type { Catalog, EntityInstance, SnapshotAttribute, Role } from '../../types'
+import { api, setAuthRole } from '../../api/client'
+import type { Catalog, CatalogVersion, EntityInstance, SnapshotAttribute, Role } from '../../types'
 import { useValidation } from '../../hooks/useValidation'
 import ValidationResults from '../../components/ValidationResults'
 import { useCatalogData } from '../../hooks/useCatalogData'
@@ -90,6 +99,14 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
   const [copyOpen, setCopyOpen] = useState(false)
   const [copyError, setCopyError] = useState<string | null>(null)
   const [copyLoading, setCopyLoading] = useState(false)
+
+  // Description editing
+  const [editingDesc, setEditingDesc] = useState(false)
+  const [editDescValue, setEditDescValue] = useState('')
+
+  // CV selector
+  const [cvList, setCvList] = useState<CatalogVersion[]>([])
+  const [cvSelectOpen, setCvSelectOpen] = useState(false)
 
   // Replace catalog modal
   const [replaceOpen, setReplaceOpen] = useState(false)
@@ -255,6 +272,43 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
     }
   }
 
+  const handleSaveDescription = async () => {
+    if (!name) return
+    setAuthRole(role)
+    try {
+      await api.catalogs.update(name, { description: editDescValue })
+      setEditingDesc(false)
+      await loadCatalog()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update description')
+    }
+  }
+
+  const handleChangeCv = async (cvId: string) => {
+    if (!name || !cvId) return
+    setCvSelectOpen(false)
+    setAuthRole(role)
+    try {
+      await api.catalogs.update(name, { catalog_version_id: cvId })
+      await loadCatalog()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update catalog version')
+    }
+  }
+
+  const [cvListLoading, setCvListLoading] = useState(false)
+  const handleOpenCvSelector = async () => {
+    if (cvListLoading) return
+    setCvListLoading(true)
+    setAuthRole(role)
+    try {
+      const res = await api.catalogVersions.list()
+      setCvList(res.items || [])
+    } catch { /* ignore */ } finally {
+      setCvListLoading(false)
+    }
+  }
+
   if (loading) return <PageSection><Spinner aria-label="Loading" /></PageSection>
   if (error && !catalog) return <PageSection><Alert variant="danger" title={error} /></PageSection>
   if (!catalog) return <PageSection><Alert variant="warning" title="Catalog not found" /></PageSection>
@@ -278,10 +332,60 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
           <Label color="purple" style={{ marginLeft: '0.5rem' }}>published</Label>
         )}
       </Title>
-      <p style={{ color: '#6a6e73', marginBottom: '0.5rem' }}>
-        Catalog Version: {catalog.catalog_version_label || catalog.catalog_version_id}
-        {catalog.description && ` — ${catalog.description}`}
-      </p>
+      <DescriptionList isHorizontal style={{ marginBottom: '0.5rem' }}>
+        <DescriptionListGroup>
+          <DescriptionListTerm>Catalog Version</DescriptionListTerm>
+          <DescriptionListDescription>
+            {isAdmin && !catalog.published ? (
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <Select
+                  isOpen={cvSelectOpen}
+                  onOpenChange={(open) => { setCvSelectOpen(open); if (open) handleOpenCvSelector() }}
+                  toggle={(toggleRef) => (
+                    <MenuToggle ref={toggleRef} onClick={() => { if (!cvSelectOpen) handleOpenCvSelector(); setCvSelectOpen(!cvSelectOpen) }} isExpanded={cvSelectOpen} aria-label="Select catalog version">
+                      {catalog.catalog_version_label || catalog.catalog_version_id}
+                    </MenuToggle>
+                  )}
+                  onSelect={(_e, val) => handleChangeCv(String(val))}
+                  selected={catalog.catalog_version_id}
+                >
+                  <SelectList>
+                    {cvList.map(cv => (
+                      <SelectOption key={cv.id} value={cv.id}>{cv.version_label}</SelectOption>
+                    ))}
+                  </SelectList>
+                </Select>
+              </div>
+            ) : (
+              <span>{catalog.catalog_version_label || catalog.catalog_version_id}</span>
+            )}
+          </DescriptionListDescription>
+        </DescriptionListGroup>
+        <DescriptionListGroup>
+          <DescriptionListTerm>Description</DescriptionListTerm>
+          <DescriptionListDescription>
+            {editingDesc ? (
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <TextInput
+                  value={editDescValue}
+                  onChange={(_e, v) => setEditDescValue(v)}
+                  aria-label="Description"
+                  style={{ maxWidth: '300px' }}
+                />
+                <Button variant="primary" size="sm" onClick={handleSaveDescription}>Save</Button>
+                <Button variant="link" size="sm" onClick={() => setEditingDesc(false)}>Cancel</Button>
+              </div>
+            ) : (
+              <>
+                {catalog.description || <span style={{ color: '#6a6e73' }}>No description</span>}
+                {canWrite && (
+                  <Button variant="link" size="sm" onClick={() => { setEditDescValue(catalog.description || ''); setEditingDesc(true) }} style={{ marginLeft: '0.5rem' }} aria-label="Edit description">Edit</Button>
+                )}
+              </>
+            )}
+          </DescriptionListDescription>
+        </DescriptionListGroup>
+      </DescriptionList>
 
       {catalog.published && !isAdmin && (
         <Alert variant="info" title="This catalog is published. Editing requires SuperAdmin privileges." isInline style={{ marginBottom: '1rem' }} />

@@ -145,7 +145,103 @@ Before committing any phase, ALL of these must be done:
 
 ## Phase 2: Missing CRUD Capabilities (Commit 2)
 
-### Task 8: TD-61 — Add CV description update endpoint
+### Task 8: US-49 — CV metadata edit (label + description) ✅
+
+- [x] Added `Update` to CatalogVersionRepository interface, mock, GORM impl
+- [x] Added `GetByID` to CatalogVersionPinRepository interface, mock, GORM impl
+- [x] Service: `UpdateCatalogVersion(ctx, id, *versionLabel, *description)` — label uniqueness, `*string` pattern
+- [x] Handler: `PUT /catalog-versions/:id` with `UpdateCatalogVersionRequest` DTO (requireRW)
+- [x] UI: Inline edit for label + description on CatalogVersionDetailPage
+- [x] Client: `catalogVersions.update(id, data)`
+- [x] Tests: 8 service + 5 handler + 3 integration + 13 browser + 2 client
+
+### Task 9: US-50/US-51 — Catalog metadata edit + re-pinning ✅
+
+- [x] Added `Update` to CatalogRepository interface, mock, GORM impl
+- [x] Service: `UpdateMetadata(ctx, name, *newName, *description, *catalogVersionID, role)` — DNS-label validation, published guards, validation reset
+- [x] Handler: `PUT /catalogs/:catalog-name` with `UpdateCatalogRequest` DTO (requireRW + requireCatalogAccess)
+- [x] UI: Inline edit for description, CV selector dropdown on CatalogDetailPage
+- [x] Client: `catalogs.update(name, data)`
+- [x] Tests: 15 service + 7 handler + 2 integration + 8 browser + 2 client
+
+### Task 10: US-52 — CV pin editing (add/remove) ✅
+
+- [x] Service: `AddPin(ctx, cvID, entityTypeVersionID)` — validates ETV, 409 on duplicate
+- [x] Service: `RemovePin(ctx, cvID, pinID)` — validates ownership
+- [x] Handlers: `POST /catalog-versions/:id/pins`, `DELETE /catalog-versions/:id/pins/:pin-id` (requireRW)
+- [x] UI: Add Pin button + modal, Remove button per pin on BOM tab
+- [x] Client: `catalogVersions.addPin(id, etvId)`, `catalogVersions.removePin(id, pinId)`
+- [x] Tests: 11 service + 6 handler + 2 integration + browser tests
+
+### Task 11: Phase 2 Completion ✅
+
+- [x] **Step 1:** Backend tests — all 1392 pass (16 packages)
+- [x] **Step 1b:** Browser tests — 768/768 pass (fixed PatternFly select `option`→`menuitem` role, Edit button `exact: true` disambiguation)
+- [x] **Step 2:** Coverage — 0 uncovered new Go lines. UI: 8 uncovered new lines (all guard returns + PatternFly internals, approved). Backend: 97.4% (3680/3779). UI: 93.3% (2358/2527).
+- [x] **Step 3:** Quality review — completed. Findings:
+  - I-1 (description-only edit resets validation on published catalogs): FIXED — description changes no longer set `changed=true`, validation stays valid, CR still synced
+  - I-2 (GetByLabel/GetByName DB error silently swallowed): FIXED — added `!domainerrors.IsNotFound(err)` propagation (TDD: RED verified, GREEN verified)
+  - I-3 (double write-protection on DELETE): Benign — defense in depth, documented
+  - I-4 (rapid CV selector click): FIXED — added `cvListLoading` guard
+  - I-5 (aria-label case inconsistency): FIXED — `"Version label"` → `"Version Label"`
+  - TD-66 already tracked for role mapping duplication
+  - PRD US-43 updated to document description-only edit behavior on published catalogs
+- [x] **Step 4:** Quality review fixes applied with TDD (4 new tests: GetByLabelDBError, GetByNameDBError, DescOnlyNoValidationReset, CatalogUpdate_DuplicateName)
+- [x] **Step 5:** Deployed to Kind. Live tests: 239/239 pass (8 scripts). System tests: 30/30 pass.
+- [x] **Step 6:** `docs/coverage-report.md` updated with measured numbers
+- [x] **Step 7:** Human approved
+- [ ] **Step 8:** Commit pending — will include with US-53 changes
+
+### Task 12: US-53 — CV Pin Management ✅
+
+- [x] **12a:** Fix AddPin entity type duplicate check — now checks entity TYPE ID, not ETV ID (TDD: RED verified, GREEN verified)
+- [x] **12b:** UpdatePin service + handler — `PUT /catalog-versions/:id/pins/:pin-id` with entity type mismatch validation (TDD: 5 service + 5 handler tests)
+- [x] **12c:** BOM inline version dropdown — PatternFly Select per pin row for Admin+, lazy-loads versions with caching
+- [x] **12d:** Add Pin modal filtering — excludes already-pinned entity types from dropdown
+- [x] **12e:** Live tests — 3 new tests in `scripts/test-descriptions.sh` (UpdatePin, entity type mismatch 400, duplicate entity type 409)
+- [x] **Coverage:** 0 uncovered new Go lines (verified by arithmetic + 4 error path tests added + 1 integration test). Backend: 97.4% (3716/3815).
+- [x] **Quality review:** Complete. I-1 (pin Update integration test) already fixed. I-2 (version cache) benign. I-3 (toggle race) low severity. S-1 (same-version test) added. TD-67 added to PRD for S-4 (validate tag enforcement).
+- [ ] **Browser tests:** to be run in non-isolated environment
+- [ ] **Deploy + live tests:** to be run in non-isolated environment
+
+### Remaining Steps for Phase 2 + US-53 (to be completed in non-isolated environment)
+
+**What was done in isolated environment:**
+- All backend code: service, handler, DTO, repo interface + mock + GORM impl
+- All frontend code: client.ts `updatePin`, BOM version dropdown, Add Pin filtering
+- All backend tests: 17 service + 10 handler + 1 integration = 28 new tests (all pass)
+- All browser tests written: 6 new CV detail page tests + 1 client test (compile verified, cannot run without Playwright)
+- Live tests written: 3 new tests in `scripts/test-descriptions.sh`
+- Coverage verified: 0 uncovered new Go lines, 97.4% overall
+- Quality review completed with all issues addressed
+- Coverage report and plan updated
+
+**What remains (non-isolated environment):**
+
+1. Run browser tests: `make test-browser`
+   - Expect 6 new US-53 tests in `CatalogVersionDetailPage.browser.test.tsx`:
+     - T-28.14: BOM version dropdown visible for Admin
+     - T-28.16: Selecting version calls updatePin API
+     - T-28.18: RO sees plain text, not dropdown
+     - T-28.19: Add Pin modal filters pinned entity types
+     - Update pin version error shows alert
+   - Expect 1 new test in `client.browser.test.ts`:
+     - T-28.21: catalogVersions.updatePin sends PUT
+   - If PatternFly Select uses `option` instead of `menuitem` role, update test selectors (known issue from Phase 2)
+2. Deploy: `./scripts/kind-deploy.sh rebuild "kubectl --context kind-assethub"`
+3. Run system tests: `make test-system`
+4. Run live tests: `make test-live`
+   - `scripts/test-descriptions.sh` has 3 new US-53 tests:
+     - UpdatePin changes pinned version
+     - UpdatePin entity type mismatch returns 400
+     - AddPin duplicate entity type returns 409
+5. If browser tests fail on version dropdown interaction, likely causes:
+   - PatternFly `Select` role mismatch (`option` vs `menuitem`) — fix: change `getByRole('option', ...)` to `getByRole('menuitem', ...)`
+   - Version dropdown not opening — check `aria-label` matches `"Version for Model"`
+   - Mock `versions.list` not returning data — verify mock setup in `beforeEach`
+6. If all pass, commit: `"Resolve US-49, US-50, US-51, US-52, US-53: Missing CRUD capabilities and pin management"`
+
+### Previous Task 8: TD-61 — Add CV description update endpoint
 
 **Files:**
 - Modify: `internal/service/meta/catalog_version_service.go` — add `UpdateDescription(ctx, id, description)` method
@@ -232,6 +328,105 @@ Before committing any phase, ALL of these must be done:
 - [ ] **Step 6:** Update `docs/coverage-report.md` with measured numbers
 - [ ] **Step 7:** Get human approval
 - [ ] **Step 8:** Commit: `"Resolve TD-61, FF-10, TD-12, FF-4: Missing CRUD capabilities"`
+
+---
+
+## Phase 2b: CV Pin Management (US-53) — Commit with Phase 2
+
+**Skill:** `/feat-plan` — new feature (change pin version, entity type uniqueness constraint, UI filtering)
+
+**Status:** Phase 1 (PRD) ✅, Phase 2 (HL test plan) ✅, Phase 3 (detailed test plan) ✅
+
+### Task 12a: US-53 — Fix AddPin duplicate entity type check
+
+**Files:**
+- Modify: `internal/service/meta/catalog_version_service.go` — AddPin checks entity type ID (via ETV lookup), not just ETV ID
+- Test: `internal/service/meta/enum_catalog_service_test.go`
+
+- [ ] **Step 1:** Write test: AddPin with V2 of "Server" when V1 is pinned → 409.
+- [ ] **Step 2:** Run test — RED (current code only checks ETV ID match).
+- [ ] **Step 3:** Fix AddPin to resolve entity type ID from each existing pin's ETV and compare.
+- [ ] **Step 4:** Run test — GREEN.
+
+### Task 12b: US-53 — Add UpdatePin endpoint (change version)
+
+**Files:**
+- Modify: `internal/service/meta/catalog_version_service.go` — add `UpdatePin(ctx, cvID, pinID, newETVID)` method
+- Modify: `internal/api/meta/catalog_version_handler.go` — add `UpdatePin` handler + `PUT /catalog-versions/:id/pins/:pin-id` route
+- Modify: `internal/api/dto/dto.go` — add `UpdatePinRequest` DTO
+- Modify: `ui/src/api/client.ts` — add `catalogVersions.updatePin(cvId, pinId, etvId)`
+- Test: Service + handler + integration + client tests
+
+- [ ] **Step 1:** Write service test: UpdatePin changes ETV, validates same entity type.
+- [ ] **Step 2:** Implement service method.
+- [ ] **Step 3:** Write handler test: `PUT /catalog-versions/:id/pins/:pin-id` returns 200.
+- [ ] **Step 4:** Implement handler + DTO + route.
+- [ ] **Step 5:** Write test: entity type mismatch returns 400.
+- [ ] **Step 6:** Add `catalogVersions.updatePin` to `client.ts`.
+
+### Task 12c: US-53 — BOM tab inline version dropdown
+
+**Files:**
+- Modify: `ui/src/pages/meta/CatalogVersionDetailPage.tsx` — version column becomes dropdown for Admin+, loads versions on open, calls updatePin on select
+- Test: Browser tests for dropdown, version change, RO plain text
+
+- [ ] **Step 1:** Write browser test: version column is dropdown for Admin.
+- [ ] **Step 2:** Replace plain text version with PatternFly Select dropdown.
+- [ ] **Step 3:** Write browser test: selecting version calls updatePin API.
+- [ ] **Step 4:** Implement onSelect handler.
+- [ ] **Step 5:** Write browser test: RO sees plain text.
+
+### Task 12d: US-53 — Add Pin modal filters to unpinned entities
+
+**Files:**
+- Modify: `ui/src/pages/meta/CatalogVersionDetailPage.tsx` — filter entity type list in Add Pin modal
+- Test: Browser tests for filtering
+
+- [ ] **Step 1:** Write browser test: Add Pin modal does not show already-pinned entity types.
+- [ ] **Step 2:** Filter `entityTypes` list by excluding those whose ID matches any `pin.entity_type_id`.
+- [ ] **Step 3:** Run test — GREEN.
+
+### Task 12e: US-53 — Live tests
+
+- [ ] **Step 1:** Add live test cases to `scripts/test-descriptions.sh`: add pin of same entity type different version → 409, update pin version, verify updated version in response.
+- [ ] **Step 2:** Run live tests.
+
+---
+
+## Phase 2c: Security Fix — Published Catalog Validate Bypass (Commit with Phase 2)
+
+**Skill:** `/bug-solver` — fixes authorization bypass (CWE-863)
+
+**Severity:** High — RW user can mutate published catalog's `validation_status` without SuperAdmin role.
+
+**Root cause:** `POST /:catalog-name/validate` route lacks `RequireWriteAccess` middleware. The PRD (US-43) incorrectly classified validation as a "read operation", but `CatalogValidationService.Validate` calls `catalogRepo.UpdateValidationStatus()` which WRITES to the database.
+
+**Impact:**
+- RW user can flip a published catalog from `valid` to `invalid` (or vice versa)
+- Catalog CR in K8s gets desynchronized status, potentially triggering operator alerts
+- Undermines trust model: consumers relying on published catalog `valid` status
+
+### Task 12f: Fix validate endpoint write protection
+
+**Option B (split approach):** Allow RW users to RUN validation and SEE results on published catalogs, but only persist the status update if the user has write access. This preserves the diagnostic utility while closing the authorization gap.
+
+**Files:**
+- Modify: `internal/api/operational/catalog_handler.go` — `ValidateCatalog` handler checks `RequireWriteAccess` OR splits read/write
+- Modify: route registration — add `writeMiddleware` to validate route
+- Test: Handler + live tests
+
+- [ ] **Step 1:** Write test: RW user calls validate on published catalog → status NOT updated (or returns 403).
+- [ ] **Step 2:** Run test — RED (current code allows RW to mutate status).
+- [ ] **Step 3:** Apply fix: add `RequireWriteAccess` middleware to validate route, OR modify handler to skip `UpdateValidationStatus` when user lacks write access on published catalogs.
+- [ ] **Step 4:** Run test — GREEN.
+- [ ] **Step 5:** Write live test: verify published catalog validate is blocked for RW user.
+- [ ] **Step 6:** Update PRD US-43 to correct the "read operation" characterization.
+- [ ] **Step 7:** Run all tests (backend + browser + live).
+
+**Decision needed from human:** Which fix option?
+- **Option A (strict):** Add `writeMiddleware` to validate route — RW users cannot validate published catalogs at all
+- **Option B (split):** Return validation results but skip status write on published catalogs for non-SuperAdmin
+- **Option C (document):** Accept risk, update PRD to explicitly allow RW status mutation on published catalogs
 
 ---
 

@@ -514,6 +514,104 @@ func TestT16_38_CatalogResponseHasPublishedFields(t *testing.T) {
 	assert.NotNil(t, resp["published_at"])
 }
 
+// === UpdateCatalog Handler Tests ===
+
+func TestUpdateCatalog_RenameSuccess(t *testing.T) {
+	e, catRepo, cvRepo, _ := setupCatalogServer()
+
+	catRepo.On("GetByName", mock.Anything, "old-name").Return(&models.Catalog{
+		ID: "c1", Name: "old-name", Description: "desc", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	catRepo.On("GetByName", mock.Anything, "new-name").Return(nil, domainerrors.NewNotFound("Catalog", "new-name"))
+	catRepo.On("UpdateName", mock.Anything, "c1", "new-name").Return(nil)
+	catRepo.On("UpdateValidationStatus", mock.Anything, "c1", models.ValidationStatusDraft).Return(nil)
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1.0"}, nil)
+
+	body := `{"name":"new-name"}`
+	rec := doCatalogRequest(e, http.MethodPut, "/api/data/v1/catalogs/old-name", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.CatalogResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, "new-name", resp.Name)
+	assert.Equal(t, "v1.0", resp.CatalogVersionLabel)
+}
+
+func TestUpdateCatalog_DescriptionOnly(t *testing.T) {
+	e, catRepo, cvRepo, _ := setupCatalogServer()
+
+	catRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", Description: "old", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	catRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.Catalog")).Return(nil)
+	catRepo.On("UpdateValidationStatus", mock.Anything, "c1", models.ValidationStatusDraft).Return(nil)
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1.0"}, nil)
+
+	body := `{"description":"new desc"}`
+	rec := doCatalogRequest(e, http.MethodPut, "/api/data/v1/catalogs/my-catalog", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"new desc"`)
+}
+
+func TestUpdateCatalog_AsRO(t *testing.T) {
+	e, _, _, _ := setupCatalogServer()
+	body := `{"description":"new"}`
+	rec := doCatalogRequest(e, http.MethodPut, "/api/data/v1/catalogs/my-catalog", body, apimw.RoleRO)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestUpdateCatalog_BindError(t *testing.T) {
+	e, _, _, _ := setupCatalogServer()
+	rec := doCatalogRequest(e, http.MethodPut, "/api/data/v1/catalogs/my-catalog", "bad{json", apimw.RoleRW)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestUpdateCatalog_ServiceError(t *testing.T) {
+	e, catRepo, _, _ := setupCatalogServer()
+
+	catRepo.On("GetByName", mock.Anything, "nonexistent").Return(nil, domainerrors.NewNotFound("Catalog", "nonexistent"))
+
+	body := `{"description":"new"}`
+	rec := doCatalogRequest(e, http.MethodPut, "/api/data/v1/catalogs/nonexistent", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestUpdateCatalog_ChangeCatalogVersion(t *testing.T) {
+	e, catRepo, cvRepo, _ := setupCatalogServer()
+
+	catRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	cvRepo.On("GetByID", mock.Anything, "cv2").Return(&models.CatalogVersion{ID: "cv2", VersionLabel: "v2.0"}, nil)
+	catRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.Catalog")).Return(nil)
+	catRepo.On("UpdateValidationStatus", mock.Anything, "c1", models.ValidationStatusDraft).Return(nil)
+
+	body := `{"catalog_version_id":"cv2"}`
+	rec := doCatalogRequest(e, http.MethodPut, "/api/data/v1/catalogs/my-catalog", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.CatalogResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, "cv2", resp.CatalogVersionID)
+	assert.Equal(t, "v2.0", resp.CatalogVersionLabel)
+}
+
+func TestUpdateCatalog_PublishedForbiddenNonSuperAdmin(t *testing.T) {
+	e, catRepo, _, _ := setupCatalogServer()
+
+	catRepo.On("GetByName", mock.Anything, "pub-cat").Return(&models.Catalog{
+		ID: "c1", Name: "pub-cat", Published: true,
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+
+	body := `{"description":"new"}`
+	rec := doCatalogRequest(e, http.MethodPut, "/api/data/v1/catalogs/pub-cat", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
 // ---- Copy & Replace Handler Tests ----
 
 func setupCatalogServerWithCopy() (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockCatalogVersionRepo, *mocks.MockEntityInstanceRepo, *mocks.MockInstanceAttributeValueRepo, *mocks.MockAssociationLinkRepo) {

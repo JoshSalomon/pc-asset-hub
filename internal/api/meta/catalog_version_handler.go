@@ -19,6 +19,21 @@ func NewCatalogVersionHandler(svc *svcmeta.CatalogVersionService) *CatalogVersio
 	return &CatalogVersionHandler{svc: svc}
 }
 
+func mapRole(role middleware.Role) svcmeta.Role {
+	switch role {
+	case middleware.RoleRO:
+		return svcmeta.RoleRO
+	case middleware.RoleRW:
+		return svcmeta.RoleRW
+	case middleware.RoleAdmin:
+		return svcmeta.RoleAdmin
+	case middleware.RoleSuperAdmin:
+		return svcmeta.RoleSuperAdmin
+	default:
+		return svcmeta.RoleRO
+	}
+}
+
 func (h *CatalogVersionHandler) Create(c echo.Context) error {
 	var req dto.CreateCatalogVersionRequest
 	if err := c.Bind(&req); err != nil {
@@ -166,6 +181,7 @@ func (h *CatalogVersionHandler) ListPins(c echo.Context) error {
 	resp := make([]dto.CatalogVersionPinResponse, len(pins))
 	for i, p := range pins {
 		resp[i] = dto.CatalogVersionPinResponse{
+			PinID:               p.PinID,
 			EntityTypeName:      p.EntityTypeName,
 			EntityTypeID:        p.EntityTypeID,
 			EntityTypeVersionID: p.EntityTypeVersionID,
@@ -174,6 +190,76 @@ func (h *CatalogVersionHandler) ListPins(c echo.Context) error {
 		}
 	}
 	return c.JSON(http.StatusOK, dto.ListResponse{Items: resp, Total: len(resp)})
+}
+
+func (h *CatalogVersionHandler) Update(c echo.Context) error {
+	id := c.Param("id")
+	var req dto.UpdateCatalogVersionRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+
+	cv, err := h.svc.UpdateCatalogVersion(c.Request().Context(), id, req.VersionLabel, req.Description)
+	if err != nil {
+		return mapError(err)
+	}
+
+	return c.JSON(http.StatusOK, dto.CatalogVersionResponse{
+		ID: cv.ID, VersionLabel: cv.VersionLabel, Description: cv.Description, LifecycleStage: string(cv.LifecycleStage),
+		CreatedAt: cv.CreatedAt, UpdatedAt: cv.UpdatedAt,
+	})
+}
+
+func (h *CatalogVersionHandler) AddPin(c echo.Context) error {
+	cvID := c.Param("id")
+	var req dto.AddPinRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+
+	role := mapRole(middleware.GetRoleFromContext(c))
+	pin, err := h.svc.AddPin(c.Request().Context(), cvID, req.EntityTypeVersionID, role)
+	if err != nil {
+		return mapError(err)
+	}
+
+	return c.JSON(http.StatusCreated, dto.CatalogVersionPinResponse{
+		PinID:               pin.ID,
+		EntityTypeVersionID: pin.EntityTypeVersionID,
+	})
+}
+
+func (h *CatalogVersionHandler) RemovePin(c echo.Context) error {
+	cvID := c.Param("id")
+	pinID := c.Param("pin-id")
+
+	role := mapRole(middleware.GetRoleFromContext(c))
+	if err := h.svc.RemovePin(c.Request().Context(), cvID, pinID, role); err != nil {
+		return mapError(err)
+	}
+
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *CatalogVersionHandler) UpdatePin(c echo.Context) error {
+	cvID := c.Param("id")
+	pinID := c.Param("pin-id")
+
+	var req dto.UpdatePinRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+
+	role := mapRole(middleware.GetRoleFromContext(c))
+	pin, err := h.svc.UpdatePin(c.Request().Context(), cvID, pinID, req.EntityTypeVersionID, role)
+	if err != nil {
+		return mapError(err)
+	}
+
+	return c.JSON(http.StatusOK, dto.CatalogVersionPinResponse{
+		PinID:               pin.ID,
+		EntityTypeVersionID: pin.EntityTypeVersionID,
+	})
 }
 
 func (h *CatalogVersionHandler) ListTransitions(c echo.Context) error {
@@ -198,9 +284,13 @@ func RegisterCatalogVersionRoutes(g *echo.Group, h *CatalogVersionHandler, requi
 	g.GET("/catalog-versions", h.List)
 	g.GET("/catalog-versions/:id", h.GetByID)
 	g.POST("/catalog-versions", h.Create, requireRW)
+	g.PUT("/catalog-versions/:id", h.Update, requireRW)
 	g.POST("/catalog-versions/:id/promote", h.Promote, requireRW)
 	g.POST("/catalog-versions/:id/demote", h.Demote, requireRW)
 	g.DELETE("/catalog-versions/:id", h.Delete, requireRW)
 	g.GET("/catalog-versions/:id/pins", h.ListPins)
+	g.POST("/catalog-versions/:id/pins", h.AddPin, requireRW)
+	g.PUT("/catalog-versions/:id/pins/:pin-id", h.UpdatePin, requireRW)
+	g.DELETE("/catalog-versions/:id/pins/:pin-id", h.RemovePin, requireRW)
 	g.GET("/catalog-versions/:id/transitions", h.ListTransitions)
 }

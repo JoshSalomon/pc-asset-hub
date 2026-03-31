@@ -158,6 +158,24 @@ func (h *CatalogHandler) UnpublishCatalog(c echo.Context) error {
 	return c.JSON(http.StatusOK, dto.StatusResponse{Status: "unpublished"})
 }
 
+func (h *CatalogHandler) UpdateCatalog(c echo.Context) error {
+	name := c.Param("catalog-name")
+
+	var req dto.UpdateCatalogRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+
+	role := apimw.GetRoleFromContext(c)
+
+	detail, err := h.svc.UpdateMetadata(c.Request().Context(), name, req.Name, req.Description, req.CatalogVersionID, string(role))
+	if err != nil {
+		return mapError(err)
+	}
+
+	return c.JSON(http.StatusOK, catalogToDTO(detail.Catalog, detail.CatalogVersionLabel))
+}
+
 func (h *CatalogHandler) CopyCatalog(c echo.Context) error {
 	var req dto.CopyCatalogRequest
 	if err := c.Bind(&req); err != nil {
@@ -236,15 +254,17 @@ func catalogToDTO(cat *models.Catalog, cvLabel string) dto.CatalogResponse {
 	}
 }
 
-func RegisterCatalogRoutes(g *echo.Group, h *CatalogHandler, requireRW, requireAdmin echo.MiddlewareFunc) {
+func RegisterCatalogRoutes(g *echo.Group, h *CatalogHandler, requireRW, requireAdmin echo.MiddlewareFunc, writeGuards ...echo.MiddlewareFunc) {
 	requireCatalogAccess := apimw.RequireCatalogAccess(h.accessChecker)
+	writeMiddleware := append([]echo.MiddlewareFunc{requireRW}, writeGuards...)
 	g.POST("", h.CreateCatalog, requireRW)
 	g.GET("", h.ListCatalogs)
 	// Static segments must be registered BEFORE parameterized /:catalog-name
 	g.POST("/copy", h.CopyCatalog, requireRW)
 	g.POST("/replace", h.ReplaceCatalog, requireAdmin)
 	g.GET("/:catalog-name", h.GetCatalog, requireCatalogAccess)
-	g.DELETE("/:catalog-name", h.DeleteCatalog, requireRW, requireCatalogAccess)
+	g.PUT("/:catalog-name", h.UpdateCatalog, append(writeMiddleware, requireCatalogAccess)...)
+	g.DELETE("/:catalog-name", h.DeleteCatalog, append(writeMiddleware, requireCatalogAccess)...)
 	g.POST("/:catalog-name/validate", h.ValidateCatalog, requireRW, requireCatalogAccess)
 	g.POST("/:catalog-name/publish", h.PublishCatalog, requireAdmin, requireCatalogAccess)
 	g.POST("/:catalog-name/unpublish", h.UnpublishCatalog, requireAdmin, requireCatalogAccess)

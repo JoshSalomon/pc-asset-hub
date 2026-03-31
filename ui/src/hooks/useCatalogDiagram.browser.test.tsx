@@ -13,8 +13,8 @@ vi.mock('../api/client', () => ({
 }))
 
 const mockPins = [
-  { entity_type_name: 'Server', entity_type_id: 'et1', entity_type_version_id: 'etv1', version: 2 },
-  { entity_type_name: 'Tool', entity_type_id: 'et2', entity_type_version_id: 'etv2', version: 1 },
+  { pin_id: 'pin-1', entity_type_name: 'Server', entity_type_id: 'et1', entity_type_version_id: 'etv1', version: 2 },
+  { pin_id: 'pin-2', entity_type_name: 'Tool', entity_type_id: 'et2', entity_type_version_id: 'etv2', version: 1 },
 ]
 
 const mockSnapshotServer = {

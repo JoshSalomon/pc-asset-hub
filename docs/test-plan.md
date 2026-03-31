@@ -195,6 +195,11 @@ Each feature area is tested at the appropriate layers:
 | System attributes — catalog validation (Name non-empty) | X | X | X | | |
 | System attributes — UI unified rendering (create/edit) | | | | X | |
 | System attributes — UI system badge + edit protection | | | | X | |
+| CV metadata edit — label + description (US-49) | X | X | X | X | |
+| Catalog metadata edit — name + description (US-50) | X | X | X | X | |
+| Catalog re-pinning — change CV (US-51) | X | X | X | X | |
+| CV pin add/remove (US-52) | X | X | X | X | |
+| Pin editing stage guards (TD-69) | X | | X | | X |
 
 ---
 
@@ -573,3 +578,43 @@ Adds description fields across the schema management layer. Entity type list res
 - **Browser tests (EnumDetailPage)**: Verify description shown in detail view. Verify description editable.
 - **Browser tests (App.tsx — CV list)**: Verify Description column visible in CV list. Verify create modal has description field.
 - **Browser tests (CatalogVersionDetailPage)**: Verify description shown in overview section.
+
+### 5.37 Catalog Version Metadata Edit (US-49, TD-61)
+
+Update a catalog version's version label and/or description after creation via `PUT /catalog-versions/:id`. Uses `*string` pattern for optional field preservation.
+
+- **Unit tests (service)**: Verify `UpdateCatalogVersion` updates description when provided. Verify label update when provided. Verify omitted fields preserved (nil pointer = no change). Verify label uniqueness enforced (409 on duplicate). Verify NotFound for nonexistent CV.
+- **Integration tests (repository)**: Verify label update persists correctly in real SQLite. Verify `uniqueIndex` on `VersionLabel` rejects duplicate labels at DB level. Verify description update persists. Verify updating a nonexistent CV returns error.
+- **API tests (handler)**: Verify `PUT /catalog-versions/:id` with `{"description":"new"}` returns 200 with updated CV. Verify `{"version_label":"v2.1"}` renames the CV. Verify `{}` (empty body) preserves all fields. Verify 409 for duplicate label. Verify 404 for nonexistent CV. Verify 403 for RO.
+- **UI tests (browser)**: Verify inline Edit button next to description on CV detail page. Verify edit flow: click Edit → TextInput appears → type → Save → API called → value updated. Verify Cancel restores original value. Verify inline Edit button next to version label. Verify label edit triggers PUT. Verify RO user sees no Edit buttons.
+
+### 5.38 Catalog Metadata Edit (US-50, FF-10)
+
+Update a catalog's name and/or description after creation via `PUT /catalogs/{name}`. Published catalogs restrict editing (SuperAdmin only for description, rename blocked).
+
+- **Unit tests (service)**: Verify `UpdateMetadata` updates description. Verify name change with DNS-label validation and uniqueness check. Verify omitted fields preserved (`*string`). Verify published catalog: SuperAdmin can edit description, rename blocked (returns 400). Verify non-SuperAdmin on published catalog returns 403. Verify validation status reset to `draft` on any change. Verify SyncCR called after metadata change on published catalog.
+- **Integration tests (repository)**: Verify catalog name update persists and old name no longer resolves. Verify unique constraint on catalog name rejects duplicates at DB level. Verify description update persists. Verify `UpdateValidationStatus` to `draft` after metadata change. Verify catalog with instances — rename preserves all instance `catalog_id` FK references (instances still belong to the same catalog entity).
+- **API tests (handler)**: Verify `PUT /catalogs/{name}` with `{"description":"new"}` returns 200. Verify `{"name":"new-name"}` renames catalog and redirects response to new name. Verify `{}` preserves all fields. Verify 400 for invalid DNS-label name. Verify 409 for duplicate name. Verify 404 for nonexistent catalog. Verify 403 for RO. Verify `RequireWriteAccess` + `RequireCatalogAccess` middleware applied. Verify published catalog: 403 for RW/Admin on any edit, 400 for SuperAdmin rename, 200 for SuperAdmin description edit.
+- **UI tests (browser)**: Verify inline Edit button for description on catalog detail page (same pattern as EntityTypeDetailPage). Verify edit flow: click Edit → input → Save → API called → value updated. Verify Cancel restores. Verify RO user sees no Edit button. Verify published catalog shows disabled Edit for non-SuperAdmin.
+- **Live system tests**: Add test cases to `scripts/test-descriptions.sh` — update catalog description, verify persisted; update catalog name, verify redirect; attempt rename on published catalog, verify rejection.
+
+### 5.39 Catalog Re-pinning (US-51, TD-12)
+
+Change a catalog's pinned CV via `PUT /catalogs/{name}` with `catalog_version_id`. Resets validation to `draft`. Published catalogs must unpublish first.
+
+- **Unit tests (service)**: Verify re-pin updates `catalog_version_id`. Verify new CV must exist (404 if not). Verify validation status reset to `draft` on re-pin. Verify published catalog re-pin blocked (returns 400 with "unpublish first"). Verify unpublished catalog re-pin succeeds.
+- **Integration tests (repository)**: Verify `catalog_version_id` FK update persists in real SQLite. Verify FK constraint — re-pin to nonexistent CV ID rejected at DB level. Verify catalog's validation status updated to `draft` after re-pin. Verify instances remain associated with the catalog after re-pin (only the CV reference changes, not the catalog ID on instances).
+- **API tests (handler)**: Verify `PUT /catalogs/{name}` with `{"catalog_version_id":"new-cv"}` returns 200. Verify 404 for nonexistent CV. Verify 400 for published catalog. Verify 403 for RO.
+- **UI tests (browser)**: Verify CV selector dropdown on catalog detail page for Admin+ users. Verify dropdown lists available CVs. Verify selecting a new CV triggers PUT. Verify dropdown disabled on published catalogs.
+
+### 5.40 Catalog Version Pin Editing (US-52, FF-4)
+
+Add, remove, or change version of entity type pins in a catalog version. Each entity type can appear at most once.
+
+- **Unit tests (service — AddPin)**: Verify `AddPin` validates ETV exists (404 if not). Verify duplicate entity type (not just ETV) returns 409 — adding V2 of "Server" when V1 is already pinned must fail. Verify adding a different entity type succeeds. Verify RW+ role required.
+- **Unit tests (service — UpdatePin)**: Verify `UpdatePin` changes the pinned ETV. Verify new ETV must belong to the same entity type as the existing pin (returns 400 if mismatched). Verify 404 for nonexistent pin or ETV. Verify pin ownership — pin must belong to the specified CV.
+- **Unit tests (service — RemovePin)**: Verify `RemovePin` removes pin by ID. Verify 404 for nonexistent pin.
+- **Integration tests (repository)**: Verify pin creation persists. Verify pin update persists. Verify `ListByCatalogVersion` returns updated pins. Verify FK constraints.
+- **API tests (handler)**: Verify `POST /pins` returns 201. Verify 409 for duplicate entity type. Verify `PUT /pins/:pin-id` returns 200 with updated ETV. Verify 400 for entity type mismatch on update. Verify `DELETE /pins/:pin-id` returns 204. Verify 403 for RO on all endpoints.
+- **Browser tests (BOM tab — inline version change)**: Verify version column is a dropdown for Admin+. Verify dropdown lists all versions of the entity type. Verify selecting a different version calls updatePin API. Verify version updates in the table after successful change. Verify RO user sees plain text, not dropdown.
+- **Browser tests (Add Pin modal — entity type filtering)**: Verify Add Pin modal only shows entity types NOT already pinned. Verify after adding a pin, the entity type disappears from the Add Pin dropdown. Verify after removing a pin, the entity type reappears in the Add Pin dropdown.

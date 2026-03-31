@@ -687,6 +687,67 @@ test('T-18.45: versions.snapshot returns system attrs', async () => {
   expect(result.attributes[2].system).toBeUndefined()
 })
 
+// === Phase 2 CRUD: catalogVersions.update ===
+
+test('catalogVersions.update sends PUT with body', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'cv-1', version_label: 'v2.0', description: 'updated' }))
+
+  const result = await api.catalogVersions.update('cv-1', { version_label: 'v2.0', description: 'updated' })
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalog-versions/cv-1')
+  expect(opts.method).toBe('PUT')
+  expect(JSON.parse(opts.body)).toEqual({ version_label: 'v2.0', description: 'updated' })
+  expect(result.version_label).toBe('v2.0')
+})
+
+// === Phase 2 CRUD: catalogVersions.addPin ===
+
+test('catalogVersions.addPin sends POST with entity_type_version_id', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ entity_type_version_id: 'etv-1' }, 201))
+
+  await api.catalogVersions.addPin('cv-1', 'etv-1')
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalog-versions/cv-1/pins')
+  expect(opts.method).toBe('POST')
+  expect(JSON.parse(opts.body)).toEqual({ entity_type_version_id: 'etv-1' })
+})
+
+// === T-28.21: catalogVersions.updatePin ===
+
+test('T-28.21: catalogVersions.updatePin sends PUT with entity_type_version_id', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ pin_id: 'pin-1', entity_type_version_id: 'etv-new' }))
+
+  await api.catalogVersions.updatePin('cv-1', 'pin-1', 'etv-new')
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalog-versions/cv-1/pins/pin-1')
+  expect(opts.method).toBe('PUT')
+  expect(JSON.parse(opts.body)).toEqual({ entity_type_version_id: 'etv-new' })
+})
+
+// === Phase 2 CRUD: catalogVersions.removePin ===
+
+test('catalogVersions.removePin sends DELETE', async () => {
+  mockFetch.mockReturnValue(noContentResponse())
+
+  await api.catalogVersions.removePin('cv-1', 'pin-1')
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalog-versions/cv-1/pins/pin-1')
+  expect(opts.method).toBe('DELETE')
+})
+
+// === Phase 2 CRUD: catalogs.update ===
+
+test('catalogs.update sends PUT with body', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'c1', name: 'my-cat', description: 'new desc' }))
+
+  const result = await api.catalogs.update('my-cat', { description: 'new desc', catalog_version_id: 'cv-2' })
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-cat')
+  expect(opts.method).toBe('PUT')
+  expect(JSON.parse(opts.body)).toEqual({ description: 'new desc', catalog_version_id: 'cv-2' })
+  expect(result.description).toBe('new desc')
+})
+
 // T-18.46: listAttributes client function returns system attrs in response
 test('T-18.46: attributes.list returns system attrs', async () => {
   const attrsData = {
