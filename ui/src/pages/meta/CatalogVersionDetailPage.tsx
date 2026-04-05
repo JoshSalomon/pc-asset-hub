@@ -154,10 +154,10 @@ export default function CatalogVersionDetailPage({ role }: Props) {
   const [pinVersionSelectOpen, setPinVersionSelectOpen] = useState<string | null>(null)
   const [pinVersionOptions, setPinVersionOptions] = useState<Record<string, EntityTypeVersion[]>>({})
 
-  const canEdit = role === 'RW' || role === 'Admin' || role === 'SuperAdmin'
-  // Pin editing: development = RW+, testing = SuperAdmin only, production = blocked
-  // Pin editing: development = RW+, testing = SuperAdmin only, production = blocked
-  const canEditPins = canEdit && cv?.lifecycle_stage !== 'production' && (cv?.lifecycle_stage !== 'testing' || role === 'SuperAdmin')
+  const hasWriteRole = role === 'RW' || role === 'Admin' || role === 'SuperAdmin'
+  // Stage guards: development = RW+, testing = SuperAdmin only, production = blocked
+  const canEdit = hasWriteRole && cv?.lifecycle_stage !== 'production' && (cv?.lifecycle_stage !== 'testing' || role === 'SuperAdmin')
+  const canEditPins = canEdit
 
   const loadCV = useCallback(async () => {
     if (!id) return

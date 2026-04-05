@@ -688,3 +688,36 @@ test('BOM version dropdown handles version load error', async () => {
   await page.getByRole('button', { name: 'Version for Model' }).click()
   // No crash — gracefully handled
 })
+
+// === Stage Guard Tests for CV Metadata Edit (TD-71) ===
+
+test('T-30.18: Edit buttons hidden on production CV for all roles', async () => {
+  ;(api.catalogVersions.get as Mock).mockResolvedValue({ ...mockCV, lifecycle_stage: 'production' })
+  renderDetail('SuperAdmin')
+  await expect.element(page.getByText('v1.0').first()).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Edit version label' })).not.toBeInTheDocument()
+  await expect.element(page.getByRole('button', { name: 'Edit description' })).not.toBeInTheDocument()
+})
+
+test('T-30.19: Edit buttons hidden on testing CV for RW', async () => {
+  ;(api.catalogVersions.get as Mock).mockResolvedValue({ ...mockCV, lifecycle_stage: 'testing' })
+  renderDetail('RW')
+  await expect.element(page.getByText('v1.0').first()).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Edit version label' })).not.toBeInTheDocument()
+  await expect.element(page.getByRole('button', { name: 'Edit description' })).not.toBeInTheDocument()
+})
+
+test('T-30.20: Edit buttons visible on testing CV for SuperAdmin', async () => {
+  ;(api.catalogVersions.get as Mock).mockResolvedValue({ ...mockCV, lifecycle_stage: 'testing' })
+  renderDetail('SuperAdmin')
+  await expect.element(page.getByText('v1.0').first()).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Edit version label' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Edit description' })).toBeVisible()
+})
+
+test('T-30.21: Edit buttons visible on development CV for RW (no regression)', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByText('v1.0').first()).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Edit version label' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Edit description' })).toBeVisible()
+})

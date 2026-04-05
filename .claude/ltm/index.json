@@ -361,6 +361,53 @@
       "phase": 0,
       "difficulty": 0.7,
       "created_at": "2026-03-30T12:24:38.402103+00:00"
+    },
+    "mem_9e192bec": {
+      "topic": "Stage guards: checkCVEditAllowed pattern for CV metadata + pin editing",
+      "tags": [
+        "stage-guard",
+        "catalog-version",
+        "RBAC",
+        "security"
+      ],
+      "phase": 0,
+      "difficulty": 0.4,
+      "created_at": "2026-04-03T19:23:11.935055+00:00"
+    },
+    "mem_97b8b7ae": {
+      "topic": "Coverage skills: block-by-block reconciliation for arithmetic discrepancies",
+      "tags": [
+        "coverage",
+        "skills",
+        "testing",
+        "debugging"
+      ],
+      "phase": 0,
+      "difficulty": 0.7,
+      "created_at": "2026-04-03T19:23:12.011920+00:00"
+    },
+    "mem_6b215d87": {
+      "topic": "Deploy to kind cluster via SSH to host",
+      "tags": [
+        "deploy",
+        "kind",
+        "ssh",
+        "infrastructure"
+      ],
+      "phase": 0,
+      "difficulty": 0.3,
+      "created_at": "2026-04-05T10:06:40.573100+00:00"
+    },
+    "mem_339ff9f4": {
+      "topic": "LTM memory files are tracked in git and must be staged with commits",
+      "tags": [
+        "ltm",
+        "git",
+        "workflow"
+      ],
+      "phase": 0,
+      "difficulty": 0.2,
+      "created_at": "2026-04-05T10:07:59.575842+00:00"
     }
   }
 }

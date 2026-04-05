@@ -1,6 +1,6 @@
 e# AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-03-30
+Last updated: 2026-04-03
 
 ---
 
@@ -8,12 +8,12 @@ Last updated: 2026-03-30
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1409 | 100% | 97.4% (3716/3815) | — |
+| Backend (Go) | 1450 | 100% | 97.4% (3743/3841) | — |
 | UI — Unit tests (jsdom) | 75 | 100% | — | — |
-| UI — Browser tests (Playwright) | 777 | 100% | 93.4% (2391/2561) | 96.7% (2167/2240) |
+| UI — Browser tests (Playwright) | 784 | 100% | 93.4% (2394/2564) | 96.7% (2170/2243) |
 | UI — System tests (Playwright + live server) | 30 | 100% | — | — |
-| Live system (bash scripts) | 242 | 100% | — | — |
-| **Total** | **2533** | **100%** | — | — |
+| Live system (bash scripts) | 303 | 100% | — | — |
+| **Total** | **2642** | **100%** | — | — |
 
 ---
 
@@ -22,7 +22,7 @@ Last updated: 2026-03-30
 | Package | Coverage | Notes |
 |---------|----------|-------|
 | `internal/api/health` | 90.0% (9/10) | Readyz DB-ping error path |
-| `internal/api/meta` | 99.0% (484/489) | Promote/Demote/Delete RoleRO/RW switch cases unreachable behind RBAC middleware; CV Update bind-error |
+| `internal/api/meta` | 99.2% (495/499) | Promote/Demote/Delete RoleRO inline switch cases unreachable behind RBAC middleware |
 | `internal/api/middleware` | 100.0% (69/69) | |
 | `internal/api/operational` | 98.4% (307/312) | Copy/Replace/Update handlers bind-error branches only |
 | `internal/domain/errors` | 100.0% (32/32) | |
@@ -34,7 +34,7 @@ Last updated: 2026-03-30
 | `internal/operator/api/v1alpha1` | 97.7% (85/87) | `DeepCopyObject` nil-receiver guard |
 | `internal/operator/controllers` | 94.3% (198/210) | `SetupWithManager` (envtest — deferred to Phase B), `SetOwnerReference` error branches |
 | `internal/operator/crdgen` | 94.7% (36/38) | `json.Marshal` error guards on well-formed inputs |
-| `internal/service/meta` | 99.5% (805/809) | BulkCopy error paths, requiresDeepCopy edge cases |
+| `internal/service/meta` | 99.5% (821/825) | BulkCopy error paths, requiresDeepCopy edge cases |
 | `internal/service/operational` | 99.8% (911/913) | Cycle guard in resolveParentChain (safety net) |
 | `internal/service/validation` | 95.6% (43/45) | |
 
@@ -78,6 +78,7 @@ These are error-handling branches in handlers where `c.Bind()` fails with malfor
 | `api/meta/attribute_handler.go` | `Edit` | 76.9% | Bind-error branch |
 | `api/meta/attribute_handler.go` | `CopyAttributes` | 75.0% | Bind-error, empty fields branches |
 | `api/meta/attribute_handler.go` | `Reorder` | 66.7% | Bind-error, empty ordered_ids branch |
+| `api/meta/catalog_version_handler.go` | `Promote`/`Demote`/`Delete` | — | RoleRO inline switch case in each (unreachable behind RBAC `requireRW` middleware) |
 | `api/meta/catalog_version_handler.go` | `Create` | 70.0% | Bind-error, pin marshaling branches |
 | `api/meta/enum_handler.go` | `Update` | 66.7% | Bind-error branch |
 | `api/meta/enum_handler.go` | `ReorderValues` | 66.7% | Bind-error branch |
@@ -677,6 +678,42 @@ Per-file coverage deltas:
 | `client.ts` | 90.2% stmts | 90.2% stmts | 0pp (new methods covered by page/client tests) |
 
 Live test count: 239 → 242 (+3 new US-53 tests: UpdatePin, entity type mismatch 400, AddPin duplicate entity type 409).
+
+### New Code Coverage (Session 016 — Phase 2c Security Fixes + Phase 3 Cleanup)
+
+**Backend changes:**
+
+| File | Change | Coverage |
+|------|--------|----------|
+| `catalog_version_handler.go` | Add `mapRole` call in `Update` for stage guard (TD-71) | 100% new lines |
+| `catalog_version_service.go` | Rename `checkPinEditAllowed` → `checkCVEditAllowed`, add stage guard to `UpdateCatalogVersion` | 100% new lines |
+| `catalog_handler.go` | Fix validate route to use `writeMiddleware` (published catalog bypass fix) | Routing only |
+
+**UI changes:**
+
+| File | Change | Coverage |
+|------|--------|----------|
+| `CatalogVersionDetailPage.tsx` | Unify `canEdit`/`canEditPins` with stage guard logic | 100% new lines |
+| `CatalogDetailPage.tsx` | Add `canValidate` guard (block validate on published unless SuperAdmin) | 100% new lines |
+
+New backend tests: **+3 coverage tests** for previously uncovered handler branches:
+- `TestCVUpdate_MapRole_RO` — exercises `mapRole` RO case by bypassing `requireRW` middleware
+- `TestCVUpdate_MapRole_Unknown` — exercises `mapRole` default case by injecting unknown role into context
+- `TestCVPromote_WithWarnings` — exercises Promote warnings loop body with mock catalog repo returning draft/invalid catalogs
+
+Per-file coverage deltas:
+
+| Package/File | Before | After | Delta |
+|-------------|--------|-------|-------|
+| `api/meta` | 484/489 (5 uncov) | 495/499 (4 uncov) | +11 covered, +10 total, **-1 uncov** |
+| `api/operational` | 307/312 (5 uncov) | 307/312 (5 uncov) | unchanged |
+| `service/meta` | 805/809 (4 uncov) | 821/825 (4 uncov) | +16 covered, +16 total |
+| `CatalogVersionDetailPage.tsx` | 230/256 (89.8%) | 232/258 (89.9%) | +2 covered, +2 total |
+| `CatalogDetailPage.tsx` (op) | 261/282 (92.6%) | 262/283 (92.6%) | +1 covered, +1 total |
+
+Backend test count: 1409 → 1450 (+41 new tests including TD-71 stage guard + coverage tests).
+Browser test count: 777 → 784 (+7 tests).
+Live test count: 242 → 303 (+61 tests across multiple scripts).
 
 ### Coverage Gaps to Address
 

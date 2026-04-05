@@ -2,6 +2,8 @@ package meta_test
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/labstack/echo/v4"
@@ -552,6 +554,155 @@ func TestCVUpdate_ServiceError(t *testing.T) {
 	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/bad",
 		`{"description":"new"}`, apimw.RoleAdmin)
 	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// === Update Stage Guard Handler Tests (TD-71) ===
+
+func TestCVUpdate_ProductionBlocked(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageProduction,
+	}, nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1",
+		`{"description":"new"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "production")
+}
+
+func TestCVUpdate_TestingBlocked_RW(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1",
+		`{"description":"new"}`, apimw.RoleRW)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "SuperAdmin")
+}
+
+func TestCVUpdate_TestingAllowed_SuperAdmin(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "old", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1",
+		`{"description":"new"}`, apimw.RoleSuperAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestCVUpdate_DevelopmentAllowed_RW(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "old", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1",
+		`{"description":"new"}`, apimw.RoleRW)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// === Coverage: mapRole branches (bypass requireRW to reach handler with RO/unknown role) ===
+
+// setupCVServerNoRequireRW creates a server with RBAC middleware (sets role in context)
+// but without requireRW middleware, so RO and unknown roles reach the handler.
+func setupCVServerNoRequireRW(cvRepo *mocks.MockCatalogVersionRepo, ltRepo *mocks.MockLifecycleTransitionRepo, catalogRepo *mocks.MockCatalogRepo) *echo.Echo {
+	svc := svcmeta.NewCatalogVersionService(cvRepo, nil, ltRepo, nil, "", nil, nil, nil, catalogRepo)
+	handler := apimeta.NewCatalogVersionHandler(svc)
+
+	e := echo.New()
+	g := e.Group("/api/meta/v1")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	// Register WITHOUT requireRW so RO/unknown roles reach the handler
+	noopMW := func(next echo.HandlerFunc) echo.HandlerFunc { return next }
+	apimeta.RegisterCatalogVersionRoutes(g, handler, noopMW)
+	return e
+}
+
+// Coverage: mapRole RO branch (L24-25) — RO reaches handler via no-requireRW setup
+func TestCVUpdate_MapRole_RO(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerNoRequireRW(cvRepo, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "old", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1",
+		`{"description":"new"}`, apimw.RoleRO)
+	// RO reaches handler → mapRole(RoleRO) → service gets RoleRO → allowed on development
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// Coverage: mapRole default branch (L32-33) — unknown role falls through to default.
+// RBAC middleware rejects unknown roles, so we bypass it and inject the role directly.
+func TestCVUpdate_MapRole_Unknown(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := svcmeta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+	handler := apimeta.NewCatalogVersionHandler(svc)
+
+	e := echo.New()
+	g := e.Group("/api/meta/v1")
+	// Inject an unknown role directly into context, bypassing RBAC validation
+	g.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.Set(apimw.RoleContextKey, apimw.Role("UnknownRole"))
+			return next(c)
+		}
+	})
+	noopMW := func(next echo.HandlerFunc) echo.HandlerFunc { return next }
+	apimeta.RegisterCatalogVersionRoutes(g, handler, noopMW)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "old", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/meta/v1/catalog-versions/cv1",
+		strings.NewReader(`{"description":"new"}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	// Unknown role → mapRole default → RoleRO → allowed on development
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// Coverage: Promote warnings loop body (L111-116) — service returns warnings for non-valid catalogs
+func TestCVPromote_WithWarnings(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	ltRepo := new(mocks.MockLifecycleTransitionRepo)
+	catalogRepo := new(mocks.MockCatalogRepo)
+	e := setupCVServerNoRequireRW(cvRepo, ltRepo, catalogRepo)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	cvRepo.On("UpdateLifecycle", mock.Anything, "cv1", models.LifecycleStageTesting).Return(nil)
+	ltRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.LifecycleTransition")).Return(nil)
+	catalogRepo.On("ListByCatalogVersionID", mock.Anything, "cv1").Return([]*models.Catalog{
+		{Name: "draft-catalog", ValidationStatus: models.ValidationStatusDraft},
+		{Name: "invalid-catalog", ValidationStatus: models.ValidationStatusInvalid},
+	}, nil)
+
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/cv1/promote", "", apimw.RoleRW)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "draft-catalog")
+	assert.Contains(t, rec.Body.String(), "invalid-catalog")
+	assert.Contains(t, rec.Body.String(), "warnings")
 }
 
 // === AddPin Handler Tests ===

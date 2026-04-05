@@ -618,3 +618,16 @@ Add, remove, or change version of entity type pins in a catalog version. Each en
 - **API tests (handler)**: Verify `POST /pins` returns 201. Verify 409 for duplicate entity type. Verify `PUT /pins/:pin-id` returns 200 with updated ETV. Verify 400 for entity type mismatch on update. Verify `DELETE /pins/:pin-id` returns 204. Verify 403 for RO on all endpoints.
 - **Browser tests (BOM tab — inline version change)**: Verify version column is a dropdown for Admin+. Verify dropdown lists all versions of the entity type. Verify selecting a different version calls updatePin API. Verify version updates in the table after successful change. Verify RO user sees plain text, not dropdown.
 - **Browser tests (Add Pin modal — entity type filtering)**: Verify Add Pin modal only shows entity types NOT already pinned. Verify after adding a pin, the entity type disappears from the Add Pin dropdown. Verify after removing a pin, the entity type reappears in the Add Pin dropdown.
+
+### 5.41 Security Fixes — Validate Write Protection & CV Metadata Stage Guards (TD-78, TD-71)
+
+Two authorization fixes: (1) the validate endpoint on published catalogs is now write-protected (requires SuperAdmin), closing a bypass where RW users could mutate `validation_status` on published catalogs; (2) CV metadata edits (label, description) now enforce the same lifecycle stage guards as pin editing — blocked on production, SuperAdmin-only on testing, RW+ on development.
+
+**What is tested at each layer:**
+
+- **Unit tests (handler — validate write protection)**: Verify `POST /catalogs/{name}/validate` on a published catalog returns 403 for RW role. Verify same endpoint succeeds for SuperAdmin on published catalog. Verify unpublished catalog validation still works for RW (no regression).
+- **Unit tests (service — CV metadata stage guard)**: Verify `UpdateCatalogVersion` on a production CV returns validation error regardless of role. Verify on testing CV returns validation error for RW and Admin roles. Verify on testing CV succeeds for SuperAdmin. Verify on development CV succeeds for RW.
+- **API tests (handler — CV metadata stage guard)**: Verify `PUT /catalog-versions/:id` on production CV returns 400. Verify on testing CV returns 400 for RW, 200 for SuperAdmin. Verify on development CV returns 200 for RW. Verify role extraction from header works correctly.
+- **Browser tests (catalog detail — validate button)**: Verify Validate button hidden on published catalogs for non-SuperAdmin users. Verify Validate button visible on published catalogs for SuperAdmin. Verify Validate button visible on unpublished catalogs for RW (no regression).
+- **Browser tests (CV detail — edit controls)**: Verify Edit buttons hidden on production CVs for all roles. Verify Edit buttons hidden on testing CVs for RW and Admin. Verify Edit buttons visible on testing CVs for SuperAdmin. Verify Edit buttons visible on development CVs for RW (no regression).
+- **Live tests**: Verify validate on published catalog blocked for RW. Verify CV metadata update blocked on production CV. Verify CV metadata update on testing CV blocked for RW, allowed for SuperAdmin.

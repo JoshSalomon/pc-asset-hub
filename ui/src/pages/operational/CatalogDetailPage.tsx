@@ -75,6 +75,8 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
 
   const canWrite = role === 'RW' || role === 'Admin' || role === 'SuperAdmin'
   const isAdmin = role === 'Admin' || role === 'SuperAdmin'
+  const canMutate = canWrite && (!catalog?.published || role === 'SuperAdmin')
+  const canValidate = canMutate
 
   // Add contained instance modal state
   const [addChildOpen, setAddChildOpen] = useState(false)
@@ -378,7 +380,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
             ) : (
               <>
                 {catalog.description || <span style={{ color: '#6a6e73' }}>No description</span>}
-                {canWrite && (
+                {canMutate && (
                   <Button variant="link" size="sm" onClick={() => { setEditDescValue(catalog.description || ''); setEditingDesc(true) }} style={{ marginLeft: '0.5rem' }} aria-label="Edit description">Edit</Button>
                 )}
               </>
@@ -395,7 +397,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
         <Button variant="link" isInline onClick={() => navigate(`/catalogs/${catalog.name}`)}>
           Open in Data Viewer →
         </Button>
-        {canWrite && (
+        {canValidate && (
           <Button variant="secondary" onClick={validation.validate} isLoading={validation.validating} isDisabled={validation.validating}>
             Validate
           </Button>
@@ -416,7 +418,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
             Unpublish
           </Button>
         )}
-        {canWrite && (
+        {canMutate && (
           <Button variant="secondary" onClick={() => { setCopyOpen(true); setCopyError(null) }}>
             Copy
           </Button>
@@ -446,7 +448,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
               <PageSection padding={{ default: 'noPadding' }} style={{ marginTop: '1rem' }}>
                 <Toolbar>
                   <ToolbarContent>
-                    {canWrite && (
+                    {canMutate && (
                       <ToolbarItem>
                         <Button variant="primary" onClick={inst.openCreate}>
                           Create {pin.entity_type_name}
@@ -489,7 +491,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
                             <Button variant="link" size="sm" onClick={() => detail.selectInstance(detail.selectedInstance?.id === instance.id ? null : instance)}>
                               {detail.selectedInstance?.id === instance.id ? 'Hide Details' : 'Details'}
                             </Button>
-                            {canWrite && (
+                            {canMutate && (
                               <>
                                 <Button variant="secondary" size="sm" onClick={() => inst.openEdit(instance)} style={{ marginLeft: '0.5rem' }}>Edit</Button>
                                 <Button variant="danger" size="sm" onClick={() => inst.openDelete(instance)} style={{ marginLeft: '0.5rem' }}>Delete</Button>
@@ -508,7 +510,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
                     {detail.selectedInstance.parent_instance_id && (
                       <p style={{ color: '#6a6e73', marginBottom: '0.5rem' }}>Contained by: {detail.parentName || detail.selectedInstance.parent_instance_id}</p>
                     )}
-                    {canWrite && schemaAssocs.filter(a => a.type === 'containment' && a.direction === 'incoming').length > 0 && (
+                    {canMutate && schemaAssocs.filter(a => a.type === 'containment' && a.direction === 'incoming').length > 0 && (
                       <Button variant="secondary" size="sm" onClick={() => {
                         setSetParentError(null)
                         // Auto-select the container type (there should be exactly one)
@@ -526,7 +528,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
                     {/* Children Section */}
                     <div style={{ marginTop: '1rem' }}>
                       <Title headingLevel="h5">Contained Instances</Title>
-                      {canWrite && schemaAssocs.filter(a => a.type === 'containment' && a.direction === 'outgoing').length > 0 && (
+                      {canMutate && schemaAssocs.filter(a => a.type === 'containment' && a.direction === 'outgoing').length > 0 && (
                         <Button variant="secondary" size="sm" onClick={() => {
                           setAddChildError(null)
                           setAvailableInstances([])
@@ -567,7 +569,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
                     {/* References Section */}
                     <div style={{ marginTop: '1rem' }}>
                       <Title headingLevel="h5">References</Title>
-                      {canWrite && schemaAssocs.filter(a => a.type !== 'containment' && a.direction === 'outgoing').length > 0 && (
+                      {canMutate && schemaAssocs.filter(a => a.type !== 'containment' && a.direction === 'outgoing').length > 0 && (
                         <Button variant="secondary" size="sm" onClick={() => { setLinkOpen(true); setLinkError(null) }} style={{ marginBottom: '0.5rem' }}>
                           Link to Instance
                         </Button>
@@ -580,7 +582,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
                             <>
                               <p><strong>Forward References</strong></p>
                               <Table aria-label="Forward references" variant="compact">
-                                <Thead><Tr><Th>Association</Th><Th>Type</Th><Th>Target</Th><Th>Entity Type</Th>{canWrite && <Th screenReaderText="Actions" />}</Tr></Thead>
+                                <Thead><Tr><Th>Association</Th><Th>Type</Th><Th>Target</Th><Th>Entity Type</Th>{canMutate && <Th screenReaderText="Actions" />}</Tr></Thead>
                                 <Tbody>
                                   {detail.forwardRefs.map(ref => (
                                     <Tr key={ref.link_id}>
@@ -588,7 +590,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
                                       <Td>{ref.association_type}</Td>
                                       <Td>{ref.instance_name}</Td>
                                       <Td>{ref.entity_type_name}</Td>
-                                      {canWrite && (
+                                      {canMutate && (
                                         <Td><Button variant="link" size="sm" onClick={() => handleUnlink(ref.link_id)}>Unlink</Button></Td>
                                       )}
                                     </Tr>

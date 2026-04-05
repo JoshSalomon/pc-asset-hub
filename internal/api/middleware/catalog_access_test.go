@@ -9,6 +9,8 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	domainerrors "github.com/project-catalyst/pc-asset-hub/internal/domain/errors"
 )
 
 // mockCatalogAccessChecker allows configuring per-catalog access for tests.
@@ -343,9 +345,27 @@ func TestWriteProtection_NoCatalogName(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, rec.Code)
 }
 
-// Write protection: checker error → 500
-func TestWriteProtection_CheckerError(t *testing.T) {
-	checker := &mockPublishChecker{returnErr: fmt.Errorf("db error")}
+// Write protection: not-found error → passthrough to handler (handler returns 404)
+func TestWriteProtection_NotFoundError(t *testing.T) {
+	checker := &mockPublishChecker{returnErr: domainerrors.NewNotFound("Catalog", "missing")}
+	e := echo.New()
+	e.Use(RBACMiddleware(&HeaderRBACProvider{}))
+	g := e.Group("/catalogs/:catalog-name")
+	g.POST("/items", func(c echo.Context) error {
+		return c.String(http.StatusCreated, "created")
+	}, RequireRole(RoleRW), RequireWriteAccess(checker))
+
+	req := httptest.NewRequest(http.MethodPost, "/catalogs/missing/items", nil)
+	req.Header.Set("X-User-Role", "RW")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	// Not-found → passthrough; handler decides the response
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
+// Write protection: genuine DB error → 500 (do NOT silently allow mutations)
+func TestWriteProtection_DBError_Returns500(t *testing.T) {
+	checker := &mockPublishChecker{returnErr: fmt.Errorf("connection refused")}
 	e := echo.New()
 	e.Use(RBACMiddleware(&HeaderRBACProvider{}))
 	g := e.Group("/catalogs/:catalog-name")
@@ -357,5 +377,6 @@ func TestWriteProtection_CheckerError(t *testing.T) {
 	req.Header.Set("X-User-Role", "RW")
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
+	// DB error must NOT passthrough — return 500 to prevent silent mutation of published catalogs
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }

@@ -265,7 +265,7 @@ func RegisterCatalogRoutes(g *echo.Group, h *CatalogHandler, requireRW, requireA
 	g.GET("/:catalog-name", h.GetCatalog, requireCatalogAccess)
 	g.PUT("/:catalog-name", h.UpdateCatalog, append(writeMiddleware, requireCatalogAccess)...)
 	g.DELETE("/:catalog-name", h.DeleteCatalog, append(writeMiddleware, requireCatalogAccess)...)
-	g.POST("/:catalog-name/validate", h.ValidateCatalog, requireRW, requireCatalogAccess)
+	g.POST("/:catalog-name/validate", h.ValidateCatalog, append(writeMiddleware, requireCatalogAccess)...)
 	g.POST("/:catalog-name/publish", h.PublishCatalog, requireAdmin, requireCatalogAccess)
 	g.POST("/:catalog-name/unpublish", h.UnpublishCatalog, requireAdmin, requireCatalogAccess)
 }

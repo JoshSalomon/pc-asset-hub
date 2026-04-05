@@ -1292,7 +1292,7 @@ Acceptance Criteria:
 - SuperAdmin **data mutations** (instance/link changes) reset validation status to `draft` (same behavior as unpublished catalogs).
 - **Catalog metadata edits** (description change) by SuperAdmin are treated as cosmetic changes — they do NOT reset validation status or unpublish the catalog. The Catalog CR is synced to reflect the updated description without disrupting published state. This allows fixing typos or adding context to a published catalog without triggering re-validation.
 - Renaming or re-pinning (CV change) on published catalogs is blocked entirely — these are structural changes that require unpublish → edit → re-validate → republish.
-- Validation (POST .../validate) remains available to RW+ users on published catalogs — it is a read operation.
+- Validation (POST .../validate) on published catalogs requires SuperAdmin role — validation writes the `validation_status` field, making it a data mutation subject to write protection. RW and Admin users receive 403 when attempting to validate a published catalog.
 - Catalog-level operations (delete catalog, unpublish) require Admin+ regardless of published state.
 
 ---
@@ -1429,6 +1429,8 @@ Acceptance Criteria:
 - Version label uniqueness is enforced — duplicate labels return 409.
 - The CV detail page shows inline Edit buttons next to version label and description (same pattern as EntityTypeDetailPage).
 - RO users cannot update; the API returns 403.
+- **Lifecycle stage guards apply to CV metadata edits** (same rules as pin editing per TD-69): edits are blocked entirely on production CVs (400), restricted to SuperAdmin on testing CVs (400 for RW/Admin), and allowed for RW+ on development CVs.
+- The UI hides Edit buttons on the CV detail page when the lifecycle stage prohibits editing for the current user's role.
 
 ---
 

@@ -3123,6 +3123,67 @@ Pin editing (AddPin, RemovePin, UpdatePin) is restricted by catalog version life
 
 ---
 
+## 30. Security Fixes — Validate Write Protection & CV Metadata Stage Guards (TD-78, TD-71)
+
+Two authorization fixes: (1) `POST /catalogs/{name}/validate` on published catalogs now requires SuperAdmin (closes write protection bypass where RW users could mutate `validation_status`); (2) `UpdateCatalogVersion` now enforces the same lifecycle stage guards as pin editing — blocked on production, SuperAdmin-only on testing, RW+ on development.
+
+### Backend — Validate Write Protection (TD-78)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.01 | Validate on published catalog as RW → blocked by writeMiddleware | API | 403 Forbidden |
+| T-30.02 | Validate on published catalog as Admin → blocked by writeMiddleware | API | 403 Forbidden |
+| T-30.03 | Validate on published catalog as SuperAdmin → allowed | API | 200 with validation results |
+| T-30.04 | Validate on unpublished catalog as RW → allowed (no regression) | API | 200 with validation results |
+
+### Backend — CV Metadata Stage Guard (TD-71)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.05 | UpdateCatalogVersion on production CV as SuperAdmin → rejected | Unit | Validation error mentioning "production" |
+| T-30.06 | UpdateCatalogVersion on production CV as RW → rejected | Unit | Validation error mentioning "production" |
+| T-30.07 | UpdateCatalogVersion on testing CV as RW → rejected | Unit | Validation error mentioning "SuperAdmin" |
+| T-30.08 | UpdateCatalogVersion on testing CV as Admin → rejected | Unit | Validation error mentioning "SuperAdmin" |
+| T-30.09 | UpdateCatalogVersion on testing CV as SuperAdmin → allowed | Unit | CV updated successfully |
+| T-30.10 | UpdateCatalogVersion on development CV as RW → allowed (no regression) | Unit | CV updated successfully |
+
+### API Handler — CV Metadata Stage Guard (TD-71)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.11 | PUT /catalog-versions/:id on production CV → 400 | API | 400 with "production" message |
+| T-30.12 | PUT /catalog-versions/:id on testing CV as RW → 400 | API | 400 with stage guard message |
+| T-30.13 | PUT /catalog-versions/:id on testing CV as SuperAdmin → 200 | API | 200 with updated CV |
+| T-30.14 | PUT /catalog-versions/:id on development CV as RW → 200 (no regression) | API | 200 with updated CV |
+
+### UI — Validate Button Visibility (TD-78)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.15 | Validate button hidden on published catalog for RW user | Browser | Button not rendered |
+| T-30.16 | Validate button visible on published catalog for SuperAdmin | Browser | Button rendered and clickable |
+| T-30.17 | Validate button visible on unpublished catalog for RW (no regression) | Browser | Button rendered |
+
+### UI — CV Edit Controls Visibility (TD-71)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.18 | Edit buttons hidden on production CV for all roles | Browser | No Edit buttons for label or description |
+| T-30.19 | Edit buttons hidden on testing CV for RW | Browser | No Edit buttons |
+| T-30.20 | Edit buttons visible on testing CV for SuperAdmin | Browser | Edit buttons rendered |
+| T-30.21 | Edit buttons visible on development CV for RW (no regression) | Browser | Edit buttons rendered |
+
+### Live System Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.22 | Validate on published catalog as RW → 403 | Live | 403 Forbidden |
+| T-30.23 | UpdateCatalogVersion on production CV → 400 | Live | 400 with stage guard message |
+| T-30.24 | UpdateCatalogVersion on testing CV as RW → 400 | Live | 400 with stage guard message |
+| T-30.25 | UpdateCatalogVersion on testing CV as SuperAdmin → 200 | Live | 200 with updated CV |
+
+---
+
 ## Coverage Criteria
 
 ### Pass Rate

@@ -2231,3 +2231,53 @@ test('CV re-pin error shows alert', async () => {
   await page.getByText('v-bad').click()
   await expect.element(page.getByText('400: invalid CV')).toBeVisible()
 })
+
+// === Validate Write Protection Tests (TD-78) ===
+
+test('T-30.15: Validate button hidden on published catalog for RW user', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, published: true })
+  renderDetail('RW')
+  await expect.element(page.getByText('my-catalog')).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Validate' })).not.toBeInTheDocument()
+})
+
+test('T-30.16: Validate button visible on published catalog for SuperAdmin', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, published: true })
+  renderDetail('SuperAdmin')
+  await expect.element(page.getByText('my-catalog')).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Validate' })).toBeVisible()
+})
+
+test('T-30.17: Validate button visible on unpublished catalog for RW (no regression)', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByText('my-catalog')).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Validate' })).toBeVisible()
+})
+
+// T-30.18: Published catalog hides mutation UI for RW
+test('T-30.18: published catalog hides Edit description and Create button for RW', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, published: true })
+  renderDetail('RW')
+  await expect.element(page.getByText('my-catalog')).toBeVisible()
+  // Edit description button should be hidden
+  await expect.element(page.getByRole('button', { name: 'Edit description' })).not.toBeInTheDocument()
+  // Create button (e.g. "Create model") should be hidden
+  await expect.element(page.getByRole('button', { name: /^Create / })).not.toBeInTheDocument()
+})
+
+// T-30.19: Published catalog shows mutation UI for SuperAdmin
+test('T-30.19: published catalog shows Edit description and Create button for SuperAdmin', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, published: true })
+  renderDetail('SuperAdmin')
+  await expect.element(page.getByText('my-catalog')).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Edit description' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: /^Create / })).toBeVisible()
+})
+
+// T-30.20: Unpublished catalog still shows mutation UI for RW (no regression)
+test('T-30.20: unpublished catalog shows Edit description and Create button for RW', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByText('my-catalog')).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Edit description' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: /^Create / })).toBeVisible()
+})

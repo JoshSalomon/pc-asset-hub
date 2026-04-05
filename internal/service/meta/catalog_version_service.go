@@ -387,9 +387,13 @@ func (s *CatalogVersionService) ListTransitions(ctx context.Context, cvID string
 }
 
 // UpdateCatalogVersion updates the version label and/or description of a catalog version.
-func (s *CatalogVersionService) UpdateCatalogVersion(ctx context.Context, id string, versionLabel, description *string) (*models.CatalogVersion, error) {
+func (s *CatalogVersionService) UpdateCatalogVersion(ctx context.Context, id string, versionLabel, description *string, role Role) (*models.CatalogVersion, error) {
 	cv, err := s.cvRepo.GetByID(ctx, id)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := checkCVEditAllowed(cv, role, "metadata editing"); err != nil {
 		return nil, err
 	}
 
@@ -424,20 +428,21 @@ func (s *CatalogVersionService) UpdateCatalogVersion(ctx context.Context, id str
 	return cv, nil
 }
 
-// AddPin adds a new entity type version pin to a catalog version.
-// checkPinEditAllowed verifies that the CV stage permits pin modifications for the given role.
+// checkCVEditAllowed verifies that the CV stage permits the given operation for the given role.
 // development: RW+ allowed, testing: SuperAdmin only, production: blocked entirely.
-func checkPinEditAllowed(cv *models.CatalogVersion, role Role) error {
+func checkCVEditAllowed(cv *models.CatalogVersion, role Role, operation string) error {
 	switch cv.LifecycleStage {
 	case models.LifecycleStageProduction:
-		return domainerrors.NewValidation("pin editing is not allowed on production catalog versions")
+		return domainerrors.NewValidation(operation + " is not allowed on production catalog versions")
 	case models.LifecycleStageTesting:
 		if role != RoleSuperAdmin {
-			return domainerrors.NewValidation("only SuperAdmin can edit pins on testing catalog versions")
+			return domainerrors.NewValidation("only SuperAdmin can perform " + operation + " on testing catalog versions")
 		}
 	}
 	return nil
 }
+
+// AddPin adds a new entity type version pin to a catalog version.
 
 func (s *CatalogVersionService) AddPin(ctx context.Context, cvID, entityTypeVersionID string, role Role) (*models.CatalogVersionPin, error) {
 	// Verify CV exists and check stage permissions
@@ -445,7 +450,7 @@ func (s *CatalogVersionService) AddPin(ctx context.Context, cvID, entityTypeVers
 	if err != nil {
 		return nil, err
 	}
-	if err := checkPinEditAllowed(cv, role); err != nil {
+	if err := checkCVEditAllowed(cv, role, "pin editing"); err != nil {
 		return nil, err
 	}
 
@@ -490,7 +495,7 @@ func (s *CatalogVersionService) UpdatePin(ctx context.Context, cvID, pinID, newE
 	if err != nil {
 		return nil, err
 	}
-	if err := checkPinEditAllowed(cv, role); err != nil {
+	if err := checkCVEditAllowed(cv, role, "pin editing"); err != nil {
 		return nil, err
 	}
 
@@ -534,7 +539,7 @@ func (s *CatalogVersionService) RemovePin(ctx context.Context, cvID, pinID strin
 	if err != nil {
 		return err
 	}
-	if err := checkPinEditAllowed(cv, role); err != nil {
+	if err := checkCVEditAllowed(cv, role, "pin editing"); err != nil {
 		return err
 	}
 

@@ -199,7 +199,8 @@ func (h *CatalogVersionHandler) Update(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
-	cv, err := h.svc.UpdateCatalogVersion(c.Request().Context(), id, req.VersionLabel, req.Description)
+	role := mapRole(middleware.GetRoleFromContext(c))
+	cv, err := h.svc.UpdateCatalogVersion(c.Request().Context(), id, req.VersionLabel, req.Description, role)
 	if err != nil {
 		return mapError(err)
 	}

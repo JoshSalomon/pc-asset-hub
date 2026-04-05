@@ -551,7 +551,7 @@ func TestUpdateCatalogVersion_UpdateLabel(t *testing.T) {
 	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
 
 	newLabel := "v2.0"
-	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", &newLabel, nil)
+	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", &newLabel, nil, meta.RoleRW)
 	require.NoError(t, err)
 	assert.Equal(t, "v2.0", cv.VersionLabel)
 	assert.Equal(t, "old desc", cv.Description) // unchanged
@@ -567,7 +567,7 @@ func TestUpdateCatalogVersion_UpdateDescription(t *testing.T) {
 	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
 
 	newDesc := "new desc"
-	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, &newDesc)
+	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, &newDesc, meta.RoleRW)
 	require.NoError(t, err)
 	assert.Equal(t, "new desc", cv.Description)
 	assert.Equal(t, "v1.0", cv.VersionLabel) // unchanged
@@ -585,7 +585,7 @@ func TestUpdateCatalogVersion_UpdateBoth(t *testing.T) {
 
 	newLabel := "v2.0"
 	newDesc := "new desc"
-	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", &newLabel, &newDesc)
+	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", &newLabel, &newDesc, meta.RoleRW)
 	require.NoError(t, err)
 	assert.Equal(t, "v2.0", cv.VersionLabel)
 	assert.Equal(t, "new desc", cv.Description)
@@ -597,7 +597,7 @@ func TestUpdateCatalogVersion_NotFound(t *testing.T) {
 
 	cvRepo.On("GetByID", mock.Anything, "bad").Return(nil, domainerrors.NewNotFound("CatalogVersion", "bad"))
 
-	_, err := svc.UpdateCatalogVersion(context.Background(), "bad", nil, nil)
+	_, err := svc.UpdateCatalogVersion(context.Background(), "bad", nil, nil, meta.RoleRW)
 	assert.True(t, domainerrors.IsNotFound(err))
 }
 
@@ -613,7 +613,7 @@ func TestUpdateCatalogVersion_DuplicateLabel(t *testing.T) {
 	}, nil)
 
 	newLabel := "v2.0"
-	_, err := svc.UpdateCatalogVersion(context.Background(), "cv1", &newLabel, nil)
+	_, err := svc.UpdateCatalogVersion(context.Background(), "cv1", &newLabel, nil, meta.RoleRW)
 	assert.True(t, domainerrors.IsConflict(err))
 }
 
@@ -628,7 +628,7 @@ func TestUpdateCatalogVersion_GetByLabelDBError(t *testing.T) {
 	cvRepo.On("GetByLabel", mock.Anything, "v-new").Return(nil, dbErr)
 
 	newLabel := "v-new"
-	_, err := svc.UpdateCatalogVersion(context.Background(), "cv1", &newLabel, nil)
+	_, err := svc.UpdateCatalogVersion(context.Background(), "cv1", &newLabel, nil, meta.RoleRW)
 	// Should propagate the DB error, not silently swallow it
 	assert.ErrorIs(t, err, dbErr)
 }
@@ -647,7 +647,7 @@ func TestUpdateCatalogVersion_SameLabel(t *testing.T) {
 
 	// No actual change, so no Update call needed
 	newLabel := "v1.0"
-	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", &newLabel, nil)
+	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", &newLabel, nil, meta.RoleRW)
 	require.NoError(t, err)
 	assert.Equal(t, "v1.0", cv.VersionLabel)
 }
@@ -660,7 +660,7 @@ func TestUpdateCatalogVersion_NeitherChanged(t *testing.T) {
 		ID: "cv1", VersionLabel: "v1.0", Description: "desc",
 	}, nil)
 
-	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, nil)
+	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, nil, meta.RoleRW)
 	require.NoError(t, err)
 	assert.Equal(t, "v1.0", cv.VersionLabel)
 	// Update should NOT have been called
@@ -677,8 +677,98 @@ func TestUpdateCatalogVersion_UpdateRepoError(t *testing.T) {
 	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(domainerrors.NewValidation("db error"))
 
 	newDesc := "new"
-	_, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, &newDesc)
+	_, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, &newDesc, meta.RoleRW)
 	assert.Error(t, err)
+}
+
+// === UpdateCatalogVersion Stage Guard Tests (TD-71) ===
+
+func TestUpdateCatalogVersion_ProductionBlocked_SuperAdmin(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageProduction,
+	}, nil)
+
+	newDesc := "updated"
+	_, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, &newDesc, meta.RoleSuperAdmin)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "metadata editing")
+	assert.Contains(t, err.Error(), "production")
+}
+
+func TestUpdateCatalogVersion_ProductionBlocked_RW(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageProduction,
+	}, nil)
+
+	newLabel := "v2.0"
+	_, err := svc.UpdateCatalogVersion(context.Background(), "cv1", &newLabel, nil, meta.RoleRW)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "metadata editing")
+}
+
+func TestUpdateCatalogVersion_TestingBlocked_RW(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+
+	newDesc := "updated"
+	_, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, &newDesc, meta.RoleRW)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "metadata")
+	assert.Contains(t, err.Error(), "SuperAdmin")
+}
+
+func TestUpdateCatalogVersion_TestingBlocked_Admin(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+
+	newDesc := "updated"
+	_, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, &newDesc, meta.RoleAdmin)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "SuperAdmin")
+}
+
+func TestUpdateCatalogVersion_TestingAllowed_SuperAdmin(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "old", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+
+	newDesc := "updated"
+	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, &newDesc, meta.RoleSuperAdmin)
+	require.NoError(t, err)
+	assert.Equal(t, "updated", cv.Description)
+}
+
+func TestUpdateCatalogVersion_DevelopmentAllowed_RW(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "old", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+
+	newDesc := "updated"
+	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, &newDesc, meta.RoleRW)
+	require.NoError(t, err)
+	assert.Equal(t, "updated", cv.Description)
 }
 
 // === AddPin Tests ===
