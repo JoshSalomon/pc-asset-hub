@@ -57,6 +57,21 @@ export interface EdgeClickData {
   targetEntityTypeName: string
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildEdgeClickData(data: Record<string, any>): EdgeClickData {
+  return {
+    name: data.name,
+    assocType: data.assocType,
+    sourceRole: data.sourceRole || '',
+    targetRole: data.targetRole || '',
+    sourceCardinality: data.sourceCardinality || '',
+    targetCardinality: data.targetCardinality || '',
+    sourceEntityTypeId: data.sourceEntityTypeId,
+    sourceEntityTypeName: data.sourceEntityTypeName || '',
+    targetEntityTypeName: data.targetEntityTypeName || '',
+  }
+}
+
 interface EntityTypeDiagramProps {
   entityTypes: DiagramEntityType[]
   onNodeDoubleClick?: (entityTypeId: string) => void
@@ -137,7 +152,7 @@ const AssociationEdge: React.FunctionComponent<{
     <>
       <path d={d} fill="none" stroke="transparent" strokeWidth={12}
         style={{ cursor: data.onEdgeClick ? 'pointer' : 'default' }}
-        onClick={() => data.onEdgeClick?.({ name: data.name, assocType: data.assocType, sourceRole: data.sourceRole || '', targetRole: data.targetRole || '', sourceCardinality: data.sourceCardinality || '', targetCardinality: data.targetCardinality || '', sourceEntityTypeId: data.sourceEntityTypeId, sourceEntityTypeName: data.sourceEntityTypeName || '', targetEntityTypeName: data.targetEntityTypeName || '' })} />
+        onClick={() => data.onEdgeClick?.(buildEdgeClickData(data))} />
       <path d={d} fill="none" stroke={strokeColor} strokeWidth={1.5} strokeDasharray={strokeDash}
         markerEnd={isBidirectional ? `url(#arrow-filled-${edge.getId()})` : undefined}
         markerStart={isBidirectional ? `url(#arrow-hollow-${edge.getId()})` : isContainment ? `url(#diamond-${edge.getId()})` : undefined} />
@@ -176,7 +191,7 @@ const AssociationEdge: React.FunctionComponent<{
       {labelText && (
         <g transform={`translate(${labelPoint.x - labelWidth / 2}, ${labelPoint.y - labelHeight / 2})`}
           style={{ cursor: data.onEdgeClick ? 'pointer' : 'default' }}
-          onClick={() => data.onEdgeClick?.({ name: data.name, assocType: data.assocType, sourceRole: data.sourceRole || '', targetRole: data.targetRole || '', sourceCardinality: data.sourceCardinality || '', targetCardinality: data.targetCardinality || '', sourceEntityTypeId: data.sourceEntityTypeId, sourceEntityTypeName: data.sourceEntityTypeName || '', targetEntityTypeName: data.targetEntityTypeName || '' })}>
+          onClick={() => data.onEdgeClick?.(buildEdgeClickData(data))}>
           <rect width={labelWidth} height={labelHeight} rx={3} ry={3}
             fill={labelBg} stroke={labelBorder} strokeWidth={1} />
           <text x={labelWidth / 2} y={labelHeight / 2 + 1} textAnchor="middle" dominantBaseline="central"
@@ -221,13 +236,28 @@ export function buildModel(
   const attrLineHeight = 14
   const headerPadding = 40
 
+  const minNodeWidth = 200
+  const charWidth = 7
+  const nodePadding = 24
+
   const nodes: NodeModel[] = entityTypes.map((et) => {
     const attrHeight = Math.max(et.attributes.length * attrLineHeight + 8, 20)
+
+    // Compute width dynamically from the longest attribute label
+    let longestLabel = 0
+    for (const attr of et.attributes) {
+      const typeName = attr.enum_name || attr.type
+      const prefix = attr.required ? '* ' : ''
+      const label = `${prefix}${attr.name} : ${typeName}`
+      longestLabel = Math.max(longestLabel, label.length)
+    }
+    const dynamicWidth = Math.max(minNodeWidth, longestLabel * charWidth + nodePadding)
+
     return {
       id: et.entityType.id,
       type: 'entity-type',
       label: et.entityType.name,
-      width: 200,
+      width: dynamicWidth,
       height: headerPadding + attrHeight,
       shape: NodeShape.rect,
       data: {

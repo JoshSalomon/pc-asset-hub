@@ -16,13 +16,14 @@ import {
   type MenuToggleElement,
 } from '@patternfly/react-core'
 import type { EntityInstance } from '../types'
+import { api } from '../api/client'
 
 interface Props {
   isOpen: boolean
   onClose: () => void
+  catalogName: string | undefined
   instanceName: string | undefined
   parentTypeName: string
-  parentInstances: EntityInstance[]
   hasParent: boolean
   onSubmit: (parentType: string, parentId: string) => Promise<void>
   onRemoveParent: () => void
@@ -31,9 +32,9 @@ interface Props {
 
 export default function SetParentModal({
   isOpen, onClose,
+  catalogName,
   instanceName,
   parentTypeName,
-  parentInstances,
   hasParent,
   onSubmit, onRemoveParent,
   error,
@@ -41,12 +42,28 @@ export default function SetParentModal({
   const [parentInstanceId, setParentInstanceId] = useState('')
   const [parentInstSelectOpen, setParentInstSelectOpen] = useState(false)
 
+  // Internal data state (previously managed by page)
+  const [parentInstances, setParentInstances] = useState<EntityInstance[]>([])
+
+  // Load parent instances when modal opens with a parent type
+  const loadParentInstances = async (typeName: string) => {
+    if (!catalogName || !typeName) { setParentInstances([]); return }
+    try {
+      const res = await api.instances.list(catalogName, typeName)
+      setParentInstances(res.items || [])
+    } catch { setParentInstances([]) }
+  }
+
   // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
       setParentInstanceId('')
+      setParentInstances([])
+      if (parentTypeName) {
+        loadParentInstances(parentTypeName)
+      }
     }
-  }, [isOpen])
+  }, [isOpen, parentTypeName])
 
   return (
     <Modal variant={ModalVariant.medium} isOpen={isOpen} onClose={onClose}>

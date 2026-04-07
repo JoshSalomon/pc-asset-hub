@@ -8,7 +8,6 @@ import {
   TabTitleText,
   Button,
   Label,
-  Alert,
   EmptyState,
   EmptyStateBody,
   Spinner,
@@ -22,7 +21,7 @@ import { useContainmentTree } from '../../hooks/useContainmentTree'
 import { useCatalogDiagram } from '../../hooks/useCatalogDiagram'
 import ValidationResults from '../../components/ValidationResults'
 import InstanceDetailPanel from '../../components/InstanceDetailPanel'
-import EntityTypeDiagram from '../../components/EntityTypeDiagram'
+import DiagramTabContent from '../../components/DiagramTabContent'
 
 export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
   const { name } = useParams<{ name: string }>()
@@ -218,16 +217,11 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
 
         <Tab eventKey="__diagram__" title={<TabTitleText>Model Diagram</TabTitleText>}>
           <PageSection padding={{ default: 'noPadding' }} style={{ marginTop: '1rem' }}>
-            {diagram.diagramError && (
-              <Alert variant="danger" title={diagram.diagramError} isInline style={{ marginBottom: '1rem' }} />
-            )}
-            {diagram.diagramLoading ? (
-              <Spinner aria-label="Loading diagram" />
-            ) : diagram.diagramData.length === 0 && !diagram.diagramError ? (
-              <EmptyState><EmptyStateBody>No model diagram available. The catalog version has no pinned entity types.</EmptyStateBody></EmptyState>
-            ) : (
-              <EntityTypeDiagram entityTypes={diagram.diagramData} />
-            )}
+            <DiagramTabContent
+              diagramData={diagram.diagramData}
+              diagramLoading={diagram.diagramLoading}
+              diagramError={diagram.diagramError}
+            />
           </PageSection>
         </Tab>
       </Tabs>

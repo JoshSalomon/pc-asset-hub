@@ -465,13 +465,20 @@ func (s *CatalogVersionService) AddPin(ctx context.Context, cvID, entityTypeVers
 	if err != nil {
 		return nil, err
 	}
-	for _, pin := range existingPins {
-		existingETV, err := s.etvRepo.GetByID(ctx, pin.EntityTypeVersionID)
+	if len(existingPins) > 0 {
+		// Batch-fetch all existing pin ETVs in one query to avoid N+1
+		etvIDs := make([]string, len(existingPins))
+		for i, pin := range existingPins {
+			etvIDs[i] = pin.EntityTypeVersionID
+		}
+		existingETVs, err := s.etvRepo.GetByIDs(ctx, etvIDs)
 		if err != nil {
 			return nil, err
 		}
-		if existingETV.EntityTypeID == newETV.EntityTypeID {
-			return nil, domainerrors.NewConflict("CatalogVersionPin", "entity type already pinned; use UpdatePin to change version")
+		for _, etv := range existingETVs {
+			if etv.EntityTypeID == newETV.EntityTypeID {
+				return nil, domainerrors.NewConflict("CatalogVersionPin", "entity type already pinned; use UpdatePin to change version")
+			}
 		}
 	}
 

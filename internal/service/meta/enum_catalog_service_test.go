@@ -834,6 +834,9 @@ func TestAddPin_DuplicatePin(t *testing.T) {
 	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
 		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
 	}, nil)
+	etvRepo.On("GetByIDs", mock.Anything, []string{"etv1"}).Return([]*models.EntityTypeVersion{
+		{ID: "etv1", EntityTypeID: "et1", Version: 1},
+	}, nil)
 
 	_, err := svc.AddPin(context.Background(), "cv1", "etv1", meta.RoleAdmin)
 	assert.True(t, domainerrors.IsConflict(err))
@@ -853,12 +856,12 @@ func TestAddPin_DuplicateEntityType(t *testing.T) {
 	etvRepo.On("GetByID", mock.Anything, "etv1-v2").Return(&models.EntityTypeVersion{
 		ID: "etv1-v2", EntityTypeID: "et1", Version: 2,
 	}, nil)
-	// V1 of the same entity type "et1" is already pinned
-	etvRepo.On("GetByID", mock.Anything, "etv1-v1").Return(&models.EntityTypeVersion{
-		ID: "etv1-v1", EntityTypeID: "et1", Version: 1,
-	}, nil)
+	// V1 of the same entity type "et1" is already pinned — batch fetch returns it
 	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
 		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1-v1"},
+	}, nil)
+	etvRepo.On("GetByIDs", mock.Anything, []string{"etv1-v1"}).Return([]*models.EntityTypeVersion{
+		{ID: "etv1-v1", EntityTypeID: "et1", Version: 1},
 	}, nil)
 
 	_, err := svc.AddPin(context.Background(), "cv1", "etv1-v2", meta.RoleAdmin)
@@ -1149,7 +1152,7 @@ func TestUpdatePin_UpdateError(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// AddPin: existing pin's ETV lookup error
+// AddPin: existing pin's ETV batch lookup error
 func TestAddPin_ExistingPinETVError(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)
 	pinRepo := new(mocks.MockCatalogVersionPinRepo)
@@ -1165,7 +1168,7 @@ func TestAddPin_ExistingPinETVError(t *testing.T) {
 	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
 		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv-bad"},
 	}, nil)
-	etvRepo.On("GetByID", mock.Anything, "etv-bad").Return(nil, domainerrors.NewNotFound("EntityTypeVersion", "etv-bad"))
+	etvRepo.On("GetByIDs", mock.Anything, []string{"etv-bad"}).Return(([]*models.EntityTypeVersion)(nil), domainerrors.NewNotFound("EntityTypeVersion", "etv-bad"))
 
 	_, err := svc.AddPin(context.Background(), "cv1", "etv-new", meta.RoleAdmin)
 	assert.Error(t, err)
@@ -1286,4 +1289,121 @@ func TestTD69_UpdatePin_TestingRWBlocked(t *testing.T) {
 	_, err := svc.UpdatePin(context.Background(), "cv1", "pin1", "etv1", meta.RoleRW)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "SuperAdmin")
+}
+
+// TD-77: AddPin uses batch GetByIDs instead of N+1 GetByID calls for existing pins
+func TestTD77_AddPin_BatchFetchExistingPins(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	// Set up 5 existing pins, each for a different entity type
+	existingPins := make([]*models.CatalogVersionPin, 5)
+	existingETVIDs := make([]string, 5)
+	batchResult := make([]*models.EntityTypeVersion, 5)
+	for i := 0; i < 5; i++ {
+		etvID := fmt.Sprintf("etv-existing-%d", i)
+		existingPins[i] = &models.CatalogVersionPin{
+			ID: fmt.Sprintf("pin-%d", i), CatalogVersionID: "cv1", EntityTypeVersionID: etvID,
+		}
+		existingETVIDs[i] = etvID
+		batchResult[i] = &models.EntityTypeVersion{
+			ID: etvID, EntityTypeID: fmt.Sprintf("et-%d", i), Version: 1,
+		}
+	}
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	// GetByID should only be called once — for the NEW entity type version
+	etvRepo.On("GetByID", mock.Anything, "etv-new").Return(&models.EntityTypeVersion{
+		ID: "etv-new", EntityTypeID: "et-new", Version: 1,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return(existingPins, nil)
+	// GetByIDs should be called once for all existing pin ETVs
+	etvRepo.On("GetByIDs", mock.Anything, mock.AnythingOfType("[]string")).Return(batchResult, nil)
+	pinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+
+	pin, err := svc.AddPin(context.Background(), "cv1", "etv-new", meta.RoleAdmin)
+	require.NoError(t, err)
+	assert.NotEmpty(t, pin.ID)
+
+	// Verify GetByID was NOT called for existing pins (only once for the new ETV)
+	etvRepo.AssertNumberOfCalls(t, "GetByID", 1)
+	// Verify GetByIDs was called exactly once
+	etvRepo.AssertNumberOfCalls(t, "GetByIDs", 1)
+}
+
+// TD-77: AddPin duplicate detection still works with batch fetch
+func TestTD77_AddPin_BatchFetchDuplicateDetected(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	// New ETV belongs to entity type "et1"
+	etvRepo.On("GetByID", mock.Anything, "etv-new").Return(&models.EntityTypeVersion{
+		ID: "etv-new", EntityTypeID: "et1", Version: 2,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv-existing"},
+	}, nil)
+	// Existing pin's ETV also belongs to "et1" — should trigger conflict
+	etvRepo.On("GetByIDs", mock.Anything, mock.AnythingOfType("[]string")).Return([]*models.EntityTypeVersion{
+		{ID: "etv-existing", EntityTypeID: "et1", Version: 1},
+	}, nil)
+
+	_, err := svc.AddPin(context.Background(), "cv1", "etv-new", meta.RoleAdmin)
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsConflict(err))
+}
+
+// TD-77: AddPin with no existing pins skips GetByIDs call
+func TestTD77_AddPin_NoPinsSkipsBatchFetch(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+	pinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+
+	pin, err := svc.AddPin(context.Background(), "cv1", "etv1", meta.RoleAdmin)
+	require.NoError(t, err)
+	assert.NotEmpty(t, pin.ID)
+
+	// GetByIDs should NOT be called when there are no existing pins
+	etvRepo.AssertNotCalled(t, "GetByIDs")
+}
+
+// TD-77: AddPin handles GetByIDs error gracefully
+func TestTD77_AddPin_BatchFetchError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv-new").Return(&models.EntityTypeVersion{
+		ID: "etv-new", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv-existing"},
+	}, nil)
+	etvRepo.On("GetByIDs", mock.Anything, mock.AnythingOfType("[]string")).Return(([]*models.EntityTypeVersion)(nil), fmt.Errorf("db error"))
+
+	_, err := svc.AddPin(context.Background(), "cv1", "etv-new", meta.RoleAdmin)
+	assert.Error(t, err)
 }

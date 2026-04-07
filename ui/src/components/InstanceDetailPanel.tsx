@@ -77,18 +77,17 @@ export default function InstanceDetailPanel({
               <>
                 <p style={{ fontWeight: 600, marginTop: '0.5rem' }}>Forward References</p>
                 <Table aria-label="Forward references" variant="compact">
-                  <Thead><Tr><Th>Association</Th><Th>Type</Th><Th>Target</Th><Th>Entity Type</Th></Tr></Thead>
+                  <Thead><Tr><Th>Target</Th><Th>Association</Th><Th>Type</Th></Tr></Thead>
                   <Tbody>
                     {forwardRefs.map(ref => (
                       <Tr key={ref.link_id}>
-                        <Td>{ref.association_name}</Td>
-                        <Td>{ref.association_type}</Td>
                         <Td>
                           <Button variant="link" isInline onClick={() => onNavigateToRef(ref.instance_id)}>
-                            {ref.instance_name}
+                            {ref.instance_name} ({ref.entity_type_name})
                           </Button>
                         </Td>
-                        <Td>{ref.entity_type_name}</Td>
+                        <Td>{ref.association_name}</Td>
+                        <Td>{ref.association_type}</Td>
                       </Tr>
                     ))}
                   </Tbody>
@@ -99,18 +98,17 @@ export default function InstanceDetailPanel({
               <>
                 <p style={{ fontWeight: 600, marginTop: '0.5rem' }}>Referenced By</p>
                 <Table aria-label="Reverse references" variant="compact">
-                  <Thead><Tr><Th>Association</Th><Th>Type</Th><Th>Source</Th><Th>Entity Type</Th></Tr></Thead>
+                  <Thead><Tr><Th>Target</Th><Th>Association</Th><Th>Type</Th></Tr></Thead>
                   <Tbody>
                     {reverseRefs.map(ref => (
                       <Tr key={ref.link_id}>
-                        <Td>{ref.association_name}</Td>
-                        <Td>{ref.association_type}</Td>
                         <Td>
                           <Button variant="link" isInline onClick={() => onNavigateToRef(ref.instance_id)}>
-                            {ref.instance_name}
+                            {ref.instance_name} ({ref.entity_type_name})
                           </Button>
                         </Td>
-                        <Td>{ref.entity_type_name}</Td>
+                        <Td>{ref.association_name}</Td>
+                        <Td>{ref.association_type}</Td>
                       </Tr>
                     ))}
                   </Tbody>

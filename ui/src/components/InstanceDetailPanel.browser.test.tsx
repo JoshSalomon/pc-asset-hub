@@ -163,7 +163,7 @@ test('T-20.18: renders forward references', async () => {
     />
   )
   await expect.element(page.getByText('Forward References')).toBeVisible()
-  await expect.element(page.getByRole('button', { name: 'gpt-4' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'gpt-4 (model)' })).toBeVisible()
 })
 
 // T-20.19: renders reverse references
@@ -179,7 +179,7 @@ test('T-20.19: renders reverse references', async () => {
     />
   )
   await expect.element(page.getByText('Referenced By')).toBeVisible()
-  await expect.element(page.getByRole('button', { name: 'monitor-1' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'monitor-1 (guardrail)' })).toBeVisible()
 })
 
 // T-20.20: clicking reference calls onNavigateToRef
@@ -195,7 +195,7 @@ test('T-20.20: clicking reference calls onNavigateToRef', async () => {
       onNavigateToRef={onNav}
     />
   )
-  await page.getByRole('button', { name: 'gpt-4' }).click()
+  await page.getByRole('button', { name: 'gpt-4 (model)' }).click()
   expect(onNav).toHaveBeenCalledWith('i4')
 })
 
@@ -243,8 +243,8 @@ test('T-20.23: renders both forward and reverse refs', async () => {
   )
   await expect.element(page.getByText('Forward References')).toBeVisible()
   await expect.element(page.getByText('Referenced By')).toBeVisible()
-  await expect.element(page.getByRole('button', { name: 'gpt-4' })).toBeVisible()
-  await expect.element(page.getByRole('button', { name: 'monitor-1' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'gpt-4 (model)' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'monitor-1 (guardrail)' })).toBeVisible()
 })
 
 // T-20.24: attribute with null value shows dash
@@ -280,6 +280,42 @@ test('clicking reverse ref link calls onNavigateToRef', async () => {
       onNavigateToRef={onNav}
     />
   )
-  await page.getByRole('button', { name: 'monitor-1' }).click()
+  await page.getByRole('button', { name: 'monitor-1 (monitor)' }).click()
   expect(onNav).toHaveBeenCalledWith('i99')
+})
+
+// TD-78: Forward refs show merged target column "instance (entity-type)"
+test('TD-78: forward refs show merged target column', async () => {
+  render(
+    <InstanceDetailPanel
+      instance={mockInstance}
+      catalogName="my-catalog"
+      forwardRefs={mockForwardRefs}
+      reverseRefs={[]}
+      refsLoading={false}
+      onNavigateToRef={vi.fn()}
+    />
+  )
+  // Should show "gpt-4 (model)" as a clickable link, not separate columns
+  await expect.element(page.getByRole('button', { name: 'gpt-4 (model)' })).toBeVisible()
+  // Entity Type should NOT be a separate column header
+  const table = page.getByRole('table', { name: 'Forward references' })
+  await expect.element(table.getByRole('columnheader', { name: 'Entity Type' })).not.toBeInTheDocument()
+})
+
+// TD-78: Reverse refs show merged target column
+test('TD-78: reverse refs show merged target column', async () => {
+  render(
+    <InstanceDetailPanel
+      instance={mockInstance}
+      catalogName="my-catalog"
+      forwardRefs={[]}
+      reverseRefs={mockReverseRefs}
+      refsLoading={false}
+      onNavigateToRef={vi.fn()}
+    />
+  )
+  await expect.element(page.getByRole('button', { name: 'monitor-1 (guardrail)' })).toBeVisible()
+  const table = page.getByRole('table', { name: 'Reverse references' })
+  await expect.element(table.getByRole('columnheader', { name: 'Entity Type' })).not.toBeInTheDocument()
 })

@@ -43,10 +43,15 @@ export default function EnumDetailPage({ role }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Edit name
+  // Edit name (inline)
   const [editName, setEditName] = useState('')
-  const [editNameOpen, setEditNameOpen] = useState(false)
+  const [editingName, setEditingName] = useState(false)
   const [editNameError, setEditNameError] = useState<string | null>(null)
+
+  // Edit description (inline)
+  const [editingDesc, setEditingDesc] = useState(false)
+  const [editDescValue, setEditDescValue] = useState('')
+  const [editDescError, setEditDescError] = useState<string | null>(null)
 
   // Add value
   const [addValueOpen, setAddValueOpen] = useState(false)
@@ -84,10 +89,22 @@ export default function EnumDetailPage({ role }: Props) {
     setEditNameError(null)
     try {
       await api.enums.update(id, { name: editName.trim(), description: enumData?.description ?? '' })
-      setEditNameOpen(false)
+      setEditingName(false)
       loadEnum()
     } catch (e) {
       setEditNameError(e instanceof Error ? e.message : 'Failed to update')
+    }
+  }
+
+  const handleUpdateDescription = async () => {
+    if (!id) return
+    setEditDescError(null)
+    try {
+      await api.enums.update(id, { name: enumData?.name ?? '', description: editDescValue })
+      setEditingDesc(false)
+      loadEnum()
+    } catch (e) {
+      setEditDescError(e instanceof Error ? e.message : 'Failed to update')
     }
   }
 
@@ -157,37 +174,59 @@ export default function EnumDetailPage({ role }: Props) {
         <DescriptionListGroup>
           <DescriptionListTerm>Name</DescriptionListTerm>
           <DescriptionListDescription>
-            {enumData.name}
-            {canEdit && (
-              <Button
-                variant="link"
-                size="sm"
-                onClick={() => { setEditName(enumData.name); setEditNameOpen(true) }}
-                style={{ marginLeft: '0.5rem' }}
-                aria-label="Edit name"
-              >
-                Edit
-              </Button>
+            {editingName ? (
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <TextInput
+                  value={editName}
+                  onChange={(_e, v) => setEditName(v)}
+                  aria-label="Name"
+                  style={{ width: '100%' }}
+                />
+                <Button variant="primary" size="sm" onClick={handleUpdateName}>Save</Button>
+                <Button variant="link" size="sm" onClick={() => { setEditingName(false); setEditNameError(null) }}>Cancel</Button>
+              </div>
+            ) : (
+              <>
+                {enumData.name}
+                {canEdit && (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    onClick={() => { setEditName(enumData.name); setEditingName(true) }}
+                    style={{ marginLeft: '0.5rem' }}
+                    aria-label="Edit name"
+                  >
+                    Edit
+                  </Button>
+                )}
+              </>
             )}
+            {editNameError && <Alert variant="danger" title={editNameError} isInline style={{ marginTop: '0.5rem' }} />}
           </DescriptionListDescription>
         </DescriptionListGroup>
         <DescriptionListGroup>
           <DescriptionListTerm>Description</DescriptionListTerm>
           <DescriptionListDescription>
-            {enumData.description || <span style={{ color: '#6a6e73' }}>No description</span>}
-            {canEdit && (
-              <Button variant="link" size="sm" onClick={async () => {
-                const desc = window.prompt('Enter description:', enumData.description || '')
-                if (desc !== null) {
-                  try {
-                    await api.enums.update(id!, { name: enumData.name, description: desc })
-                    loadEnum()
-                  } catch (e) {
-                    setDeleteError(e instanceof Error ? e.message : 'Failed to update')
-                  }
-                }
-              }} style={{ marginLeft: '0.5rem' }} aria-label="Edit description">Edit</Button>
+            {editingDesc ? (
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <TextInput
+                  value={editDescValue}
+                  onChange={(_e, v) => setEditDescValue(v)}
+                  aria-label="Description"
+                  style={{ width: '100%' }}
+                />
+                <Button variant="primary" size="sm" onClick={handleUpdateDescription}>Save</Button>
+                <Button variant="link" size="sm" onClick={() => { setEditingDesc(false); setEditDescError(null) }}>Cancel</Button>
+              </div>
+            ) : (
+              <>
+                {enumData.description || <span style={{ color: '#6a6e73' }}>No description</span>}
+                {canEdit && (
+                  <Button variant="link" size="sm" onClick={() => { setEditDescValue(enumData.description || ''); setEditingDesc(true) }} style={{ marginLeft: '0.5rem' }} aria-label="Edit description">Edit</Button>
+                )}
+              </>
             )}
+            {editDescError && <Alert variant="danger" title={editDescError} isInline style={{ marginTop: '0.5rem' }} />}
           </DescriptionListDescription>
         </DescriptionListGroup>
         <DescriptionListGroup>
@@ -268,23 +307,6 @@ export default function EnumDetailPage({ role }: Props) {
           </Tbody>
         </Table>
       )}
-
-      {/* Edit Name Modal */}
-      <Modal variant={ModalVariant.small} isOpen={editNameOpen} onClose={() => { setEditNameOpen(false); setEditNameError(null) }}>
-        <ModalHeader title="Edit Enum Name" />
-        <ModalBody>
-          {editNameError && <Alert variant="danger" title={editNameError} isInline style={{ marginBottom: '1rem' }} />}
-          <Form>
-            <FormGroup label="Name" isRequired fieldId="edit-enum-name">
-              <TextInput id="edit-enum-name" value={editName} onChange={(_e, v) => setEditName(v)} isRequired />
-            </FormGroup>
-          </Form>
-        </ModalBody>
-        <ModalFooter>
-          <Button variant="primary" onClick={handleUpdateName} isDisabled={!editName.trim()}>Save</Button>
-          <Button variant="link" onClick={() => { setEditNameOpen(false); setEditNameError(null) }}>Cancel</Button>
-        </ModalFooter>
-      </Modal>
 
       {/* Add Value Modal */}
       <Modal variant={ModalVariant.small} isOpen={addValueOpen} onClose={() => { setAddValueOpen(false); setAddValueError(null) }}>

@@ -346,6 +346,22 @@ test('T-E.133: CV diagram renders when clicking Diagram tab directly', async () 
   await expect.element(page.getByTestId('entity-type-diagram')).toBeVisible()
 })
 
+// TD-54: Diagram tab shows error when snapshot fetch fails
+test('TD-54: Diagram tab shows error alert on snapshot failure', async () => {
+  ;(api.versions.snapshot as Mock).mockRejectedValue(new Error('Diagram load failed'))
+  renderDetail()
+  await page.getByRole('tab', { name: 'Diagram' }).click()
+  await expect.element(page.getByText('Diagram load failed')).toBeVisible()
+})
+
+// TD-54: Diagram tab shows empty state consistent with DiagramTabContent
+test('TD-54: Diagram tab shows empty state when no pins', async () => {
+  ;(api.catalogVersions.listPins as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail()
+  await page.getByRole('tab', { name: 'Diagram' }).click()
+  await expect.element(page.getByText(/No model diagram available/)).toBeVisible()
+})
+
 // === Phase 2 CRUD: Inline Edit Description ===
 
 test('Edit description button visible for RW+, hidden for RO', async () => {
@@ -689,6 +705,37 @@ test('BOM version dropdown handles version load error', async () => {
   // No crash — gracefully handled
 })
 
+// === TD-70: BOM table sorted alphabetically by entity type name ===
+
+test('TD-70: BOM table pins are sorted alphabetically by entity type name', async () => {
+  // Provide pins in reverse-alphabetical / non-sorted order
+  ;(api.catalogVersions.listPins as Mock).mockResolvedValue({
+    items: [
+      { pin_id: 'pin-z', entity_type_name: 'Zebra', entity_type_id: 'et-z', entity_type_version_id: 'etv-z', version: 1 },
+      { pin_id: 'pin-a', entity_type_name: 'Alpha', entity_type_id: 'et-a', entity_type_version_id: 'etv-a', version: 2 },
+      { pin_id: 'pin-m', entity_type_name: 'model', entity_type_id: 'et-m', entity_type_version_id: 'etv-m', version: 1, description: 'lowercase name' },
+    ],
+    total: 3,
+  })
+  renderDetail('RO')
+  await page.getByRole('tab', { name: 'Bill of Materials' }).click()
+  // Wait for all pins to render
+  await expect.element(page.getByRole('button', { name: 'Alpha', exact: true })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'model', exact: true })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Zebra', exact: true })).toBeVisible()
+
+  // Verify row order by checking that the first gridcell of each data row
+  // contains the entity type name in alphabetical order.
+  // PatternFly table rows: header row + 3 data rows
+  const gridcells = page.getByRole('gridcell').elements()
+  // Each row has columns: Entity Type, Description, Version, Entity Type ID
+  // (RO has no Actions column). So 4 cells per row, 3 rows = 12 cells.
+  // First cell of each row: index 0, 4, 8
+  expect(gridcells[0].textContent).toBe('Alpha')
+  expect(gridcells[4].textContent).toBe('model')
+  expect(gridcells[8].textContent).toBe('Zebra')
+})
+
 // === Stage Guard Tests for CV Metadata Edit (TD-71) ===
 
 test('T-30.18: Edit buttons hidden on production CV for all roles', async () => {
@@ -720,4 +767,83 @@ test('T-30.21: Edit buttons visible on development CV for RW (no regression)', a
   await expect.element(page.getByText('v1.0').first()).toBeVisible()
   await expect.element(page.getByRole('button', { name: 'Edit version label' })).toBeVisible()
   await expect.element(page.getByRole('button', { name: 'Edit description' })).toBeVisible()
+})
+
+// === TD-76 / T-29.15–17: Stage guards for pin controls ===
+
+test('T-29.15: Production CV hides Add Pin, Remove buttons, and version dropdowns for all roles', async () => {
+  ;(api.catalogVersions.get as Mock).mockResolvedValue({ ...mockCV, lifecycle_stage: 'production' })
+  renderDetail('SuperAdmin')
+  await page.getByRole('tab', { name: 'Bill of Materials' }).click()
+  await expect.element(page.getByRole('button', { name: 'Model', exact: true })).toBeVisible()
+  // Add Pin button should be absent
+  await expect.element(page.getByRole('button', { name: 'Add Pin' })).not.toBeInTheDocument()
+  // Remove buttons should be absent
+  await expect.element(page.getByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
+  // Version dropdowns should be absent — plain text instead
+  await expect.element(page.getByRole('button', { name: 'Version for Model' })).not.toBeInTheDocument()
+  await expect.element(page.getByRole('button', { name: 'Version for Tool' })).not.toBeInTheDocument()
+  // Plain text versions should be visible
+  await expect.element(page.getByRole('gridcell', { name: 'V3' })).toBeVisible()
+  await expect.element(page.getByRole('gridcell', { name: 'V1' })).toBeVisible()
+})
+
+test('T-29.16: Testing CV hides pin controls for Admin role', async () => {
+  ;(api.catalogVersions.get as Mock).mockResolvedValue({ ...mockCV, lifecycle_stage: 'testing' })
+  renderDetail('Admin')
+  await page.getByRole('tab', { name: 'Bill of Materials' }).click()
+  await expect.element(page.getByRole('button', { name: 'Model', exact: true })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Add Pin' })).not.toBeInTheDocument()
+  await expect.element(page.getByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
+  await expect.element(page.getByRole('button', { name: 'Version for Model' })).not.toBeInTheDocument()
+})
+
+test('T-29.17: Testing CV shows pin controls for SuperAdmin role', async () => {
+  ;(api.catalogVersions.get as Mock).mockResolvedValue({ ...mockCV, lifecycle_stage: 'testing' })
+  renderDetail('SuperAdmin')
+  await page.getByRole('tab', { name: 'Bill of Materials' }).click()
+  await expect.element(page.getByRole('button', { name: 'Model', exact: true })).toBeVisible()
+  // Add Pin button should be visible
+  await expect.element(page.getByRole('button', { name: 'Add Pin' })).toBeVisible()
+  // Remove buttons should be visible (2 pins)
+  const removeButtons = page.getByRole('button', { name: 'Remove' })
+  expect(removeButtons.elements().length).toBe(2)
+  // Version dropdowns should be visible
+  await expect.element(page.getByRole('button', { name: 'Version for Model' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Version for Tool' })).toBeVisible()
+})
+
+test('T-29.xx: Development CV shows pin controls for RW (no regression)', async () => {
+  renderDetail('RW')
+  await page.getByRole('tab', { name: 'Bill of Materials' }).click()
+  await expect.element(page.getByRole('button', { name: 'Model', exact: true })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Add Pin' })).toBeVisible()
+  const removeButtons = page.getByRole('button', { name: 'Remove' })
+  expect(removeButtons.elements().length).toBe(2)
+  await expect.element(page.getByRole('button', { name: 'Version for Model' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Version for Tool' })).toBeVisible()
+})
+
+// === TD-68: Inline TextInput width matches container ===
+
+test('TD-68: description edit TextInput has width 100% and no max-width', async () => {
+  renderDetail('Admin')
+  await expect.element(page.getByText('v1.0').first()).toBeVisible()
+  await page.getByRole('button', { name: 'Edit description' }).click()
+  const input = page.getByRole('textbox', { name: 'Description' })
+  await expect.element(input).toBeVisible()
+  await expect.element(input).toHaveAttribute('style', expect.stringContaining('width: 100%'))
+  const style = input.element().getAttribute('style') || ''
+  expect(style).not.toContain('max-width')
+})
+
+test('TD-68: version label edit TextInput has width 100% and no max-width', async () => {
+  renderDetail('Admin')
+  await expect.element(page.getByText('v1.0').first()).toBeVisible()
+  await page.getByRole('button', { name: 'Edit version label' }).click()
+  const input = page.getByRole('textbox', { name: 'Version Label' })
+  await expect.element(input).toBeVisible()
+  await expect.element(input).toHaveAttribute('style', expect.stringContaining('width: 100%'))
+  const style = input.element().getAttribute('style') || ''
+  expect(style).not.toContain('max-width')
 })

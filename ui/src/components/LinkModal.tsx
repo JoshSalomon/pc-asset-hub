@@ -14,23 +14,23 @@ import {
   MenuToggle,
   type MenuToggleElement,
 } from '@patternfly/react-core'
-import type { EntityInstance, SnapshotAssociation } from '../types'
+import type { EntityInstance, SnapshotAssociation, CatalogVersionPin } from '../types'
+import { api } from '../api/client'
 
 interface Props {
   isOpen: boolean
   onClose: () => void
+  catalogName: string | undefined
+  pins: CatalogVersionPin[]
   schemaAssocs: SnapshotAssociation[]
-  linkTargetInstances: EntityInstance[]
-  onAssocChange: (assocName: string) => void
   onSubmit: (targetId: string, assocName: string) => Promise<void>
   error: string | null
 }
 
 export default function LinkModal({
   isOpen, onClose,
+  catalogName, pins,
   schemaAssocs,
-  linkTargetInstances,
-  onAssocChange,
   onSubmit, error,
 }: Props) {
   const [assocName, setAssocName] = useState('')
@@ -38,11 +38,28 @@ export default function LinkModal({
   const [linkAssocSelectOpen, setLinkAssocSelectOpen] = useState(false)
   const [linkTargetSelectOpen, setLinkTargetSelectOpen] = useState(false)
 
+  // Internal data state (previously managed by page)
+  const [linkTargetInstances, setLinkTargetInstances] = useState<EntityInstance[]>([])
+
+  // Load target instances when association selected
+  const loadLinkTargetInstances = async (selectedAssocName: string) => {
+    if (!catalogName) return
+    const assoc = schemaAssocs.find(a => a.name === selectedAssocName && a.direction === 'outgoing')
+    if (!assoc) return
+    const targetPin = pins.find(p => p.entity_type_id === assoc.target_entity_type_id)
+    if (!targetPin) return
+    try {
+      const res = await api.instances.list(catalogName, targetPin.entity_type_name)
+      setLinkTargetInstances(res.items || [])
+    } catch { setLinkTargetInstances([]) }
+  }
+
   // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
       setAssocName('')
       setTargetId('')
+      setLinkTargetInstances([])
     }
   }, [isOpen])
 
@@ -62,7 +79,7 @@ export default function LinkModal({
                 setAssocName(v)
                 setLinkAssocSelectOpen(false)
                 setTargetId('')
-                onAssocChange(v)
+                loadLinkTargetInstances(v)
               }}
               onOpenChange={setLinkAssocSelectOpen}
               toggle={(ref: React.Ref<MenuToggleElement>) => (

@@ -681,6 +681,89 @@ func TestCVUpdate_MapRole_Unknown(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
+// === TD-73: Promote/Demote/Delete use mapRole (not inline switch) ===
+// These tests bypass requireRW to verify mapRole is used consistently.
+
+// TD-73: Promote with RO role via mapRole — RO can promote dev (service allows RW+ for dev→test)
+func TestCVPromote_MapRole_RO(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	ltRepo := new(mocks.MockLifecycleTransitionRepo)
+	catalogRepo := new(mocks.MockCatalogRepo)
+	e := setupCVServerNoRequireRW(cvRepo, ltRepo, catalogRepo)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	cvRepo.On("UpdateLifecycle", mock.Anything, "cv1", models.LifecycleStageTesting).Return(nil)
+	ltRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.LifecycleTransition")).Return(nil)
+	catalogRepo.On("ListByCatalogVersionID", mock.Anything, "cv1").Return([]*models.Catalog{}, nil)
+
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/cv1/promote", "", apimw.RoleRO)
+	// RO via mapRole → svcmeta.RoleRO → service rejects (insufficient_role for RO)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// TD-73: Promote with unknown role via mapRole — defaults to RO
+func TestCVPromote_MapRole_Unknown(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	ltRepo := new(mocks.MockLifecycleTransitionRepo)
+	catalogRepo := new(mocks.MockCatalogRepo)
+	svc := svcmeta.NewCatalogVersionService(cvRepo, nil, ltRepo, nil, "", nil, nil, nil, catalogRepo)
+	handler := apimeta.NewCatalogVersionHandler(svc)
+
+	e := echo.New()
+	g := e.Group("/api/meta/v1")
+	g.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.Set(apimw.RoleContextKey, apimw.Role("UnknownRole"))
+			return next(c)
+		}
+	})
+	noopMW := func(next echo.HandlerFunc) echo.HandlerFunc { return next }
+	apimeta.RegisterCatalogVersionRoutes(g, handler, noopMW)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/meta/v1/catalog-versions/cv1/promote",
+		strings.NewReader(""))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	// Unknown role → mapRole default → RoleRO → service rejects
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// TD-73: Demote with RO role via mapRole
+func TestCVDemote_MapRole_RO(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerNoRequireRW(cvRepo, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv-test").Return(&models.CatalogVersion{
+		ID: "cv-test", VersionLabel: "v2.0", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/cv-test/demote",
+		`{"target_stage":"development"}`, apimw.RoleRO)
+	// RO via mapRole → svcmeta.RoleRO → service rejects
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// TD-73: Delete with RO role via mapRole
+func TestCVDelete_MapRole_RO(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerNoRequireRW(cvRepo, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+
+	rec := doRequest(e, http.MethodDelete, "/api/meta/v1/catalog-versions/cv1", "", apimw.RoleRO)
+	// RO via mapRole → svcmeta.RoleRO → service rejects
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
 // Coverage: Promote warnings loop body (L111-116) — service returns warnings for non-valid catalogs
 func TestCVPromote_WithWarnings(t *testing.T) {
 	cvRepo := new(mocks.MockCatalogVersionRepo)

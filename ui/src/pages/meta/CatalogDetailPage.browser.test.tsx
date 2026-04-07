@@ -94,6 +94,11 @@ beforeEach(() => {
     return Promise.resolve(mockSnapshot)
   })
   ;(api.instances.list as Mock).mockResolvedValue({ items: mockInstances, total: 1 })
+  ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
+    const found = mockInstances.find(i => i.id === id)
+    if (found) return Promise.resolve(found)
+    return Promise.resolve({ id, name: `inst-${id}`, entity_type_id: 'et1', version: 1, attributes: [], created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' })
+  })
   ;(api.instances.create as Mock).mockResolvedValue({ id: 'i2', name: 'new-inst' })
   ;(api.instances.update as Mock).mockResolvedValue({ id: 'i1', name: 'inst-a', version: 2 })
   ;(api.instances.delete as Mock).mockResolvedValue(undefined)
@@ -291,10 +296,10 @@ test('T-12.58: details panel shows references', async () => {
   await expect.element(page.getByRole('heading', { name: 'References' }).first()).toBeVisible()
   // Forward references visible
   await expect.element(page.getByText('Forward References').first()).toBeVisible()
-  await expect.element(page.getByRole('gridcell', { name: 'target-inst' }).first()).toBeVisible()
+  await expect.element(page.getByRole('gridcell', { name: 'target-inst (tool)' }).first()).toBeVisible()
   // Reverse references visible
   await expect.element(page.getByText('Referenced By').first()).toBeVisible()
-  await expect.element(page.getByRole('gridcell', { name: 'source-inst' }).first()).toBeVisible()
+  await expect.element(page.getByRole('gridcell', { name: 'source-inst (server)' }).first()).toBeVisible()
 })
 
 // T-12.59: Forward references show association name
@@ -313,6 +318,34 @@ test('T-12.63: RO sees refs without link/unlink', async () => {
   await expect.element(page.getByRole('heading', { name: 'References' }).first()).toBeVisible()
   // Should NOT see Link to Instance or Unlink buttons
   await expect.element(page.getByRole('button', { name: 'Link to Instance' })).not.toBeInTheDocument()
+})
+
+// TD-78: Forward refs show merged target column "instance-name (entity-type)"
+test('TD-78: forward refs show merged target column', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  // Merged column should show "target-inst (tool)"
+  await expect.element(page.getByRole('gridcell', { name: 'target-inst (tool)' }).first()).toBeVisible()
+})
+
+// TD-78: Reverse refs show merged target column "instance-name (entity-type)"
+test('TD-78: reverse refs show merged target column', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  // Merged column should show "source-inst (server)"
+  await expect.element(page.getByRole('gridcell', { name: 'source-inst (server)' }).first()).toBeVisible()
+})
+
+// TD-78: Entity Type is not a separate column in forward refs
+test('TD-78: no separate Entity Type column in forward refs', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  // "tool" should NOT appear as its own gridcell (it's merged into target)
+  const forwardTable = page.getByRole('table', { name: 'Forward references' })
+  await expect.element(forwardTable.getByRole('columnheader', { name: 'Entity Type' })).not.toBeInTheDocument()
 })
 
 // Bug: child type resets when reopening Add Contained from different parent type
@@ -878,9 +911,11 @@ test('details pane shows parent name not UUID', async () => {
     created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
   }]
   ;(api.instances.list as Mock).mockResolvedValue({ items: childInstances, total: 1 })
-  // Mock GetByID for parent instance resolution
-  ;(api.instances.get as Mock).mockResolvedValue({
-    id: 'p1', name: 'my-parent-server', entity_type_id: 'et1',
+  // Mock GetByID: return child instance for 'c1', parent for 'p1'
+  ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
+    if (id === 'c1') return Promise.resolve(childInstances[0])
+    if (id === 'p1') return Promise.resolve({ id: 'p1', name: 'my-parent-server', entity_type_id: 'et1' })
+    return Promise.resolve({ id, name: `inst-${id}`, entity_type_id: 'et1' })
   })
   renderDetail('Admin')
   await expect.element(page.getByRole('gridcell', { name: 'child-inst' })).toBeVisible()
@@ -1582,7 +1617,11 @@ test('remove container calls setParent with empty parent', async () => {
     created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
   }]
   ;(api.instances.list as Mock).mockResolvedValue({ items: childInstances, total: 1 })
-  ;(api.instances.get as Mock).mockResolvedValue({ id: 'p1', name: 'my-parent', entity_type_id: 'et1' })
+  ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
+    if (id === 'c1') return Promise.resolve(childInstances[0])
+    if (id === 'p1') return Promise.resolve({ id: 'p1', name: 'my-parent', entity_type_id: 'et1' })
+    return Promise.resolve({ id, name: `inst-${id}`, entity_type_id: 'et1' })
+  })
   ;(api.instances.setParent as Mock).mockResolvedValue(undefined)
   renderDetail('Admin')
   await expect.element(page.getByRole('gridcell', { name: 'child-inst' })).toBeVisible()
@@ -1630,7 +1669,11 @@ test('parent name resolution failure falls back to UUID', async () => {
     created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
   }]
   ;(api.instances.list as Mock).mockResolvedValue({ items: childInstances, total: 1 })
-  ;(api.instances.get as Mock).mockRejectedValue(new Error('404'))
+  // Re-fetch of the instance itself succeeds, but parent resolution fails
+  ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
+    if (id === 'c1') return Promise.resolve(childInstances[0])
+    return Promise.reject(new Error('404'))
+  })
   renderDetail('Admin')
   await expect.element(page.getByRole('gridcell', { name: 'child-inst' })).toBeVisible()
   await page.getByRole('button', { name: 'Details' }).first().click()
@@ -2232,7 +2275,7 @@ test('CV re-pin error shows alert', async () => {
   await expect.element(page.getByText('400: invalid CV')).toBeVisible()
 })
 
-// === Validate Write Protection Tests (TD-78) ===
+// === Validate Write Protection Tests (TD-71: published catalog security fix) ===
 
 test('T-30.15: Validate button hidden on published catalog for RW user', async () => {
   ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, published: true })
@@ -2280,4 +2323,45 @@ test('T-30.20: unpublished catalog shows Edit description and Create button for 
   await expect.element(page.getByText('my-catalog')).toBeVisible()
   await expect.element(page.getByRole('button', { name: 'Edit description' })).toBeVisible()
   await expect.element(page.getByRole('button', { name: /^Create / })).toBeVisible()
+})
+
+// === TD-68: Inline TextInput width matches container ===
+
+test('TD-68: description edit TextInput has width 100% and no max-width', async () => {
+  renderDetail()
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Edit description' }).click()
+  const input = page.getByRole('textbox', { name: 'Description' })
+  await expect.element(input).toBeVisible()
+  await expect.element(input).toHaveAttribute('style', expect.stringContaining('width: 100%'))
+  const style = input.element().getAttribute('style') || ''
+  expect(style).not.toContain('max-width')
+})
+
+// === TD-51: Remove Container error is surfaced, not swallowed ===
+
+test('TD-51: remove container error is shown to user', async () => {
+  const childInstances = [{
+    id: 'c1', entity_type_id: 'et1', catalog_id: 'cat1', parent_instance_id: 'p1',
+    name: 'child-inst', description: '', version: 1,
+    attributes: [{ name: 'hostname', type: 'string', value: 'h1' }],
+    created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+  }]
+  ;(api.instances.list as Mock).mockResolvedValue({ items: childInstances, total: 1 })
+  ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
+    if (id === 'c1') return Promise.resolve(childInstances[0])
+    if (id === 'p1') return Promise.resolve({ id: 'p1', name: 'my-parent', entity_type_id: 'et1' })
+    return Promise.resolve({ id, name: `inst-${id}`, entity_type_id: 'et1' })
+  })
+  ;(api.instances.setParent as Mock).mockRejectedValue(new Error('403: forbidden'))
+  renderDetail('Admin')
+  await expect.element(page.getByRole('gridcell', { name: 'child-inst' })).toBeVisible()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await expect.element(page.getByText('Contained by: my-parent').first()).toBeVisible()
+  await page.getByRole('button', { name: 'Set Container' }).first().click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // Click "Remove Container" — the API will reject
+  await page.getByRole('dialog').getByRole('button', { name: 'Remove Container' }).click()
+  // Error should be displayed in the dialog, not swallowed
+  await expect.element(page.getByText('403: forbidden')).toBeVisible()
 })

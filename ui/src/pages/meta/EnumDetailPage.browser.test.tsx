@@ -117,16 +117,15 @@ test('RO hides edit controls', async () => {
 
 // === Edit name ===
 
-test('edit enum name via modal', async () => {
+test('edit enum name via inline edit', async () => {
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Edit name' }).click()
-  await expect.element(page.getByText('Edit Enum Name')).toBeVisible()
 
   await page.getByRole('textbox', { name: /Name/i }).clear()
   await page.getByRole('textbox', { name: /Name/i }).fill('New Status')
-  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
+  await page.getByRole('button', { name: 'Save' }).click()
 
   expect(api.enums.update).toHaveBeenCalledWith('enum-1', { name: 'New Status', description: 'Deployment status values' })
 })
@@ -139,13 +138,13 @@ test('rename enum with undefined description sends empty string not undefined', 
   await page.getByRole('button', { name: 'Edit name' }).click()
   await page.getByRole('textbox', { name: /Name/i }).clear()
   await page.getByRole('textbox', { name: /Name/i }).fill('Renamed')
-  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
+  await page.getByRole('button', { name: 'Save' }).click()
 
   // Must send empty string, not undefined (which JSON.stringify would omit, causing backend to clear description)
   expect(api.enums.update).toHaveBeenCalledWith('enum-1', { name: 'Renamed', description: '' })
 })
 
-test('edit name error shown in modal', async () => {
+test('edit name error shown inline', async () => {
   ;(api.enums.update as Mock).mockRejectedValue(new Error('409: conflict'))
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
@@ -153,20 +152,20 @@ test('edit name error shown in modal', async () => {
   await page.getByRole('button', { name: 'Edit name' }).click()
   await page.getByRole('textbox', { name: /Name/i }).clear()
   await page.getByRole('textbox', { name: /Name/i }).fill('Dup')
-  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
+  await page.getByRole('button', { name: 'Save' }).click()
 
   await expect.element(page.getByText('409: conflict')).toBeVisible()
 })
 
-test('edit name cancel closes modal', async () => {
+test('edit name cancel hides inline edit', async () => {
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Edit name' }).click()
-  await expect.element(page.getByText('Edit Enum Name')).toBeVisible()
+  await expect.element(page.getByRole('textbox', { name: /Name/i })).toBeVisible()
 
-  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
-  await expect.element(page.getByRole('dialog')).not.toBeInTheDocument()
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await expect.element(page.getByRole('textbox', { name: /Name/i })).not.toBeInTheDocument()
 })
 
 // === T-C.49: Add value ===
@@ -315,20 +314,136 @@ test('reorder value error shows alert', async () => {
   await expect.element(page.getByText('500: reorder failed')).toBeVisible()
 })
 
-// Enum description edit via prompt
-test('edit enum description via prompt', async () => {
-  const origPrompt = window.prompt
-  window.prompt = vi.fn().mockReturnValue('Updated desc') as typeof window.prompt
-  ;(api.enums.update as Mock).mockResolvedValue({ status: 'updated' })
+// === Edit description inline ===
 
+test('edit description shows inline TextInput with Save/Cancel', async () => {
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
+
   await page.getByRole('button', { name: 'Edit description' }).click()
 
-  expect(window.prompt).toHaveBeenCalled()
-  expect(api.enums.update).toHaveBeenCalledWith('enum-1', { name: 'Status', description: 'Updated desc' })
+  // Should show inline TextInput pre-filled with current description
+  const input = page.getByRole('textbox', { name: 'Description' })
+  await expect.element(input).toBeVisible()
+  await expect.element(input).toHaveValue('Deployment status values')
 
-  window.prompt = origPrompt
+  // Should show Save and Cancel buttons
+  await expect.element(page.getByRole('button', { name: 'Save' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Cancel' })).toBeVisible()
+})
+
+test('edit description Save calls API and updates', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit description' }).click()
+
+  const input = page.getByRole('textbox', { name: 'Description' })
+  await input.clear()
+  await input.fill('Updated desc')
+  await page.getByRole('button', { name: 'Save' }).click()
+
+  expect(api.enums.update).toHaveBeenCalledWith('enum-1', { name: 'Status', description: 'Updated desc' })
+})
+
+test('edit description Cancel reverts without API call', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit description' }).click()
+
+  const input = page.getByRole('textbox', { name: 'Description' })
+  await input.clear()
+  await input.fill('Should be discarded')
+  await page.getByRole('button', { name: 'Cancel' }).click()
+
+  // Input should disappear
+  await expect.element(page.getByRole('textbox', { name: 'Description' })).not.toBeInTheDocument()
+  // Original description still shown
+  await expect.element(page.getByText('Deployment status values')).toBeVisible()
+  // API should NOT have been called
+  expect(api.enums.update).not.toHaveBeenCalled()
+})
+
+test('edit description error shows alert', async () => {
+  ;(api.enums.update as Mock).mockRejectedValue(new Error('500: update failed'))
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit description' }).click()
+  const input = page.getByRole('textbox', { name: 'Description' })
+  await input.clear()
+  await input.fill('bad desc')
+  await page.getByRole('button', { name: 'Save' }).click()
+
+  await expect.element(page.getByText('500: update failed')).toBeVisible()
+})
+
+// === Bug 1: Inline name edit (replaces modal) ===
+
+test('clicking Edit name shows inline TextInput with Save/Cancel buttons', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit name' }).click()
+
+  // Should show inline TextInput pre-filled with current name
+  const input = page.getByRole('textbox', { name: 'Name' })
+  await expect.element(input).toBeVisible()
+  await expect.element(input).toHaveValue('Status')
+
+  // Should show Save and Cancel buttons (NOT in a dialog)
+  await expect.element(page.getByRole('button', { name: 'Save' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Cancel' })).toBeVisible()
+
+  // Should NOT open a modal dialog
+  await expect.element(page.getByRole('dialog')).not.toBeInTheDocument()
+})
+
+test('inline name Save calls API and updates', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit name' }).click()
+  const input = page.getByRole('textbox', { name: 'Name' })
+  await input.clear()
+  await input.fill('New Status')
+  await page.getByRole('button', { name: 'Save' }).click()
+
+  expect(api.enums.update).toHaveBeenCalledWith('enum-1', { name: 'New Status', description: 'Deployment status values' })
+})
+
+test('inline name Cancel reverts without API call', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit name' }).click()
+  const input = page.getByRole('textbox', { name: 'Name' })
+  await input.clear()
+  await input.fill('Should be discarded')
+  await page.getByRole('button', { name: 'Cancel' }).click()
+
+  // Input should disappear
+  await expect.element(page.getByRole('textbox', { name: 'Name' })).not.toBeInTheDocument()
+  // Original name still shown in heading
+  await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
+  // API should NOT have been called
+  expect(api.enums.update).not.toHaveBeenCalled()
+})
+
+// === Bug 2: TextInput width — no max-width ===
+
+test('TD-68: description edit TextInput has width 100% and no max-width', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: 'Status' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit description' }).click()
+  const input = page.getByRole('textbox', { name: 'Description' })
+  await expect.element(input).toBeVisible()
+  await expect.element(input).toHaveAttribute('style', expect.stringContaining('width: 100%'))
+  // Must NOT contain max-width
+  const style = input.element().getAttribute('style') || ''
+  expect(style).not.toContain('max-width')
 })
 
 // Fix 5: Enum detail page shows description

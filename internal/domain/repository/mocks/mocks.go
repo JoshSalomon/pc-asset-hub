@@ -53,6 +53,13 @@ func (m *MockEntityTypeVersionRepo) GetByID(ctx context.Context, id string) (*mo
 	}
 	return args.Get(0).(*models.EntityTypeVersion), args.Error(1)
 }
+func (m *MockEntityTypeVersionRepo) GetByIDs(ctx context.Context, ids []string) ([]*models.EntityTypeVersion, error) {
+	args := m.Called(ctx, ids)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.EntityTypeVersion), args.Error(1)
+}
 func (m *MockEntityTypeVersionRepo) GetByEntityTypeAndVersion(ctx context.Context, entityTypeID string, version int) (*models.EntityTypeVersion, error) {
 	args := m.Called(ctx, entityTypeID, version)
 	if args.Get(0) == nil {

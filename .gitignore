@@ -41,3 +41,6 @@ docs/*.txt
 .claude/ltm/state.json
 .claude/ltm/stats.json
 .claude/ltm/server.json
+
+# Temp artifacts (in the project)
+tmp/

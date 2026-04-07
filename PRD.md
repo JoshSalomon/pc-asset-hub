@@ -1744,3 +1744,47 @@ Export a complete catalog — including its catalog version, pinned entity type 
 
 **Scope:** File format specification, streaming support for large catalogs, partial import (import schema only vs. schema + data), and compression will be discussed in a future design session.
 
+### FF-13: Landing Page Customization and Server Version
+
+Allow customization of the landing page and display the running server version.
+
+**Customization:**
+- Landing page strings (title, subtitle, card descriptions) configurable via environment variables or a config file, so different deployments can brand the UI without code changes.
+- Optional custom icons for the Schema Manager and Data Viewer cards (default to current icons if not configured).
+
+**Server Version:**
+- The API server exposes its build version via `GET /healthz` or a new `GET /version` endpoint (e.g., `{"version": "1.2.0", "commit": "abc1234", "build_time": "2026-04-05T10:00:00Z"}`).
+- The landing page displays the server version in the footer or a subtle badge, so operators can confirm which version is deployed.
+- Build version is injected at compile time via `-ldflags` (Go) and `VITE_APP_VERSION` (UI).
+
+### FF-14: Comprehensive Type System
+
+Extend the attribute type system beyond the current `string`, `number`, `enum` with richer constraints and new types. This replaces the implicit "any string / any number" semantics with a schema-level type definition that carries validation rules.
+
+**Constrained strings:**
+- `string(maxLength)` — e.g., `string(255)` limits the attribute value to 255 characters. Validated on instance create/update. Shown as max-length hint in the UI form field.
+- `multiline` boolean property — when true, the UI renders a `TextArea` instead of a `TextInput`. Applies to any string-based type (plain string, `string(maxLength)`, and `json`). System attributes like `description` are implicitly multiline. Schema authors set this per attribute when defining the entity type.
+
+**Constrained numbers:**
+- `integer(min, max)` and `float(min, max)` — e.g., `integer(1, 65535)` for a port number, `float(0.0, 1.0)` for a probability. Replaces the current untyped `number` which accepts any numeric value.
+- Each type definition specifies exactly one legal range. The range is inclusive on both ends.
+- Integer vs float distinction enables UI validation (reject decimals for integer fields) and potential future DB column type optimization.
+
+**Fixed-size arrays:**
+- `array(elementType, size)` — e.g., `array(string, 3)` for exactly 3 string values. Element type can be any scalar type (string, number, integer, float, enum).
+- Stored as JSON array in the attribute value. Validated on create/update: exact size, each element matches the element type and its constraints.
+- UI renders as a multi-field input group with exactly `size` fields.
+
+**Variable-size arrays (nice to have):**
+- `array(elementType, minSize, maxSize)` — e.g., `array(string, 1, 10)` for 1-10 string values. If `maxSize` is omitted or `*`, the array is unbounded.
+- Lower priority — fixed-size arrays cover most modeling use cases (e.g., primary/secondary DNS, RGB color values). Variable-size adds complexity in validation, UI rendering (dynamic add/remove), and storage.
+
+**Structured data (consider):**
+- `json` — stored as a string but validated as legal JSON on create/update. Useful for attributes that carry opaque structured data (e.g., configuration blobs, metadata from external systems) where defining a full schema is impractical. The UI would render a code editor or textarea with JSON syntax highlighting and validation. Whether this is needed depends on whether Asset Hub should model structured sub-documents or remain a flat attribute system — if users frequently resort to pasting JSON into plain string fields, this type would formalize and validate that pattern.
+
+**Implementation notes:**
+- Type definitions are stored as structured metadata on the attribute (not just a string tag). The current `type` field (`string`, `number`, `enum`) becomes a type descriptor with optional constraints.
+- Enums remain as-is — they are already a constrained type (value must be in the enum's value set). The new types complement enums for non-enumerable constraints.
+- Catalog validation (`POST /catalogs/{name}/validate`) must check all type constraints, not just required/enum membership.
+- Copy-on-write versioning carries type constraints forward with attributes.
+

@@ -1,7 +1,7 @@
 import { render } from 'vitest-browser-react'
 import { expect, test, vi, beforeEach, type Mock } from 'vitest'
 import { page } from 'vitest/browser'
-import { api } from '../api/client'
+import { api, setAuthRole } from '../api/client'
 import { useInstanceDetail } from './useInstanceDetail'
 import type { SnapshotAssociation, EntityInstance } from '../types'
 
@@ -27,11 +27,11 @@ const mockInstance: EntityInstance = {
 }
 
 const mockInstanceWithParent: EntityInstance = {
-  ...mockInstance, parent_instance_id: 'parent1',
+  ...mockInstance, id: 'i1-with-parent', parent_instance_id: 'parent1',
 }
 
-function TestComponent({ catalogName, entityTypeName, assocs }: { catalogName?: string; entityTypeName: string; assocs?: SnapshotAssociation[] }) {
-  const detail = useInstanceDetail(catalogName, entityTypeName, assocs || schemaAssocs)
+function TestComponent({ catalogName, entityTypeName, assocs, role }: { catalogName?: string; entityTypeName: string; assocs?: SnapshotAssociation[]; role?: 'RO' | 'RW' | 'Admin' | 'SuperAdmin' }) {
+  const detail = useInstanceDetail(catalogName, entityTypeName, assocs || schemaAssocs, role || 'Admin')
   return (
     <div>
       <span data-testid="selected">{detail.selectedInstance?.name || ''}</span>
@@ -41,8 +41,8 @@ function TestComponent({ catalogName, entityTypeName, assocs }: { catalogName?: 
       <span data-testid="fwd-refs-count">{detail.forwardRefs.length}</span>
       <span data-testid="rev-refs-count">{detail.reverseRefs.length}</span>
       <span data-testid="refs-loading">{String(detail.refsLoading)}</span>
-      <button data-testid="select" onClick={() => detail.selectInstance(mockInstance)}>SelectInst</button>
-      <button data-testid="select-parent" onClick={() => detail.selectInstance(mockInstanceWithParent)}>SelectParent</button>
+      <button data-testid="select" onClick={() => detail.selectInstance(mockInstance.id)}>SelectInst</button>
+      <button data-testid="select-parent" onClick={() => detail.selectInstance(mockInstanceWithParent.id)}>SelectParent</button>
       <button data-testid="select-null" onClick={() => detail.selectInstance(null)}>SelectNull</button>
       <button data-testid="clear" onClick={detail.clearSelection}>ClearSel</button>
     </div>
@@ -51,7 +51,12 @@ function TestComponent({ catalogName, entityTypeName, assocs }: { catalogName?: 
 
 beforeEach(() => {
   vi.clearAllMocks()
-  ;(api.instances.get as Mock).mockResolvedValue({ id: 'parent1', name: 'parent-inst' })
+  ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
+    if (id === 'parent1') return Promise.resolve({ id: 'parent1', name: 'parent-inst' })
+    if (id === 'i1') return Promise.resolve(mockInstance)
+    if (id === mockInstanceWithParent.id) return Promise.resolve(mockInstanceWithParent)
+    return Promise.resolve({ id, name: `inst-${id}` })
+  })
   ;(api.instances.listContained as Mock).mockResolvedValue({ items: [{ id: 'c1', name: 'child-a' }], total: 1 })
   ;(api.links.forwardRefs as Mock).mockResolvedValue([{ link_id: 'l1', association_name: 'uses', association_type: 'directional', instance_id: 'i2', instance_name: 'target', entity_type_name: 'tool' }])
   ;(api.links.reverseRefs as Mock).mockResolvedValue([{ link_id: 'l2', association_name: 'dep', association_type: 'directional', instance_id: 'i3', instance_name: 'source', entity_type_name: 'server' }])
@@ -76,13 +81,18 @@ test('T-19.21: useInstanceDetail skips parent name when no parent', async () => 
   // Wait for children to load to be sure all async work is done
   await expect.element(page.getByTestId('children-loading')).toHaveTextContent('false')
   await expect.element(page.getByTestId('parent-name')).toHaveTextContent('')
-  // instances.get is for parent resolution — should NOT have been called
-  expect(api.instances.get).not.toHaveBeenCalled()
+  // instances.get is called once for re-fetch, but NOT again for parent resolution
+  expect(api.instances.get).toHaveBeenCalledTimes(1)
+  expect(api.instances.get).toHaveBeenCalledWith('my-catalog', 'model', 'i1')
 })
 
 // T-19.22: selectInstance handles parent name load error (falls back to ID)
 test('T-19.22: useInstanceDetail parent name error falls back to ID', async () => {
-  ;(api.instances.get as Mock).mockRejectedValue(new Error('Not found'))
+  // First call (re-fetch) succeeds, second call (parent resolution) fails
+  ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
+    if (id === 'i1-with-parent') return Promise.resolve(mockInstanceWithParent)
+    return Promise.reject(new Error('Not found'))
+  })
   render(<TestComponent catalogName="my-catalog" entityTypeName="model" />)
   await page.getByTestId('select-parent').click()
   await expect.element(page.getByTestId('parent-name')).toHaveTextContent('parent1')
@@ -125,4 +135,21 @@ test('T-19.26: useInstanceDetail selectInstance null clears', async () => {
   await expect.element(page.getByTestId('selected')).toHaveTextContent('inst-a')
   await page.getByTestId('select-null').click()
   await expect.element(page.getByTestId('selected')).toHaveTextContent('')
+})
+
+// TD-49: selectInstance calls setAuthRole before making API calls
+test('TD-49: selectInstance calls setAuthRole with current role', async () => {
+  render(<TestComponent catalogName="my-catalog" entityTypeName="model" role="RW" />)
+  await page.getByTestId('select').click()
+  await expect.element(page.getByTestId('selected')).toHaveTextContent('inst-a')
+  expect(setAuthRole).toHaveBeenCalledWith('RW')
+})
+
+// TD-50: selectInstance re-fetches instance by ID instead of using stale object
+test('TD-50: selectInstance fetches instance by ID from API', async () => {
+  render(<TestComponent catalogName="my-catalog" entityTypeName="model" />)
+  await page.getByTestId('select').click()
+  await expect.element(page.getByTestId('selected')).toHaveTextContent('inst-a')
+  // selectInstance('i1') should call api.instances.get to fetch the instance
+  expect(api.instances.get).toHaveBeenCalledWith('my-catalog', 'model', 'i1')
 })

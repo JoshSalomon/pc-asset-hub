@@ -1,4 +1,4 @@
-import { expect, test, describe } from 'vitest'
+import { expect, test, describe, vi } from 'vitest'
 import { buildModel } from './EntityTypeDiagram'
 import type { DiagramEntityType } from './EntityTypeDiagram'
 
@@ -48,6 +48,61 @@ function makeEntityTypes(assocOverrides: Partial<DiagramEntityType['associations
   ]
 }
 
+describe('buildModel node width', () => {
+  test('node width accommodates long attribute labels', () => {
+    const longAttrEntityTypes: DiagramEntityType[] = [
+      {
+        entityType: { id: 'et1', name: 'Agent', created_at: '', updated_at: '' },
+        version: 1,
+        attributes: [
+          { id: 'a1', name: 'execution-modes', description: '', type: 'enum', enum_name: 'guardrail-invocation', ordinal: 1, required: true },
+          { id: 'a2', name: 'name', description: '', type: 'string', ordinal: 2, required: false },
+        ],
+        associations: [],
+      },
+    ]
+    const model = buildModel(longAttrEntityTypes)
+    const node = model.nodes![0]
+    // The longest label is "* execution-modes : guardrail-invocation" (40 chars)
+    // A fixed width of 200 would be too narrow; the dynamic width should be wider
+    expect(node.width).toBeGreaterThan(200)
+  })
+
+  test('node width uses minimum when attributes are short', () => {
+    const shortAttrEntityTypes: DiagramEntityType[] = [
+      {
+        entityType: { id: 'et1', name: 'Server', created_at: '', updated_at: '' },
+        version: 1,
+        attributes: [
+          { id: 'a1', name: 'name', description: '', type: 'string', ordinal: 1, required: false },
+        ],
+        associations: [],
+      },
+    ]
+    const model = buildModel(shortAttrEntityTypes)
+    const node = model.nodes![0]
+    // Short labels should still get the minimum width
+    expect(node.width).toBe(200)
+  })
+
+  test('node width accounts for required attribute prefix', () => {
+    const requiredAttrEntityTypes: DiagramEntityType[] = [
+      {
+        entityType: { id: 'et1', name: 'Config', created_at: '', updated_at: '' },
+        version: 1,
+        attributes: [
+          { id: 'a1', name: 'very-long-configuration-parameter-name', description: '', type: 'enum', enum_name: 'extended-enumeration-type', ordinal: 1, required: true },
+        ],
+        associations: [],
+      },
+    ]
+    const model = buildModel(requiredAttrEntityTypes)
+    const node = model.nodes![0]
+    // "* very-long-configuration-parameter-name : extended-enumeration-type" = 69 chars
+    expect(node.width).toBeGreaterThan(200)
+  })
+})
+
 describe('buildModel edge data', () => {
   test('containment edge has assocType containment', () => {
     const model = buildModel(baseEntityTypes)
@@ -69,4 +124,24 @@ describe('buildModel edge data', () => {
     const edge = model.edges![0]
     expect(edge.data.assocType).toBe('bidirectional')
   })
+
+  test('onEdgeClick callback is passed through in edge data', () => {
+    const handler = vi.fn()
+    const model = buildModel(baseEntityTypes, undefined, handler)
+    const edge = model.edges![0]
+    expect(edge.data.onEdgeClick).toBe(handler)
+  })
+
+  test('edge data contains source and target entity type info', () => {
+    const model = buildModel(baseEntityTypes)
+    const edge = model.edges![0]
+    expect(edge.data.sourceEntityTypeId).toBe('et1')
+    expect(edge.data.sourceEntityTypeName).toBe('Server')
+    expect(edge.data.targetEntityTypeName).toBe('Tool')
+    expect(edge.data.sourceRole).toBe('parent')
+    expect(edge.data.targetRole).toBe('child')
+    expect(edge.data.sourceCardinality).toBe('1')
+    expect(edge.data.targetCardinality).toBe('0..n')
+  })
 })
+

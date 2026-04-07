@@ -1162,3 +1162,34 @@ func TestTE116_BulkCopyPreservesAssociationNames(t *testing.T) {
 	require.Len(t, v2Assocs, 1)
 	assert.Equal(t, "my_tools", v2Assocs[0].Name)
 }
+
+// TD-77: GetByIDs batch fetch
+func TestGetByIDs(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	etRepo := repository.NewEntityTypeGormRepo(db)
+	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
+	ctx := context.Background()
+
+	et := &models.EntityType{ID: newID(), Name: "BatchTest", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	require.NoError(t, etRepo.Create(ctx, et))
+
+	v1 := &models.EntityTypeVersion{ID: newID(), EntityTypeID: et.ID, Version: 1, Description: "V1", CreatedAt: time.Now()}
+	v2 := &models.EntityTypeVersion{ID: newID(), EntityTypeID: et.ID, Version: 2, Description: "V2", CreatedAt: time.Now()}
+	require.NoError(t, etvRepo.Create(ctx, v1))
+	require.NoError(t, etvRepo.Create(ctx, v2))
+
+	// Fetch both by IDs
+	results, err := etvRepo.GetByIDs(ctx, []string{v1.ID, v2.ID})
+	require.NoError(t, err)
+	assert.Len(t, results, 2)
+
+	// Fetch with empty slice
+	empty, err := etvRepo.GetByIDs(ctx, []string{})
+	require.NoError(t, err)
+	assert.Len(t, empty, 0)
+
+	// Fetch with non-existent ID (should return only the found ones, not error)
+	partial, err := etvRepo.GetByIDs(ctx, []string{v1.ID, "nonexistent"})
+	require.NoError(t, err)
+	assert.Len(t, partial, 1)
+}

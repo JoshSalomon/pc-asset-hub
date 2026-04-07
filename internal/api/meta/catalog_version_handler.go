@@ -90,18 +90,7 @@ func (h *CatalogVersionHandler) GetByID(c echo.Context) error {
 func (h *CatalogVersionHandler) Promote(c echo.Context) error {
 	id := c.Param("id")
 	role := middleware.GetRoleFromContext(c)
-
-	var svcRole svcmeta.Role
-	switch role {
-	case middleware.RoleRO:
-		svcRole = svcmeta.RoleRO
-	case middleware.RoleRW:
-		svcRole = svcmeta.RoleRW
-	case middleware.RoleAdmin:
-		svcRole = svcmeta.RoleAdmin
-	case middleware.RoleSuperAdmin:
-		svcRole = svcmeta.RoleSuperAdmin
-	}
+	svcRole := mapRole(role)
 
 	result, err := h.svc.Promote(c.Request().Context(), id, svcRole, string(role))
 	if err != nil {
@@ -123,18 +112,7 @@ func (h *CatalogVersionHandler) Promote(c echo.Context) error {
 func (h *CatalogVersionHandler) Demote(c echo.Context) error {
 	id := c.Param("id")
 	role := middleware.GetRoleFromContext(c)
-
-	var svcRole svcmeta.Role
-	switch role {
-	case middleware.RoleRO:
-		svcRole = svcmeta.RoleRO
-	case middleware.RoleRW:
-		svcRole = svcmeta.RoleRW
-	case middleware.RoleAdmin:
-		svcRole = svcmeta.RoleAdmin
-	case middleware.RoleSuperAdmin:
-		svcRole = svcmeta.RoleSuperAdmin
-	}
+	svcRole := mapRole(role)
 
 	var req struct {
 		TargetStage string `json:"target_stage"`
@@ -152,18 +130,7 @@ func (h *CatalogVersionHandler) Demote(c echo.Context) error {
 func (h *CatalogVersionHandler) Delete(c echo.Context) error {
 	id := c.Param("id")
 	role := middleware.GetRoleFromContext(c)
-
-	var svcRole svcmeta.Role
-	switch role {
-	case middleware.RoleRO:
-		svcRole = svcmeta.RoleRO
-	case middleware.RoleRW:
-		svcRole = svcmeta.RoleRW
-	case middleware.RoleAdmin:
-		svcRole = svcmeta.RoleAdmin
-	case middleware.RoleSuperAdmin:
-		svcRole = svcmeta.RoleSuperAdmin
-	}
+	svcRole := mapRole(role)
 
 	if err := h.svc.DeleteCatalogVersion(c.Request().Context(), id, svcRole); err != nil {
 		return mapError(err)

@@ -123,6 +123,25 @@ test('shows back link to entity types list', async () => {
   await expect.element(backLink).toBeVisible()
 })
 
+// TD-82: Back button returns to diagram page when navigated from there
+test('TD-82: back button returns to source page when location.state.from is set', async () => {
+  render(
+    <MemoryRouter initialEntries={[
+      { pathname: '/schema/catalogs/my-catalog' },
+      { pathname: '/schema/entity-types/et-1', state: { from: '/schema/catalogs/my-catalog' } },
+    ]} initialIndex={1}>
+      <Routes>
+        <Route path="/schema/entity-types/:id" element={<EntityTypeDetailPage role="Admin" />} />
+        <Route path="/schema/catalogs/:name" element={<div>Catalog Page</div>} />
+        <Route path="/schema" element={<div>Home Page</div>} />
+      </Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
+  await page.getByRole('button', { name: /Back/i }).click()
+  await expect.element(page.getByText('Catalog Page')).toBeVisible()
+})
+
 test('shows Copy and Delete buttons for Admin', async () => {
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
