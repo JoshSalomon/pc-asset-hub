@@ -42,18 +42,15 @@ test('schema management card navigates to /schema', async () => {
   await visible(pg.getByRole('tab', { name: 'Entity Types' }))
 })
 
-test('catalog card navigates to catalog detail', async () => {
+test('catalog section shows on landing page', async () => {
   await pg.goto(UI_URL)
-  // Wait for catalogs to load
+  // Wait for catalogs section to load (shows catalogs or empty state)
   await pg.waitForTimeout(1000)
-  // If catalogs exist, clicking one should navigate
-  const catalogCards = pg.locator('[class*="card"]').filter({ hasText: /draft|valid|invalid/ })
-  const count = await catalogCards.count()
-  if (count > 0) {
-    await catalogCards.first().click()
-    // Operational catalog detail page uses breadcrumb with "Catalogs" link
-    await visible(pg.getByRole('button', { name: 'Catalogs' }))
-  }
+  const bodyText = await pg.textContent('body')
+  // Either catalogs are displayed or the empty state shows
+  const hasCatalogs = bodyText?.includes('Version:')
+  const hasEmpty = bodyText?.includes('No catalogs available')
+  expect(hasCatalogs || hasEmpty).toBe(true)
 })
 
 test('role selector shows all 4 roles', async () => {

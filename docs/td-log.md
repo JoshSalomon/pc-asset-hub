@@ -7,7 +7,7 @@ Items where the current implementation diverges from the intended behavior descr
 ---
 
 ## 🔴 Critical / ⚠️ Important
-
+1
 | ID | Item | Current Behavior | Required Behavior |
 |----|------|-----------------|-------------------|
 | TD-1 | 🔴 Enum deletion safety | Enum delete checks if any attribute references it across all entity type versions (flat check) | Enum cannot be deleted if it is used by any attribute in a **used entity version**. A used entity version is defined as: (1) any entity type version pinned by a catalog version, or (2) the latest version of any entity type (which belongs to an implicit pre-production catalog). Unused historical versions that are not pinned by any CV and are not the latest version should not block deletion. |
