@@ -1407,3 +1407,34 @@ func TestTD77_AddPin_BatchFetchError(t *testing.T) {
 	_, err := svc.AddPin(context.Background(), "cv1", "etv-new", meta.RoleAdmin)
 	assert.Error(t, err)
 }
+
+// AddPin with orphaned pin (GetByIDs returns fewer results than requested) should error
+func TestAddPin_OrphanedPinDetected(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	// New ETV to add — entity type "et-new"
+	etvRepo.On("GetByID", mock.Anything, "etv-new").Return(&models.EntityTypeVersion{
+		ID: "etv-new", EntityTypeID: "et-new", Version: 1,
+	}, nil)
+	// CV has two existing pins, but one points to a deleted ETV
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv-good"},
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv-orphaned"},
+	}, nil)
+	// GetByIDs returns only 1 of the 2 requested — etv-orphaned is missing
+	etvRepo.On("GetByIDs", mock.Anything, mock.AnythingOfType("[]string")).Return([]*models.EntityTypeVersion{
+		{ID: "etv-good", EntityTypeID: "et-other", Version: 1},
+	}, nil)
+	// Mock Create since without the fix, AddPin would proceed to create
+	pinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+
+	_, err := svc.AddPin(context.Background(), "cv1", "etv-new", meta.RoleAdmin)
+	assert.Error(t, err, "should detect orphaned pin when GetByIDs returns fewer results than requested")
+	assert.Contains(t, err.Error(), "orphaned pin references a deleted entity type version")
+}

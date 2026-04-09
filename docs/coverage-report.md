@@ -8,12 +8,12 @@ Last updated: 2026-04-03
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1450 | 100% | 97.4% (3743/3841) | — |
+| Backend (Go) | 1460 | 100% | 97.5% (3747/3842) | — |
 | UI — Unit tests (jsdom) | 75 | 100% | — | — |
-| UI — Browser tests (Playwright) | 784 | 100% | 93.4% (2394/2564) | 96.7% (2170/2243) |
+| UI — Browser tests (Playwright) | 857 | 100% | 93.6% (2449/2617) | 96.7% (2221/2297) |
 | UI — System tests (Playwright + live server) | 30 | 100% | — | — |
 | Live system (bash scripts) | 303 | 100% | — | — |
-| **Total** | **2642** | **100%** | — | — |
+| **Total** | **2725** | **100%** | — | — |
 
 ---
 
@@ -22,19 +22,19 @@ Last updated: 2026-04-03
 | Package | Coverage | Notes |
 |---------|----------|-------|
 | `internal/api/health` | 90.0% (9/10) | Readyz DB-ping error path |
-| `internal/api/meta` | 99.2% (495/499) | Promote/Demote/Delete RoleRO inline switch cases unreachable behind RBAC middleware |
+| `internal/api/meta` | 99.8% (483/484) | enum Update bind-error |
 | `internal/api/middleware` | 100.0% (69/69) | |
 | `internal/api/operational` | 98.4% (307/312) | Copy/Replace/Update handlers bind-error branches only |
 | `internal/domain/errors` | 100.0% (32/32) | |
 | `internal/domain/models` | 100.0% (1/1) | |
 | `internal/infrastructure/config` | 100.0% (21/21) | |
 | `internal/infrastructure/gorm/models` | 100.0% (30/30) | |
-| `internal/infrastructure/gorm/repository` | 91.4% (635/695) | GORM error branches on Delete/Update |
+| `internal/infrastructure/gorm/repository` | 91.5% (645/705) | GORM error branches on Delete/Update |
 | `internal/infrastructure/k8s` | 92.6% (50/54) | K8s client error paths |
 | `internal/operator/api/v1alpha1` | 97.7% (85/87) | `DeepCopyObject` nil-receiver guard |
 | `internal/operator/controllers` | 94.3% (198/210) | `SetupWithManager` (envtest — deferred to Phase B), `SetOwnerReference` error branches |
 | `internal/operator/crdgen` | 94.7% (36/38) | `json.Marshal` error guards on well-formed inputs |
-| `internal/service/meta` | 99.5% (821/825) | BulkCopy error paths, requiresDeepCopy edge cases |
+| `internal/service/meta` | 99.5% (827/831) | BulkCopy error paths, requiresDeepCopy edge cases |
 | `internal/service/operational` | 99.8% (911/913) | Cycle guard in resolveParentChain (safety net) |
 | `internal/service/validation` | 95.6% (43/45) | |
 

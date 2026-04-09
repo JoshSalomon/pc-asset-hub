@@ -1,0 +1,80 @@
+Read @docs/superpowers/plans/2026-03-27-foundation-cleanup.md and continue with the next incomplete phases.
+
+## Current State
+
+Branch: `009-foundation-cleanup`
+Last commits:
+  - `b4691c0` — Phase 3e: Coverage verification, quality review fixes, update report
+  - `3a8992f` — Phase 3: UI polish, refactoring, and code quality (TD-49–TD-85)
+  - `136fe4d` — Resolve TD-71, security fixes: CV stage guards, published catalog write protection, UI mutation guards
+  - `a10a16d` — Extract technical debt log from PRD to docs/td-log.md (TD-64)
+
+All tests pass: 1460 backend, 857 browser, 30 system, 303 live.
+Coverage: backend 97.5% (3747/3842), UI 93.6% (2449/2617).
+
+## Completed Phases
+
+### ✅ Phase 2c: Security Fixes
+
+1. **Published catalog validate bypass** — Fixed. Validate endpoint now uses `writeMiddleware` (`RequireWriteAccess`). RequireWriteAccess unified code path for not-found/not-published (timing fix). Returns 500 on genuine DB errors.
+2. **TD-71: UpdateCatalogVersion stage guard** — Fixed. `checkCVEditAllowed(cv, role, operation)` blocks production entirely, testing = SuperAdmin only. UI `canMutate` guard hides all mutation controls on published catalogs.
+
+### ✅ Phase 3a: Bug Fixes
+
+- ✅ Task 13: TD-70 — BOM table sorted alphabetically by entity_type_name
+- ✅ Task 14: TD-72 — Diagram node width dynamic from longest attribute label
+
+### ✅ Phase 3b: UI Polish
+
+- ✅ Task 15: TD-60 — Enum inline edit (replaced window.prompt + modal rename)
+- ✅ Task 16: TD-78 — Reference tables: merged Entity Type + instance name into first column
+- ✅ Task 17: TD-68 — Removed maxWidth:300px from all inline edit TextInputs
+- ✅ Task 18: TD-57 — Moved CatalogDetailPage/CatalogListPage to pages/meta/
+- ✅ Bonus: TD-82 — Diagram double-click back button returns to source page
+- ✅ Bonus: InstanceDetailPanel reference tables also merged (operational page)
+
+### ✅ Phase 3c: Hook & Component Refactoring
+
+- ✅ Task 19: TD-49/50/51 — Instance detail hook fixes (setAuthRole, re-fetch by ID, error surfacing)
+- ✅ Task 20: TD-53/54 — DiagramTabContent extracted, CVDetailPage uses useCatalogDiagram (already done in prior session)
+- ✅ Task 21: TD-55 — buildEdgeClickData helper extracted
+- ✅ Task 22: TD-74/75 — Extracted useInlineEdit + usePinManagement hooks (724→621 lines)
+- ✅ Task 23: TD-52 — Modal data-loading internalized (AddChildModal, LinkModal, SetParentModal)
+
+### ✅ Phase 3d: Code Quality & Test Gaps
+
+- ✅ Task 24: TD-73/66 — Replaced inline role switches with mapRole in Promote/Demote/Delete
+- ✅ Task 25: TD-76 — Added canEditPins browser tests (T-29.15/16/17)
+- ✅ Task 26: TD-77 — AddPin batch query via GetByIDs + orphaned pin detection
+
+### ✅ Phase 3e: Completion
+
+- ✅ Task 27: Full test suite passed, coverage verified, quality review done (3 findings fixed)
+
+## TDs Resolved This Session (21)
+
+TD-49, TD-50, TD-51, TD-52, TD-53, TD-54, TD-55, TD-57, TD-60, TD-66, TD-68, TD-70, TD-71, TD-72, TD-73, TD-74, TD-75, TD-76, TD-77, TD-78, TD-82
+
+## New TDs Logged (7)
+
+TD-79 (Add Pin default version), TD-80 (catalog rename), TD-81 (unlink/remove UX), TD-83 (diagram selection frame), TD-84 (handleUnlink silent catch), TD-85 (GetByIDs order)
+
+## New Future Features
+
+FF-13 (landing page customization + server version), FF-14 (comprehensive type system)
+
+## Skills Improved
+
+- `/coverage-test`: Added block-by-block reconciliation (Step 2d) + per-file uncovered count check (Step 2c-ii)
+- `/coverage-review`: Added arithmetic discrepancy audit (Phase 2b) + per-file uncovered count audit (Phase 4)
+
+## Key Patterns (reference)
+
+- Update DTOs use `*string` pointers for optional fields
+- PF6 Select inside Modal: use wrapper components with own isOpen state to prevent Modal re-render → aria-hidden on Popper portal
+- Stage guards: `checkCVEditAllowed(cv, role, operation)` pattern — pure function, no DB interaction
+- useRef mirror pattern: ref mirrors state for stable useCallback identity (see usePinManagement.ts)
+- Deploy from sandbox: `ssh -i ~/.ssh/container-dev -o StrictHostKeyChecking=no jsalomon@host.containers.internal deploy`
+- API/UI host: `host.containers.internal:30080` / `host.containers.internal:30000` (not localhost)
+- Use `/bug-solver` skill for fixes, `/coverage-test` after each phase
+- TD log is now at `docs/td-log.md` (extracted from PRD per TD-64)

@@ -20,6 +20,11 @@ export function usePinManagement({ catalogVersionId, loadPins, onError }: UsePin
   // Inline version change state (per-pin)
   const [pinVersionSelectOpen, setPinVersionSelectOpen] = useState<string | null>(null)
   const [pinVersionOptions, setPinVersionOptions] = useState<Record<string, EntityTypeVersion[]>>({})
+  // Ref mirror of pinVersionOptions state — allows loadPinVersionOptions callback
+  // to read the current cache without listing pinVersionOptions in its useCallback
+  // dependencies. Without this, every cache update recreates the callback, causing
+  // cascade recreations of handleTogglePinVersionSelect. This is a standard React
+  // pattern for reading current state in stable callbacks.
   const pinVersionOptionsRef = useRef(pinVersionOptions)
   pinVersionOptionsRef.current = pinVersionOptions
 

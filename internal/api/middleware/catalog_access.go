@@ -77,14 +77,13 @@ func RequireWriteAccess(checker CatalogPublishChecker) echo.MiddlewareFunc {
 				return next(c)
 			}
 
+			// Unified path: not-found and not-published go through the same conditional
+			// to prevent timing-based catalog existence probing. DB errors return 500.
 			published, err := checker.IsPublished(c, catalogName)
-			if err != nil {
-				if domainerrors.IsNotFound(err) {
-					return next(c) // catalog doesn't exist — handler will return 404
-				}
+			if err != nil && !domainerrors.IsNotFound(err) {
 				return echo.NewHTTPError(http.StatusInternalServerError, "publish check failed")
 			}
-			if !published {
+			if err != nil || !published {
 				return next(c)
 			}
 

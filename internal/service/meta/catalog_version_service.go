@@ -475,6 +475,9 @@ func (s *CatalogVersionService) AddPin(ctx context.Context, cvID, entityTypeVers
 		if err != nil {
 			return nil, err
 		}
+		if len(existingETVs) < len(etvIDs) {
+			return nil, domainerrors.NewValidation("data integrity error: orphaned pin references a deleted entity type version")
+		}
 		for _, etv := range existingETVs {
 			if etv.EntityTypeID == newETV.EntityTypeID {
 				return nil, domainerrors.NewConflict("CatalogVersionPin", "entity type already pinned; use UpdatePin to change version")

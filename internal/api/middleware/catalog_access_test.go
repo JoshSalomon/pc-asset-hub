@@ -363,6 +363,48 @@ func TestWriteProtection_NotFoundError(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, rec.Code)
 }
 
+// Write protection: not-found path executes same logic as not-published (timing consistency)
+// The middleware should not have a separate early-return for not-found — both paths
+// should go through the same conditional to prevent timing-based catalog existence probing.
+func TestWriteProtection_NotFound_SamePathAsUnpublished(t *testing.T) {
+	// Track how many times the handler is called and with what role context
+	var handlerCalled int
+	handler := func(c echo.Context) error {
+		handlerCalled++
+		return c.String(http.StatusCreated, "created")
+	}
+
+	// Test 1: not-found catalog
+	checker1 := &mockPublishChecker{returnErr: domainerrors.NewNotFound("Catalog", "missing")}
+	e1 := echo.New()
+	e1.Use(RBACMiddleware(&HeaderRBACProvider{}))
+	g1 := e1.Group("/catalogs/:catalog-name")
+	g1.POST("/items", handler, RequireRole(RoleRW), RequireWriteAccess(checker1))
+
+	handlerCalled = 0
+	req1 := httptest.NewRequest(http.MethodPost, "/catalogs/missing/items", nil)
+	req1.Header.Set("X-User-Role", "RW")
+	rec1 := httptest.NewRecorder()
+	e1.ServeHTTP(rec1, req1)
+	assert.Equal(t, http.StatusCreated, rec1.Code)
+	assert.Equal(t, 1, handlerCalled, "not-found should call handler exactly once")
+
+	// Test 2: unpublished catalog — must behave identically
+	checker2 := &mockPublishChecker{published: map[string]bool{"dev-catalog": false}}
+	e2 := echo.New()
+	e2.Use(RBACMiddleware(&HeaderRBACProvider{}))
+	g2 := e2.Group("/catalogs/:catalog-name")
+	g2.POST("/items", handler, RequireRole(RoleRW), RequireWriteAccess(checker2))
+
+	handlerCalled = 0
+	req2 := httptest.NewRequest(http.MethodPost, "/catalogs/dev-catalog/items", nil)
+	req2.Header.Set("X-User-Role", "RW")
+	rec2 := httptest.NewRecorder()
+	e2.ServeHTTP(rec2, req2)
+	assert.Equal(t, http.StatusCreated, rec2.Code)
+	assert.Equal(t, 1, handlerCalled, "unpublished should call handler exactly once")
+}
+
 // Write protection: genuine DB error → 500 (do NOT silently allow mutations)
 func TestWriteProtection_DBError_Returns500(t *testing.T) {
 	checker := &mockPublishChecker{returnErr: fmt.Errorf("connection refused")}

@@ -216,6 +216,20 @@ test('handleOpenAddPin handles entityTypes.list error gracefully', async () => {
   await expect.element(page.getByTestId('entityTypes')).toHaveTextContent('')
 })
 
+test('loadPinVersionOptions uses cache on second toggle (skips API call)', async () => {
+  render(<TestComponent cvId="cv1" loadPins={loadPins} onError={onError} />)
+  // First toggle: loads from API
+  await page.getByRole('button', { name: 'ToggleVersion' }).click()
+  await vi.waitFor(() => expect(api.versions.list).toHaveBeenCalledTimes(1))
+  // Close
+  await page.getByRole('button', { name: 'ToggleVersion' }).click()
+  // Re-open: should use cache, NOT call API again
+  await page.getByRole('button', { name: 'ToggleVersion' }).click()
+  await expect.element(page.getByTestId('pinVersionSelectOpen')).toHaveTextContent('pin-1')
+  // Still only 1 API call — cache hit on L78
+  expect(api.versions.list).toHaveBeenCalledTimes(1)
+})
+
 test('loadPinVersionOptions handles error gracefully', async () => {
   ;(api.versions.list as Mock).mockRejectedValue(new Error('fail'))
   render(<TestComponent cvId="cv1" loadPins={loadPins} onError={onError} />)

@@ -78,6 +78,9 @@ func TestEntityTypeVersion_ErrorBranches(t *testing.T) {
 	_, err = repo.GetLatestByEntityTypes(ctx, []string{"x"})
 	assert.Error(t, err)
 
+	_, err = repo.GetByIDs(ctx, []string{"x"})
+	assert.Error(t, err)
+
 	err = repo.Create(ctx, &models.EntityTypeVersion{ID: "x", EntityTypeID: "et1", Version: 1, CreatedAt: time.Now()})
 	assert.Error(t, err)
 }
