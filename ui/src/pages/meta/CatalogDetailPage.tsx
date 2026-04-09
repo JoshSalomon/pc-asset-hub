@@ -535,7 +535,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
                             <>
                               <p style={{ marginTop: '0.5rem' }}><strong>Referenced By</strong></p>
                               <Table aria-label="Reverse references" variant="compact">
-                                <Thead><Tr><Th>Target</Th><Th>Association</Th><Th>Type</Th></Tr></Thead>
+                                <Thead><Tr><Th>Source</Th><Th>Association</Th><Th>Type</Th></Tr></Thead>
                                 <Tbody>
                                   {detail.reverseRefs.map(ref => (
                                     <Tr key={ref.link_id}>

@@ -546,13 +546,14 @@ func TestUpdateCatalog_DescriptionOnly(t *testing.T) {
 		ValidationStatus: models.ValidationStatusValid,
 	}, nil)
 	catRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.Catalog")).Return(nil)
-	catRepo.On("UpdateValidationStatus", mock.Anything, "c1", models.ValidationStatusDraft).Return(nil)
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1.0"}, nil)
 
 	body := `{"description":"new desc"}`
 	rec := doCatalogRequest(e, http.MethodPut, "/api/data/v1/catalogs/my-catalog", body, apimw.RoleRW)
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), `"new desc"`)
+	// Description-only edits must NOT reset validation status
+	catRepo.AssertNotCalled(t, "UpdateValidationStatus")
 }
 
 func TestUpdateCatalog_AsRO(t *testing.T) {

@@ -346,6 +346,7 @@ func (s *CatalogService) UpdateMetadata(ctx context.Context, name string, newNam
 			return nil, err
 		}
 		catalog.Name = *newName
+		catalog.UpdatedAt = time.Now()
 		changed = true
 	}
 
