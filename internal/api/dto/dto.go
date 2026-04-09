@@ -26,7 +26,7 @@ type EntityTypeVersionResponse struct {
 }
 
 type UpdateEntityTypeRequest struct {
-	Description string `json:"description"`
+	Description *string `json:"description"`
 }
 
 type CopyEntityTypeRequest struct {
@@ -179,6 +179,7 @@ type CatalogVersionResponse struct {
 }
 
 type CatalogVersionPinResponse struct {
+	PinID               string `json:"pin_id"`
 	EntityTypeName      string `json:"entity_type_name"`
 	EntityTypeID        string `json:"entity_type_id"`
 	EntityTypeVersionID string `json:"entity_type_version_id"`
@@ -262,6 +263,25 @@ type CreateCatalogRequest struct {
 	Name             string `json:"name"`
 	Description      string `json:"description"`
 	CatalogVersionID string `json:"catalog_version_id"`
+}
+
+type UpdateCatalogVersionRequest struct {
+	VersionLabel *string `json:"version_label"`
+	Description  *string `json:"description"`
+}
+
+type UpdateCatalogRequest struct {
+	Name             *string `json:"name"`
+	Description      *string `json:"description"`
+	CatalogVersionID *string `json:"catalog_version_id"`
+}
+
+type AddPinRequest struct {
+	EntityTypeVersionID string `json:"entity_type_version_id" validate:"required"`
+}
+
+type UpdatePinRequest struct {
+	EntityTypeVersionID string `json:"entity_type_version_id" validate:"required"`
 }
 
 type CatalogResponse struct {

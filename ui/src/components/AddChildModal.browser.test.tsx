@@ -1,8 +1,18 @@
 import { render } from 'vitest-browser-react'
-import { expect, test, vi } from 'vitest'
+import { expect, test, vi, beforeEach, type Mock } from 'vitest'
 import { page } from 'vitest/browser'
 import AddChildModal from './AddChildModal'
-import type { SnapshotAssociation } from '../types'
+import { api } from '../api/client'
+import type { SnapshotAssociation, CatalogVersionPin } from '../types'
+
+vi.mock('../api/client', () => ({
+  api: {
+    instances: { list: vi.fn() },
+    versions: { snapshot: vi.fn() },
+    enums: { listValues: vi.fn() },
+  },
+  setAuthRole: vi.fn(),
+}))
 
 const containmentAssocs: SnapshotAssociation[] = [
   {
@@ -17,15 +27,25 @@ const containmentAssocs: SnapshotAssociation[] = [
   },
 ]
 
+const mockPins: CatalogVersionPin[] = [
+  { pin_id: 'pin-1', entity_type_name: 'tool', entity_type_id: 'et2', entity_type_version_id: 'etv2', version: 1 },
+  { pin_id: 'pin-2', entity_type_name: 'config', entity_type_id: 'et3', entity_type_version_id: 'etv3', version: 1 },
+]
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  ;(api.versions.snapshot as Mock).mockResolvedValue({ attributes: [], associations: [] })
+  ;(api.enums.listValues as Mock).mockResolvedValue({ items: [], total: 0 })
+})
+
 function renderModal(overrides: Partial<React.ComponentProps<typeof AddChildModal>> = {}) {
   const props = {
     isOpen: true,
     onClose: vi.fn(),
+    catalogName: 'my-catalog',
+    pins: mockPins,
     schemaAssocs: containmentAssocs,
-    childSchemaAttrs: [],
-    childEnumValues: {},
-    availableInstances: [],
-    onChildTypeChange: vi.fn(),
     onSubmit: vi.fn().mockResolvedValue(undefined),
     error: null,
     ...overrides,
@@ -39,12 +59,14 @@ test('T-19.38: AddChildModal shows child type selector', async () => {
   await expect.element(page.getByText('Select child type...')).toBeVisible()
 })
 
-// T-19.39: Loads child schema on type selection (via onChildTypeChange callback)
-test('T-19.39: AddChildModal calls onChildTypeChange on type selection', async () => {
-  const { props } = renderModal()
+// T-19.39: Loads child schema on type selection (internally calls API)
+test('T-19.39: AddChildModal loads data on type selection', async () => {
+  renderModal()
   await page.getByText('Select child type...').click()
   await page.getByText('tool').click()
-  expect(props.onChildTypeChange).toHaveBeenCalledWith('tool')
+  // Modal now loads data internally — verify API was called
+  expect(api.instances.list).toHaveBeenCalledWith('my-catalog', 'tool')
+  expect(api.versions.snapshot).toHaveBeenCalledWith('et2', 1)
 })
 
 // T-19.40: Create mode shows name, description fields
@@ -58,11 +80,13 @@ test('T-19.40: AddChildModal create mode shows form fields', async () => {
 
 // T-19.41: Adopt mode shows instance selector
 test('T-19.41: AddChildModal adopt mode shows instance selector', async () => {
-  renderModal({
-    availableInstances: [
+  ;(api.instances.list as Mock).mockResolvedValue({
+    items: [
       { id: 'i1', entity_type_id: 'et2', catalog_id: 'cat1', name: 'orphan-tool', description: '', version: 1, attributes: [], created_at: '', updated_at: '' },
     ],
+    total: 1,
   })
+  renderModal()
   // Select a type first
   await page.getByText('Select child type...').click()
   await page.getByText('tool').click()
@@ -88,11 +112,13 @@ test('T-19.42: AddChildModal calls onSubmit on create', async () => {
 
 // T-19.43: Calls onSubmit with adopt data
 test('T-19.43: AddChildModal calls onSubmit on adopt', async () => {
-  const { props } = renderModal({
-    availableInstances: [
+  ;(api.instances.list as Mock).mockResolvedValue({
+    items: [
       { id: 'i1', entity_type_id: 'et2', catalog_id: 'cat1', name: 'orphan-tool', description: '', version: 1, attributes: [], created_at: '', updated_at: '' },
     ],
+    total: 1,
   })
+  const { props } = renderModal()
   // Select type
   await page.getByText('Select child type...').click()
   await page.getByText('tool').click()

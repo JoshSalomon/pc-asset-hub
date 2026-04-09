@@ -266,6 +266,38 @@ func TestT1_14_CreateDuplicateEnumValue(t *testing.T) {
 	assert.True(t, domainerrors.IsConflict(err))
 }
 
+// TD-59: GetLatestByEntityTypes batch query
+func TestTD59_GetLatestByEntityTypes(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	etRepo := repository.NewEntityTypeGormRepo(db)
+	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
+	ctx := context.Background()
+
+	now := time.Now()
+	et1 := &models.EntityType{ID: newID(), Name: "Server", CreatedAt: now, UpdatedAt: now}
+	et2 := &models.EntityType{ID: newID(), Name: "Tool", CreatedAt: now, UpdatedAt: now}
+	require.NoError(t, etRepo.Create(ctx, et1))
+	require.NoError(t, etRepo.Create(ctx, et2))
+
+	// Server: V1 and V2
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: newID(), EntityTypeID: et1.ID, Version: 1, Description: "V1", CreatedAt: now}))
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: newID(), EntityTypeID: et1.ID, Version: 2, Description: "V2", CreatedAt: now}))
+	// Tool: V1 only
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: newID(), EntityTypeID: et2.ID, Version: 1, Description: "Tool V1", CreatedAt: now}))
+
+	result, err := etvRepo.GetLatestByEntityTypes(ctx, []string{et1.ID, et2.ID})
+	require.NoError(t, err)
+	assert.Len(t, result, 2)
+	assert.Equal(t, "V2", result[et1.ID].Description)
+	assert.Equal(t, 2, result[et1.ID].Version)
+	assert.Equal(t, "Tool V1", result[et2.ID].Description)
+
+	// Empty input
+	empty, err := etvRepo.GetLatestByEntityTypes(ctx, []string{})
+	require.NoError(t, err)
+	assert.Empty(t, empty)
+}
+
 // === Attributes (T-1.15 through T-1.23) ===
 
 func TestT1_15_CreateAttributeString(t *testing.T) {
@@ -789,6 +821,94 @@ func TestT1_38_InvalidTransitionValidation(t *testing.T) {
 	assert.NoError(t, err) // Repo allows it; service validates
 }
 
+func TestCatalogVersionUpdate(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	ctx := context.Background()
+
+	cvID := newID()
+	now := time.Now()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{
+		ID: cvID, VersionLabel: "v1.0", Description: "old", LifecycleStage: models.LifecycleStageDevelopment,
+		CreatedAt: now, UpdatedAt: now,
+	}))
+
+	found, err := cvRepo.GetByID(ctx, cvID)
+	require.NoError(t, err)
+	found.VersionLabel = "v2.0"
+	found.Description = "new"
+	found.UpdatedAt = time.Now()
+	require.NoError(t, cvRepo.Update(ctx, found))
+
+	updated, err := cvRepo.GetByID(ctx, cvID)
+	require.NoError(t, err)
+	assert.Equal(t, "v2.0", updated.VersionLabel)
+	assert.Equal(t, "new", updated.Description)
+}
+
+func TestCatalogVersionUpdate_DuplicateLabel(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	ctx := context.Background()
+
+	now := time.Now()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{
+		ID: newID(), VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageDevelopment,
+		CreatedAt: now, UpdatedAt: now,
+	}))
+
+	cv2ID := newID()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{
+		ID: cv2ID, VersionLabel: "v2.0", LifecycleStage: models.LifecycleStageDevelopment,
+		CreatedAt: now, UpdatedAt: now,
+	}))
+
+	found, err := cvRepo.GetByID(ctx, cv2ID)
+	require.NoError(t, err)
+	found.VersionLabel = "v1.0" // duplicate
+	err = cvRepo.Update(ctx, found)
+	assert.True(t, domainerrors.IsConflict(err))
+}
+
+func TestCatalogVersionPinGetByID(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	pinRepo := repository.NewCatalogVersionPinGormRepo(db)
+	etRepo := repository.NewEntityTypeGormRepo(db)
+	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
+	ctx := context.Background()
+
+	cvID := newID()
+	now := time.Now()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{
+		ID: cvID, VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageDevelopment,
+		CreatedAt: now, UpdatedAt: now,
+	}))
+
+	etID := newID()
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: etID, Name: "Model", CreatedAt: now, UpdatedAt: now}))
+	etvID := newID()
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: etID, Version: 1, CreatedAt: now}))
+
+	pinID := newID()
+	require.NoError(t, pinRepo.Create(ctx, &models.CatalogVersionPin{ID: pinID, CatalogVersionID: cvID, EntityTypeVersionID: etvID}))
+
+	found, err := pinRepo.GetByID(ctx, pinID)
+	require.NoError(t, err)
+	assert.Equal(t, pinID, found.ID)
+	assert.Equal(t, cvID, found.CatalogVersionID)
+	assert.Equal(t, etvID, found.EntityTypeVersionID)
+}
+
+func TestCatalogVersionPinGetByID_NotFound(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	pinRepo := repository.NewCatalogVersionPinGormRepo(db)
+	ctx := context.Background()
+
+	_, err := pinRepo.GetByID(ctx, "nonexistent")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
 func TestListByEntityTypeVersionIDs(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	cvRepo := repository.NewCatalogVersionGormRepo(db)
@@ -823,6 +943,39 @@ func TestListByEntityTypeVersionIDs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, pins, 1)
 	assert.Equal(t, etv1ID, pins[0].EntityTypeVersionID)
+}
+
+// T-28.13: Pin update persists new ETV ID
+func TestPinUpdate_PersistsNewETVID(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	pinRepo := repository.NewCatalogVersionPinGormRepo(db)
+	etRepo := repository.NewEntityTypeGormRepo(db)
+	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
+	ctx := context.Background()
+
+	cvID := newID()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{ID: cvID, VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageDevelopment, CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+
+	etID := newID()
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: etID, Name: "Model-" + etID[:8], CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	etv1ID, etv2ID := newID(), newID()
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etv1ID, EntityTypeID: etID, Version: 1, CreatedAt: time.Now()}))
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etv2ID, EntityTypeID: etID, Version: 2, CreatedAt: time.Now()}))
+
+	pinID := newID()
+	require.NoError(t, pinRepo.Create(ctx, &models.CatalogVersionPin{ID: pinID, CatalogVersionID: cvID, EntityTypeVersionID: etv1ID}))
+
+	// Update pin to V2
+	pin, err := pinRepo.GetByID(ctx, pinID)
+	require.NoError(t, err)
+	pin.EntityTypeVersionID = etv2ID
+	require.NoError(t, pinRepo.Update(ctx, pin))
+
+	// Verify persisted
+	updated, err := pinRepo.GetByID(ctx, pinID)
+	require.NoError(t, err)
+	assert.Equal(t, etv2ID, updated.EntityTypeVersionID)
 }
 
 func TestListByEntityTypeVersionIDs_Empty(t *testing.T) {
@@ -1008,4 +1161,35 @@ func TestTE116_BulkCopyPreservesAssociationNames(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, v2Assocs, 1)
 	assert.Equal(t, "my_tools", v2Assocs[0].Name)
+}
+
+// TD-77: GetByIDs batch fetch
+func TestGetByIDs(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	etRepo := repository.NewEntityTypeGormRepo(db)
+	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
+	ctx := context.Background()
+
+	et := &models.EntityType{ID: newID(), Name: "BatchTest", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	require.NoError(t, etRepo.Create(ctx, et))
+
+	v1 := &models.EntityTypeVersion{ID: newID(), EntityTypeID: et.ID, Version: 1, Description: "V1", CreatedAt: time.Now()}
+	v2 := &models.EntityTypeVersion{ID: newID(), EntityTypeID: et.ID, Version: 2, Description: "V2", CreatedAt: time.Now()}
+	require.NoError(t, etvRepo.Create(ctx, v1))
+	require.NoError(t, etvRepo.Create(ctx, v2))
+
+	// Fetch both by IDs
+	results, err := etvRepo.GetByIDs(ctx, []string{v1.ID, v2.ID})
+	require.NoError(t, err)
+	assert.Len(t, results, 2)
+
+	// Fetch with empty slice
+	empty, err := etvRepo.GetByIDs(ctx, []string{})
+	require.NoError(t, err)
+	assert.Len(t, empty, 0)
+
+	// Fetch with non-existent ID (should return only the found ones, not error)
+	partial, err := etvRepo.GetByIDs(ctx, []string{v1.ID, "nonexistent"})
+	require.NoError(t, err)
+	assert.Len(t, partial, 1)
 }

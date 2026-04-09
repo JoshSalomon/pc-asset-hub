@@ -222,3 +222,96 @@ func TestValidateCatalog_NilService(t *testing.T) {
 	rec := doValidateRequest(e, "test-catalog", apimw.RoleRW)
 	assert.Equal(t, http.StatusNotImplemented, rec.Code)
 }
+
+// === Validate Write Protection Tests (TD-78) ===
+
+type mockPublishChecker struct {
+	published map[string]bool
+}
+
+func (m *mockPublishChecker) IsPublished(_ echo.Context, catalogName string) (bool, error) {
+	return m.published[catalogName], nil
+}
+
+func setupValidationServerWithWriteGuard(publishedCatalogs map[string]bool) (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockEntityInstanceRepo,
+	*mocks.MockCatalogVersionPinRepo, *mocks.MockEntityTypeVersionRepo,
+	*mocks.MockAttributeRepo, *mocks.MockAssociationRepo,
+	*mocks.MockEnumValueRepo, *mocks.MockAssociationLinkRepo, *mocks.MockEntityTypeRepo,
+	*mocks.MockInstanceAttributeValueRepo) {
+
+	catRepo := new(mocks.MockCatalogRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	iavRepo := new(mocks.MockInstanceAttributeValueRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	assocRepo := new(mocks.MockAssociationRepo)
+	enumValRepo := new(mocks.MockEnumValueRepo)
+	linkRepo := new(mocks.MockAssociationLinkRepo)
+	etRepo := new(mocks.MockEntityTypeRepo)
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+
+	catalogSvc := svcop.NewCatalogService(catRepo, cvRepo, instRepo, nil, "")
+	validationSvc := svcop.NewCatalogValidationService(
+		catRepo, instRepo, iavRepo, pinRepo, etvRepo,
+		attrRepo, assocRepo, enumValRepo, linkRepo, etRepo,
+	)
+	accessChecker := &apimw.HeaderCatalogAccessChecker{}
+	handler := apiop.NewCatalogHandler(catalogSvc, validationSvc, accessChecker)
+
+	publishChecker := &mockPublishChecker{published: publishedCatalogs}
+	requireWriteAccess := apimw.RequireWriteAccess(publishChecker)
+
+	e := echo.New()
+	g := e.Group("/api/data/v1/catalogs")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	requireRW := apimw.RequireRole(apimw.RoleRW)
+	apiop.RegisterCatalogRoutes(g, handler, requireRW, apimw.RequireRole(apimw.RoleAdmin), requireWriteAccess)
+
+	return e, catRepo, instRepo, pinRepo, etvRepo, attrRepo, assocRepo, enumValRepo, linkRepo, etRepo, iavRepo
+}
+
+func TestValidateCatalog_PublishedBlocked_RW(t *testing.T) {
+	e, _, _, _, _, _, _, _, _, _, _ := setupValidationServerWithWriteGuard(map[string]bool{"prod-catalog": true})
+
+	rec := doValidateRequest(e, "prod-catalog", apimw.RoleRW)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Contains(t, rec.Body.String(), "SuperAdmin")
+}
+
+func TestValidateCatalog_PublishedBlocked_Admin(t *testing.T) {
+	e, _, _, _, _, _, _, _, _, _, _ := setupValidationServerWithWriteGuard(map[string]bool{"prod-catalog": true})
+
+	rec := doValidateRequest(e, "prod-catalog", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Contains(t, rec.Body.String(), "SuperAdmin")
+}
+
+func TestValidateCatalog_PublishedAllowed_SuperAdmin(t *testing.T) {
+	e, catRepo, instRepo, pinRepo, _, _, _, _, _, _, _ := setupValidationServerWithWriteGuard(map[string]bool{"prod-catalog": true})
+
+	catRepo.On("GetByName", mock.Anything, "prod-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "prod-catalog", CatalogVersionID: "cv1", Published: true,
+	}, nil)
+	instRepo.On("ListByCatalog", mock.Anything, "c1").Return([]*models.EntityInstance{}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+	catRepo.On("UpdateValidationStatus", mock.Anything, "c1", mock.Anything).Return(nil)
+
+	rec := doValidateRequest(e, "prod-catalog", apimw.RoleSuperAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestValidateCatalog_UnpublishedAllowed_RW(t *testing.T) {
+	e, catRepo, instRepo, pinRepo, _, _, _, _, _, _, _ := setupValidationServerWithWriteGuard(map[string]bool{"dev-catalog": false})
+
+	catRepo.On("GetByName", mock.Anything, "dev-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "dev-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	instRepo.On("ListByCatalog", mock.Anything, "c1").Return([]*models.EntityInstance{}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+	catRepo.On("UpdateValidationStatus", mock.Anything, "c1", mock.Anything).Return(nil)
+
+	rec := doValidateRequest(e, "dev-catalog", apimw.RoleRW)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}

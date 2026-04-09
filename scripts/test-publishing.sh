@@ -377,6 +377,59 @@ fi
 # Clean up sync test catalog
 api DELETE "$DATA_API/catalogs/$SYNC_CATALOG" Admin > /dev/null 2>&1 || true
 
+header "Test T-30.22: Validate on published catalog blocked for RW (403)"
+
+# Re-validate and re-publish for this test
+api POST "$DATA_API/catalogs/$CATALOG_NAME/validate" SuperAdmin > /dev/null 2>&1
+api POST "$DATA_API/catalogs/$CATALOG_NAME/publish" Admin > /dev/null 2>&1
+
+RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/validate" RW)
+STATUS=$(get_status "$RESP")
+if [ "$STATUS" = "403" ]; then
+  pass "T-30.22: Validate on published catalog blocked for RW (403)"
+else
+  fail "T-30.22: Validate on published catalog" "expected=403 got=$STATUS"
+fi
+
+# Clean up: unpublish again
+api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" Admin > /dev/null 2>&1
+
+header "Test T-30.23: UpdateCatalogVersion on production CV blocked (400)"
+
+# Promote CV to production for this test
+api POST "$META_API/catalog-versions/$CV_ID/promote" Admin > /dev/null 2>&1
+
+RESP=$(api PUT "$META_API/catalog-versions/$CV_ID" Admin "{\"description\":\"should fail\"}")
+STATUS=$(get_status "$RESP")
+if [ "$STATUS" = "400" ]; then
+  pass "T-30.23: UpdateCatalogVersion on production CV blocked (400)"
+else
+  fail "T-30.23: UpdateCatalogVersion on production CV" "expected=400 got=$STATUS"
+fi
+
+# Demote back to testing for next tests
+api POST "$META_API/catalog-versions/$CV_ID/demote" SuperAdmin "{\"target_stage\":\"testing\"}" > /dev/null 2>&1
+
+header "Test T-30.24: UpdateCatalogVersion on testing CV blocked for RW (400)"
+
+RESP=$(api PUT "$META_API/catalog-versions/$CV_ID" RW "{\"description\":\"should fail\"}")
+STATUS=$(get_status "$RESP")
+if [ "$STATUS" = "400" ]; then
+  pass "T-30.24: UpdateCatalogVersion on testing CV blocked for RW (400)"
+else
+  fail "T-30.24: UpdateCatalogVersion on testing CV as RW" "expected=400 got=$STATUS"
+fi
+
+header "Test T-30.25: UpdateCatalogVersion on testing CV allowed for SuperAdmin (200)"
+
+RESP=$(api PUT "$META_API/catalog-versions/$CV_ID" SuperAdmin "{\"description\":\"updated by superadmin\"}")
+STATUS=$(get_status "$RESP")
+if [ "$STATUS" = "200" ]; then
+  pass "T-30.25: UpdateCatalogVersion on testing CV allowed for SuperAdmin (200)"
+else
+  fail "T-30.25: UpdateCatalogVersion on testing CV as SuperAdmin" "expected=200 got=$STATUS"
+fi
+
 header "Cleanup (only removing test data created by this script)"
 
 api DELETE "$DATA_API/catalogs/$CATALOG_NAME" Admin > /dev/null 2>&1 || true

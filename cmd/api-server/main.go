@@ -134,12 +134,12 @@ func main() {
 	// Operational API — Catalog CRUD
 	catalogGroup := e.Group("/api/data/v1/catalogs")
 	catalogGroup.Use(middleware.RBACMiddleware(rbacProvider))
-	apiop.RegisterCatalogRoutes(catalogGroup, catalogHandler, requireRW, requireAdmin)
+	requireWriteAccess := middleware.RequireWriteAccess(catalogSvc)
+	apiop.RegisterCatalogRoutes(catalogGroup, catalogHandler, requireRW, requireAdmin, requireWriteAccess)
 
 	// Operational API — Instance CRUD (under catalogs, with per-catalog access check)
 	instanceGroup := catalogGroup.Group("/:catalog-name")
 	instanceGroup.Use(middleware.RequireCatalogAccess(catalogAccessChecker))
-	requireWriteAccess := middleware.RequireWriteAccess(catalogSvc)
 	apiop.RegisterInstanceRoutes(instanceGroup, instanceHandler, requireRW, requireWriteAccess)
 
 	// Graceful shutdown

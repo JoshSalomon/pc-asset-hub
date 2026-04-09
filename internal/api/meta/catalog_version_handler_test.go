@@ -2,6 +2,8 @@ package meta_test
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/labstack/echo/v4"
@@ -508,4 +510,500 @@ func TestCVDelete_ServiceErrorPath(t *testing.T) {
 
 	rec := doRequest(e, http.MethodDelete, "/api/meta/v1/catalog-versions/cv1", "", apimw.RoleSuperAdmin)
 	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// === UpdateCatalogVersion Handler Tests ===
+
+func TestCVUpdate_Success(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "old",
+	}, nil)
+	cvRepo.On("GetByLabel", mock.Anything, "v2.0").Return(nil, domainerrors.NewNotFound("CatalogVersion", "v2.0"))
+	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+
+	body := `{"version_label":"v2.0","description":"new desc"}`
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"v2.0"`)
+	assert.Contains(t, rec.Body.String(), `"new desc"`)
+}
+
+func TestCVUpdate_AsRO(t *testing.T) {
+	e := setupCVServer()
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1",
+		`{"description":"new"}`, apimw.RoleRO)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestCVUpdate_BindError(t *testing.T) {
+	e := setupCVServer()
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1",
+		"bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestCVUpdate_ServiceError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "bad").Return(nil, domainerrors.NewNotFound("CatalogVersion", "bad"))
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/bad",
+		`{"description":"new"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// === Update Stage Guard Handler Tests (TD-71) ===
+
+func TestCVUpdate_ProductionBlocked(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageProduction,
+	}, nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1",
+		`{"description":"new"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "production")
+}
+
+func TestCVUpdate_TestingBlocked_RW(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1",
+		`{"description":"new"}`, apimw.RoleRW)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "SuperAdmin")
+}
+
+func TestCVUpdate_TestingAllowed_SuperAdmin(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "old", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1",
+		`{"description":"new"}`, apimw.RoleSuperAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestCVUpdate_DevelopmentAllowed_RW(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "old", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1",
+		`{"description":"new"}`, apimw.RoleRW)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// === Coverage: mapRole branches (bypass requireRW to reach handler with RO/unknown role) ===
+
+// setupCVServerNoRequireRW creates a server with RBAC middleware (sets role in context)
+// but without requireRW middleware, so RO and unknown roles reach the handler.
+func setupCVServerNoRequireRW(cvRepo *mocks.MockCatalogVersionRepo, ltRepo *mocks.MockLifecycleTransitionRepo, catalogRepo *mocks.MockCatalogRepo) *echo.Echo {
+	svc := svcmeta.NewCatalogVersionService(cvRepo, nil, ltRepo, nil, "", nil, nil, nil, catalogRepo)
+	handler := apimeta.NewCatalogVersionHandler(svc)
+
+	e := echo.New()
+	g := e.Group("/api/meta/v1")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	// Register WITHOUT requireRW so RO/unknown roles reach the handler
+	noopMW := func(next echo.HandlerFunc) echo.HandlerFunc { return next }
+	apimeta.RegisterCatalogVersionRoutes(g, handler, noopMW)
+	return e
+}
+
+// Coverage: mapRole RO branch (L24-25) — RO reaches handler via no-requireRW setup
+func TestCVUpdate_MapRole_RO(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerNoRequireRW(cvRepo, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "old", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1",
+		`{"description":"new"}`, apimw.RoleRO)
+	// RO reaches handler → mapRole(RoleRO) → service gets RoleRO → allowed on development
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// Coverage: mapRole default branch (L32-33) — unknown role falls through to default.
+// RBAC middleware rejects unknown roles, so we bypass it and inject the role directly.
+func TestCVUpdate_MapRole_Unknown(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := svcmeta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+	handler := apimeta.NewCatalogVersionHandler(svc)
+
+	e := echo.New()
+	g := e.Group("/api/meta/v1")
+	// Inject an unknown role directly into context, bypassing RBAC validation
+	g.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.Set(apimw.RoleContextKey, apimw.Role("UnknownRole"))
+			return next(c)
+		}
+	})
+	noopMW := func(next echo.HandlerFunc) echo.HandlerFunc { return next }
+	apimeta.RegisterCatalogVersionRoutes(g, handler, noopMW)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "old", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/meta/v1/catalog-versions/cv1",
+		strings.NewReader(`{"description":"new"}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	// Unknown role → mapRole default → RoleRO → allowed on development
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// === TD-73: Promote/Demote/Delete use mapRole (not inline switch) ===
+// These tests bypass requireRW to verify mapRole is used consistently.
+
+// TD-73: Promote with RO role via mapRole — RO can promote dev (service allows RW+ for dev→test)
+func TestCVPromote_MapRole_RO(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	ltRepo := new(mocks.MockLifecycleTransitionRepo)
+	catalogRepo := new(mocks.MockCatalogRepo)
+	e := setupCVServerNoRequireRW(cvRepo, ltRepo, catalogRepo)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	cvRepo.On("UpdateLifecycle", mock.Anything, "cv1", models.LifecycleStageTesting).Return(nil)
+	ltRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.LifecycleTransition")).Return(nil)
+	catalogRepo.On("ListByCatalogVersionID", mock.Anything, "cv1").Return([]*models.Catalog{}, nil)
+
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/cv1/promote", "", apimw.RoleRO)
+	// RO via mapRole → svcmeta.RoleRO → service rejects (insufficient_role for RO)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// TD-73: Promote with unknown role via mapRole — defaults to RO
+func TestCVPromote_MapRole_Unknown(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	ltRepo := new(mocks.MockLifecycleTransitionRepo)
+	catalogRepo := new(mocks.MockCatalogRepo)
+	svc := svcmeta.NewCatalogVersionService(cvRepo, nil, ltRepo, nil, "", nil, nil, nil, catalogRepo)
+	handler := apimeta.NewCatalogVersionHandler(svc)
+
+	e := echo.New()
+	g := e.Group("/api/meta/v1")
+	g.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.Set(apimw.RoleContextKey, apimw.Role("UnknownRole"))
+			return next(c)
+		}
+	})
+	noopMW := func(next echo.HandlerFunc) echo.HandlerFunc { return next }
+	apimeta.RegisterCatalogVersionRoutes(g, handler, noopMW)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/meta/v1/catalog-versions/cv1/promote",
+		strings.NewReader(""))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	// Unknown role → mapRole default → RoleRO → service rejects
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// TD-73: Demote with RO role via mapRole
+func TestCVDemote_MapRole_RO(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerNoRequireRW(cvRepo, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv-test").Return(&models.CatalogVersion{
+		ID: "cv-test", VersionLabel: "v2.0", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/cv-test/demote",
+		`{"target_stage":"development"}`, apimw.RoleRO)
+	// RO via mapRole → svcmeta.RoleRO → service rejects
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// TD-73: Delete with RO role via mapRole
+func TestCVDelete_MapRole_RO(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerNoRequireRW(cvRepo, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+
+	rec := doRequest(e, http.MethodDelete, "/api/meta/v1/catalog-versions/cv1", "", apimw.RoleRO)
+	// RO via mapRole → svcmeta.RoleRO → service rejects
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// Coverage: Promote warnings loop body (L111-116) — service returns warnings for non-valid catalogs
+func TestCVPromote_WithWarnings(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	ltRepo := new(mocks.MockLifecycleTransitionRepo)
+	catalogRepo := new(mocks.MockCatalogRepo)
+	e := setupCVServerNoRequireRW(cvRepo, ltRepo, catalogRepo)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	cvRepo.On("UpdateLifecycle", mock.Anything, "cv1", models.LifecycleStageTesting).Return(nil)
+	ltRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.LifecycleTransition")).Return(nil)
+	catalogRepo.On("ListByCatalogVersionID", mock.Anything, "cv1").Return([]*models.Catalog{
+		{Name: "draft-catalog", ValidationStatus: models.ValidationStatusDraft},
+		{Name: "invalid-catalog", ValidationStatus: models.ValidationStatusInvalid},
+	}, nil)
+
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/cv1/promote", "", apimw.RoleRW)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "draft-catalog")
+	assert.Contains(t, rec.Body.String(), "invalid-catalog")
+	assert.Contains(t, rec.Body.String(), "warnings")
+}
+
+// === AddPin Handler Tests ===
+
+func TestCVAddPin_Success(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, pinRepo, nil, nil, etvRepo)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+	pinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+
+	body := `{"entity_type_version_id":"etv1"}`
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/cv1/pins", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusCreated, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"entity_type_version_id"`)
+}
+
+func TestCVAddPin_AsRO(t *testing.T) {
+	e := setupCVServer()
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/cv1/pins",
+		`{"entity_type_version_id":"etv1"}`, apimw.RoleRO)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestCVAddPin_BindError(t *testing.T) {
+	e := setupCVServer()
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/cv1/pins",
+		"bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestCVAddPin_ServiceError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "bad").Return(nil, domainerrors.NewNotFound("CatalogVersion", "bad"))
+
+	body := `{"entity_type_version_id":"etv1"}`
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/bad/pins", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// === RemovePin Handler Tests ===
+
+func TestCVRemovePin_Success(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	e := setupCVServerWithRepos(cvRepo, pinRepo, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "pin1").Return(&models.CatalogVersionPin{
+		ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1",
+	}, nil)
+	pinRepo.On("Delete", mock.Anything, "pin1").Return(nil)
+
+	rec := doRequest(e, http.MethodDelete, "/api/meta/v1/catalog-versions/cv1/pins/pin1", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+}
+
+func TestCVRemovePin_AsRO(t *testing.T) {
+	e := setupCVServer()
+	rec := doRequest(e, http.MethodDelete, "/api/meta/v1/catalog-versions/cv1/pins/pin1", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestCVRemovePin_ServiceError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "bad").Return(nil, domainerrors.NewNotFound("CatalogVersion", "bad"))
+
+	rec := doRequest(e, http.MethodDelete, "/api/meta/v1/catalog-versions/bad/pins/pin1", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// === UpdatePin Handler Tests (T-28.09 through T-28.12) ===
+
+func TestCVUpdatePin_Success(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, pinRepo, nil, nil, etvRepo)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "pin1").Return(&models.CatalogVersionPin{
+		ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1-v1",
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v1").Return(&models.EntityTypeVersion{
+		ID: "etv1-v1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v2").Return(&models.EntityTypeVersion{
+		ID: "etv1-v2", EntityTypeID: "et1", Version: 2,
+	}, nil)
+	pinRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+
+	body := `{"entity_type_version_id":"etv1-v2"}`
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1/pins/pin1", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"etv1-v2"`)
+}
+
+func TestCVUpdatePin_EntityTypeMismatch(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, pinRepo, nil, nil, etvRepo)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "pin1").Return(&models.CatalogVersionPin{
+		ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1-v1",
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v1").Return(&models.EntityTypeVersion{
+		ID: "etv1-v1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv2-v1").Return(&models.EntityTypeVersion{
+		ID: "etv2-v1", EntityTypeID: "et2", Version: 1,
+	}, nil)
+
+	body := `{"entity_type_version_id":"etv2-v1"}`
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1/pins/pin1", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestCVUpdatePin_NotFound(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	e := setupCVServerWithRepos(cvRepo, pinRepo, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "bad").Return(nil, domainerrors.NewNotFound("CatalogVersionPin", "bad"))
+
+	body := `{"entity_type_version_id":"etv1"}`
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1/pins/bad", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// TD-69: Stage guard handler tests — exercises mapRole with RW and SuperAdmin
+
+func TestCVAddPin_AsRW_Development(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, pinRepo, nil, nil, etvRepo)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+	pinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+
+	body := `{"entity_type_version_id":"etv1"}`
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/cv1/pins", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
+func TestCVAddPin_AsSuperAdmin_Testing(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, pinRepo, nil, nil, etvRepo)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+	pinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+
+	body := `{"entity_type_version_id":"etv1"}`
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/cv1/pins", body, apimw.RoleSuperAdmin)
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
+func TestCVAddPin_ProductionBlocked(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	e := setupCVServerWithRepos(cvRepo, nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageProduction,
+	}, nil)
+
+	body := `{"entity_type_version_id":"etv1"}`
+	rec := doRequest(e, http.MethodPost, "/api/meta/v1/catalog-versions/cv1/pins", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "production")
+}
+
+func TestCVUpdatePin_AsRO(t *testing.T) {
+	e := setupCVServer()
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1/pins/pin1",
+		`{"entity_type_version_id":"etv1"}`, apimw.RoleRO)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestCVUpdatePin_BindError(t *testing.T) {
+	e := setupCVServer()
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1/pins/pin1",
+		"bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }

@@ -1,8 +1,8 @@
 import { useState, useCallback } from 'react'
-import { api } from '../api/client'
-import type { EntityInstance, SnapshotAssociation, ReferenceDetail } from '../types'
+import { api, setAuthRole } from '../api/client'
+import type { EntityInstance, SnapshotAssociation, ReferenceDetail, Role } from '../types'
 
-export function useInstanceDetail(catalogName: string | undefined, entityTypeName: string, schemaAssocs: SnapshotAssociation[]) {
+export function useInstanceDetail(catalogName: string | undefined, entityTypeName: string, schemaAssocs: SnapshotAssociation[], role: Role) {
   const [selectedInstance, setSelectedInstance] = useState<EntityInstance | null>(null)
   const [parentName, setParentName] = useState<string>('')
   const [children, setChildren] = useState<EntityInstance[]>([])
@@ -11,15 +11,29 @@ export function useInstanceDetail(catalogName: string | undefined, entityTypeNam
   const [reverseRefs, setReverseRefs] = useState<ReferenceDetail[]>([])
   const [refsLoading, setRefsLoading] = useState(false)
 
-  const selectInstance = useCallback(async (inst: EntityInstance | null) => {
-    setSelectedInstance(inst)
+  const selectInstance = useCallback(async (instanceId: string | null) => {
     setParentName('')
-    if (!inst || !catalogName || !entityTypeName) {
+    if (!instanceId || !catalogName || !entityTypeName) {
+      setSelectedInstance(null)
       setChildren([])
       setForwardRefs([])
       setReverseRefs([])
       return
     }
+    // TD-49: Set auth role before any API calls
+    setAuthRole(role)
+    // TD-50: Always re-fetch instance by ID to get fresh data
+    let inst: EntityInstance
+    try {
+      inst = await api.instances.get(catalogName, entityTypeName, instanceId)
+    } catch {
+      setSelectedInstance(null)
+      setChildren([])
+      setForwardRefs([])
+      setReverseRefs([])
+      return
+    }
+    setSelectedInstance(inst)
     // Resolve parent name if instance is contained
     if (inst.parent_instance_id) {
       try {
@@ -60,7 +74,7 @@ export function useInstanceDetail(catalogName: string | undefined, entityTypeNam
     } finally {
       setRefsLoading(false)
     }
-  }, [catalogName, entityTypeName, schemaAssocs])
+  }, [catalogName, entityTypeName, schemaAssocs, role])
 
   const clearSelection = useCallback(() => {
     setSelectedInstance(null)

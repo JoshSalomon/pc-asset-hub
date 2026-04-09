@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	"github.com/labstack/echo/v4"
+
+	domainerrors "github.com/project-catalyst/pc-asset-hub/internal/domain/errors"
 )
 
 // CatalogAccessChecker determines whether the current user can access a specific catalog.
@@ -75,12 +77,14 @@ func RequireWriteAccess(checker CatalogPublishChecker) echo.MiddlewareFunc {
 				return next(c)
 			}
 
+			// Unified path: not-found and not-published go through the same conditional
+			// to prevent timing-based catalog existence probing. DB errors return 500.
 			published, err := checker.IsPublished(c, catalogName)
-			if err != nil {
+			if err != nil && !domainerrors.IsNotFound(err) {
 				return echo.NewHTTPError(http.StatusInternalServerError, "publish check failed")
 			}
-			if !published {
-				return next(c) // unpublished — normal RW access
+			if err != nil || !published {
+				return next(c)
 			}
 
 			role := GetRoleFromContext(c)

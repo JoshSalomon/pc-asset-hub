@@ -66,4 +66,3 @@ All deployment manifests must use `imagePullPolicy: Never` for locally loaded im
 - Deploy script: `scripts/kind-deploy.sh` (handles all of the above automatically)
 - Kind config: `deploy/kind/kind-config.yaml` (ports 30080, 30000)
 - Makefile targets: `kind-create`, `kind-load`, `kind-deploy-all`, `kind-delete`
-

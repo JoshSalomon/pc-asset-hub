@@ -41,3 +41,9 @@ docs/*.txt
 .claude/ltm/state.json
 .claude/ltm/stats.json
 .claude/ltm/server.json
+
+# Screenshots from live UI testing
+screenshots/
+
+# Temp artifacts (in the project)
+tmp/

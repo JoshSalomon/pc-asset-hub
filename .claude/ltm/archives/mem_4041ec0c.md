@@ -62,4 +62,3 @@ Operational: POST/GET `/:entity-type`, GET/PUT/DELETE `/:entity-type/:id`, GET `
 ## RBAC
 
 Header-based. Roles: RO, RW, Admin, SuperAdmin. Group-level middleware extracts role, per-route `RequireRole()` enforces minimum. Admin required for entity type mutations, RW for catalog version mutations.
-

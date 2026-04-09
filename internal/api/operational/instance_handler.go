@@ -46,10 +46,8 @@ func (h *InstanceHandler) CreateInstance(c echo.Context) error {
 	return c.JSON(http.StatusCreated, instanceDetailToDTO(detail))
 }
 
-func (h *InstanceHandler) ListInstances(c echo.Context) error {
-	catalogName := c.Param("catalog-name")
-	entityType := c.Param("entity-type")
-
+// parseListParams extracts pagination, sort, and filter query params from the request.
+func parseListParams(c echo.Context) models.ListParams {
 	params := models.ListParams{Limit: 20}
 
 	// Parse pagination
@@ -87,6 +85,15 @@ func (h *InstanceHandler) ListInstances(c echo.Context) error {
 	if len(filters) > 0 {
 		params.Filters = filters
 	}
+
+	return params
+}
+
+func (h *InstanceHandler) ListInstances(c echo.Context) error {
+	catalogName := c.Param("catalog-name")
+	entityType := c.Param("entity-type")
+
+	params := parseListParams(c)
 
 	details, total, err := h.svc.ListInstances(c.Request().Context(), catalogName, entityType, params)
 	if err != nil {
@@ -216,7 +223,7 @@ func (h *InstanceHandler) ListContainedInstances(c echo.Context) error {
 	parentID := c.Param("instance-id")
 	childType := c.Param("child-type")
 
-	params := models.ListParams{Limit: 20}
+	params := parseListParams(c)
 
 	details, total, err := h.svc.ListContainedInstances(c.Request().Context(), catalogName, parentType, parentID, childType, params)
 	if err != nil {

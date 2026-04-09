@@ -2,6 +2,7 @@ package meta_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -98,6 +99,30 @@ func TestT3_35_CreateCatalogVersion(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, models.LifecycleStageDevelopment, cv.LifecycleStage)
 	assert.Equal(t, "Initial version", cv.Description)
+}
+
+// TD-2: Duplicate catalog version label returns conflict error
+func TestTD2_DuplicateCatalogVersionLabel(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	ltRepo := new(mocks.MockLifecycleTransitionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, nil, "", nil, nil, nil, nil)
+
+	// First create succeeds
+	cvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil).Once()
+	ltRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.LifecycleTransition")).Return(nil).Once()
+
+	_, err := svc.CreateCatalogVersion(context.Background(), "v1.0", "First", nil)
+	require.NoError(t, err)
+
+	// Second create with same label — repo returns conflict (DB unique constraint)
+	cvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(
+		domainerrors.NewConflict("CatalogVersion", "version_label already exists: v1.0"),
+	).Once()
+
+	_, err = svc.CreateCatalogVersion(context.Background(), "v1.0", "Duplicate", nil)
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsConflict(err), "expected conflict error for duplicate label")
 }
 
 func TestT3_36_CreateCatalogVersionWithPins(t *testing.T) {
@@ -511,4 +536,905 @@ func TestTE24_ListTransitionsOrdered(t *testing.T) {
 	require.Len(t, transitions, 2)
 	assert.Equal(t, "development", transitions[0].ToStage)
 	assert.Equal(t, "testing", transitions[1].ToStage)
+}
+
+// === UpdateCatalogVersion Tests ===
+
+func TestUpdateCatalogVersion_UpdateLabel(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "old desc",
+	}, nil)
+	cvRepo.On("GetByLabel", mock.Anything, "v2.0").Return(nil, domainerrors.NewNotFound("CatalogVersion", "v2.0"))
+	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+
+	newLabel := "v2.0"
+	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", &newLabel, nil, meta.RoleRW)
+	require.NoError(t, err)
+	assert.Equal(t, "v2.0", cv.VersionLabel)
+	assert.Equal(t, "old desc", cv.Description) // unchanged
+}
+
+func TestUpdateCatalogVersion_UpdateDescription(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "old desc",
+	}, nil)
+	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+
+	newDesc := "new desc"
+	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, &newDesc, meta.RoleRW)
+	require.NoError(t, err)
+	assert.Equal(t, "new desc", cv.Description)
+	assert.Equal(t, "v1.0", cv.VersionLabel) // unchanged
+}
+
+func TestUpdateCatalogVersion_UpdateBoth(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "old desc",
+	}, nil)
+	cvRepo.On("GetByLabel", mock.Anything, "v2.0").Return(nil, domainerrors.NewNotFound("CatalogVersion", "v2.0"))
+	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+
+	newLabel := "v2.0"
+	newDesc := "new desc"
+	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", &newLabel, &newDesc, meta.RoleRW)
+	require.NoError(t, err)
+	assert.Equal(t, "v2.0", cv.VersionLabel)
+	assert.Equal(t, "new desc", cv.Description)
+}
+
+func TestUpdateCatalogVersion_NotFound(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "bad").Return(nil, domainerrors.NewNotFound("CatalogVersion", "bad"))
+
+	_, err := svc.UpdateCatalogVersion(context.Background(), "bad", nil, nil, meta.RoleRW)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestUpdateCatalogVersion_DuplicateLabel(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0",
+	}, nil)
+	cvRepo.On("GetByLabel", mock.Anything, "v2.0").Return(&models.CatalogVersion{
+		ID: "cv2", VersionLabel: "v2.0",
+	}, nil)
+
+	newLabel := "v2.0"
+	_, err := svc.UpdateCatalogVersion(context.Background(), "cv1", &newLabel, nil, meta.RoleRW)
+	assert.True(t, domainerrors.IsConflict(err))
+}
+
+func TestUpdateCatalogVersion_GetByLabelDBError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0",
+	}, nil)
+	dbErr := fmt.Errorf("connection refused")
+	cvRepo.On("GetByLabel", mock.Anything, "v-new").Return(nil, dbErr)
+
+	newLabel := "v-new"
+	_, err := svc.UpdateCatalogVersion(context.Background(), "cv1", &newLabel, nil, meta.RoleRW)
+	// Should propagate the DB error, not silently swallow it
+	assert.ErrorIs(t, err, dbErr)
+}
+
+func TestUpdateCatalogVersion_SameLabel(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "desc",
+	}, nil)
+	// GetByLabel returns the SAME CV — should be allowed (no-op rename)
+	cvRepo.On("GetByLabel", mock.Anything, "v1.0").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0",
+	}, nil)
+
+	// No actual change, so no Update call needed
+	newLabel := "v1.0"
+	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", &newLabel, nil, meta.RoleRW)
+	require.NoError(t, err)
+	assert.Equal(t, "v1.0", cv.VersionLabel)
+}
+
+func TestUpdateCatalogVersion_NeitherChanged(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "desc",
+	}, nil)
+
+	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, nil, meta.RoleRW)
+	require.NoError(t, err)
+	assert.Equal(t, "v1.0", cv.VersionLabel)
+	// Update should NOT have been called
+	cvRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+}
+
+func TestUpdateCatalogVersion_UpdateRepoError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0",
+	}, nil)
+	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(domainerrors.NewValidation("db error"))
+
+	newDesc := "new"
+	_, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, &newDesc, meta.RoleRW)
+	assert.Error(t, err)
+}
+
+// === UpdateCatalogVersion Stage Guard Tests (TD-71) ===
+
+func TestUpdateCatalogVersion_ProductionBlocked_SuperAdmin(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageProduction,
+	}, nil)
+
+	newDesc := "updated"
+	_, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, &newDesc, meta.RoleSuperAdmin)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "metadata editing")
+	assert.Contains(t, err.Error(), "production")
+}
+
+func TestUpdateCatalogVersion_ProductionBlocked_RW(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageProduction,
+	}, nil)
+
+	newLabel := "v2.0"
+	_, err := svc.UpdateCatalogVersion(context.Background(), "cv1", &newLabel, nil, meta.RoleRW)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "metadata editing")
+}
+
+func TestUpdateCatalogVersion_TestingBlocked_RW(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+
+	newDesc := "updated"
+	_, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, &newDesc, meta.RoleRW)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "metadata")
+	assert.Contains(t, err.Error(), "SuperAdmin")
+}
+
+func TestUpdateCatalogVersion_TestingBlocked_Admin(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+
+	newDesc := "updated"
+	_, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, &newDesc, meta.RoleAdmin)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "SuperAdmin")
+}
+
+func TestUpdateCatalogVersion_TestingAllowed_SuperAdmin(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "old", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+
+	newDesc := "updated"
+	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, &newDesc, meta.RoleSuperAdmin)
+	require.NoError(t, err)
+	assert.Equal(t, "updated", cv.Description)
+}
+
+func TestUpdateCatalogVersion_DevelopmentAllowed_RW(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", VersionLabel: "v1.0", Description: "old", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	cvRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+
+	newDesc := "updated"
+	cv, err := svc.UpdateCatalogVersion(context.Background(), "cv1", nil, &newDesc, meta.RoleRW)
+	require.NoError(t, err)
+	assert.Equal(t, "updated", cv.Description)
+}
+
+// === AddPin Tests ===
+
+func TestAddPin_Success(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+	pinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+
+	pin, err := svc.AddPin(context.Background(), "cv1", "etv1", meta.RoleAdmin)
+	require.NoError(t, err)
+	assert.NotEmpty(t, pin.ID)
+	assert.Equal(t, "cv1", pin.CatalogVersionID)
+	assert.Equal(t, "etv1", pin.EntityTypeVersionID)
+}
+
+func TestAddPin_CVNotFound(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "bad").Return(nil, domainerrors.NewNotFound("CatalogVersion", "bad"))
+
+	_, err := svc.AddPin(context.Background(), "bad", "etv1", meta.RoleAdmin)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestAddPin_ETVNotFound(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "bad-etv").Return(nil, domainerrors.NewNotFound("EntityTypeVersion", "bad-etv"))
+
+	_, err := svc.AddPin(context.Background(), "cv1", "bad-etv", meta.RoleAdmin)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestAddPin_DuplicatePin(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	etvRepo.On("GetByIDs", mock.Anything, []string{"etv1"}).Return([]*models.EntityTypeVersion{
+		{ID: "etv1", EntityTypeID: "et1", Version: 1},
+	}, nil)
+
+	_, err := svc.AddPin(context.Background(), "cv1", "etv1", meta.RoleAdmin)
+	assert.True(t, domainerrors.IsConflict(err))
+}
+
+// T-28.01: AddPin with same entity type (different version) returns 409
+func TestAddPin_DuplicateEntityType(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	// Requesting to add V2 of entity type "et1"
+	etvRepo.On("GetByID", mock.Anything, "etv1-v2").Return(&models.EntityTypeVersion{
+		ID: "etv1-v2", EntityTypeID: "et1", Version: 2,
+	}, nil)
+	// V1 of the same entity type "et1" is already pinned — batch fetch returns it
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1-v1"},
+	}, nil)
+	etvRepo.On("GetByIDs", mock.Anything, []string{"etv1-v1"}).Return([]*models.EntityTypeVersion{
+		{ID: "etv1-v1", EntityTypeID: "et1", Version: 1},
+	}, nil)
+
+	_, err := svc.AddPin(context.Background(), "cv1", "etv1-v2", meta.RoleAdmin)
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsConflict(err))
+	assert.Contains(t, err.Error(), "entity type")
+}
+
+func TestAddPin_CreateError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+	pinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(domainerrors.NewValidation("db error"))
+
+	_, err := svc.AddPin(context.Background(), "cv1", "etv1", meta.RoleAdmin)
+	assert.Error(t, err)
+}
+
+func TestAddPin_ListError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return(([]*models.CatalogVersionPin)(nil), domainerrors.NewValidation("db error"))
+
+	_, err := svc.AddPin(context.Background(), "cv1", "etv1", meta.RoleAdmin)
+	assert.Error(t, err)
+}
+
+// === RemovePin Tests ===
+
+func TestRemovePin_Success(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "pin1").Return(&models.CatalogVersionPin{
+		ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1",
+	}, nil)
+	pinRepo.On("Delete", mock.Anything, "pin1").Return(nil)
+
+	err := svc.RemovePin(context.Background(), "cv1", "pin1", meta.RoleAdmin)
+	require.NoError(t, err)
+}
+
+func TestRemovePin_CVNotFound(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "bad").Return(nil, domainerrors.NewNotFound("CatalogVersion", "bad"))
+
+	err := svc.RemovePin(context.Background(), "bad", "pin1", meta.RoleAdmin)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestRemovePin_PinNotFound(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "bad-pin").Return(nil, domainerrors.NewNotFound("CatalogVersionPin", "bad-pin"))
+
+	err := svc.RemovePin(context.Background(), "cv1", "bad-pin", meta.RoleAdmin)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestRemovePin_PinBelongsToDifferentCV(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "pin1").Return(&models.CatalogVersionPin{
+		ID: "pin1", CatalogVersionID: "cv2", EntityTypeVersionID: "etv1",
+	}, nil)
+
+	err := svc.RemovePin(context.Background(), "cv1", "pin1", meta.RoleAdmin)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestRemovePin_DeleteError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "pin1").Return(&models.CatalogVersionPin{
+		ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1",
+	}, nil)
+	pinRepo.On("Delete", mock.Anything, "pin1").Return(domainerrors.NewValidation("db error"))
+
+	err := svc.RemovePin(context.Background(), "cv1", "pin1", meta.RoleAdmin)
+	assert.Error(t, err)
+}
+
+// === UpdatePin Tests ===
+
+// T-28.04: UpdatePin changes ETV on existing pin
+func TestUpdatePin_Success(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "pin1").Return(&models.CatalogVersionPin{
+		ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1-v1",
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v1").Return(&models.EntityTypeVersion{
+		ID: "etv1-v1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v2").Return(&models.EntityTypeVersion{
+		ID: "etv1-v2", EntityTypeID: "et1", Version: 2,
+	}, nil)
+	pinRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+
+	pin, err := svc.UpdatePin(context.Background(), "cv1", "pin1", "etv1-v2", meta.RoleAdmin)
+	require.NoError(t, err)
+	assert.Equal(t, "etv1-v2", pin.EntityTypeVersionID)
+}
+
+// UpdatePin with same version is a valid no-op
+func TestUpdatePin_SameVersion(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "pin1").Return(&models.CatalogVersionPin{
+		ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1-v1",
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v1").Return(&models.EntityTypeVersion{
+		ID: "etv1-v1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	pinRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+
+	pin, err := svc.UpdatePin(context.Background(), "cv1", "pin1", "etv1-v1", meta.RoleAdmin)
+	require.NoError(t, err)
+	assert.Equal(t, "etv1-v1", pin.EntityTypeVersionID)
+}
+
+// T-28.05: UpdatePin with ETV from different entity type returns 400
+func TestUpdatePin_EntityTypeMismatch(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "pin1").Return(&models.CatalogVersionPin{
+		ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1-v1",
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v1").Return(&models.EntityTypeVersion{
+		ID: "etv1-v1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv2-v1").Return(&models.EntityTypeVersion{
+		ID: "etv2-v1", EntityTypeID: "et2", Version: 1,
+	}, nil)
+
+	_, err := svc.UpdatePin(context.Background(), "cv1", "pin1", "etv2-v1", meta.RoleAdmin)
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "entity type mismatch")
+}
+
+// T-28.06: UpdatePin with nonexistent pin returns 404
+func TestUpdatePin_PinNotFound(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "bad").Return(nil, domainerrors.NewNotFound("CatalogVersionPin", "bad"))
+
+	_, err := svc.UpdatePin(context.Background(), "cv1", "bad", "etv1", meta.RoleAdmin)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// T-28.07: UpdatePin with nonexistent ETV returns 404
+func TestUpdatePin_ETVNotFound(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "pin1").Return(&models.CatalogVersionPin{
+		ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1-v1",
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v1").Return(&models.EntityTypeVersion{
+		ID: "etv1-v1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "bad-etv").Return(nil, domainerrors.NewNotFound("EntityTypeVersion", "bad-etv"))
+
+	_, err := svc.UpdatePin(context.Background(), "cv1", "pin1", "bad-etv", meta.RoleAdmin)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// UpdatePin: CV not found
+func TestUpdatePin_CVNotFound(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "bad").Return(nil, domainerrors.NewNotFound("CatalogVersion", "bad"))
+
+	_, err := svc.UpdatePin(context.Background(), "bad", "pin1", "etv1", meta.RoleAdmin)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// UpdatePin: current ETV lookup error
+func TestUpdatePin_CurrentETVError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "pin1").Return(&models.CatalogVersionPin{
+		ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv-bad",
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv-bad").Return(nil, domainerrors.NewNotFound("EntityTypeVersion", "etv-bad"))
+
+	_, err := svc.UpdatePin(context.Background(), "cv1", "pin1", "etv1-v2", meta.RoleAdmin)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// UpdatePin: pinRepo.Update error
+func TestUpdatePin_UpdateError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "pin1").Return(&models.CatalogVersionPin{
+		ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1-v1",
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v1").Return(&models.EntityTypeVersion{
+		ID: "etv1-v1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v2").Return(&models.EntityTypeVersion{
+		ID: "etv1-v2", EntityTypeID: "et1", Version: 2,
+	}, nil)
+	pinRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(domainerrors.NewValidation("db error"))
+
+	_, err := svc.UpdatePin(context.Background(), "cv1", "pin1", "etv1-v2", meta.RoleAdmin)
+	assert.Error(t, err)
+}
+
+// AddPin: existing pin's ETV batch lookup error
+func TestAddPin_ExistingPinETVError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv-new").Return(&models.EntityTypeVersion{
+		ID: "etv-new", EntityTypeID: "et1", Version: 2,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv-bad"},
+	}, nil)
+	etvRepo.On("GetByIDs", mock.Anything, []string{"etv-bad"}).Return(([]*models.EntityTypeVersion)(nil), domainerrors.NewNotFound("EntityTypeVersion", "etv-bad"))
+
+	_, err := svc.AddPin(context.Background(), "cv1", "etv-new", meta.RoleAdmin)
+	assert.Error(t, err)
+}
+
+// T-28.08: UpdatePin verifies pin belongs to specified CV
+func TestUpdatePin_PinBelongsToDifferentCV(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "pin-other").Return(&models.CatalogVersionPin{
+		ID: "pin-other", CatalogVersionID: "cv-other", EntityTypeVersionID: "etv1",
+	}, nil)
+
+	_, err := svc.UpdatePin(context.Background(), "cv1", "pin-other", "etv1-v2", meta.RoleAdmin)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// === TD-69: Pin editing stage guards ===
+
+func TestTD69_AddPin_ProductionBlocked(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageProduction,
+	}, nil)
+
+	_, err := svc.AddPin(context.Background(), "cv1", "etv1", meta.RoleAdmin)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "production")
+}
+
+func TestTD69_AddPin_ProductionBlockedSuperAdmin(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageProduction,
+	}, nil)
+
+	_, err := svc.AddPin(context.Background(), "cv1", "etv1", meta.RoleSuperAdmin)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "production")
+}
+
+func TestTD69_AddPin_TestingRWBlocked(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+
+	_, err := svc.AddPin(context.Background(), "cv1", "etv1", meta.RoleRW)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "SuperAdmin")
+}
+
+func TestTD69_AddPin_TestingAdminBlocked(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+
+	_, err := svc.AddPin(context.Background(), "cv1", "etv1", meta.RoleAdmin)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "SuperAdmin")
+}
+
+func TestTD69_AddPin_TestingSuperAdminAllowed(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+	pinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+
+	pin, err := svc.AddPin(context.Background(), "cv1", "etv1", meta.RoleSuperAdmin)
+	require.NoError(t, err)
+	assert.NotEmpty(t, pin.ID)
+}
+
+func TestTD69_RemovePin_ProductionBlocked(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageProduction,
+	}, nil)
+
+	err := svc.RemovePin(context.Background(), "cv1", "pin1", meta.RoleAdmin)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "production")
+}
+
+func TestTD69_UpdatePin_TestingRWBlocked(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, nil, nil, nil, "", nil, nil, nil, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageTesting,
+	}, nil)
+
+	_, err := svc.UpdatePin(context.Background(), "cv1", "pin1", "etv1", meta.RoleRW)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "SuperAdmin")
+}
+
+// TD-77: AddPin uses batch GetByIDs instead of N+1 GetByID calls for existing pins
+func TestTD77_AddPin_BatchFetchExistingPins(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	// Set up 5 existing pins, each for a different entity type
+	existingPins := make([]*models.CatalogVersionPin, 5)
+	existingETVIDs := make([]string, 5)
+	batchResult := make([]*models.EntityTypeVersion, 5)
+	for i := 0; i < 5; i++ {
+		etvID := fmt.Sprintf("etv-existing-%d", i)
+		existingPins[i] = &models.CatalogVersionPin{
+			ID: fmt.Sprintf("pin-%d", i), CatalogVersionID: "cv1", EntityTypeVersionID: etvID,
+		}
+		existingETVIDs[i] = etvID
+		batchResult[i] = &models.EntityTypeVersion{
+			ID: etvID, EntityTypeID: fmt.Sprintf("et-%d", i), Version: 1,
+		}
+	}
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	// GetByID should only be called once — for the NEW entity type version
+	etvRepo.On("GetByID", mock.Anything, "etv-new").Return(&models.EntityTypeVersion{
+		ID: "etv-new", EntityTypeID: "et-new", Version: 1,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return(existingPins, nil)
+	// GetByIDs should be called once for all existing pin ETVs
+	etvRepo.On("GetByIDs", mock.Anything, mock.AnythingOfType("[]string")).Return(batchResult, nil)
+	pinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+
+	pin, err := svc.AddPin(context.Background(), "cv1", "etv-new", meta.RoleAdmin)
+	require.NoError(t, err)
+	assert.NotEmpty(t, pin.ID)
+
+	// Verify GetByID was NOT called for existing pins (only once for the new ETV)
+	etvRepo.AssertNumberOfCalls(t, "GetByID", 1)
+	// Verify GetByIDs was called exactly once
+	etvRepo.AssertNumberOfCalls(t, "GetByIDs", 1)
+}
+
+// TD-77: AddPin duplicate detection still works with batch fetch
+func TestTD77_AddPin_BatchFetchDuplicateDetected(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	// New ETV belongs to entity type "et1"
+	etvRepo.On("GetByID", mock.Anything, "etv-new").Return(&models.EntityTypeVersion{
+		ID: "etv-new", EntityTypeID: "et1", Version: 2,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv-existing"},
+	}, nil)
+	// Existing pin's ETV also belongs to "et1" — should trigger conflict
+	etvRepo.On("GetByIDs", mock.Anything, mock.AnythingOfType("[]string")).Return([]*models.EntityTypeVersion{
+		{ID: "etv-existing", EntityTypeID: "et1", Version: 1},
+	}, nil)
+
+	_, err := svc.AddPin(context.Background(), "cv1", "etv-new", meta.RoleAdmin)
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsConflict(err))
+}
+
+// TD-77: AddPin with no existing pins skips GetByIDs call
+func TestTD77_AddPin_NoPinsSkipsBatchFetch(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+	pinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+
+	pin, err := svc.AddPin(context.Background(), "cv1", "etv1", meta.RoleAdmin)
+	require.NoError(t, err)
+	assert.NotEmpty(t, pin.ID)
+
+	// GetByIDs should NOT be called when there are no existing pins
+	etvRepo.AssertNotCalled(t, "GetByIDs")
+}
+
+// TD-77: AddPin handles GetByIDs error gracefully
+func TestTD77_AddPin_BatchFetchError(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv-new").Return(&models.EntityTypeVersion{
+		ID: "etv-new", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv-existing"},
+	}, nil)
+	etvRepo.On("GetByIDs", mock.Anything, mock.AnythingOfType("[]string")).Return(([]*models.EntityTypeVersion)(nil), fmt.Errorf("db error"))
+
+	_, err := svc.AddPin(context.Background(), "cv1", "etv-new", meta.RoleAdmin)
+	assert.Error(t, err)
+}
+
+// AddPin with orphaned pin (GetByIDs returns fewer results than requested) should error
+func TestAddPin_OrphanedPinDetected(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	svc := meta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, nil)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	// New ETV to add — entity type "et-new"
+	etvRepo.On("GetByID", mock.Anything, "etv-new").Return(&models.EntityTypeVersion{
+		ID: "etv-new", EntityTypeID: "et-new", Version: 1,
+	}, nil)
+	// CV has two existing pins, but one points to a deleted ETV
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv-good"},
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv-orphaned"},
+	}, nil)
+	// GetByIDs returns only 1 of the 2 requested — etv-orphaned is missing
+	etvRepo.On("GetByIDs", mock.Anything, mock.AnythingOfType("[]string")).Return([]*models.EntityTypeVersion{
+		{ID: "etv-good", EntityTypeID: "et-other", Version: 1},
+	}, nil)
+	// Mock Create since without the fix, AddPin would proceed to create
+	pinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+
+	_, err := svc.AddPin(context.Background(), "cv1", "etv-new", meta.RoleAdmin)
+	assert.Error(t, err, "should detect orphaned pin when GetByIDs returns fewer results than requested")
+	assert.Contains(t, err.Error(), "orphaned pin references a deleted entity type version")
 }

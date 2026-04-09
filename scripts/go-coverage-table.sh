@@ -42,15 +42,20 @@ with open('$COVFILE') as f:
         if count > 0:
             pkg_stats[pkg]['covered'] += num_stmts
 
+# Packages to exclude from totals (test infrastructure, not production code)
+EXCLUDE = {'internal/domain/repository/mocks', 'internal/infrastructure/gorm/testutil', 'internal/infrastructure/gorm/database'}
+
 print('| Package | Coverage |')
 print('|---------|----------|')
 for pkg in sorted(pkg_stats.keys()):
     s = pkg_stats[pkg]
     pct = (s['covered'] * 100 / s['total']) if s['total'] > 0 else 0
-    print(f'| \`{pkg}\` | {pct:.1f}% ({s[\"covered\"]}/{s[\"total\"]}) |')
+    excluded = ' *(excluded from total)*' if pkg in EXCLUDE else ''
+    print(f'| \`{pkg}\` | {pct:.1f}% ({s[\"covered\"]}/{s[\"total\"]}){excluded} |')
 
 print()
-total_covered = sum(s['covered'] for s in pkg_stats.values())
-total = sum(s['total'] for s in pkg_stats.values())
-print(f'**Total: {total_covered}/{total} = {total_covered*100/total:.1f}%**')
+prod_covered = sum(s['covered'] for pkg, s in pkg_stats.items() if pkg not in EXCLUDE)
+prod_total = sum(s['total'] for pkg, s in pkg_stats.items() if pkg not in EXCLUDE)
+print(f'**Production total: {prod_covered}/{prod_total} = {prod_covered*100/prod_total:.1f}%**')
+print(f'Uncovered: {prod_total - prod_covered}')
 "

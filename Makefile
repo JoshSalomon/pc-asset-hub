@@ -32,6 +32,7 @@ test-live:
 	"$(PROJECT_ROOT)scripts/test-copy-replace.sh"
 	"$(PROJECT_ROOT)scripts/test-system-attributes.sh"
 	"$(PROJECT_ROOT)scripts/test-descriptions.sh"
+	"$(PROJECT_ROOT)scripts/test-phase1-fixes.sh"
 
 test-all: test-backend test-browser test-system test-live
 
@@ -58,7 +59,9 @@ coverage:
 	cd "$(PROJECT_ROOT)" && go tool cover -func=coverage.out
 
 clean:
-	rm -f "$(PROJECT_ROOT)coverage.out"
+	find "$(PROJECT_ROOT)" -maxdepth 1 -name '*.out' ! -name 'coverage.out' -delete
+	rm -f "$(PROJECT_ROOT)ui/"*.out
+	rm -rf "$(PROJECT_ROOT)ui/coverage-browser/"
 
 # Docker targets
 docker-build-api:

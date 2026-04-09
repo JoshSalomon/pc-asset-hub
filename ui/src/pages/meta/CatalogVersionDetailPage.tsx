@@ -24,11 +24,85 @@ import {
   ModalHeader,
   ModalBody,
   ModalFooter,
+  TextInput,
+  Form,
+  FormGroup,
+  MenuToggle,
+  Select,
+  SelectOption,
+  SelectList,
 } from '@patternfly/react-core'
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
 import { api, setAuthRole } from '../../api/client'
-import type { CatalogVersion, CatalogVersionPin, LifecycleTransition, VersionSnapshot, Role } from '../../types'
-import EntityTypeDiagram, { type DiagramEntityType } from '../../components/EntityTypeDiagram'
+import type { CatalogVersion, CatalogVersionPin, LifecycleTransition, VersionSnapshot, Role, EntityType, EntityTypeVersion } from '../../types'
+import { useCatalogDiagram } from '../../hooks/useCatalogDiagram'
+import { useInlineEdit } from '../../hooks/useInlineEdit'
+import { usePinManagement } from '../../hooks/usePinManagement'
+import DiagramTabContent from '../../components/DiagramTabContent'
+
+// Self-contained Select wrappers — manage their own isOpen state so that
+// opening the dropdown does NOT cause the parent (and Modal) to re-render.
+// PF6 Modal's componentDidUpdate sets aria-hidden on ALL body-level siblings
+// whenever it re-renders; if the Select's popper portal (appended to body) is
+// created during a render that also triggers the Modal, it gets aria-hidden
+// and becomes invisible to assistive tech / getByRole queries.
+
+function PinEntityTypeSelect({ entityTypes, pins, selectedEtId, onSelect }: {
+  entityTypes: EntityType[]
+  pins: CatalogVersionPin[]
+  selectedEtId: string
+  onSelect: (etId: string) => void
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  return (
+    <Select
+      id="pin-et"
+      isOpen={isOpen}
+      onOpenChange={setIsOpen}
+      toggle={(toggleRef) => (
+        <MenuToggle ref={toggleRef} onClick={() => setIsOpen(!isOpen)} isExpanded={isOpen} style={{ width: '100%' }}>
+          {selectedEtId ? entityTypes.find(et => et.id === selectedEtId)?.name || selectedEtId : 'Select entity type...'}
+        </MenuToggle>
+      )}
+      onSelect={(_e, val) => { onSelect(String(val)); setIsOpen(false) }}
+      selected={selectedEtId}
+    >
+      <SelectList>
+        {entityTypes.filter(et => !pins.some(p => p.entity_type_id === et.id)).map(et => (
+          <SelectOption key={et.id} value={et.id} data-testid={`pin-et-${et.name}`}>{et.name}</SelectOption>
+        ))}
+      </SelectList>
+    </Select>
+  )
+}
+
+function PinVersionSelect({ versions, selectedEtvId, onSelect }: {
+  versions: EntityTypeVersion[]
+  selectedEtvId: string
+  onSelect: (etvId: string) => void
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  return (
+    <Select
+      id="pin-etv"
+      isOpen={isOpen}
+      onOpenChange={setIsOpen}
+      toggle={(toggleRef) => (
+        <MenuToggle ref={toggleRef} onClick={() => setIsOpen(!isOpen)} isExpanded={isOpen} style={{ width: '100%' }}>
+          {selectedEtvId ? `V${versions.find(v => v.id === selectedEtvId)?.version || '?'}` : 'Select version...'}
+        </MenuToggle>
+      )}
+      onSelect={(_e, val) => { onSelect(String(val)); setIsOpen(false) }}
+      selected={selectedEtvId}
+    >
+      <SelectList>
+        {versions.map(v => (
+          <SelectOption key={v.id} value={v.id} data-testid={`pin-etv-V${v.version}`}>V{v.version}</SelectOption>
+        ))}
+      </SelectList>
+    </Select>
+  )
+}
 
 interface Props {
   role: Role
@@ -59,10 +133,6 @@ export default function CatalogVersionDetailPage({ role }: Props) {
   const [snapshotLoading, setSnapshotLoading] = useState(false)
   const [snapshotError, setSnapshotError] = useState<string | null>(null)
 
-  // Diagram state
-  const [diagramData, setDiagramData] = useState<DiagramEntityType[]>([])
-  const [diagramLoading, setDiagramLoading] = useState(false)
-
   const loadCV = useCallback(async () => {
     if (!id) return
     setLoading(true)
@@ -82,7 +152,11 @@ export default function CatalogVersionDetailPage({ role }: Props) {
     setPinsLoading(true)
     try {
       const res = await api.catalogVersions.listPins(id)
-      setPins(res.items || [])
+      const items = res.items || []
+      items.sort((a: CatalogVersionPin, b: CatalogVersionPin) =>
+        a.entity_type_name.toLowerCase().localeCompare(b.entity_type_name.toLowerCase())
+      )
+      setPins(items)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load pins')
     } finally {
@@ -103,15 +177,35 @@ export default function CatalogVersionDetailPage({ role }: Props) {
     }
   }, [id])
 
+  const diagram = useCatalogDiagram(id)
+
+  const inlineEdit = useInlineEdit({
+    catalogVersionId: id,
+    onSuccess: loadCV,
+    onError: (msg) => setError(msg),
+  })
+
+  const pinMgmt = usePinManagement({
+    catalogVersionId: id,
+    loadPins,
+    onError: (msg) => setError(msg),
+  })
+
+  const hasWriteRole = role === 'RW' || role === 'Admin' || role === 'SuperAdmin'
+  // Stage guards: development = RW+, testing = SuperAdmin only, production = blocked
+  const canEdit = hasWriteRole && cv?.lifecycle_stage !== 'production' && (cv?.lifecycle_stage !== 'testing' || role === 'SuperAdmin')
+  const canEditPins = canEdit
+
   useEffect(() => {
     setAuthRole(role)
     loadCV()
   }, [loadCV, role])
 
   useEffect(() => {
-    if (activeTab === 'bom' || activeTab === 'diagram') loadPins()
+    if (activeTab === 'bom') loadPins()
+    if (activeTab === 'diagram') { loadPins(); diagram.loadDiagram() }
     if (activeTab === 'transitions') loadTransitions()
-  }, [activeTab, loadPins, loadTransitions])
+  }, [activeTab, loadPins, loadTransitions, diagram.loadDiagram])
 
   const handleOpenSnapshot = async (pin: CatalogVersionPin) => {
     setSnapshotOpen(true)
@@ -127,34 +221,6 @@ export default function CatalogVersionDetailPage({ role }: Props) {
       setSnapshotLoading(false)
     }
   }
-
-  const loadDiagramData = useCallback(async () => {
-    if (pins.length === 0) return
-    setDiagramLoading(true)
-    try {
-      setAuthRole(role)
-      const snapshots: DiagramEntityType[] = await Promise.all(
-        pins.map(async (pin) => {
-          const snap: VersionSnapshot = await api.versions.snapshot(pin.entity_type_id, pin.version)
-          return {
-            entityType: { id: pin.entity_type_id, name: pin.entity_type_name, created_at: '', updated_at: '' },
-            version: pin.version,
-            attributes: snap.attributes || [],
-            associations: snap.associations || [],
-          }
-        })
-      )
-      setDiagramData(snapshots)
-    } catch {
-      // Diagram loading failed — will retry on next tab switch
-    } finally {
-      setDiagramLoading(false)
-    }
-  }, [pins, role])
-
-  useEffect(() => {
-    if (activeTab === 'diagram') loadDiagramData()
-  }, [activeTab, loadDiagramData])
 
   const handlePromote = async () => {
     if (!id) return
@@ -217,11 +283,51 @@ export default function CatalogVersionDetailPage({ role }: Props) {
             <DescriptionList>
               <DescriptionListGroup>
                 <DescriptionListTerm>Version Label</DescriptionListTerm>
-                <DescriptionListDescription>{cv.version_label}</DescriptionListDescription>
+                <DescriptionListDescription>
+                  {inlineEdit.editingLabel ? (
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <TextInput
+                        value={inlineEdit.editLabelValue}
+                        onChange={(_e, v) => inlineEdit.setEditLabelValue(v)}
+                        aria-label="Version Label"
+                        style={{ width: '100%' }}
+                      />
+                      <Button variant="primary" size="sm" onClick={inlineEdit.handleSaveLabel}>Save</Button>
+                      <Button variant="link" size="sm" onClick={inlineEdit.cancelEditLabel}>Cancel</Button>
+                    </div>
+                  ) : (
+                    <>
+                      {cv.version_label}
+                      {canEdit && (
+                        <Button variant="link" size="sm" onClick={() => inlineEdit.startEditLabel(cv.version_label)} style={{ marginLeft: '0.5rem' }} aria-label="Edit version label">Edit</Button>
+                      )}
+                    </>
+                  )}
+                </DescriptionListDescription>
               </DescriptionListGroup>
               <DescriptionListGroup>
                 <DescriptionListTerm>Description</DescriptionListTerm>
-                <DescriptionListDescription>{cv.description || <span style={{ color: '#6a6e73' }}>No description</span>}</DescriptionListDescription>
+                <DescriptionListDescription>
+                  {inlineEdit.editingDesc ? (
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <TextInput
+                        value={inlineEdit.editDescValue}
+                        onChange={(_e, v) => inlineEdit.setEditDescValue(v)}
+                        aria-label="Description"
+                        style={{ width: '100%' }}
+                      />
+                      <Button variant="primary" size="sm" onClick={inlineEdit.handleSaveDescription}>Save</Button>
+                      <Button variant="link" size="sm" onClick={inlineEdit.cancelEditDesc}>Cancel</Button>
+                    </div>
+                  ) : (
+                    <>
+                      {cv.description || <span style={{ color: '#6a6e73' }}>No description</span>}
+                      {canEdit && (
+                        <Button variant="link" size="sm" onClick={() => inlineEdit.startEditDesc(cv.description || '')} style={{ marginLeft: '0.5rem' }} aria-label="Edit description">Edit</Button>
+                      )}
+                    </>
+                  )}
+                </DescriptionListDescription>
               </DescriptionListGroup>
               <DescriptionListGroup>
                 <DescriptionListTerm>Lifecycle Stage</DescriptionListTerm>
@@ -262,6 +368,15 @@ export default function CatalogVersionDetailPage({ role }: Props) {
         {/* Bill of Materials Tab */}
         <Tab eventKey="bom" title={<TabTitleText>Bill of Materials</TabTitleText>}>
           <PageSection padding={{ default: 'noPadding' }} style={{ marginTop: '1rem' }}>
+            {canEditPins && (
+              <Toolbar>
+                <ToolbarContent>
+                  <ToolbarItem>
+                    <Button variant="primary" onClick={pinMgmt.handleOpenAddPin}>Add Pin</Button>
+                  </ToolbarItem>
+                </ToolbarContent>
+              </Toolbar>
+            )}
             {pinsLoading ? (
               <Spinner aria-label="Loading" />
             ) : pins.length === 0 ? (
@@ -276,6 +391,7 @@ export default function CatalogVersionDetailPage({ role }: Props) {
                     <Th>Description</Th>
                     <Th>Version</Th>
                     <Th>Entity Type ID</Th>
+                    {canEditPins && <Th>Actions</Th>}
                   </Tr>
                 </Thead>
                 <Tbody>
@@ -289,8 +405,40 @@ export default function CatalogVersionDetailPage({ role }: Props) {
                       <Td style={{ maxWidth: '30rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {pin.description || ''}
                       </Td>
-                      <Td>V{pin.version}</Td>
+                      <Td>
+                        {canEditPins ? (
+                          <Select
+                            isOpen={pinMgmt.pinVersionSelectOpen === pin.pin_id}
+                            onOpenChange={(open) => { if (!open) pinMgmt.closePinVersionSelect() }}
+                            toggle={(toggleRef) => (
+                              <MenuToggle
+                                ref={toggleRef}
+                                onClick={() => pinMgmt.handleTogglePinVersionSelect(pin)}
+                                isExpanded={pinMgmt.pinVersionSelectOpen === pin.pin_id}
+                                aria-label={`Version for ${pin.entity_type_name}`}
+                              >
+                                V{pin.version}
+                              </MenuToggle>
+                            )}
+                            onSelect={(_e, val) => pinMgmt.handleUpdatePinVersion(pin, String(val))}
+                            selected={pin.entity_type_version_id}
+                          >
+                            <SelectList>
+                              {(pinMgmt.pinVersionOptions[pin.entity_type_id] || []).map(v => (
+                                <SelectOption key={v.id} value={v.id}>V{v.version}</SelectOption>
+                              ))}
+                            </SelectList>
+                          </Select>
+                        ) : (
+                          <>V{pin.version}</>
+                        )}
+                      </Td>
                       <Td><code>{pin.entity_type_id.slice(0, 8)}...</code></Td>
+                      {canEditPins && (
+                        <Td>
+                          <Button variant="danger" size="sm" onClick={() => pinMgmt.handleRemovePin(pin.pin_id)}>Remove</Button>
+                        </Td>
+                      )}
                     </Tr>
                   ))}
                 </Tbody>
@@ -334,16 +482,49 @@ export default function CatalogVersionDetailPage({ role }: Props) {
         </Tab>
         <Tab eventKey="diagram" title={<TabTitleText>Diagram</TabTitleText>}>
           <PageSection padding={{ default: 'noPadding' }} style={{ marginTop: '1rem' }}>
-            {(diagramLoading || (pinsLoading && diagramData.length === 0)) ? (
-              <Spinner aria-label="Loading diagram" />
-            ) : diagramData.length === 0 ? (
-              <EmptyState><EmptyStateBody>No entity types pinned.</EmptyStateBody></EmptyState>
-            ) : (
-              <EntityTypeDiagram entityTypes={diagramData} />
-            )}
+            <DiagramTabContent
+              diagramData={diagram.diagramData}
+              diagramLoading={diagram.diagramLoading || (pinsLoading && diagram.diagramData.length === 0)}
+              diagramError={diagram.diagramError}
+            />
           </PageSection>
         </Tab>
       </Tabs>
+
+      {/* Add Pin Modal */}
+      <Modal
+        variant={ModalVariant.small}
+        isOpen={pinMgmt.addPinOpen}
+        onClose={pinMgmt.handleCloseAddPin}
+      >
+        <ModalHeader title="Add Pin" />
+        <ModalBody>
+          {pinMgmt.addPinError && <Alert variant="danger" title={pinMgmt.addPinError} isInline style={{ marginBottom: '1rem' }} />}
+          <Form>
+            <FormGroup label="Entity Type" isRequired fieldId="pin-et">
+              <PinEntityTypeSelect
+                entityTypes={pinMgmt.entityTypes}
+                pins={pins}
+                selectedEtId={pinMgmt.selectedEtId}
+                onSelect={pinMgmt.handleSelectEntityType}
+              />
+            </FormGroup>
+            {pinMgmt.selectedEtId && (
+              <FormGroup label="Version" isRequired fieldId="pin-etv">
+                <PinVersionSelect
+                  versions={pinMgmt.entityTypeVersions}
+                  selectedEtvId={pinMgmt.selectedEtvId}
+                  onSelect={(etvId) => pinMgmt.setSelectedEtvId(etvId)}
+                />
+              </FormGroup>
+            )}
+          </Form>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="primary" onClick={pinMgmt.handleAddPin} isDisabled={!pinMgmt.selectedEtvId}>Add</Button>
+          <Button variant="link" onClick={pinMgmt.handleCloseAddPin}>Cancel</Button>
+        </ModalFooter>
+      </Modal>
 
       {/* Version Snapshot Modal */}
       <Modal
@@ -414,13 +595,13 @@ export default function CatalogVersionDetailPage({ role }: Props) {
                       const otherName = isOutgoing
                         ? (assoc.target_entity_type_name || assoc.target_entity_type_id.slice(0, 8) + '...')
                         : (assoc.source_entity_type_name || assoc.source_entity_type_id?.slice(0, 8) + '...')
-                      const role = isOutgoing ? assoc.target_role : assoc.source_role
+                      const assocRole = isOutgoing ? assoc.target_role : assoc.source_role
                       return (
                         <Tr key={assoc.id}>
                           <Td><Label color={labelColor}>{relationship}</Label></Td>
                           <Td>{otherName}</Td>
                           <Td>{assoc.name}</Td>
-                          <Td>{role}</Td>
+                          <Td>{assocRole}</Td>
                           <Td>{isOutgoing ? `${assoc.source_cardinality} → ${assoc.target_cardinality}` : `${assoc.target_cardinality} → ${assoc.source_cardinality}`}</Td>
                         </Tr>
                       )

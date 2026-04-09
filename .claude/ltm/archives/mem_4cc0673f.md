@@ -45,4 +45,3 @@ kubectl --context kind-assethub -n assethub rollout status deployment/assethub-a
 kubectl --context kind-assethub -n assethub get pods
 curl -sf http://localhost:30080/healthz
 ```
-

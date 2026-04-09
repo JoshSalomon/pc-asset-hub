@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	domainerrors "github.com/project-catalyst/pc-asset-hub/internal/domain/errors"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
 	"github.com/project-catalyst/pc-asset-hub/internal/infrastructure/gorm/repository"
 	"github.com/project-catalyst/pc-asset-hub/internal/infrastructure/gorm/testutil"
@@ -552,6 +553,59 @@ func TestT17_04_UpdateName_PreservesPublished(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, found.Published)
 	assert.NotNil(t, found.PublishedAt)
+}
+
+func TestCatalogUpdate(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	catalogRepo := repository.NewCatalogGormRepo(db)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	ctx := context.Background()
+
+	cvID := newCatalogID()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{ID: cvID, VersionLabel: "v1", LifecycleStage: "development", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+
+	catID := newCatalogID()
+	require.NoError(t, catalogRepo.Create(ctx, &models.Catalog{
+		ID: catID, Name: "test-cat", Description: "old", CatalogVersionID: cvID,
+		ValidationStatus: models.ValidationStatusDraft, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	found, err := catalogRepo.GetByID(ctx, catID)
+	require.NoError(t, err)
+	found.Description = "new desc"
+	found.UpdatedAt = time.Now()
+	require.NoError(t, catalogRepo.Update(ctx, found))
+
+	updated, err := catalogRepo.GetByID(ctx, catID)
+	require.NoError(t, err)
+	assert.Equal(t, "new desc", updated.Description)
+}
+
+func TestCatalogUpdate_DuplicateName(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	catalogRepo := repository.NewCatalogGormRepo(db)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	ctx := context.Background()
+
+	cvID := newCatalogID()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{ID: cvID, VersionLabel: "v1", LifecycleStage: "development", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+
+	cat1ID := newCatalogID()
+	require.NoError(t, catalogRepo.Create(ctx, &models.Catalog{
+		ID: cat1ID, Name: "cat-one", CatalogVersionID: cvID,
+		ValidationStatus: models.ValidationStatusDraft, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	cat2ID := newCatalogID()
+	require.NoError(t, catalogRepo.Create(ctx, &models.Catalog{
+		ID: cat2ID, Name: "cat-two", CatalogVersionID: cvID,
+		ValidationStatus: models.ValidationStatusDraft, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	// Try to update cat-two's name to cat-one's name — should get conflict
+	cat2, _ := catalogRepo.GetByID(ctx, cat2ID)
+	cat2.Name = "cat-one"
+	err := catalogRepo.Update(ctx, cat2)
+	assert.True(t, domainerrors.IsConflict(err), "expected conflict error, got: %v", err)
 }
 
 // T-16.44 (partial): ListByCatalogVersionID

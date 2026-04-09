@@ -15,13 +15,15 @@ import {
   MenuToggle,
   type MenuToggleElement,
 } from '@patternfly/react-core'
-import type { EntityInstance, SnapshotAssociation, SnapshotAttribute } from '../types'
+import type { EntityInstance, SnapshotAssociation, SnapshotAttribute, CatalogVersionPin } from '../types'
+import { api } from '../api/client'
+import { buildTypedAttrs } from '../utils/buildTypedAttrs'
 import AttributeFormFields from './AttributeFormFields'
 
 export interface AddChildCreateData {
   name: string
   description: string
-  attrs: Record<string, string>
+  attrs: Record<string, unknown>
 }
 
 export interface AddChildAdoptData {
@@ -31,11 +33,9 @@ export interface AddChildAdoptData {
 interface Props {
   isOpen: boolean
   onClose: () => void
+  catalogName: string | undefined
+  pins: CatalogVersionPin[]
   schemaAssocs: SnapshotAssociation[]
-  childSchemaAttrs: SnapshotAttribute[]
-  childEnumValues: Record<string, string[]>
-  availableInstances: EntityInstance[]
-  onChildTypeChange: (typeName: string) => void
   onSubmit: (childType: string, mode: 'create' | 'adopt', data: AddChildCreateData | AddChildAdoptData) => Promise<void>
   error: string | null
   initialChildType?: string
@@ -43,10 +43,8 @@ interface Props {
 
 export default function AddChildModal({
   isOpen, onClose,
+  catalogName, pins,
   schemaAssocs,
-  childSchemaAttrs, childEnumValues,
-  availableInstances,
-  onChildTypeChange,
   onSubmit, error,
   initialChildType,
 }: Props) {
@@ -61,6 +59,46 @@ export default function AddChildModal({
   const [adoptSelectOpen, setAdoptSelectOpen] = useState(false)
   const [modeSelectOpen, setModeSelectOpen] = useState(false)
 
+  // Internal data state (previously managed by page)
+  const [childSchemaAttrs, setChildSchemaAttrs] = useState<SnapshotAttribute[]>([])
+  const [childEnumValues, setChildEnumValues] = useState<Record<string, string[]>>({})
+  const [availableInstances, setAvailableInstances] = useState<EntityInstance[]>([])
+
+  // Load available instances for adopt mode
+  const loadAvailableInstances = async (typeName: string) => {
+    if (!catalogName || !typeName) { setAvailableInstances([]); return }
+    try {
+      const res = await api.instances.list(catalogName, typeName)
+      setAvailableInstances((res.items || []).filter((i: EntityInstance) => !i.parent_instance_id))
+    } catch { setAvailableInstances([]) }
+  }
+
+  // Load child type schema attributes and enum values
+  const loadChildSchema = async (typeName: string) => {
+    if (!typeName || !pins.length) { setChildSchemaAttrs([]); return }
+    const pin = pins.find(p => p.entity_type_name === typeName)
+    if (!pin) { setChildSchemaAttrs([]); return }
+    try {
+      const snapshot = await api.versions.snapshot(pin.entity_type_id, pin.version)
+      setChildSchemaAttrs(snapshot.attributes || [])
+      const cache: Record<string, string[]> = {}
+      for (const attr of snapshot.attributes || []) {
+        if (attr.type === 'enum' && attr.enum_id && !cache[attr.enum_id]) {
+          try {
+            const res = await api.enums.listValues(attr.enum_id)
+            cache[attr.enum_id] = (res.items || []).map((v: { value: string }) => v.value)
+          } catch { /* ignore */ }
+        }
+      }
+      setChildEnumValues(cache)
+    } catch { setChildSchemaAttrs([]) }
+  }
+
+  const handleChildTypeChange = (typeName: string) => {
+    loadAvailableInstances(typeName)
+    loadChildSchema(typeName)
+  }
+
   // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
@@ -70,16 +108,23 @@ export default function AddChildModal({
       setNewChildDesc('')
       setNewChildAttrs({})
       setAdoptInstanceId('')
+      setChildSchemaAttrs([])
+      setChildEnumValues({})
+      setAvailableInstances([])
+      if (initialChildType) {
+        handleChildTypeChange(initialChildType)
+      }
     }
   }, [isOpen, initialChildType])
 
   const handleSubmit = async () => {
     if (!childTypeName) return
     if (addChildMode === 'create') {
+      const typedAttrs = buildTypedAttrs(newChildAttrs, childSchemaAttrs)
       await onSubmit(childTypeName, 'create', {
         name: newChildName,
         description: newChildDesc,
-        attrs: newChildAttrs,
+        attrs: typedAttrs,
       })
     } else {
       await onSubmit(childTypeName, 'adopt', { adoptInstanceId })
@@ -102,7 +147,7 @@ export default function AddChildModal({
                 setChildTypeName(v)
                 setChildTypeSelectOpen(false)
                 setNewChildAttrs({})
-                onChildTypeChange(v)
+                handleChildTypeChange(v)
               }}
               onOpenChange={setChildTypeSelectOpen}
               toggle={(ref: React.Ref<MenuToggleElement>) => (

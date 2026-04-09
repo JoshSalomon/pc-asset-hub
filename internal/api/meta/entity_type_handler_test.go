@@ -170,8 +170,8 @@ func TestT23_14_ListEntityTypesWithDescription(t *testing.T) {
 	etRepo.On("List", mock.Anything, mock.Anything).Return([]*models.EntityType{
 		{ID: "et1", Name: "Model", CreatedAt: now, UpdatedAt: now},
 	}, 1, nil)
-	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{
-		ID: "v1", EntityTypeID: "et1", Version: 2, Description: "A machine learning model",
+	etvRepo.On("GetLatestByEntityTypes", mock.Anything, []string{"et1"}).Return(map[string]*models.EntityTypeVersion{
+		"et1": {ID: "v1", EntityTypeID: "et1", Version: 2, Description: "A machine learning model"},
 	}, nil)
 
 	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types", "", apimw.RoleRO)
@@ -713,6 +713,89 @@ func TestVersionSnapshot_IncomingAssociation(t *testing.T) {
 	assert.Equal(t, "et-server", resp.Associations[0].SourceEntityTypeID)
 	assert.Equal(t, "Server", resp.Associations[0].SourceEntityTypeName)
 	assert.Equal(t, "server", resp.Associations[0].SourceRole)
+}
+
+// TD-59: Entity type list uses batch query for descriptions (no N+1)
+func TestTD59_ListUsesGetLatestByEntityTypes(t *testing.T) {
+	etRepo := new(mocks.MockEntityTypeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupTestServer(etRepo, etvRepo, nil, nil)
+
+	now := time.Now()
+	etRepo.On("List", mock.Anything, mock.Anything).Return([]*models.EntityType{
+		{ID: "et1", Name: "Server", CreatedAt: now, UpdatedAt: now},
+		{ID: "et2", Name: "Tool", CreatedAt: now, UpdatedAt: now},
+	}, 2, nil)
+	// Expect batch call with both IDs
+	etvRepo.On("GetLatestByEntityTypes", mock.Anything, mock.MatchedBy(func(ids []string) bool {
+		return len(ids) == 2
+	})).Return(map[string]*models.EntityTypeVersion{
+		"et1": {ID: "v1", EntityTypeID: "et1", Version: 1, Description: "Server description"},
+		"et2": {ID: "v2", EntityTypeID: "et2", Version: 2, Description: "Tool description"},
+	}, nil)
+
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var rawResp struct {
+		Items []struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"items"`
+		Total int `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rawResp))
+	assert.Equal(t, 2, rawResp.Total)
+	assert.Equal(t, "Server description", rawResp.Items[0].Description)
+	assert.Equal(t, "Tool description", rawResp.Items[1].Description)
+
+	// Verify batch was called, NOT individual GetLatestByEntityType
+	etvRepo.AssertCalled(t, "GetLatestByEntityTypes", mock.Anything, mock.Anything)
+	etvRepo.AssertNotCalled(t, "GetLatestByEntityType", mock.Anything, mock.Anything)
+}
+
+// TD-62: PUT with empty body preserves existing description (omitted field must not erase data)
+func TestTD62_UpdatePreservesDescriptionWhenOmitted(t *testing.T) {
+	etRepo := new(mocks.MockEntityTypeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	assocRepo := new(mocks.MockAssociationRepo)
+	e := setupTestServer(etRepo, etvRepo, attrRepo, assocRepo)
+
+	// Latest version has a description
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{
+		ID: "v1", EntityTypeID: "et1", Version: 1, Description: "important description",
+	}, nil)
+	// Capture the created version to verify its description is preserved
+	etvRepo.On("Create", mock.Anything, mock.MatchedBy(func(v *models.EntityTypeVersion) bool {
+		return v.Description == "important description"
+	})).Return(nil)
+	attrRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	assocRepo.On("BulkCopyToVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1"}, nil)
+	etRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
+
+	// PUT with empty body — description field omitted
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1", `{}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.EntityTypeVersionResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, "important description", resp.Description, "omitted description must be preserved")
+}
+
+// TD-62: PUT with omitted description returns error when latest version not found
+func TestTD62_UpdateOmittedDescriptionLatestVersionError(t *testing.T) {
+	etRepo := new(mocks.MockEntityTypeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	e := setupTestServer(etRepo, etvRepo, nil, nil)
+
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(
+		nil, domainerrors.NewNotFound("EntityTypeVersion", "et1"))
+
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/entity-types/et1", `{}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
 // === Coverage: bind-error and service-error branches ===

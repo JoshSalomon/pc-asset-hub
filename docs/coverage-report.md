@@ -1,6 +1,6 @@
 e# AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-03-25
+Last updated: 2026-04-03
 
 ---
 
@@ -8,12 +8,12 @@ Last updated: 2026-03-25
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1317 | 100% | 92.4% (3489/3774) | — |
+| Backend (Go) | 1460 | 100% | 97.5% (3747/3842) | — |
 | UI — Unit tests (jsdom) | 75 | 100% | — | — |
-| UI — Browser tests (Playwright) | 728 | 100% | 93.1% (2227/2392) | 96.4% (2022/2097) |
+| UI — Browser tests (Playwright) | 857 | 100% | 93.6% (2449/2617) | 96.7% (2221/2297) |
 | UI — System tests (Playwright + live server) | 30 | 100% | — | — |
-| Live system (bash scripts) | 228 | 100% | — | — |
-| **Total** | **2378** | **100%** | — | — |
+| Live system (bash scripts) | 303 | 100% | — | — |
+| **Total** | **2725** | **100%** | — | — |
 
 ---
 
@@ -22,20 +22,20 @@ Last updated: 2026-03-25
 | Package | Coverage | Notes |
 |---------|----------|-------|
 | `internal/api/health` | 90.0% (9/10) | Readyz DB-ping error path |
-| `internal/api/meta` | 99.1% (433/437) | Promote/Demote/Delete RoleRO/RW switch cases unreachable behind RBAC middleware |
+| `internal/api/meta` | 99.8% (483/484) | enum Update bind-error |
 | `internal/api/middleware` | 100.0% (69/69) | |
-| `internal/api/operational` | 98.3% (294/299) | Copy/Replace handlers bind-error branches only |
+| `internal/api/operational` | 98.4% (307/312) | Copy/Replace/Update handlers bind-error branches only |
 | `internal/domain/errors` | 100.0% (32/32) | |
 | `internal/domain/models` | 100.0% (1/1) | |
 | `internal/infrastructure/config` | 100.0% (21/21) | |
 | `internal/infrastructure/gorm/models` | 100.0% (30/30) | |
-| `internal/infrastructure/gorm/repository` | 90.7% (597/658) | GORM error branches on Delete/Update |
+| `internal/infrastructure/gorm/repository` | 91.5% (645/705) | GORM error branches on Delete/Update |
 | `internal/infrastructure/k8s` | 92.6% (50/54) | K8s client error paths |
 | `internal/operator/api/v1alpha1` | 97.7% (85/87) | `DeepCopyObject` nil-receiver guard |
 | `internal/operator/controllers` | 94.3% (198/210) | `SetupWithManager` (envtest — deferred to Phase B), `SetOwnerReference` error branches |
 | `internal/operator/crdgen` | 94.7% (36/38) | `json.Marshal` error guards on well-formed inputs |
-| `internal/service/meta` | 99.5% (739/743) | BulkCopy error paths, requiresDeepCopy edge cases |
-| `internal/service/operational` | 99.8% (852/854) | Cycle guard in resolveParentChain (safety net) |
+| `internal/service/meta` | 99.5% (827/831) | BulkCopy error paths, requiresDeepCopy edge cases |
+| `internal/service/operational` | 99.8% (911/913) | Cycle guard in resolveParentChain (safety net) |
 | `internal/service/validation` | 95.6% (43/45) | |
 
 ### Excluded from Coverage
@@ -78,6 +78,7 @@ These are error-handling branches in handlers where `c.Bind()` fails with malfor
 | `api/meta/attribute_handler.go` | `Edit` | 76.9% | Bind-error branch |
 | `api/meta/attribute_handler.go` | `CopyAttributes` | 75.0% | Bind-error, empty fields branches |
 | `api/meta/attribute_handler.go` | `Reorder` | 66.7% | Bind-error, empty ordered_ids branch |
+| `api/meta/catalog_version_handler.go` | `Promote`/`Demote`/`Delete` | — | RoleRO inline switch case in each (unreachable behind RBAC `requireRW` middleware) |
 | `api/meta/catalog_version_handler.go` | `Create` | 70.0% | Bind-error, pin marshaling branches |
 | `api/meta/enum_handler.go` | `Update` | 66.7% | Bind-error branch |
 | `api/meta/enum_handler.go` | `ReorderValues` | 66.7% | Bind-error branch |
@@ -115,7 +116,26 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 |------|------|-----------------|
 | L44 | `setChildren([])` | Outer catch wraps loop where each iteration has inner try/catch; only fires if Array.filter or setState throws |
 
-**CatalogDetailPage.tsx** (11 statements — page-level handlers for add-child, link, set-parent modals):
+**CatalogVersionDetailPage.tsx** (5 statements — Phase 2 handler guards):
+
+| Line | Code | Why unreachable |
+|------|------|-----------------|
+| L276 | `if (!id) return` | `id` from `useParams()` — always set by route; handler only callable after component renders with valid id |
+| L287 | `if (!id) return` | Same — guard in `handleSaveLabel` |
+| L321 | `if (!id \|\| !selectedEtvId) return` | Same — guard in `handleAddPin`; `selectedEtvId` set before submit button is enabled |
+| L350 | `if (!id) return` | Same — guard in `handleUpdatePinVersion` |
+| L361 | `if (!id) return` | Same — guard in `handleRemovePin` |
+
+**CatalogDetailPage.tsx** (4 statements — Phase 2 handler guards + PF6 Select callback):
+
+| Line | Code | Why unreachable |
+|------|------|-----------------|
+| L276 | `if (!name) return` | `name` from `useParams()` — always set by route |
+| L288 | `if (!name \|\| !cvId) return` | Same — guard in `handleChangeCv`; cvId always set by Select onSelect |
+| L301 | `if (cvListLoading) return` | Debounce guard — async timing makes deterministic testing impractical |
+| L343 | `onOpenChange={(open) => {...}}` | PF6 Select internal callback — fires from PF6's window-level click/key handlers; covered only when PF6's effect listeners are active (not reliably triggered in browser test mode) |
+
+**CatalogDetailPage.tsx** (11 statements — pre-existing page-level handlers for add-child, link, set-parent modals):
 
 | Line | Code | Why unreachable |
 |------|------|-----------------|
@@ -153,9 +173,9 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | `EntityTypeListPage.browser.test.tsx` | 12 | Pass |
 | `EnumDetailPage.browser.test.tsx` | 24 | Pass |
 | `EnumListPage.browser.test.tsx` | 14 | Pass |
-| `CatalogVersionDetailPage.browser.test.tsx` | 28 | Pass |
+| `CatalogVersionDetailPage.browser.test.tsx` | 57 | Pass |
 | `CatalogListPage.browser.test.tsx` | 20 | Pass |
-| `CatalogDetailPage.browser.test.tsx` | 131 | Pass |
+| `CatalogDetailPage.browser.test.tsx` | 137 | Pass |
 | `useCatalogData.browser.test.tsx` | 8 | Pass |
 | `useInstances.browser.test.tsx` | 11 | Pass |
 | `useInstanceDetail.browser.test.tsx` | 7 | Pass |
@@ -178,7 +198,12 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | `OperationalCatalogListPage.browser.test.tsx` | 13 | Pass |
 | `OperationalApp.browser.test.tsx` | 3 | Pass |
 | `useValidation.browser.test.tsx` | 6 | Pass |
-| **Total** | **671** | **100% pass** |
+| `useCatalogDiagram.browser.test.tsx` | 5 | Pass |
+| `CopyCatalogModal.browser.test.tsx` | 5 | Pass |
+| `AttributeFormFields.browser.test.tsx` | 8 | Pass |
+| `EntityTypeDiagram.browser.test.tsx` | 3 | Pass |
+| `LandingPage.browser.test.tsx` | 12 | Pass |
+| **Total** | **777** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
@@ -193,16 +218,51 @@ Coverage is measured using `@vitest/coverage-v8`. The two test suites run indepe
 
 **Browser tests** (primary coverage — exercises full component rendering via Playwright):
 
-| File | Statements | Branches | Functions | Lines |
-|------|-----------|----------|-----------|-------|
-| `src/App.tsx` | 87.7% | 74.4% | 79.6% | 92.7% |
-| `src/api/client.ts` | 90.2% | 86.7% | 86.5% | 90.0% |
-| `src/pages/meta/CatalogVersionDetailPage.tsx` | 84.5% | 71.8% | 92.9% | 89.0% |
-| `src/pages/meta/EnumDetailPage.tsx` | 86.0% | 75.8% | 80.0% | 94.3% |
-| `src/pages/meta/EnumListPage.tsx` | 90.0% | 81.3% | 87.5% | 96.3% |
-| `src/pages/meta/EntityTypeDetailPage.tsx` | 70.8% | 59.0% | 54.3% | 78.7% |
-| `src/pages/meta/EntityTypeListPage.tsx` | 91.7% | 100% | 83.3% | 91.7% |
-| **Total** | **79.1%** | **67.4%** | **70.0%** | **85.6%** |
+| File | Stmts (covered/total) | Stmts % | Lines % |
+|------|-----------------------|---------|---------|
+| `App.tsx` | 275/309 | 89.0% | 92.9% |
+| `api/client.ts` | 92/99 | 92.9% | 92.5% |
+| `components/AddAssociationModal.tsx` | 87/87 | 100% | 100% |
+| `components/AddAttributeModal.tsx` | 39/39 | 100% | 100% |
+| `components/AddChildModal.tsx` | 48/49 | 98.0% | 100% |
+| `components/AttributeFormFields.tsx` | 15/15 | 100% | 100% |
+| `components/CopyAttributesModal.tsx` | 36/36 | 100% | 100% |
+| `components/CopyCatalogModal.tsx` | 12/12 | 100% | 100% |
+| `components/CreateInstanceModal.tsx` | 14/14 | 100% | 100% |
+| `components/EditAssociationModal.tsx` | 85/92 | 92.4% | 92.7% |
+| `components/EditAttributeModal.tsx` | 34/34 | 100% | 100% |
+| `components/EditInstanceModal.tsx` | 19/19 | 100% | 100% |
+| `components/EntityTypeDiagram.tsx` | 83/91 | 91.2% | 90.7% |
+| `components/EnumSelect.tsx` | 9/9 | 100% | 100% |
+| `components/InstanceDetailPanel.tsx` | 8/8 | 100% | 100% |
+| `components/LinkModal.tsx` | 27/27 | 100% | 100% |
+| `components/RenameEntityTypeModal.tsx` | 12/12 | 100% | 100% |
+| `components/ReplaceCatalogModal.tsx` | 17/17 | 100% | 100% |
+| `components/SetParentModal.tsx` | 15/15 | 100% | 100% |
+| `components/ValidationResults.tsx` | 12/12 | 100% | 100% |
+| `context/AuthContext.tsx` | 8/9 | 88.9% | 100% |
+| `hooks/useAssociationManagement.ts` | 49/52 | 94.2% | 100% |
+| `hooks/useAttributeManagement.ts` | 84/92 | 91.3% | 98.8% |
+| `hooks/useCatalogData.ts` | 49/49 | 100% | 100% |
+| `hooks/useCatalogDiagram.ts` | 25/25 | 100% | 100% |
+| `hooks/useContainmentTree.ts` | 60/60 | 100% | 100% |
+| `hooks/useEntityTypeData.ts` | 61/64 | 95.3% | 100% |
+| `hooks/useInstanceDetail.ts` | 47/48 | 97.9% | 97.9% |
+| `hooks/useInstances.ts` | 66/69 | 95.7% | 100% |
+| `hooks/useValidation.ts` | 21/21 | 100% | 100% |
+| `pages/LandingPage.tsx` | 21/21 | 100% | 100% |
+| `pages/meta/CatalogVersionDetailPage.tsx` | 230/256 | 89.8% | 94.6% |
+| `pages/meta/EntityTypeDetailPage.tsx` | 153/159 | 96.2% | 100% |
+| `pages/meta/EntityTypeListPage.tsx` | 11/12 | 91.7% | 91.7% |
+| `pages/meta/EnumDetailPage.tsx` | 97/113 | 85.8% | 93.6% |
+| `pages/meta/EnumListPage.tsx` | 57/63 | 90.5% | 96.5% |
+| `pages/operational/CatalogDetailPage.tsx` | 261/282 | 92.6% | 99.6% |
+| `pages/operational/CatalogListPage.tsx` | 74/90 | 82.2% | 89.3% |
+| `pages/operational/OperationalCatalogDetailPage.tsx` | 60/61 | 98.4% | 100% |
+| `utils/buildTypedAttrs.ts` | 10/10 | 100% | 100% |
+| `utils/dnsLabel.ts` | 3/3 | 100% | 100% |
+| `utils/statusColor.ts` | 5/6 | 83.3% | 83.3% |
+| **All files (42)** | **2391/2561** | **93.4%** | **96.7% (2167/2240)** |
 
 **Unit tests** (supplemental — covers components that work in jsdom without browser):
 
@@ -519,6 +579,141 @@ Backend test count: 1261 → 1255 (net -6: removed 68 legacy tests, added 62 new
 Service/meta: 94.6% → 99.5% (+4.9pp). Service/operational: 98.8% → 99.8% (+1.0pp).
 Backend coverage: 94.0% → 94.3% (improved by removing uncovered legacy code).
 Live test count: 81 → 89 (added test-copy-replace.sh to Makefile target).
+
+### New Code Coverage (Session 012 — Foundation Cleanup Phase 1)
+
+| TD | Change | Coverage |
+|----|--------|----------|
+| TD-62 | Fix UpdateEntityType omitted-field data loss (`*string`) | 100% (3 new tests) |
+| TD-27 | Fix ListContainedInstances pagination (`parseListParams`) | 100% (2 new tests) |
+| TD-2 | Verify CV label uniqueness constraint | 100% (1 verification test) |
+| TD-3 | Verify association name uniqueness | Already covered (TestTE107) |
+| TD-16 | Fix catalog deletion cascade (IAVs + links) | 100% (4 new tests + 1 integration test) |
+| TD-59 | Fix N+1 query in entity type list (batch `GetLatestByEntityTypes`) | 100% (2 new tests + 1 integration test + 1 error branch test) |
+
+New lines: **0 uncovered** (verified by arithmetic check: script reported 0, math confirms).
+
+Per-file coverage deltas (modified files only):
+
+| Package | Before | After | Delta |
+|---------|--------|-------|-------|
+| `api/meta` | 99.1% (433/437) | 98.9% (450/455) | +17 covered, +18 total (pre-existing uncov in unmodified file) |
+| `api/operational` | 98.3% (294/299) | 98.3% (296/301) | +2 covered, +2 total |
+| `gorm/repository` | 90.7% (597/658) | 90.9% (610/672) | +13 covered, +14 total |
+| `service/operational` | 99.8% (852/854) | 99.8% (863/865) | +11 covered, +11 total |
+
+Backend test count: 1255 → 1329 (+74 new tests including sub-tests). Overall: 97.2% (3531/3632).
+
+### New Code Coverage (Session 013 — Phase 2: Missing CRUD Capabilities)
+
+| US | Change | Coverage |
+|----|--------|----------|
+| US-49 | CV metadata edit (label + description) — `UpdateCatalogVersion` service + handler | 100% (8 service + 5 handler tests) |
+| US-50 | Catalog metadata edit (name + description) — `UpdateMetadata` service + handler | 100% (15 service + 7 handler tests) |
+| US-51 | Catalog re-pinning (change CV) — extends `UpdateMetadata` | 100% (included in US-50 tests) |
+| US-52 | CV pin editing (add/remove) — `AddPin`/`RemovePin` service + handler | 100% (11 service + 6 handler tests) |
+
+New lines: **0 uncovered** (verified by arithmetic: script + manual per-package delta).
+
+Per-file coverage deltas (modified files only):
+
+| Package | Phase 1 (before) | Phase 2 (after) | Delta |
+|---------|---------|--------|-------|
+| `api/meta` | 98.9% (450/455) | 99.0% (474/479) | +24 covered, +24 total |
+| `api/operational` | 98.3% (296/301) | 98.4% (307/312) | +11 covered, +11 total |
+| `gorm/repository` | 90.9% (610/672) | 91.2% (631/692) | +21 covered, +20 total (improved) |
+| `service/meta` | 99.5% (739/743) | 99.5% (780/784) | +41 covered, +41 total |
+| `service/operational` | 99.8% (863/865) | 99.8% (910/912) | +47 covered, +47 total |
+
+Backend test count: 1329 → 1388 (+59 new tests). Overall: 97.4% (3676/3776).
+
+Quality review fixes: C-1 (RemovePin pin_id), I-1 (RequireWriteAccess middleware), I-2 (AddPin response), I-3 (single Update call), I-4 (11 live test cases), S-3 (param rename). Added TD-65, TD-66 to PRD.
+
+### New Code Coverage (Session 014 — US-53: CV Pin Management)
+
+| Change | Coverage |
+|--------|----------|
+| Fix AddPin entity type check (check TYPE ID, not ETV ID) | 100% (1 new test + 1 error path test) |
+| UpdatePin service (change pinned version, entity type mismatch guard) | 100% (8 service tests) |
+| UpdatePin handler (PUT /catalog-versions/:id/pins/:pin-id) | 100% (5 handler tests) |
+| Pin Update GORM impl | 100% (1 integration test) |
+
+New lines: **0 uncovered** (verified by arithmetic).
+
+Per-file coverage deltas:
+
+| Package | Before | After | Delta |
+|---------|--------|-------|-------|
+| `api/meta` | 474/479 (5 uncov) | 484/489 (5 uncov) | +10 covered, +10 total |
+| `gorm/repository` | 632/692 (60 uncov) | 635/695 (60 uncov) | +3 covered, +3 total |
+| `service/meta` | 782/786 (4 uncov) | 805/809 (4 uncov) | +23 covered, +23 total |
+
+Backend test count: 1392 → 1408 (+16 new tests). Overall: 97.4% (3716/3815).
+
+### New Code Coverage (Session 015 — Phase 2 UI + Browser Test Fixes)
+
+**UI changes (CatalogVersionDetailPage.tsx, CatalogDetailPage.tsx, client.ts, types/index.ts):**
+
+| Component | Change | Coverage |
+|-----------|--------|----------|
+| `CatalogVersionDetailPage.tsx` | Inline edit (description, label), Add/Remove/Update Pin, BOM version dropdown | 96.2% stmts |
+| `CatalogDetailPage.tsx` | Inline edit (description), CV selector dropdown | 92.6% stmts |
+| `client.ts` | `catalogVersions.update`, `addPin`, `updatePin`, `removePin`, `catalogs.update` | Covered via page tests + client tests |
+| `types/index.ts` | `pin_id` field on `CatalogVersionPin` | Type only |
+
+New UI lines: **9 uncovered** (5 `useParams` guards + 1 debounce guard + 1 PF6 callback + 2 `useParams`/param guards in CatalogDetailPage).
+
+Browser test count: 774 → 777 (+3 coverage tests for BOM version dropdown toggle, Escape close, and version load error).
+
+**PF6 Select-in-Modal fix:** Extracted `PinEntityTypeSelect` and `PinVersionSelect` wrapper components that manage their own `isOpen` state. This prevents the parent component (and Modal) from re-rendering when the dropdown opens, avoiding PF6 Modal's `toggleSiblingsFromScreenReaders` from setting `aria-hidden` on the Popper portal.
+
+**Test fixes:** Added `exact: true` to `getByRole('button', { name: 'Model' })` to disambiguate from "Version for Model" aria-label. Fixed Add Pin test data to include unpinned entity types (filtering removes already-pinned). Used `data-testid` on SelectOptions to bypass `aria-hidden` for Select dropdowns inside Modals.
+
+Per-file coverage deltas:
+
+| File | Before | After | Delta |
+|------|--------|-------|-------|
+| `CatalogVersionDetailPage.tsx` | 84.5% stmts | 96.2% stmts | +11.7pp |
+| `CatalogDetailPage.tsx` | 92.6% stmts | 92.6% stmts | 0pp (new lines offset by new guards) |
+| `client.ts` | 90.2% stmts | 90.2% stmts | 0pp (new methods covered by page/client tests) |
+
+Live test count: 239 → 242 (+3 new US-53 tests: UpdatePin, entity type mismatch 400, AddPin duplicate entity type 409).
+
+### New Code Coverage (Session 016 — Phase 2c Security Fixes + Phase 3 Cleanup)
+
+**Backend changes:**
+
+| File | Change | Coverage |
+|------|--------|----------|
+| `catalog_version_handler.go` | Add `mapRole` call in `Update` for stage guard (TD-71) | 100% new lines |
+| `catalog_version_service.go` | Rename `checkPinEditAllowed` → `checkCVEditAllowed`, add stage guard to `UpdateCatalogVersion` | 100% new lines |
+| `catalog_handler.go` | Fix validate route to use `writeMiddleware` (published catalog bypass fix) | Routing only |
+
+**UI changes:**
+
+| File | Change | Coverage |
+|------|--------|----------|
+| `CatalogVersionDetailPage.tsx` | Unify `canEdit`/`canEditPins` with stage guard logic | 100% new lines |
+| `CatalogDetailPage.tsx` | Add `canValidate` guard (block validate on published unless SuperAdmin) | 100% new lines |
+
+New backend tests: **+3 coverage tests** for previously uncovered handler branches:
+- `TestCVUpdate_MapRole_RO` — exercises `mapRole` RO case by bypassing `requireRW` middleware
+- `TestCVUpdate_MapRole_Unknown` — exercises `mapRole` default case by injecting unknown role into context
+- `TestCVPromote_WithWarnings` — exercises Promote warnings loop body with mock catalog repo returning draft/invalid catalogs
+
+Per-file coverage deltas:
+
+| Package/File | Before | After | Delta |
+|-------------|--------|-------|-------|
+| `api/meta` | 484/489 (5 uncov) | 495/499 (4 uncov) | +11 covered, +10 total, **-1 uncov** |
+| `api/operational` | 307/312 (5 uncov) | 307/312 (5 uncov) | unchanged |
+| `service/meta` | 805/809 (4 uncov) | 821/825 (4 uncov) | +16 covered, +16 total |
+| `CatalogVersionDetailPage.tsx` | 230/256 (89.8%) | 232/258 (89.9%) | +2 covered, +2 total |
+| `CatalogDetailPage.tsx` (op) | 261/282 (92.6%) | 262/283 (92.6%) | +1 covered, +1 total |
+
+Backend test count: 1409 → 1450 (+41 new tests including TD-71 stage guard + coverage tests).
+Browser test count: 777 → 784 (+7 tests).
+Live test count: 242 → 303 (+61 tests across multiple scripts).
 
 ### Coverage Gaps to Address
 

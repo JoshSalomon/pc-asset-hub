@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import {
   PageSection,
   Title,
@@ -49,6 +49,7 @@ interface Props {
 export default function EntityTypeDetailPage({ role }: Props) {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const canEdit = role === 'Admin' || role === 'SuperAdmin'
 
@@ -184,7 +185,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
 
   return (
     <PageSection>
-      <Button variant="link" onClick={() => navigate('/schema')} style={{ marginBottom: '1rem' }}>
+      <Button variant="link" onClick={() => navigate((location.state as { from?: string })?.from || '/schema')} style={{ marginBottom: '1rem' }}>
         &larr; Back
       </Button>
 

@@ -18,7 +18,9 @@ type EntityTypeRepository interface {
 type EntityTypeVersionRepository interface {
 	Create(ctx context.Context, etv *models.EntityTypeVersion) error
 	GetByID(ctx context.Context, id string) (*models.EntityTypeVersion, error)
+	GetByIDs(ctx context.Context, ids []string) ([]*models.EntityTypeVersion, error)
 	GetByEntityTypeAndVersion(ctx context.Context, entityTypeID string, version int) (*models.EntityTypeVersion, error)
 	GetLatestByEntityType(ctx context.Context, entityTypeID string) (*models.EntityTypeVersion, error)
+	GetLatestByEntityTypes(ctx context.Context, entityTypeIDs []string) (map[string]*models.EntityTypeVersion, error)
 	ListByEntityType(ctx context.Context, entityTypeID string) ([]*models.EntityTypeVersion, error)
 }

@@ -379,7 +379,7 @@ Phase 8 (Copy & Replace)     -- needs Phase 7 for publish/unpublish context
 
 ## Out of Scope
 
-- Catalog re-pinning (upgrading a catalog to a newer CV) — PRD TD-12, future capability
+- ~~Catalog re-pinning (upgrading a catalog to a newer CV)~~ — implemented in Phase 2 (US-51)
 - Entity type CRDs (full schema as K8s resources) — PRD future scope
 - Hub-and-spoke topology — PRD section 8.4, future enhancement
 - Multi-namespace catalog publishing — FF-9, future enhancement

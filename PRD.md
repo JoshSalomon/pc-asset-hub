@@ -23,7 +23,7 @@ This configuration is itself versioned and subject to lifecycle management.
 A **catalog** is a named collection of entity instances that uses a catalog version (CV) as its schema. The CV determines which entity types, attributes, and associations are available; the catalog holds the actual data.
 
 - Multiple catalogs can share the same CV (e.g., "Production App A" and "Staging App B" both use CV v2.0 but contain different assets).
-- A catalog is pinned to a single CV at creation. In v1, this pin is immutable — to use a new CV, create a new catalog. Re-pinning (upgrading a catalog to a newer CV) is a future capability.
+- A catalog is pinned to a single CV at creation. The pin can be changed via re-pinning (`PUT /catalogs/{name}` with `catalog_version_id`), which resets validation status to `draft`. Published catalogs must be unpublished before re-pinning.
 - Each catalog has a **validation status**: `draft` (incomplete, work in progress), `valid` (all constraints satisfied), or `invalid` (constraints violated, e.g., after a CV schema change).
 - Entity instances are created freely in a catalog without immediate validation (draft mode). Validation runs on demand or at lifecycle gates.
 
@@ -708,7 +708,7 @@ As an RW user, I want to create a catalog version that pins specific entity defi
 Acceptance Criteria:
 - RW (and above) users can create a new catalog version by specifying a version label, an optional description, and selecting specific entity definition versions to include.
 - The catalog version records the exact `(entity type name, version)` tuples it contains.
-- Once created, the catalog version's entity version pins cannot be changed (immutable snapshot). The description can be updated.
+- Entity version pins can be added or removed after creation (see US-52). The version label and description can be updated (see US-49).
 - The catalog version is created in the Development lifecycle stage.
 - The catalog version has a unique identifier.
 - RO users cannot create catalog versions; the API returns a 403.
@@ -1289,8 +1289,10 @@ Acceptance Criteria:
 - Data mutations (create/update/delete instance, create/delete link, set parent) on a published catalog require SuperAdmin role. RW and Admin users receive 403.
 - RW users see instance create/edit/delete controls disabled on published catalogs with a tooltip explaining the restriction.
 - Published catalogs show a warning banner: "This catalog is published. Editing requires SuperAdmin privileges."
-- SuperAdmin edits still reset validation status to `draft` (same behavior as unpublished catalogs).
-- Validation (POST .../validate) remains available to RW+ users on published catalogs — it is a read operation.
+- SuperAdmin **data mutations** (instance/link changes) reset validation status to `draft` (same behavior as unpublished catalogs).
+- **Catalog metadata edits** (description change) by SuperAdmin are treated as cosmetic changes — they do NOT reset validation status or unpublish the catalog. The Catalog CR is synced to reflect the updated description without disrupting published state. This allows fixing typos or adding context to a published catalog without triggering re-validation.
+- Renaming or re-pinning (CV change) on published catalogs is blocked entirely — these are structural changes that require unpublish → edit → re-validate → republish.
+- Validation (POST .../validate) on published catalogs requires SuperAdmin role — validation writes the `validation_status` field, making it a data mutation subject to write protection. RW and Admin users receive 403 when attempting to validate a published catalog.
 - Catalog-level operations (delete catalog, unpublish) require Admin+ regardless of published state.
 
 ---
@@ -1416,6 +1418,76 @@ Acceptance Criteria:
 
 ---
 
+**US-49: Edit catalog version metadata**
+As a schema admin, I want to update a catalog version's version label and description after creation, so that I can fix typos or clarify the CV's purpose without recreating it.
+
+**Why**: CV metadata (label and description) is currently immutable after creation. Typos in labels or descriptions require deleting and recreating the CV, which breaks any catalogs pinned to it.
+
+Acceptance Criteria:
+- RW (and above) users can update a CV's version label and/or description via `PUT /api/meta/v1/catalog-versions/:id` with `{version_label?, description?}`.
+- Omitted fields are preserved (use `*string` pattern — nil means "don't change").
+- Version label uniqueness is enforced — duplicate labels return 409.
+- The CV detail page shows inline Edit buttons next to version label and description (same pattern as EntityTypeDetailPage).
+- RO users cannot update; the API returns 403.
+- **Lifecycle stage guards apply to CV metadata edits** (same rules as pin editing per TD-69): edits are blocked entirely on production CVs (400), restricted to SuperAdmin on testing CVs (400 for RW/Admin), and allowed for RW+ on development CVs.
+- The UI hides Edit buttons on the CV detail page when the lifecycle stage prohibits editing for the current user's role.
+
+---
+
+**US-50: Edit catalog metadata**
+As a catalog owner, I want to rename or update the description of my catalog, so that I can correct metadata without recreating the catalog and losing all instance data.
+
+**Why**: Catalog name and description are set at creation and cannot be changed. Typos or evolving naming conventions force users to copy the catalog to a new name and delete the old one — a disruptive workflow for catalogs with hundreds of instances.
+
+Acceptance Criteria:
+- RW (and above) users can update a catalog's name and/or description via `PUT /api/data/v1/catalogs/{catalog-name}` with `{name?, description?}`.
+- Omitted fields are preserved (`*string` pattern).
+- Name changes require DNS-label validation and uniqueness check (409 on duplicate).
+- Published catalogs: only SuperAdmin can edit, and rename is not allowed (only description can be changed). Returns 403 for non-SuperAdmin, 400 for rename attempt on published catalog.
+- `RequireWriteAccess` + `RequireCatalogAccess` middleware applied to the PUT route.
+- Any change resets validation status to `draft`.
+- The catalog detail page shows an inline Edit button for description (same pattern as EntityTypeDetailPage).
+- RO users cannot update; the API returns 403.
+
+---
+
+**US-51: Catalog re-pinning (change CV)**
+As a catalog owner, I want to switch my catalog to a different catalog version, so that I can upgrade the schema without recreating the catalog.
+
+**Why**: When entity types evolve and a new CV is created with updated pins, existing catalogs are stuck on the old CV. Without re-pinning, the only option is to copy the catalog to a new one pinned to the new CV — losing the original catalog name and requiring manual data migration.
+
+Acceptance Criteria:
+- RW (and above) users can re-pin a catalog by including `catalog_version_id` in `PUT /api/data/v1/catalogs/{catalog-name}`.
+- The new CV must exist; returns 404 if not found.
+- Re-pinning resets validation status to `draft` (instance data may not conform to the new schema).
+- Published catalogs cannot be re-pinned — must unpublish first. Returns 400 with clear error.
+- The catalog detail page shows a CV selector dropdown (list of available CVs) for Admin+ users.
+- RO users cannot re-pin; the API returns 403.
+
+---
+
+**US-52: Edit catalog version pins (add/remove/change version)**
+As a schema admin, I want to add, remove, or change the version of entity type pins in a catalog version, so that I can evolve the bill of materials without recreating the CV.
+
+**Why**: CVs are currently immutable after creation. Adding a new entity type to a schema requires deleting and recreating the CV, which breaks all catalogs pinned to it. Changing the pinned version of an entity type (e.g., upgrading from V1 to V2 after adding attributes) is the most common schema evolution operation.
+
+Acceptance Criteria:
+- **Add pin**: `POST /api/meta/v1/catalog-versions/:id/pins` with `{entity_type_version_id}` adds a pin.
+- The entity type version must exist; returns 404 if not found.
+- **Unique entity type constraint**: A CV cannot have two pins for the same entity type. If the entity type (not just the specific version) is already pinned, AddPin returns 409 with a message identifying the existing pin. The check uses the entity type ID resolved from the ETV, not the ETV ID itself.
+- **Change pin version**: `PUT /api/meta/v1/catalog-versions/:id/pins/:pin-id` with `{entity_type_version_id}` changes the pinned version. The new ETV must belong to the same entity type as the existing pin. Returns 400 if the entity type doesn't match.
+- **Remove pin**: `DELETE /api/meta/v1/catalog-versions/:id/pins/:pin-id` removes a pin.
+- Removing a pin that has instances in catalogs using this CV is allowed but logs a warning.
+- Requires RW+ role; RO returns 403.
+- **Stage guards (TD-69)**: Pin editing is restricted by catalog version lifecycle stage:
+  - **development**: RW+ allowed (standard permission).
+  - **testing**: SuperAdmin only. *Note: this policy is provisional and may be relaxed to Admin+ in the future if operational experience shows it is too restrictive.*
+  - **production**: blocked entirely, regardless of role. Returns validation error.
+- **UI — BOM tab**: The version column is an inline dropdown showing all available versions of the entity type. Selecting a different version calls the change pin endpoint. Pin controls (Add Pin, Remove, version dropdown) are hidden when the CV stage does not permit editing for the current role.
+- **UI — Add Pin modal**: The entity type dropdown filters out entity types that are already pinned in this CV. Only unpinned entity types are shown.
+
+---
+
 ## 10. Open Design Decisions
 
 The following items are acknowledged but not yet fully specified:
@@ -1436,75 +1508,7 @@ The following items are acknowledged but not yet fully specified:
 
 ## 11. Technical Debt
 
-Items where the current implementation diverges from the intended behavior described in this PRD. These should be addressed in priority order.
-
-| ID | Item | Current Behavior | Required Behavior |
-|----|------|-----------------|-------------------|
-| TD-1 | Enum deletion safety | Enum delete checks if any attribute references it across all entity type versions (flat check) | Enum cannot be deleted if it is used by any attribute in a **used entity version**. A used entity version is defined as: (1) any entity type version pinned by a catalog version, or (2) the latest version of any entity type (which belongs to an implicit pre-production catalog). Unused historical versions that are not pinned by any CV and are not the latest version should not block deletion. |
-| TD-2 | Catalog version timestamp uniqueness | Two catalog versions can have the same `created_at` timestamp, causing non-deterministic sort order | `created_at` must be unique across catalog versions. The backend should enforce this (e.g., retry with a small delay if a timestamp collision is detected). This ensures deterministic sort order in the CV list (`ORDER BY created_at DESC`). |
-| TD-3 | Association target+role uniqueness | No uniqueness constraint on (target entity type, target role) per source entity type version | Target entity type + target role must be unique per source entity type version. Empty target role is valid (one allowed per target). API should reject duplicates with 409 Conflict. |
-| ~~TD-4~~ | ~~Copy attributes dialog: enum name display~~ | **RESOLVED.** Copy picker now uses `enum_name` from snapshot to show "enum (MonthName)" instead of just "enum". |
-| TD-5 | Version lineage tracking | Entity type versions are sequential integers with no parent tracking. Version 4 is created from version 3, but this relationship is not recorded. | Each entity type version should record which version it was derived from (`parent_version_id`). This enables: (1) understanding the edit history as a DAG rather than a flat list, (2) supporting future scenarios where editing from a catalog version context creates a branch, (3) detecting when two catalog versions diverge from a common base version. **Decision: deferred for v1.** The current simple incrementing scheme is sufficient for the initial release. Revisit when implementing edit-from-CV-context or version branching features (see FF-3). |
-| TD-6 | Duplicate DTO mapping logic | Attribute and Association model-to-DTO conversion is duplicated across handlers (attribute_handler, association_handler, entity_type_handler VersionSnapshot) | Extract shared helper functions (e.g., `dto.ToAttributeResponse`, `dto.ToAssociationResponse`) to eliminate duplication. All handlers should use these helpers instead of inline conversion loops. |
-| TD-7 | Bidirectional association removal only from source | A bidirectional association can only be removed from the entity type that created it (the source/outgoing side). From the target entity type's Associations tab, the Remove button is hidden for incoming associations, including bidirectional ones. | Since bidirectional associations are symmetric, the Remove button should be available from either side. Removing from the target side should delete the same association record. The UI currently hides Remove for all incoming associations — bidirectional should be an exception. |
-| TD-8a | Extract shared EditAssociationModal component | Edit association modal is duplicated between `App.tsx` (diagram edit) and `EntityTypeDetailPage.tsx` (associations tab edit) — ~110 lines of duplication | Extract into shared `ui/src/components/EditAssociationModal.tsx` with props for `showEntityTypeNames`, `allowTypeChange`, `onSave`. |
-| TD-8b | Consolidate edit modal state into a single object | Diagram edit modal in `App.tsx` uses 12 separate `useState` calls for one form | Group into a single state object or move into the shared component from TD-8a. |
-| TD-8c | Extract diagram data loading into a custom hook | `App.tsx` and `CatalogVersionDetailPage.tsx` both have `loadDiagramData` functions that fetch snapshots and build `DiagramEntityType[]` | Extract into `ui/src/hooks/useDiagramData.ts` with `loadFromAllEntityTypes()` and `loadFromPins(pins)` methods. |
-| ~~TD-8d~~ | ~~Extract EdgeClickData interface~~ | **RESOLVED.** Exported `EdgeClickData` interface from `EntityTypeDiagram.tsx`, imported in `App.tsx`. | |
-| ~~TD-9~~ | ~~Show required attributes in diagram~~ | **RESOLVED.** Required attributes prefixed with `*` in diagram UML nodes. | |
-| TD-10 | Mutable CVs in development mode | CV pins are immutable — entity types are pinned at creation and cannot be changed | In development stage, CVs should be mutable: add/remove entity type pins, change pinned versions. Pins are frozen only on promotion to testing. Catalogs cannot be created against a development-stage CV. If a CV with existing catalogs is demoted back to development, modified, and re-promoted, all catalogs pinned to that CV must be re-validated — they may become invalid if entity types were removed or attribute schemas changed. |
-| TD-11 | Show mandatory associations in UI | Associations with cardinality `1` or `1..n` are not visually distinguished from optional ones | On the entity detail page, BOM modal, and diagram, show a mandatory indicator (e.g., `*` or bold) on the side of the association where cardinality starts with `1`. For example, mcp-tool's containment by mcp-server (cardinality `1` on source) shows as mandatory on the mcp-tool detail screen but NOT on the mcp-server detail screen (where the target cardinality `0..n` is optional). The indicator appears only from the perspective of the entity that is required to have the association. |
-| TD-12 | Catalog re-pinning | A catalog's CV pin is immutable — to use a new CV, create a new catalog | Allow upgrading a catalog to a newer CV. Requires data migration validation: check that all entity instances are still valid under the new CV's schema. Report incompatibilities and let the user resolve them before completing the re-pin. |
-| TD-13 | Get catalog version by name | CV can only be retrieved by ID; no lookup by version_label | Add `GET /api/meta/v1/catalog-versions/by-name/:label` endpoint for name-based lookup. The K8s CR already uses the label as its name. |
-| TD-14 | Catalogs using this CV | CatalogVersion detail page does not show which catalogs are pinned to it | Add a "Catalogs" section on the CatalogVersion detail page listing catalogs pinned to that CV, with name, validation status, and link to catalog detail. |
-| ~~TD-15~~ | ~~Catalog cascade delete needs transaction~~ | **RESOLVED.** Wrapped instance soft-delete + catalog hard-delete in `TransactionManager.RunInTransaction`. | |
-| TD-16 | Mixed soft-delete/hard-delete on catalog deletion | Instances are soft-deleted (`deleted_at` set) but the catalog itself is hard-deleted. Soft-deleted instances with no parent catalog accumulate as dead rows. | Either hard-delete instances when the catalog is deleted (since the catalog is hard-deleted, there's no recovery path anyway), or soft-delete the catalog too. Also consider a periodic cleanup job for orphaned soft-deleted instances. |
-| ~~TD-17~~ | ~~Catalog list pagination~~ | **RESOLVED.** Added `limit` and `offset` query params to `ListCatalogs` handler. Default 20, max 100. Instance list handler already had pagination. | |
-| TD-18 | UI component props style inconsistency | Minor style issue: some components use a named `interface Props { ... }` for their parameter type (e.g., `EnumListPage`), while others use inline destructured types (e.g., `CatalogListPage`: `{ role }: { role: Role }`). Both are functionally identical. | Pick one convention and apply it consistently across all page components. The named `Props` interface is more common in the codebase and scales better when props grow. Low priority — a future style alignment pass. |
-| TD-19 | N+1 query in resolveEntityType | `InstanceService.resolveEntityType` iterates all CV pins and calls `etvRepo.GetByID` for each to find the matching entity type | Replace the per-pin query loop with a batch fetch or a join query that resolves entity type ID → pinned version in one call. Acceptable for now since CVs typically have 3-5 pins; becomes a problem at 20+. |
-| ~~TD-20~~ | ~~Missing name validation on instance creation~~ | **RESOLVED.** Added `strings.TrimSpace(name) == ""` validation in both `CreateInstance` and `CreateContainedInstance`. Returns `"instance name is required"` error. | |
-| ~~TD-21~~ | ~~Remove catalog_version_id migration code~~ | **RESOLVED.** Migration code removed from `InitDB`. All environments have been migrated. | |
-| ~~TD-23~~ | ~~CatalogDetailPage component too large~~ | **RESOLVED (Phases 1-3 complete).** Decomposed 3 page components (2834 lines total) into 6 hooks + 12 components (18 new files). CatalogDetailPage: 1208→740 lines. EntityTypeDetailPage: 1198→583 lines. OperationalCatalogDetailPage: 428→257 lines. 134 new tests, 92.9% UI coverage. Phase 4 (modal internalization) deferred. See `docs/plans/2026-03-24-component-decomposition.md`. |
-| ~~TD-24~~ | ~~Remove legacy EntityInstanceService~~ | **RESOLVED.** Removed `entity_instance_service.go`, `entity_instance_service_test.go`, legacy `Handler` from `handler.go`, `handler_test.go`, `additional_tests_test.go`, `coverage_test.go`, and legacy route registration from `main.go`. | |
-| ~~TD-25~~ | ~~Replace `interface{}` with `any` across codebase~~ | **RESOLVED.** Replaced in 9 files. | |
-| TD-26 | Extract shared instance creation logic (M5) | `CreateInstance` and `CreateContainedInstance` share ~70% of logic (instance model creation, attribute validation, persistence, validation status reset, attribute resolution). | Extract a private `createInstanceInternal` method that both call, passing `parentID` (empty for root) and containment validation as optional steps. |
-| TD-27 | ListContainedInstances pagination broken by in-memory filtering (M7) | `ListContainedInstances` fetches children with `ListByParent` (which respects limit/offset), then filters by entity type in memory. This can return fewer results than limit or miss results entirely when the parent has children of multiple types. | Push the entity type filter into the repository query (add `ListByParentAndType` method), or fetch all children without pagination and paginate after filtering. |
-| ~~TD-29~~ | ~~Reject reserved entity type names~~ | **RESOLVED.** Added `reservedEntityTypeNames` blocklist (`links`, `references`, `referenced-by`, `copy`, `replace`, `tree`, `validate`, `publish`, `unpublish`) checked in both `CreateEntityType` and `RenameEntityType`. | |
-| ~~TD-30~~ | ~~Add catalog ownership check on instance read/update/delete~~ | **RESOLVED.** Added `inst.CatalogID != catalog.ID` check in `GetInstance`, `UpdateInstance`, and `DeleteInstance`. Returns NotFound if mismatch. | |
-| TD-31 | Create new container from contained instance's Set Container modal | The Set Container modal only allows selecting existing parent instances. Users cannot create a new container directly from the child side — they must first create the container via the parent entity type tab, then come back and set it. | Add a "Create New" mode to the Set Container modal (similar to the "Create New / Adopt Existing" toggle in the Add Contained Instance modal). The natural flow is parent-first, so this is a convenience feature, not a critical gap. |
-| TD-32 | Diagram: overlapping edges between same entity pair | When two or more associations exist between the same pair of entity types (e.g., mcp-tool → guardrail with both "uses" and "validates"), the edges overlap into a single line with two labels stacked on top of each other. | Add edge offset or curvature so multiple edges between the same pair are visually distinct. Dagre layout doesn't natively support parallel edges — options include: (a) adding a small vertical offset per duplicate edge, (b) using quadratic bezier curves with different control points, or (c) bundling labels into a single edge with a multi-line label. |
-| TD-33 | "Contained by" flickers UUID before showing parent name | When opening instance details for a contained entity, the parent UUID briefly flashes before the async API call resolves the parent name. | Either (a) include `parent_instance_name` in the instance list API response so no extra fetch is needed, or (b) show a spinner/placeholder instead of the raw UUID while loading. Option (a) is cleaner — resolve the parent name server-side in `ListInstances`/`GetInstance`. |
-| ~~TD-34~~ | ~~`SetParentRequest.ParentType` missing validation~~ | **RESOLVED.** Added explicit `parent_type is required` check in `SetParent` handler. Returns 400 with clear error message. | |
-| ~~TD-35~~ | ~~Operational catalog detail page too large~~ | **RESOLVED.** Extracted `useContainmentTree` hook + `InstanceDetailPanel` component. 428→257 lines, 15→5 useState. See TD-23 resolution. |
-| TD-37 | Reference direction unclear in tree browser detail panel | In the instance detail panel, directional associations show under "Forward References" and "Referenced By" sections with a "Type" column showing "directional". It is not clear which direction the association goes — the user cannot tell whether the selected instance depends on the target or vice versa. The association name alone may not convey direction (e.g., "uses-model" is clear, but "related-to" is not). | Show an arrow or directional indicator in the reference table: e.g., "my-server → gpt-4" for forward refs and "monitor-1 → my-server" for reverse. Alternatively, use role labels from the association definition (source_role/target_role) to clarify the relationship semantics. Consider replacing the generic "directional" type label with the actual role or a "depends on" / "depended by" phrasing. |
-| TD-38 | Entity type tab selector doesn't scale in meta catalog detail | The meta UI `CatalogDetailPage` uses PatternFly Tabs with one tab per entity type. When a catalog has many entity types (10+), the tabs overflow a single row and become hard to navigate. | Options: (A) Replace tabs with a sidebar or dropdown selector. (B) Add a search/filter input above the tabs. (C) Use PatternFly's scrollable tabs variant (`isOverflowHorizontal`). (D) Switch to a two-pane layout similar to the operational UI's tree browser. |
-| ~~TD-36~~ | ~~Review usefulness of Overview tab in operational catalog view~~ | **RESOLVED.** Overview tab removed (TD-56). Tree Browser is now the default tab. See TD-56 for future re-addition with useful content. |
-| TD-28 | Phase 3 code quality improvements (L1-L5, L7) | Multiple low-severity issues from quality review: (L1) duplicated forward/reverse reference handler conversion logic, (L2) dead `_ = parentInst`/`_ = sourceInst` assignments, (L3) JSON tags on service-layer `ReferenceDetail`, (L4) N+1 queries in `resolveLinks`, (L5) CatalogDetailPage now has ~30 state variables and should be decomposed, (L7) silently swallowed `UpdateValidationStatus` errors. | Extract `refsToDTO` helper in handler. Clean up dead assignments. Remove JSON tags from service types. Add batch fetch for links resolution. Decompose CatalogDetailPage into sub-components. Log validation status update failures. |
-| TD-39 | CopyCatalog sequential instance creation doesn't scale | `CopyCatalog` creates instances one at a time via N individual `instRepo.Create` calls, plus N `GetCurrentValues` and N `GetForwardRefs` calls. For catalogs with 1000+ instances this is slow. | Add `CreateBatch` method to `EntityInstanceRepository` that inserts multiple instances in a single query. Similarly batch `SetValues` and link creation. Low priority — catalogs currently have <100 instances. |
-| TD-40 | `SyncCR` uses unstructured logging | `SyncCR` in `catalog_service.go` uses `log.Printf("warning: ...")` (Go's default logger). In production this produces unstructured text logs that are hard to filter and correlate in centralized logging systems. | Replace `log.Printf` with structured logging (e.g., `slog.Warn` or a project-standard logger) that includes catalog name, error, and operation context as structured fields. Apply the same fix to any other `log.Printf` calls in the codebase. |
-| ~~TD-41~~ | ~~Show entity description in table views~~ | **PARTIALLY RESOLVED.** Operational catalog list shows Description column (catalog has its own description). Entity type list and BOM pins table have the UI column but the API does not return description — see TD-43 and TD-44. |
-| TD-43 | Entity type list missing description in API response | `EntityTypeResponse` DTO does not include a `description` field. The `EntityType` model has no description — it lives on `EntityTypeVersion`. The entity type list page shows an empty Description column. | Add `description` to `EntityTypeResponse` by resolving the latest version's description in the handler (or service). Alternatively, add a `description` field to the `EntityType` model itself (separate from version description). The version description describes the version change; the entity type description should describe what the entity type represents. |
-| ~~TD-44~~ | ~~BOM pins table missing description in API response~~ | **RESOLVED.** Added `Description` to `ResolvedPin`, `CatalogVersionPinResponse`, and handler. BOM tab now shows entity type version description. |
-| TD-45 | Enum list page missing description column | The enum list page does not show a Description column. Enums have a `name` but no description field in the model. | Either add a `description` field to the Enum model, or accept that enums don't have descriptions. If adding, update the create/edit API and UI. |
-| TD-46 | No UI to edit entity type version description | The entity type version description is set at creation and carried forward on COW. The backend `UpdateEntityType` endpoint (`PUT /entity-types/:id`) creates a new version with a new description, but the UI has no control to invoke it. Users cannot change the description after initial creation. | Add a "Description" editable field (inline or modal) on the entity type detail page. Editing the description calls `PUT /entity-types/:id` with `{"description": "new desc"}`, which creates a new version via COW. Show the current version's description on the detail page header area. |
-| ~~TD-47~~ | ~~Diagram: containment edges should use UML composition notation~~ | **RESOLVED.** Filled diamond SVG marker added on the parent (source) end of containment edges. Arrowhead retained on target end. Non-containment edges unchanged. Implemented in `EntityTypeDiagram.tsx` `AssociationEdge` component. |
-| ~~TD-48~~ | ~~Duplicate number-parsing logic in attribute submission~~ | **RESOLVED.** Extracted `buildTypedAttrs` utility in `utils/buildTypedAttrs.ts`, used by all three call sites. |
-| TD-49 | `useInstanceDetail.selectInstance` missing `setAuthRole` call | `useCatalogData` and `useInstances` both call `setAuthRole(role)` before API requests, but `useInstanceDetail.selectInstance` makes API calls (get parent, list children, get refs) without setting the auth role. If the role changes while an instance is selected, the wrong role could be sent. | Pass `role` to `useInstanceDetail` and call `setAuthRole(role)` at the start of `selectInstance`. |
-| TD-50 | `selectInstance` passes stale instance object after mutations | After mutations (handleAddChild, handleCreateLink, handleSetParent), the code calls `detail.selectInstance(detail.selectedInstance)` with the render-time snapshot. The instance's version may have changed server-side. | Pass only the instance ID and re-fetch the instance inside `selectInstance`, or accept that only `inst.id` is used (current behavior is safe but fragile). |
-| TD-51 | `onRemoveParent` swallows errors silently | The "Remove Container" inline handler uses `.catch(() => {})` which silently discards API errors. The user gets no feedback if the operation fails. | Show an error alert or set `setParentError` in the catch block. |
-| TD-52 | Modal data-loading still managed by page | `AddChildModal`, `LinkModal`, and `SetParentModal` receive dependent data (child schema attrs, enum values, available instances, link target instances, parent instances) as props from the page. The page manages ~60 lines of data-loading orchestration for these modals. | Move data loading into the modals — each modal imports the API client and loads its own data on open/selection change. This eliminates tight coupling and reduces the page by ~60 lines. Modals would accept `catalogName`, `pins`, and `schemaAssocs` as props, then load everything else internally. |
-| TD-53 | Diagram tab JSX duplicated across catalog pages | The Model Diagram tab rendering (loading spinner, error alert, empty state, diagram component) is duplicated between `CatalogDetailPage.tsx` and `OperationalCatalogDetailPage.tsx` (~10 lines each). | Extract a `DiagramTabContent` component that accepts the `useCatalogDiagram` hook return value and renders the loading/error/empty/diagram states. Both pages import and use this component. |
-| TD-54 | `CatalogVersionDetailPage` does not use `useCatalogDiagram` hook | `CatalogVersionDetailPage.tsx` manually manages `diagramData` and `diagramLoading` state with ~25 lines of inline fetch-pins-then-snapshots logic. This duplicates the exact pattern now encapsulated in `useCatalogDiagram`. | Refactor `CatalogVersionDetailPage` to use `useCatalogDiagram(id)` and remove the duplicated state and logic. |
-| TD-55 | Edge click handler object construction duplicated in `AssociationEdge` | The `onClick` handler in `AssociationEdge` (EntityTypeDiagram.tsx) constructs an identical `EdgeClickData` object at two locations (transparent clickable path and label group). Each has ~10 fields with `|| ''` fallbacks. | Extract a helper function (e.g., `buildEdgeClickData(data)`) within the component scope that both click handlers call. |
-| TD-56 | Operational catalog viewer Overview tab removed — consider re-adding with useful content | The Overview tab on `OperationalCatalogDetailPage` was hidden because it showed only entity type names/versions with no actionable information. If a meaningful Overview tab is designed later (e.g., catalog stats, instance counts per entity type, last-modified timestamps, data quality summary), the tab should be re-added with useful content. | Design and implement a useful Overview tab, or confirm it is not needed and clean up any remaining dead code. |
-| TD-57 | Move `CatalogDetailPage` and `CatalogListPage` from `pages/operational/` to `pages/meta/` | Both `CatalogDetailPage.tsx` (schema catalog detail with instance CRUD) and `CatalogListPage.tsx` (schema catalog list) live in `pages/operational/` but serve schema-management functions and are rendered under `/schema/*` routes. All other schema pages (EntityTypeDetailPage, EnumDetailPage, CatalogVersionDetailPage) are in `pages/meta/`. | Move both files and their test files to `pages/meta/`. Update imports in `App.tsx`. This is a pure file-move refactor with no behavior changes. |
-| TD-59 | N+1 query in entity type list description resolution | The entity type list handler calls `GetLatestByEntityType()` once per entity type in a loop to resolve descriptions. With many entity types, this generates N additional database queries. | Add a batch method `GetLatestByEntityTypes(ctx, entityTypeIDs []string) (map[string]*EntityTypeVersion, error)` to resolve all descriptions in a single query. |
-| TD-60 | Enum description edit uses `window.prompt()` instead of inline edit | The enum detail page description edit uses `window.prompt()`, while the entity type detail page uses a proper inline TextInput with Save/Cancel buttons. This is inconsistent UX and makes the enum edit untestable in browser tests (Playwright cannot mock native `window.prompt`). | Replace `window.prompt()` with inline TextInput edit (same pattern as EntityTypeDetailPage description edit). This also makes the catch block coverable in tests. |
-| TD-61 | CatalogVersion description is not editable after creation | The CV description is set at creation but there is no `PUT /catalog-versions/:id` endpoint to update it. The CV detail page shows the description but has no edit control. | Add `UpdateCatalogVersion(ctx, id, description)` to service, `PUT /catalog-versions/:id` handler accepting `{description}`, and inline edit on the CV detail page (same pattern as EntityTypeDetailPage). |
-| TD-58 | Enum values are not versioned — mutations are destructive | Enum values (add, remove, reorder) mutate in place. If an enum is referenced by attributes across multiple catalog versions, changing its values affects all of them retroactively. Entity types use copy-on-write versioning for attributes and associations, but enums have no equivalent mechanism. Removing an enum value that is in use by existing entity instances could leave invalid data. | Options: (A) Add versioning to enums (copy-on-write on mutation, enum versions pinned in CVs alongside entity type versions). (B) Add validation that prevents removing enum values that are in use. (C) Accept the current behavior and document it as a known limitation. Option B is the minimum viable fix. |
-| ~~TD-42~~ | ~~[IMPORTANT] Add Contained Instance modal missing custom attributes~~ | **RESOLVED.** Add Contained Instance modal now loads child entity type schema attributes when child type is selected. Renders attribute fields (string, number, enum) same as root-level Create Instance modal. Attributes passed in API request body. |
-| TD-62 | [IMPORTANT] Audit all update/PUT endpoints for omitted-field data loss | The `UpdateEnum` handler was silently erasing the `description` field when the caller omitted it from the JSON body, because the DTO used `string` (zero value `""`) rather than `*string` (nil = omitted). This was fixed for enums by switching to `*string` and preserving the current value when nil. **The same bug pattern may exist on other update endpoints** — any PUT/PATCH handler that unconditionally overwrites a field from a DTO `string` will erase data when the caller omits that field. | Audit every update endpoint in the Meta and Operational APIs. For each optional field on an update DTO, verify that omitting the field in the JSON request body does NOT erase the current value. Use `*string` (pointer) for optional fields and preserve current values when nil. Endpoints to check: `UpdateEntityType`, `UpdateInstance`, `SetParent`, catalog update (if added), CV update (TD-61), and any future update handlers. |
-| ~~TD-22~~ | ~~[CRITICAL] Common attributes as schema-level attributes~~ | **RESOLVED (Approach B — API-level merge).** Common attributes — Name (required) and Description (optional) — are injected as synthetic system attributes (`system: true`) into all API responses: instance detail, attribute lists, version snapshots, and UML diagrams. The UI renders them uniformly alongside custom attributes. System attributes cannot be created, edited, renamed, or deleted by users. Custom attribute names "name"/"description" are rejected. Copy-attributes excludes system attributes. Catalog validation checks Name is non-empty. No DB schema changes — common attributes remain as fields on `EntityInstance`, with the API layer handling the merge. |
+See [docs/td-log.md](docs/td-log.md) for the full technical debt tracking log.
 
 ## 12. Future Features
 
@@ -1564,9 +1568,9 @@ A future edit-from-CV workflow could:
 
 **Decision:** Deferred. The v1 read-only BOM view is sufficient. Revisit when user feedback indicates demand for in-place editing from the CV context.
 
-### FF-4: Edit Catalog Version
+### FF-4: Edit Catalog Version (PARTIALLY IMPLEMENTED — see US-52)
 
-Catalog versions are currently immutable after creation — pins (entity type version selections) cannot be changed, and there is no way to add or remove entity types from an existing CV. This forces users to delete and recreate CVs when entity types evolve, which is disruptive when catalogs already reference the CV.
+Add/remove pins implemented via `POST/DELETE /catalog-versions/:id/pins`. Changing pinned version for an entity type and backward-compatibility validation for published CVs are deferred.
 
 **Capabilities:**
 - **Add entity type pin** — pin a new entity type (at a specific version) to an existing CV
@@ -1703,4 +1707,84 @@ Import catalog data (entity instances, attribute values, association links, cont
 - **API import:** Pull data from external systems via configured API endpoints. The import configuration specifies the source URL, authentication, and a mapping from the external data format to the Asset Hub entity model.
 
 **Scope:** Details on file format, API mapping configuration, conflict resolution (merge vs. overwrite), and validation behavior will be discussed and specified in a future design session.
+
+### FF-12: Catalog Export/Import (System Portability)
+
+Export a complete catalog — including its catalog version, pinned entity type definitions (with attributes, associations, enums), and all operational data (instances, attribute values, containment hierarchy, association links) — to a portable file. Import that file into a different Asset Hub deployment to recreate the full catalog.
+
+**Export:**
+- `GET /api/data/v1/catalogs/{name}/export` produces a self-contained JSON (or YAML) file containing:
+  - Catalog metadata (name, description, validation status)
+  - Catalog version (label, description, lifecycle stage)
+  - All pinned entity type definitions (entity types, their versioned attributes with types/enums/required flags, and associations with cardinality)
+  - Enum definitions (names, values) referenced by attributes
+  - All entity instances with attribute values
+  - Containment hierarchy (parent-child relationships)
+  - Association links between instances
+- The file is self-describing: it includes the full schema so the target system doesn't need the same entity types pre-existing.
+
+**Import:**
+- `POST /api/data/v1/catalogs/import` accepts the export file and creates the catalog on the target system. Optional query/body parameters `catalog_name` and `catalog_version_label` override the names in the file, allowing import under a different catalog name or CV label without editing the export file (e.g., `POST /api/data/v1/catalogs/import?catalog_name=my-copy&catalog_version_label=v2.0-imported`).
+- **Idempotent re-import:** If schema entities (entity types, enums, attributes, associations) or operational data (instances) already exist with the same name and are **identical** to the imported version, the import treats them as already-present and skips creation. This supports the workflow: import → delete parts → re-import.
+- **Collision detection:** If a schema entity or instance exists with the same name but is **not identical** to the imported version (different attributes, different enum values, different data), the import **fails** with a detailed error listing all collisions. No partial import — the operation is atomic.
+- **Identical** means structurally equivalent: same attributes (name, type, required, ordinal), same enum values (same set in same order), same association definitions (type, target, cardinality). IDs are not compared — only structural content.
+
+**Collision rules summary:**
+
+| Scenario | Behavior |
+|----------|----------|
+| Entity type with same name, identical schema | Skip (idempotent) |
+| Entity type with same name, different schema | Fail with collision error |
+| Enum with same name, identical values | Skip |
+| Enum with same name, different values | Fail |
+| Instance with same name in same entity type, identical attributes | Skip |
+| Instance with same name, different attribute values | Fail |
+| Catalog with same name already exists | Fail — use `catalog_name` override to rename on import |
+| CV with same label already exists | Fail — use `catalog_version_label` override to rename on import |
+
+**Scope:** File format specification, streaming support for large catalogs, partial import (import schema only vs. schema + data), and compression will be discussed in a future design session.
+
+### FF-13: Landing Page Customization and Server Version
+
+Allow customization of the landing page and display the running server version.
+
+**Customization:**
+- Landing page strings (title, subtitle, card descriptions) configurable via environment variables or a config file, so different deployments can brand the UI without code changes.
+- Optional custom icons for the Schema Manager and Data Viewer cards (default to current icons if not configured).
+
+**Server Version:**
+- The API server exposes its build version via `GET /healthz` or a new `GET /version` endpoint (e.g., `{"version": "1.2.0", "commit": "abc1234", "build_time": "2026-04-05T10:00:00Z"}`).
+- The landing page displays the server version in the footer or a subtle badge, so operators can confirm which version is deployed.
+- Build version is injected at compile time via `-ldflags` (Go) and `VITE_APP_VERSION` (UI).
+
+### FF-14: Comprehensive Type System
+
+Extend the attribute type system beyond the current `string`, `number`, `enum` with richer constraints and new types. This replaces the implicit "any string / any number" semantics with a schema-level type definition that carries validation rules.
+
+**Constrained strings:**
+- `string(maxLength)` — e.g., `string(255)` limits the attribute value to 255 characters. Validated on instance create/update. Shown as max-length hint in the UI form field.
+- `multiline` boolean property — when true, the UI renders a `TextArea` instead of a `TextInput`. Applies to any string-based type (plain string, `string(maxLength)`, and `json`). System attributes like `description` are implicitly multiline. Schema authors set this per attribute when defining the entity type.
+
+**Constrained numbers:**
+- `integer(min, max)` and `float(min, max)` — e.g., `integer(1, 65535)` for a port number, `float(0.0, 1.0)` for a probability. Replaces the current untyped `number` which accepts any numeric value.
+- Each type definition specifies exactly one legal range. The range is inclusive on both ends.
+- Integer vs float distinction enables UI validation (reject decimals for integer fields) and potential future DB column type optimization.
+
+**Fixed-size arrays:**
+- `array(elementType, size)` — e.g., `array(string, 3)` for exactly 3 string values. Element type can be any scalar type (string, number, integer, float, enum).
+- Stored as JSON array in the attribute value. Validated on create/update: exact size, each element matches the element type and its constraints.
+- UI renders as a multi-field input group with exactly `size` fields.
+
+**Variable-size arrays (nice to have):**
+- `array(elementType, minSize, maxSize)` — e.g., `array(string, 1, 10)` for 1-10 string values. If `maxSize` is omitted or `*`, the array is unbounded.
+- Lower priority — fixed-size arrays cover most modeling use cases (e.g., primary/secondary DNS, RGB color values). Variable-size adds complexity in validation, UI rendering (dynamic add/remove), and storage.
+
+**Structured data (consider):**
+- `json` — stored as a string but validated as legal JSON on create/update. Useful for attributes that carry opaque structured data (e.g., configuration blobs, metadata from external systems) where defining a full schema is impractical. The UI would render a code editor or textarea with JSON syntax highlighting and validation. Whether this is needed depends on whether Asset Hub should model structured sub-documents or remain a flat attribute system — if users frequently resort to pasting JSON into plain string fields, this type would formalize and validate that pattern.
+
+**Implementation notes:**
+- Type definitions are stored as structured metadata on the attribute (not just a string tag). The current `type` field (`string`, `number`, `enum`) becomes a type descriptor with optional constraints.
+- Enums remain as-is — they are already a constrained type (value must be in the enum's value set). The new types complement enums for non-enumerable constraints.
+- Catalog validation (`POST /catalogs/{name}/validate`) must check all type constraints, not just required/enum membership.
+- Copy-on-write versioning carries type constraints forward with attributes.
 

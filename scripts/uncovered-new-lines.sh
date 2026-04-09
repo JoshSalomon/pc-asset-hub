@@ -60,8 +60,13 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     *)
-      # Positional arg = coverage file
-      COVFILE="$1"
+      # Positional args: first is base ref (if not a file), second is coverage file
+      if [ -z "$COVFILE" ] && [ ! -f "$1" ]; then
+        # Looks like a git ref, not a file path
+        BASE="$1"
+      else
+        COVFILE="$1"
+      fi
       shift
       ;;
   esac

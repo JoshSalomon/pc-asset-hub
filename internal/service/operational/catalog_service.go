@@ -175,8 +175,26 @@ func (s *CatalogService) Delete(ctx context.Context, name string) error {
 		}
 	}
 
-	// Cascade delete instances + catalog in a transaction for atomicity
+	// Cascade delete: IAVs + links per instance, then instances, then catalog
 	doDelete := func(txCtx context.Context) error {
+		if s.iavRepo != nil || s.linkRepo != nil {
+			instances, err := s.instRepo.ListByCatalog(txCtx, catalog.ID)
+			if err != nil {
+				return err
+			}
+			for _, inst := range instances {
+				if s.linkRepo != nil {
+					if err := s.linkRepo.DeleteByInstance(txCtx, inst.ID); err != nil {
+						return err
+					}
+				}
+				if s.iavRepo != nil {
+					if err := s.iavRepo.DeleteByInstanceID(txCtx, inst.ID); err != nil {
+						return err
+					}
+				}
+			}
+		}
 		if err := s.instRepo.DeleteByCatalogID(txCtx, catalog.ID); err != nil {
 			return err
 		}
@@ -287,6 +305,103 @@ func (s *CatalogService) Unpublish(ctx context.Context, name string) error {
 	}
 
 	return nil
+}
+
+// UpdateMetadata updates a catalog's name, description, and/or catalog version.
+func (s *CatalogService) UpdateMetadata(ctx context.Context, name string, newName, description, catalogVersionID *string, role string) (*CatalogDetail, error) {
+	catalog, err := s.catalogRepo.GetByName(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	// Published catalog restrictions
+	if catalog.Published {
+		if role != "SuperAdmin" {
+			return nil, domainerrors.NewForbidden("only SuperAdmin can edit published catalogs")
+		}
+		if newName != nil {
+			return nil, domainerrors.NewValidation("cannot rename published catalog")
+		}
+		if catalogVersionID != nil {
+			return nil, domainerrors.NewValidation("cannot change catalog version of published catalog; unpublish first")
+		}
+	}
+
+	changed := false
+	needsUpdate := false
+
+	// Handle rename (uses dedicated UpdateName — separate from general Update)
+	if newName != nil && *newName != catalog.Name {
+		if err := ValidateCatalogName(*newName); err != nil {
+			return nil, err
+		}
+		// Check uniqueness — propagate non-NotFound DB errors
+		existing, err := s.catalogRepo.GetByName(ctx, *newName)
+		if err == nil && existing.ID != catalog.ID {
+			return nil, domainerrors.NewConflict("Catalog", "name already exists: "+*newName)
+		} else if err != nil && !domainerrors.IsNotFound(err) {
+			return nil, err
+		}
+		if err := s.catalogRepo.UpdateName(ctx, catalog.ID, *newName); err != nil {
+			return nil, err
+		}
+		catalog.Name = *newName
+		catalog.UpdatedAt = time.Now()
+		changed = true
+	}
+
+	// Handle description update — cosmetic change, does not reset validation
+	if description != nil && *description != catalog.Description {
+		catalog.Description = *description
+		needsUpdate = true
+	}
+
+	// Handle catalog version change
+	if catalogVersionID != nil && *catalogVersionID != catalog.CatalogVersionID {
+		// Verify new CV exists
+		if _, err := s.cvRepo.GetByID(ctx, *catalogVersionID); err != nil {
+			return nil, err
+		}
+		catalog.CatalogVersionID = *catalogVersionID
+		needsUpdate = true
+		changed = true
+	}
+
+	// Single Update call for description and/or CV change
+	if needsUpdate {
+		catalog.UpdatedAt = time.Now()
+		if err := s.catalogRepo.Update(ctx, catalog); err != nil {
+			return nil, err
+		}
+	}
+
+	// Reset validation status only for structural changes (name, CV re-pin).
+	// Description-only edits are cosmetic and should not invalidate a published catalog.
+	if changed {
+		if err := s.catalogRepo.UpdateValidationStatus(ctx, catalog.ID, models.ValidationStatusDraft); err != nil {
+			return nil, err
+		}
+		catalog.ValidationStatus = models.ValidationStatusDraft
+	}
+
+	// Sync CR if published — covers both structural changes and description edits.
+	// For description-only edits on published catalogs, this refreshes the CR
+	// without resetting validation status (the catalog stays valid+published).
+	if catalog.Published && (changed || needsUpdate) {
+		s.SyncCR(ctx, catalog.Name)
+	}
+
+	// Resolve CV label for response
+	cvLabel := ""
+	cv, err := s.cvRepo.GetByID(ctx, catalog.CatalogVersionID)
+	if err == nil {
+		cvLabel = cv.VersionLabel
+	}
+
+	return &CatalogDetail{
+		Catalog:             catalog,
+		CatalogVersionLabel: cvLabel,
+	}, nil
 }
 
 // CopyCatalog deep-clones all data from a source catalog into a new catalog.

@@ -1,18 +1,33 @@
 import { render } from 'vitest-browser-react'
-import { expect, test, vi } from 'vitest'
+import { expect, test, vi, beforeEach, type Mock } from 'vitest'
 import { page } from 'vitest/browser'
 import SetParentModal from './SetParentModal'
+import { api } from '../api/client'
+
+vi.mock('../api/client', () => ({
+  api: {
+    instances: { list: vi.fn() },
+  },
+  setAuthRole: vi.fn(),
+}))
+
+const mockParentInstances = [
+  { id: 'p1', entity_type_id: 'et1', catalog_id: 'cat1', name: 'server-1', description: '', version: 1, attributes: [], created_at: '', updated_at: '' },
+  { id: 'p2', entity_type_id: 'et1', catalog_id: 'cat1', name: 'server-2', description: '', version: 1, attributes: [], created_at: '', updated_at: '' },
+]
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  ;(api.instances.list as Mock).mockResolvedValue({ items: mockParentInstances, total: 2 })
+})
 
 function renderModal(overrides: Partial<React.ComponentProps<typeof SetParentModal>> = {}) {
   const props = {
     isOpen: true,
     onClose: vi.fn(),
+    catalogName: 'my-catalog',
     instanceName: 'my-instance',
     parentTypeName: 'server',
-    parentInstances: [
-      { id: 'p1', entity_type_id: 'et1', catalog_id: 'cat1', name: 'server-1', description: '', version: 1, attributes: [], created_at: '', updated_at: '' },
-      { id: 'p2', entity_type_id: 'et1', catalog_id: 'cat1', name: 'server-2', description: '', version: 1, attributes: [], created_at: '', updated_at: '' },
-    ],
     hasParent: false,
     onSubmit: vi.fn().mockResolvedValue(undefined),
     onRemoveParent: vi.fn(),

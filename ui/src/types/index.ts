@@ -80,6 +80,7 @@ export interface CatalogVersion {
 }
 
 export interface CatalogVersionPin {
+  pin_id: string
   entity_type_name: string
   entity_type_id: string
   entity_type_version_id: string

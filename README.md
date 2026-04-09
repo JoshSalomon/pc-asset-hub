@@ -192,17 +192,18 @@ pc-asset-hub/
 
 | Layer | Tests | Coverage |
 |-------|-------|----------|
-| Backend (Go) | 1262 | 94.0% |
-| UI Browser (Playwright) | 453 | 84.6% |
-| Live System (bash) | 81 | — |
+| Backend (Go) | 1460 | 97.5% |
+| UI Browser (Playwright) | 857 | 93.6% |
+| Live System (bash) | 303 | — |
 | System (Playwright + live) | 30 | — |
-| **Total** | **1901** | |
+| **Total** | **2725** | |
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
-| [PRD.md](PRD.md) | Product requirements, user stories, acceptance criteria, technical debt |
+| [PRD.md](PRD.md) | Product requirements, user stories, acceptance criteria, future features |
+| [docs/td-log.md](docs/td-log.md) | Technical debt log (critical, normal, resolved) |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Deployment guide for kind and OpenShift clusters |
 | [docs/architecture.md](docs/architecture.md) | System architecture, data model, layered design, technology stack |
 | [docs/test-plan.md](docs/test-plan.md) | Testing strategy, coverage matrix, cross-cutting test approaches |

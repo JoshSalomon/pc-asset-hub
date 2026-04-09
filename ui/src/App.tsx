@@ -44,8 +44,8 @@ import EntityTypeDetailPage from './pages/meta/EntityTypeDetailPage'
 import EnumListPage from './pages/meta/EnumListPage'
 import EnumDetailPage from './pages/meta/EnumDetailPage'
 import CatalogVersionDetailPage from './pages/meta/CatalogVersionDetailPage'
-import CatalogListPage from './pages/operational/CatalogListPage'
-import CatalogDetailPage from './pages/operational/CatalogDetailPage'
+import CatalogListPage from './pages/meta/CatalogListPage'
+import CatalogDetailPage from './pages/meta/CatalogDetailPage'
 import OperationalCatalogDetailPage from './pages/operational/OperationalCatalogDetailPage'
 import LandingPage from './pages/LandingPage'
 
@@ -719,7 +719,7 @@ function App() {
                   ) : (
                     <EntityTypeDiagram
                       entityTypes={diagramData}
-                      onNodeDoubleClick={(entityTypeId) => navigate(`/schema/entity-types/${entityTypeId}`)}
+                      onNodeDoubleClick={(entityTypeId) => navigate(`/schema/entity-types/${entityTypeId}`, { state: { from: location.pathname } })}
                       onEdgeClick={handleDiagramEdgeClick}
                     />
                   )}

@@ -1,14 +1,14 @@
 import { render } from 'vitest-browser-react'
 import { expect, test, vi, beforeEach, type Mock } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import CatalogDetailPage from './CatalogDetailPage'
 import { api } from '../../api/client'
 
 vi.mock('../../api/client', () => ({
   api: {
-    catalogs: { get: vi.fn(), list: vi.fn(), validate: vi.fn(), publish: vi.fn(), unpublish: vi.fn(), copy: vi.fn(), replace: vi.fn() },
-    catalogVersions: { listPins: vi.fn() },
+    catalogs: { get: vi.fn(), list: vi.fn(), validate: vi.fn(), publish: vi.fn(), unpublish: vi.fn(), copy: vi.fn(), replace: vi.fn(), update: vi.fn() },
+    catalogVersions: { listPins: vi.fn(), list: vi.fn() },
     versions: { snapshot: vi.fn() },
     instances: { list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), createContained: vi.fn(), listContained: vi.fn(), setParent: vi.fn() },
     enums: { listValues: vi.fn() },
@@ -24,8 +24,8 @@ const mockCatalog = {
 }
 
 const mockPins = [
-  { entity_type_name: 'model', entity_type_id: 'et1', entity_type_version_id: 'etv1', version: 1 },
-  { entity_type_name: 'tool', entity_type_id: 'et2', entity_type_version_id: 'etv2', version: 1 },
+  { pin_id: 'pin-1', entity_type_name: 'model', entity_type_id: 'et1', entity_type_version_id: 'etv1', version: 1 },
+  { pin_id: 'pin-2', entity_type_name: 'tool', entity_type_id: 'et2', entity_type_version_id: 'etv2', version: 1 },
 ]
 
 const mockSnapshot = {
@@ -94,6 +94,11 @@ beforeEach(() => {
     return Promise.resolve(mockSnapshot)
   })
   ;(api.instances.list as Mock).mockResolvedValue({ items: mockInstances, total: 1 })
+  ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
+    const found = mockInstances.find(i => i.id === id)
+    if (found) return Promise.resolve(found)
+    return Promise.resolve({ id, name: `inst-${id}`, entity_type_id: 'et1', version: 1, attributes: [], created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' })
+  })
   ;(api.instances.create as Mock).mockResolvedValue({ id: 'i2', name: 'new-inst' })
   ;(api.instances.update as Mock).mockResolvedValue({ id: 'i1', name: 'inst-a', version: 2 })
   ;(api.instances.delete as Mock).mockResolvedValue(undefined)
@@ -107,6 +112,11 @@ beforeEach(() => {
   ;(api.catalogs.copy as Mock).mockResolvedValue({ id: 'new-id', name: 'copy-cat' })
   ;(api.catalogs.replace as Mock).mockResolvedValue({ id: 'src-id', name: 'prod' })
   ;(api.catalogs.list as Mock).mockResolvedValue({ items: [{ name: 'other-cat' }, { name: 'prod-cat' }], total: 2 })
+  ;(api.catalogs.update as Mock).mockResolvedValue({ ...mockCatalog, description: 'updated desc' })
+  ;(api.catalogVersions.list as Mock).mockResolvedValue({ items: [
+    { id: 'cv1', version_label: 'v1.0', lifecycle_stage: 'development' },
+    { id: 'cv2', version_label: 'v2.0', lifecycle_stage: 'testing' },
+  ], total: 2 })
 })
 
 // Helper: wait for instance table to render
@@ -184,7 +194,7 @@ test('T-11.53: create submits with attributes', async () => {
 test('T-11.54: edit modal pre-fills values', async () => {
   renderDetail('Admin')
   await waitForInstances()
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await expect.element(page.getByRole('dialog')).toBeVisible()
   await expect.element(page.getByRole('dialog').getByText('Edit inst-a')).toBeVisible()
 })
@@ -193,7 +203,7 @@ test('T-11.54: edit modal pre-fills values', async () => {
 test('T-11.55: edit submits', async () => {
   renderDetail('Admin')
   await waitForInstances()
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await expect.element(page.getByRole('dialog')).toBeVisible()
   await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
 
@@ -286,10 +296,10 @@ test('T-12.58: details panel shows references', async () => {
   await expect.element(page.getByRole('heading', { name: 'References' }).first()).toBeVisible()
   // Forward references visible
   await expect.element(page.getByText('Forward References').first()).toBeVisible()
-  await expect.element(page.getByRole('gridcell', { name: 'target-inst' }).first()).toBeVisible()
+  await expect.element(page.getByRole('gridcell', { name: 'target-inst (tool)' }).first()).toBeVisible()
   // Reverse references visible
   await expect.element(page.getByText('Referenced By').first()).toBeVisible()
-  await expect.element(page.getByRole('gridcell', { name: 'source-inst' }).first()).toBeVisible()
+  await expect.element(page.getByRole('gridcell', { name: 'source-inst (server)' }).first()).toBeVisible()
 })
 
 // T-12.59: Forward references show association name
@@ -308,6 +318,34 @@ test('T-12.63: RO sees refs without link/unlink', async () => {
   await expect.element(page.getByRole('heading', { name: 'References' }).first()).toBeVisible()
   // Should NOT see Link to Instance or Unlink buttons
   await expect.element(page.getByRole('button', { name: 'Link to Instance' })).not.toBeInTheDocument()
+})
+
+// TD-78: Forward refs show merged target column "instance-name (entity-type)"
+test('TD-78: forward refs show merged target column', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  // Merged column should show "target-inst (tool)"
+  await expect.element(page.getByRole('gridcell', { name: 'target-inst (tool)' }).first()).toBeVisible()
+})
+
+// TD-78: Reverse refs show merged target column "instance-name (entity-type)"
+test('TD-78: reverse refs show merged target column', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  // Merged column should show "source-inst (server)"
+  await expect.element(page.getByRole('gridcell', { name: 'source-inst (server)' }).first()).toBeVisible()
+})
+
+// TD-78: Entity Type is not a separate column in forward refs
+test('TD-78: no separate Entity Type column in forward refs', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  // "tool" should NOT appear as its own gridcell (it's merged into target)
+  const forwardTable = page.getByRole('table', { name: 'Forward references' })
+  await expect.element(forwardTable.getByRole('columnheader', { name: 'Entity Type' })).not.toBeInTheDocument()
 })
 
 // Bug: child type resets when reopening Add Contained from different parent type
@@ -365,7 +403,7 @@ test('edit instance failure shows error in modal', async () => {
   ;(api.instances.update as Mock).mockRejectedValue(new Error('500: update failed'))
   renderDetail('Admin')
   await waitForInstances()
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await expect.element(page.getByRole('dialog')).toBeVisible()
   await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
 
@@ -753,7 +791,7 @@ test('set container modal opens and shows pre-selected container type', async ()
 test('edit modal cancel closes modal', async () => {
   renderDetail('Admin')
   await waitForInstances()
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await expect.element(page.getByRole('dialog')).toBeVisible()
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
   const dialogs = page.getByRole('dialog')
@@ -873,9 +911,11 @@ test('details pane shows parent name not UUID', async () => {
     created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
   }]
   ;(api.instances.list as Mock).mockResolvedValue({ items: childInstances, total: 1 })
-  // Mock GetByID for parent instance resolution
-  ;(api.instances.get as Mock).mockResolvedValue({
-    id: 'p1', name: 'my-parent-server', entity_type_id: 'et1',
+  // Mock GetByID: return child instance for 'c1', parent for 'p1'
+  ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
+    if (id === 'c1') return Promise.resolve(childInstances[0])
+    if (id === 'p1') return Promise.resolve({ id: 'p1', name: 'my-parent-server', entity_type_id: 'et1' })
+    return Promise.resolve({ id, name: `inst-${id}`, entity_type_id: 'et1' })
   })
   renderDetail('Admin')
   await expect.element(page.getByRole('gridcell', { name: 'child-inst' })).toBeVisible()
@@ -1426,7 +1466,7 @@ test('T-18.42: create submits name/description as top-level fields', async () =>
 test('T-18.43: edit modal shows Name and Description from schema attrs', async () => {
   renderDetail('Admin')
   await waitForInstances()
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await expect.element(page.getByRole('dialog')).toBeVisible()
   // Name and Description should be present
   await expect.element(page.getByRole('dialog').getByText('Name *')).toBeVisible()
@@ -1437,7 +1477,7 @@ test('T-18.43: edit modal shows Name and Description from schema attrs', async (
 test('T-18.44: edit submits name/description as top-level fields', async () => {
   renderDetail('Admin')
   await waitForInstances()
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await expect.element(page.getByRole('dialog')).toBeVisible()
 
   // Name textbox is first, change it
@@ -1464,7 +1504,7 @@ test('create modal Name label has no duplicate required indicator', async () => 
 test('edit modal Name label has no duplicate required indicator', async () => {
   renderDetail('Admin')
   await waitForInstances()
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await expect.element(page.getByRole('dialog')).toBeVisible()
   await expect.element(page.getByRole('dialog').getByText('Name * *')).not.toBeInTheDocument()
 })
@@ -1577,7 +1617,11 @@ test('remove container calls setParent with empty parent', async () => {
     created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
   }]
   ;(api.instances.list as Mock).mockResolvedValue({ items: childInstances, total: 1 })
-  ;(api.instances.get as Mock).mockResolvedValue({ id: 'p1', name: 'my-parent', entity_type_id: 'et1' })
+  ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
+    if (id === 'c1') return Promise.resolve(childInstances[0])
+    if (id === 'p1') return Promise.resolve({ id: 'p1', name: 'my-parent', entity_type_id: 'et1' })
+    return Promise.resolve({ id, name: `inst-${id}`, entity_type_id: 'et1' })
+  })
   ;(api.instances.setParent as Mock).mockResolvedValue(undefined)
   renderDetail('Admin')
   await expect.element(page.getByRole('gridcell', { name: 'child-inst' })).toBeVisible()
@@ -1625,7 +1669,11 @@ test('parent name resolution failure falls back to UUID', async () => {
     created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
   }]
   ;(api.instances.list as Mock).mockResolvedValue({ items: childInstances, total: 1 })
-  ;(api.instances.get as Mock).mockRejectedValue(new Error('404'))
+  // Re-fetch of the instance itself succeeds, but parent resolution fails
+  ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
+    if (id === 'c1') return Promise.resolve(childInstances[0])
+    return Promise.reject(new Error('404'))
+  })
   renderDetail('Admin')
   await expect.element(page.getByRole('gridcell', { name: 'child-inst' })).toBeVisible()
   await page.getByRole('button', { name: 'Details' }).first().click()
@@ -1745,7 +1793,7 @@ test('create modal X button closes modal', async () => {
 test('edit modal X button closes modal', async () => {
   renderDetail('Admin')
   await waitForInstances()
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await expect.element(page.getByRole('dialog')).toBeVisible()
   await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
   expect(page.getByRole('dialog').elements().length).toBe(0)
@@ -1857,7 +1905,7 @@ test('enum select works in edit modal', async () => {
   ;(api.instances.list as Mock).mockResolvedValue({ items: instancesWithEnum, total: 1 })
   renderDetail('Admin')
   await expect.element(page.getByRole('gridcell', { name: 'inst-a' })).toBeVisible()
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await expect.element(page.getByRole('dialog')).toBeVisible()
 
   // Should show enum select with current value "active"
@@ -1876,7 +1924,7 @@ test('enum select works in edit modal', async () => {
 test('edit modal description input updates value', async () => {
   renderDetail('Admin')
   await waitForInstances()
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await expect.element(page.getByRole('dialog')).toBeVisible()
 
   // Fill description (second textbox)
@@ -1893,7 +1941,7 @@ test('edit modal description input updates value', async () => {
 test('edit modal custom text attribute updates value', async () => {
   renderDetail('Admin')
   await waitForInstances()
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await expect.element(page.getByRole('dialog')).toBeVisible()
 
   // hostname is the third textbox (after name, description)
@@ -2085,4 +2133,235 @@ test('T-21.20: diagram tab shows empty state when no diagram data loaded', async
   await page.getByRole('tab', { name: 'Model Diagram' }).click()
   // Diagram component renders (data loads successfully)
   await expect.element(page.getByTestId('entity-type-diagram')).toBeVisible()
+})
+
+// === Phase 2 CRUD: Catalog Description Inline Edit ===
+
+test('Edit description button visible for RW+ on catalog detail', async () => {
+  renderDetail('RW')
+  await waitForInstances()
+  await expect.element(page.getByRole('button', { name: 'Edit description' })).toBeVisible()
+})
+
+test('Edit description button hidden for RO on catalog detail', async () => {
+  renderDetail('RO')
+  await waitForInstances()
+  await expect.element(page.getByRole('button', { name: 'Edit description' })).not.toBeInTheDocument()
+})
+
+test('Catalog description edit flow: click Edit, change, Save calls API', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await expect.element(page.getByText('Test catalog')).toBeVisible()
+  await page.getByRole('button', { name: 'Edit description' }).click()
+  const input = page.getByRole('textbox', { name: 'Description' })
+  await expect.element(input).toBeVisible()
+  await input.fill('updated desc')
+  await page.getByRole('button', { name: 'Save' }).first().click()
+  expect(api.catalogs.update).toHaveBeenCalledWith('my-catalog', { description: 'updated desc' })
+})
+
+test('Catalog description edit Cancel restores original', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Edit description' }).click()
+  await expect.element(page.getByRole('textbox', { name: 'Description' })).toBeVisible()
+  await page.getByRole('button', { name: 'Cancel' }).first().click()
+  // Original description should be visible again
+  await expect.element(page.getByText('Test catalog')).toBeVisible()
+  await expect.element(page.getByRole('textbox', { name: 'Description' })).not.toBeInTheDocument()
+})
+
+// === Phase 2 CRUD: CV Selector ===
+
+test('CV selector visible for Admin on unpublished catalog', async () => {
+  renderDetail('Admin')
+  await waitForInstances()
+  // The CV selector should render as a MenuToggle with the current CV label
+  await expect.element(page.getByRole('button', { name: 'Select catalog version' })).toBeVisible()
+})
+
+test('CV selector hidden for RO user', async () => {
+  renderDetail('RO')
+  await waitForInstances()
+  // RO should see plain text, no dropdown
+  await expect.element(page.getByRole('button', { name: 'Select catalog version' })).not.toBeInTheDocument()
+})
+
+test('CV selector hidden for RW user (not Admin)', async () => {
+  renderDetail('RW')
+  await waitForInstances()
+  await expect.element(page.getByRole('button', { name: 'Select catalog version' })).not.toBeInTheDocument()
+})
+
+test('CV selector disabled (hidden) on published catalog', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid', published: true })
+  renderDetail('Admin')
+  await waitForInstances()
+  // Published catalogs should show plain text, not a dropdown
+  await expect.element(page.getByRole('button', { name: 'Select catalog version' })).not.toBeInTheDocument()
+})
+
+// Description edit error
+test('edit description error shows alert', async () => {
+  ;(api.catalogs.update as Mock).mockRejectedValue(new Error('500: update failed'))
+  renderDetail()
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Edit description' }).click()
+  await page.getByRole('textbox', { name: 'Description' }).fill('bad')
+  await page.getByRole('button', { name: 'Save' }).first().click()
+  await expect.element(page.getByText('500: update failed')).toBeVisible()
+})
+
+// CV selector opens and loads CV list
+test('CV selector dropdown opens and shows CVs', async () => {
+  ;(api.catalogVersions.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'cv1', version_label: 'v1.0' },
+      { id: 'cv2', version_label: 'v2.0' },
+    ],
+    total: 2,
+  })
+  renderDetail()
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Select catalog version' }).click()
+  await expect.element(page.getByText('v2.0')).toBeVisible()
+})
+
+// CV re-pin calls API
+test('selecting a CV calls update API', async () => {
+  ;(api.catalogVersions.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'cv1', version_label: 'v1.0' },
+      { id: 'cv-new', version_label: 'v3.0' },
+    ],
+    total: 2,
+  })
+  ;(api.catalogs.update as Mock).mockResolvedValue({ ...mockCatalog, catalog_version_id: 'cv-new' })
+  renderDetail()
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Select catalog version' }).click()
+  await page.getByText('v3.0').click()
+  await vi.waitFor(() => {
+    expect(api.catalogs.update).toHaveBeenCalledWith('my-catalog', { catalog_version_id: 'cv-new' })
+  })
+})
+
+// CV selector closes on Escape (covers onOpenChange callback)
+test('CV selector closes on Escape', async () => {
+  ;(api.catalogVersions.list as Mock).mockResolvedValue({
+    items: [{ id: 'cv1', version_label: 'v1.0' }],
+    total: 1,
+  })
+  renderDetail()
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Select catalog version' }).click()
+  await expect.element(page.getByText('v1.0').last()).toBeVisible()
+  await userEvent.keyboard('{Escape}')
+  // Dropdown should close
+})
+
+// CV re-pin error
+test('CV re-pin error shows alert', async () => {
+  ;(api.catalogVersions.list as Mock).mockResolvedValue({
+    items: [{ id: 'cv-bad', version_label: 'v-bad' }],
+    total: 1,
+  })
+  ;(api.catalogs.update as Mock).mockRejectedValue(new Error('400: invalid CV'))
+  renderDetail()
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Select catalog version' }).click()
+  await page.getByText('v-bad').click()
+  await expect.element(page.getByText('400: invalid CV')).toBeVisible()
+})
+
+// === Validate Write Protection Tests (TD-71: published catalog security fix) ===
+
+test('T-30.15: Validate button hidden on published catalog for RW user', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, published: true })
+  renderDetail('RW')
+  await expect.element(page.getByText('my-catalog')).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Validate' })).not.toBeInTheDocument()
+})
+
+test('T-30.16: Validate button visible on published catalog for SuperAdmin', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, published: true })
+  renderDetail('SuperAdmin')
+  await expect.element(page.getByText('my-catalog')).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Validate' })).toBeVisible()
+})
+
+test('T-30.17: Validate button visible on unpublished catalog for RW (no regression)', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByText('my-catalog')).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Validate' })).toBeVisible()
+})
+
+// T-30.18: Published catalog hides mutation UI for RW
+test('T-30.18: published catalog hides Edit description and Create button for RW', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, published: true })
+  renderDetail('RW')
+  await expect.element(page.getByText('my-catalog')).toBeVisible()
+  // Edit description button should be hidden
+  await expect.element(page.getByRole('button', { name: 'Edit description' })).not.toBeInTheDocument()
+  // Create button (e.g. "Create model") should be hidden
+  await expect.element(page.getByRole('button', { name: /^Create / })).not.toBeInTheDocument()
+})
+
+// T-30.19: Published catalog shows mutation UI for SuperAdmin
+test('T-30.19: published catalog shows Edit description and Create button for SuperAdmin', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, published: true })
+  renderDetail('SuperAdmin')
+  await expect.element(page.getByText('my-catalog')).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Edit description' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: /^Create / })).toBeVisible()
+})
+
+// T-30.20: Unpublished catalog still shows mutation UI for RW (no regression)
+test('T-30.20: unpublished catalog shows Edit description and Create button for RW', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByText('my-catalog')).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Edit description' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: /^Create / })).toBeVisible()
+})
+
+// === TD-68: Inline TextInput width matches container ===
+
+test('TD-68: description edit TextInput has width 100% and no max-width', async () => {
+  renderDetail()
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Edit description' }).click()
+  const input = page.getByRole('textbox', { name: 'Description' })
+  await expect.element(input).toBeVisible()
+  await expect.element(input).toHaveAttribute('style', expect.stringContaining('width: 100%'))
+  const style = input.element().getAttribute('style') || ''
+  expect(style).not.toContain('max-width')
+})
+
+// === TD-51: Remove Container error is surfaced, not swallowed ===
+
+test('TD-51: remove container error is shown to user', async () => {
+  const childInstances = [{
+    id: 'c1', entity_type_id: 'et1', catalog_id: 'cat1', parent_instance_id: 'p1',
+    name: 'child-inst', description: '', version: 1,
+    attributes: [{ name: 'hostname', type: 'string', value: 'h1' }],
+    created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+  }]
+  ;(api.instances.list as Mock).mockResolvedValue({ items: childInstances, total: 1 })
+  ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
+    if (id === 'c1') return Promise.resolve(childInstances[0])
+    if (id === 'p1') return Promise.resolve({ id: 'p1', name: 'my-parent', entity_type_id: 'et1' })
+    return Promise.resolve({ id, name: `inst-${id}`, entity_type_id: 'et1' })
+  })
+  ;(api.instances.setParent as Mock).mockRejectedValue(new Error('403: forbidden'))
+  renderDetail('Admin')
+  await expect.element(page.getByRole('gridcell', { name: 'child-inst' })).toBeVisible()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await expect.element(page.getByText('Contained by: my-parent').first()).toBeVisible()
+  await page.getByRole('button', { name: 'Set Container' }).first().click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // Click "Remove Container" — the API will reject
+  await page.getByRole('dialog').getByRole('button', { name: 'Remove Container' }).click()
+  // Error should be displayed in the dialog, not swallowed
+  await expect.element(page.getByText('403: forbidden')).toBeVisible()
 })

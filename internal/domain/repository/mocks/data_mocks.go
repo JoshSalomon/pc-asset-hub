@@ -96,6 +96,9 @@ func (m *MockCatalogRepo) UpdateValidationStatus(ctx context.Context, id string,
 func (m *MockCatalogRepo) UpdatePublished(ctx context.Context, id string, published bool, publishedAt *time.Time) error {
 	return m.Called(ctx, id, published, publishedAt).Error(0)
 }
+func (m *MockCatalogRepo) Update(ctx context.Context, catalog *models.Catalog) error {
+	return m.Called(ctx, catalog).Error(0)
+}
 func (m *MockCatalogRepo) UpdateName(ctx context.Context, id string, newName string) error {
 	return m.Called(ctx, id, newName).Error(0)
 }
@@ -133,6 +136,10 @@ func (m *MockInstanceAttributeValueRepo) GetValuesForVersion(ctx context.Context
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]*models.InstanceAttributeValue), args.Error(1)
+}
+
+func (m *MockInstanceAttributeValueRepo) DeleteByInstanceID(ctx context.Context, instanceID string) error {
+	return m.Called(ctx, instanceID).Error(0)
 }
 
 // MockAssociationLinkRepo mocks AssociationLinkRepository.

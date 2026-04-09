@@ -185,6 +185,8 @@ Meta API:
   /api/meta/v1/enums/{id}
   /api/meta/v1/catalog-versions
   /api/meta/v1/catalog-versions/{id}
+  /api/meta/v1/catalog-versions/{id}/pins
+  /api/meta/v1/catalog-versions/{id}/pins/{pin-id}
   /api/meta/v1/catalog-versions/{id}/promote
   /api/meta/v1/catalog-versions/{id}/demote
 
@@ -447,7 +449,7 @@ association_links (
 
 **Instance version history**: `instance_attribute_values` includes `instance_version`, so every historical state of an instance's attributes is preserved.
 
-**Catalog as data container**: Entity instances belong to a `Catalog`, not directly to a `CatalogVersion`. The catalog is pinned to a CV at creation (immutable in v1). This separates schema (CV) from data (catalog) and allows multiple named datasets to share the same schema.
+**Catalog as data container**: Entity instances belong to a `Catalog`, not directly to a `CatalogVersion`. The catalog is pinned to a CV at creation; the pin can be changed via re-pinning (`PUT /catalogs/{name}` with `catalog_version_id`), which resets validation status to `draft`. This separates schema (CV) from data (catalog) and allows multiple named datasets to share the same schema.
 
 **Containment via self-reference**: `parent_instance_id` on `entity_instances` models the containment hierarchy. Name uniqueness is scoped to `(entity_type_id, catalog_id, parent_instance_id, name)`, enforcing the namespace rule.
 
@@ -479,7 +481,7 @@ Catalog Version (bill of materials)
 
 2. **Entity instance versioning**: Every mutation to an entity instance auto-increments its version. Previous attribute values are retained per version.
 
-3. **Catalog versioning**: A catalog version pins specific entity definition versions together as an immutable snapshot (bill of materials). Deployments reference a fixed catalog version.
+3. **Catalog versioning**: A catalog version pins specific entity definition versions together as a bill of materials. Pins can be added, removed, or changed to a different version of the same entity type (see US-52). Each entity type can appear at most once in a CV — the `(catalog_version_id, entity_type_id)` pair is unique. Deployments reference a fixed catalog version.
 
 ### Lifecycle States
 

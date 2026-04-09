@@ -38,8 +38,8 @@ const mockCatalog = {
 }
 
 const mockPins = [
-  { entity_type_name: 'mcp-server', entity_type_id: 'et1', entity_type_version_id: 'etv1', version: 1 },
-  { entity_type_name: 'mcp-tool', entity_type_id: 'et2', entity_type_version_id: 'etv2', version: 1 },
+  { pin_id: 'pin-1', entity_type_name: 'mcp-server', entity_type_id: 'et1', entity_type_version_id: 'etv1', version: 1 },
+  { pin_id: 'pin-2', entity_type_name: 'mcp-tool', entity_type_id: 'et2', entity_type_version_id: 'etv2', version: 1 },
 ]
 
 const mockTree = [

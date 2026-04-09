@@ -101,6 +101,18 @@ func (r *CatalogGormRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+func (r *CatalogGormRepo) Update(ctx context.Context, catalog *models.Catalog) error {
+	record := gormmodels.CatalogFromModel(catalog)
+	result := getDB(ctx, r.db).Save(record)
+	if result.Error != nil {
+		if isUniqueConstraintError(result.Error) {
+			return domainerrors.NewConflict("Catalog", "name already exists: "+catalog.Name)
+		}
+		return result.Error
+	}
+	return nil
+}
+
 func (r *CatalogGormRepo) UpdateValidationStatus(ctx context.Context, id string, status models.ValidationStatus) error {
 	result := getDB(ctx, r.db).Model(&gormmodels.Catalog{}).
 		Where("id = ?", id).
