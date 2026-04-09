@@ -64,7 +64,9 @@ beforeAll(async () => {
   const health = await fetch(`${API_URL}/healthz`)
   if (!health.ok) throw new Error('API not reachable')
 
-  browser = await chromium.launch({ headless: true })
+  const headless = process.env.HEADLESS !== 'false'
+  const slowMo = process.env.SLOWMO ? Number(process.env.SLOWMO) : undefined
+  browser = await chromium.launch({ headless, slowMo })
   pg = await browser.newPage()
 })
 

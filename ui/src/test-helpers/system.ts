@@ -19,7 +19,9 @@ export async function setupBrowser(): Promise<{ browser: Browser; page: Page }> 
     throw new Error(`API not reachable at ${API_URL}`)
   }
 
-  const browser = await chromium.launch({ headless: true })
+  const headless = process.env.HEADLESS !== 'false'
+  const slowMo = process.env.SLOWMO ? Number(process.env.SLOWMO) : undefined
+  const browser = await chromium.launch({ headless, slowMo })
   const page = await browser.newPage()
   return { browser, page }
 }

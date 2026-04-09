@@ -120,10 +120,33 @@ curl -s -X POST http://localhost:30080/api/data/v1/catalogs/my-catalog/mcp-serve
 ```bash
 make test-backend     # Go unit + integration tests (SQLite)
 make test-browser     # UI browser tests (Playwright via Vitest)
-make test-system      # System tests against live kind cluster
+make test-system      # Live browser tests against kind cluster (Playwright)
+make test-e2e         # Alias for test-system
 make test-live        # Live API tests (bash scripts)
 make test-all         # All of the above
 ```
+
+Run a single test file or a specific test:
+
+```bash
+cd ui && npx vitest run --config vitest.system.config.ts src/LandingPage.system.test.ts
+cd ui && npx vitest run --config vitest.system.config.ts -t "role selector shows all 4 roles"
+```
+
+Watch live browser tests in a visible browser window:
+
+```bash
+HEADLESS=false make test-e2e                          # show browser
+HEADLESS=false SLOWMO=500 make test-e2e               # show browser + slow motion (ms)
+```
+
+These env vars also work with single-file runs:
+
+```bash
+HEADLESS=false SLOWMO=300 npx vitest run --config vitest.system.config.ts src/CatalogDetail.system.test.ts
+```
+
+First-time setup for live browser tests: `scripts/install-playwright.sh`
 
 ### Coverage
 
