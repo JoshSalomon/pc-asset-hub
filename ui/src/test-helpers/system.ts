@@ -44,8 +44,8 @@ export async function setRole(page: Page, role: 'RO' | 'RW' | 'Admin' | 'SuperAd
   // Click the role selector button (shows current role)
   await page.getByRole('button', { name: /Role:/i }).click()
 
-  // Select the desired role from the dropdown
-  await page.getByRole('option', { name: role }).click()
+  // Select the desired role from the dropdown (exact match to avoid Admin matching SuperAdmin)
+  await page.getByRole('option', { name: role, exact: true }).click()
 
   // Wait for the role to be reflected in the button
   await visible(page.getByRole('button', { name: new RegExp(`Role: ${role}`, 'i') }))
