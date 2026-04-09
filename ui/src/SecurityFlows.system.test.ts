@@ -224,7 +224,7 @@ describe('Test 2: Published catalog restrictions', () => {
     const publishedRow = pg.getByRole('row').filter({ hasText: 'published' })
     const count = await publishedRow.count()
     if (count === 0) {
-      console.log('SKIP: no published catalog available')
+      expect.fail('Prerequisite failed: no published catalog available')
       return
     }
 
@@ -284,7 +284,7 @@ describe('Test 3: Testing CV stage guards', () => {
     const testingRow = pg.getByRole('row').filter({ hasText: 'testing' })
     const count = await testingRow.count()
     if (count === 0) {
-      console.log('SKIP: no testing-stage CV available')
+      expect.fail('Prerequisite failed: no testing-stage CV available')
       return
     }
 
@@ -339,7 +339,7 @@ describe('Test 4: Production CV stage guards', () => {
     const productionRow = pg.getByRole('row').filter({ hasText: 'production' })
     const count = await productionRow.count()
     if (count === 0) {
-      console.log('SKIP: no production-stage CV available')
+      expect.fail('Prerequisite failed: no production-stage CV available')
       return
     }
 
@@ -451,7 +451,7 @@ describe('Test 6: Production CV API stage guards', () => {
     const pinId = pins.body.items?.[0]?.pin_id
 
     if (!pinId) {
-      console.log('SKIP: no pins on production CV')
+      expect.fail('Prerequisite failed: no pins on production CV')
       return
     }
 

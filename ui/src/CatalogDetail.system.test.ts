@@ -331,7 +331,7 @@ describe('Instance CRUD', () => {
 
     // If not visible, the create test may have failed - skip
     if (!(await deleteRow.isVisible({ timeout: 2000 }).catch(() => false))) {
-      console.log('SKIP: test instance not found')
+      expect.fail('Prerequisite failed: test instance not found')
       return
     }
 
@@ -394,7 +394,7 @@ describe('Containment', () => {
     // Look for "Add Contained Instance" button
     const addContainedBtn = pg.getByRole('button', { name: 'Add Contained Instance' })
     if (!(await addContainedBtn.isVisible({ timeout: 2000 }).catch(() => false))) {
-      console.log('SKIP: No containment association configured')
+      console.log('SKIP: No containment association configured (acceptable)')
       return
     }
 

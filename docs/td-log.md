@@ -7,7 +7,7 @@ Items where the current implementation diverges from the intended behavior descr
 ---
 
 ## 🔴 Critical / ⚠️ Important
-1
+
 | ID | Item | Current Behavior | Required Behavior |
 |----|------|-----------------|-------------------|
 | TD-1 | 🔴 Enum deletion safety | Enum delete checks if any attribute references it across all entity type versions (flat check) | Enum cannot be deleted if it is used by any attribute in a **used entity version**. A used entity version is defined as: (1) any entity type version pinned by a catalog version, or (2) the latest version of any entity type (which belongs to an implicit pre-production catalog). Unused historical versions that are not pinned by any CV and are not the latest version should not block deletion. |
@@ -56,6 +56,7 @@ Items where the current implementation diverges from the intended behavior descr
 | TD-84 | `handleUnlink` swallows errors silently | `CatalogDetailPage.tsx:177` has `catch { /* ignore */ }` on the link delete API call. The user gets no feedback if unlinking fails. Same class of bug as TD-51 (which was fixed for remove-parent). | Show an error alert in the catch block, e.g., `setError(e instanceof Error ? e.message : 'Failed to unlink')`. |
 | TD-85 | `GetByIDs` return order not guaranteed | `EntityTypeVersionRepo.GetByIDs` uses `WHERE id IN ?` without `ORDER BY`. The returned slice order may not match the input `ids` order. Currently only used by `AddPin` (which doesn't need ordering), but future callers might expect order preservation. | Either sort results in Go to match input order, or keep the comment-only fix and accept non-deterministic order. If a caller needs ordering, add an `ORDER BY` or post-sort at that time. |
 | TD-86 | `append(writeMiddleware, ...)` slice mutation risk in route registration | `RegisterCatalogRoutes` builds `writeMiddleware := append([]echo.MiddlewareFunc{requireRW}, writeGuards...)` then calls `append(writeMiddleware, requireCatalogAccess)...` for each route. Currently safe because capacity=2 forces a new allocation each time, but adding a third `writeGuard` would cause the underlying array to be shared — later appends would corrupt earlier routes' middleware chains. | Replace `append(writeMiddleware, requireCatalogAccess)...` with `slices.Concat(writeMiddleware, []echo.MiddlewareFunc{requireCatalogAccess})...` or pre-build per-route slices explicitly. Low priority — only triggers if a third writeGuard is added. |
+| TD-87 | `App.system.test.ts` has inline helpers instead of importing from `test-helpers/system.ts` | `App.system.test.ts` defines its own `navigateToUI`, `apiCall`, `visible`, `hidden`, `setRole`, `cleanupTestData` inline. The shared `test-helpers/system.ts` module provides equivalent helpers used by all other system test files. | Refactor `App.system.test.ts` to import from `test-helpers/system.ts` and remove inline duplicates. Low priority — functional duplication only, no behavioral divergence. |
 
 ---
 
