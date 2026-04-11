@@ -387,33 +387,25 @@ describe('Instance Detail Panel', () => {
     await pg.getByText(groupText).first().click()
     await pg.waitForTimeout(500)
 
-    // First, we need to expand the child group if it exists, or navigate differently
-    // Let's try clicking on server-1 first to expand it
-    await pg.getByText('server-1').first().click()
+    // server-1 has children — click its expand toggle (▸) to reveal child-1
+    // The expand toggle is a span with ▸ next to the instance name
+    const server1Row = pg.getByText('server-1').first().locator('..')
+    const expandToggle = server1Row.locator('span').filter({ hasText: '\u25B8' })
+    await visible(expandToggle, 5000)
+    await expandToggle.click()
+    await pg.waitForTimeout(500)
+
+    // child-1 should now be visible under server-1
+    const child1Node = pg.getByText('child-1').first()
+    await visible(child1Node, 5000)
+    await child1Node.click()
     await pg.waitForTimeout(1000)
 
-    // Now look for child entity type group
-    const childGroupText = `${etChildName}`
-    const childGroup = pg.getByText(childGroupText).first()
-    if (await childGroup.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await childGroup.click()
-      await pg.waitForTimeout(500)
-    }
-
-    // Try to find and click child-1
-    const child1Node = pg.getByText('child-1').first()
-    if (await child1Node.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await child1Node.click()
-      await pg.waitForTimeout(500)
-
-      // Should see breadcrumb with parent chain
-      const bodyText = await pg.textContent('body')
-      expect(bodyText).toContain(CATALOG_NAME)
-      expect(bodyText).toContain(etParentName)
-      expect(bodyText).toContain('server-1')
-    } else {
-      console.log('SKIP: child instance not visible in tree (containment tree structure may vary)')
-    }
+    // Should see breadcrumb with parent chain
+    const bodyText = await pg.textContent('body')
+    expect(bodyText).toContain(CATALOG_NAME)
+    expect(bodyText).toContain(etParentName)
+    expect(bodyText).toContain('server-1')
   }, 60000)
 })
 
@@ -443,17 +435,16 @@ describe('Reference Navigation', () => {
     await pg.waitForTimeout(1500)
 
     // Should see References heading
-    await visible(pg.getByRole('heading', { level: 4, name: 'References' }))
+    await visible(pg.getByRole('heading', { level: 4, name: 'References' }), 10000)
+    // Wait for reference API calls to complete
+    await pg.waitForTimeout(2000)
 
-    // Should see forward references table
-    const forwardTable = pg.getByRole('table', { name: 'Forward references' })
-    if (await forwardTable.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await visible(forwardTable)
-      // Should show server-2 as target
-      await visible(forwardTable.getByRole('button', { name: /server-2/ }))
-    } else {
-      console.log('SKIP: forward references table not visible (may be loading)')
-    }
+    // Should see forward references — find the table (PatternFly may use grid role)
+    const forwardTable = pg.getByRole('grid', { name: 'Forward references' })
+      .or(pg.getByRole('table', { name: 'Forward references' }))
+    await visible(forwardTable, 10000)
+    // Should show server-2 as target
+    await visible(pg.getByRole('button', { name: /server-2/ }))
   }, 60000)
 
   test('detail panel shows reverse references', async () => {
@@ -473,22 +464,22 @@ describe('Reference Navigation', () => {
     await pg.getByText(groupText).first().click()
     await pg.waitForTimeout(500)
 
-    // Click server-2
+    // Click server-2 and wait for detail + references to load
     await pg.getByText('server-2').first().click()
-    await pg.waitForTimeout(1500)
+    await pg.waitForLoadState('networkidle')
 
     // Should see References heading
-    await visible(pg.getByRole('heading', { level: 4, name: 'References' }))
+    await visible(pg.getByRole('heading', { level: 4, name: 'References' }), 10000)
 
-    // Should see reverse references table
-    const reverseTable = pg.getByRole('table', { name: 'Reverse references' })
-    if (await reverseTable.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await visible(reverseTable)
-      // Should show server-1 as source
-      await visible(reverseTable.getByRole('button', { name: /server-1/ }))
-    } else {
-      console.log('SKIP: reverse references table not visible (may be loading)')
-    }
+    // Wait for reverse references to load (async API call after detail loads)
+    await pg.waitForTimeout(2000)
+
+    // Should see reverse references
+    const reverseTable = pg.getByRole('grid', { name: 'Reverse references' })
+      .or(pg.getByRole('table', { name: 'Reverse references' }))
+    await visible(reverseTable, 15000)
+    // Should show server-1 as source
+    await visible(pg.getByRole('button', { name: /server-1/ }))
   }, 60000)
 
   test('clicking reference link navigates to target instance', async () => {
@@ -496,17 +487,15 @@ describe('Reference Navigation', () => {
     await visible(pg.getByRole('heading', { level: 3, name: 'server-2' }))
 
     // Click the reverse reference link to server-1
-    const reverseTable = pg.getByRole('table', { name: 'Reverse references' })
-    if (await reverseTable.isVisible({ timeout: 2000 }).catch(() => false)) {
-      const server1Link = reverseTable.getByRole('button', { name: /server-1/ })
-      await server1Link.click()
-      await pg.waitForTimeout(500)
+    const reverseTable = pg.getByRole('grid', { name: 'Reverse references' })
+      .or(pg.getByRole('table', { name: 'Reverse references' }))
+    await visible(reverseTable, 10000)
+    const server1Link = pg.getByRole('button', { name: /server-1/ })
+    await server1Link.click()
+    await pg.waitForTimeout(500)
 
-      // Should navigate to server-1 detail
-      await visible(pg.getByRole('heading', { level: 3, name: 'server-1' }))
-    } else {
-      console.log('SKIP: reference link click test (reverse refs not visible)')
-    }
+    // Should navigate to server-1 detail
+    await visible(pg.getByRole('heading', { level: 3, name: 'server-1' }))
   })
 
   test('instance with no references shows "No references" message', async () => {
@@ -623,7 +612,7 @@ describe('Empty States', () => {
     })
 
     if (createRes.status !== 201) {
-      console.log(`SKIP: Could not create empty catalog: ${JSON.stringify(createRes)}`)
+      console.warn(`SKIP: Could not create empty catalog: ${JSON.stringify(createRes)}`)
       return
     }
 
@@ -635,7 +624,7 @@ describe('Empty States', () => {
     // Check if page loaded successfully
     const bodyText = await pg.textContent('body')
     if (bodyText?.includes('404') || bodyText?.includes('NOT_FOUND')) {
-      console.log('SKIP: Catalog page shows 404')
+      console.warn('SKIP: Catalog page shows 404')
       await apiCall('DELETE', `/api/data/v1/catalogs/${emptyCatalogName}`, undefined, 'Admin')
       return
     }
@@ -651,7 +640,7 @@ describe('Empty States', () => {
       // Should see "No instances in this catalog."
       await visible(emptyMsg, 5000)
     } else {
-      console.log('SKIP: Neither tree heading nor empty message found')
+      console.warn('SKIP: Neither tree heading nor empty message found')
     }
 
     // Clean up

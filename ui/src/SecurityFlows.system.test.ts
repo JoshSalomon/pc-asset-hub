@@ -80,9 +80,10 @@ beforeAll(async () => {
     catalog_version_id: cvId,
   }, 'SuperAdmin')
 
-  // Create an instance to validate the catalog
-  await apiCall('POST', `/api/data/v1/catalogs/${catalogName}/instances`, {
-    entity_type_name: testName('Sec_ET'),
+  // Create an instance so the catalog has data
+  await apiCall('POST', `/api/data/v1/catalogs/${catalogName}/${testName('Sec_ET')}`, {
+    name: 'sec-test-instance',
+    description: 'Security test instance',
     attributes: {
       test_attr: 'test value',
     },

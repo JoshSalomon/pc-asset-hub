@@ -69,7 +69,7 @@ export async function apiCall(
     body: body ? JSON.stringify(body) : undefined,
   })
 
-  if (method === 'DELETE') {
+  if (method === 'DELETE' && res.ok) {
     return { status: res.status, body: null }
   }
 
