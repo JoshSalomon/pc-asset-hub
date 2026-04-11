@@ -6,7 +6,7 @@
 //   - UI at http://localhost:30000, API at http://localhost:30080
 //
 // Run:
-//   cd /home/jsalomon/src/pc-asset-hub/ui && npx vitest run --config vitest.system.config.ts src/CatalogVersionDetail.system.test.ts
+//   cd ui && npx vitest run --config vitest.system.config.ts src/CatalogVersionDetail.system.test.ts
 
 import { test, expect, beforeAll, afterAll } from 'vitest'
 import { type Browser, type Page } from 'playwright'
