@@ -65,7 +65,31 @@ Development proceeds through three environment phases, each with increasing infr
 | T-B.10 | Demotion removes CRDs/CRs from kind cluster | E2E | US-12, US-25 |
 | T-B.11 | Operator uninstall cleans up all resources | E2E | US-24 |
 
-**Tests that must pass**: All Phase A tests (T-1.* through T-9.*, T-CV.*) plus T-B.01 through T-B.11.
+**Live browser tests (Playwright + Vitest)** — run via `make test-e2e`:
+
+| ID | Test Case | Layer | Notes |
+|----|-----------|-------|-------|
+| T-B.20 | Landing page loads with title, sections, and role selector | Browser | 4 tests |
+| T-B.21 | CV detail: inline edit (label, description), cancel restores original | Browser | 4 tests |
+| T-B.22 | CV detail: BOM tab shows pins, version dropdown, Add/Remove Pin | Browser | 4 tests |
+| T-B.23 | CV detail: stage guards — Admin blocked on testing, SuperAdmin allowed | Browser | 2 tests |
+| T-B.24 | CV detail: transitions tab shows history, diagram tab renders | Browser | 2 tests |
+| T-B.25 | Catalog list: create, delete, search | Browser | 3 tests |
+| T-B.26 | Catalog detail: navigate, entity type tabs, inline edit description | Browser | 2 tests |
+| T-B.27 | Instance CRUD: create, edit, delete via UI modals | Browser | 3 tests |
+| T-B.28 | Containment: add contained instance via Details panel | Browser | 1 test |
+| T-B.29 | Validation: click Validate, see results | Browser | 1 test |
+| T-B.30 | Publish/unpublish: publish, verify write protection, unpublish | Browser | 3 tests |
+| T-B.31 | Copy catalog, CV selector change | Browser | 2 tests |
+| T-B.32 | Data viewer: tree browser, entity type groups, expand nodes | Browser | 3 tests |
+| T-B.33 | Data viewer: instance detail panel, attributes, breadcrumb chain | Browser | 2 tests |
+| T-B.34 | Data viewer: forward/reverse references, reference navigation | Browser | 3 tests |
+| T-B.35 | Data viewer: model diagram, validation, empty states | Browser | 6 tests |
+| T-B.36 | Security: RO user sees no create/edit/delete controls | Browser | 4 tests |
+| T-B.37 | Security: published catalog write protection (UI + API) | Browser | 7 tests |
+| T-B.38 | Security: testing/production CV stage guards (UI + API) | Browser | 8 tests |
+
+**Tests that must pass**: All Phase A tests (T-1.* through T-9.*, T-CV.*) plus T-B.01 through T-B.38.
 
 **What cannot be tested**:
 - OpenShift-specific features (Routes, OAuth, OLM)

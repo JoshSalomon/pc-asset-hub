@@ -104,6 +104,41 @@ The project uses five testing layers, each building on the one below.
 
 **Framework**: Go `testing` + `sigs.k8s.io/controller-runtime/pkg/envtest` (simulated Kubernetes API server — no real cluster required)
 
+### Layer 6: Live Browser Tests (Playwright + Vitest)
+
+**Scope**: End-to-end UI flows against a live deployment (Kind cluster). These tests launch a headless browser, interact with the deployed UI, and verify behavior across all pages and features.
+
+**What's tested**:
+- Landing page navigation and role selector
+- Catalog version detail: inline edit, BOM tab, stage guards, transitions, diagram
+- Catalog list and detail: catalog CRUD, instance CRUD, containment, validation, publish/unpublish, copy
+- Operational data viewer: containment tree, instance detail, reference navigation, model diagram
+- Security flows: RO restrictions, published catalog write protection, stage guard enforcement across roles
+
+**Test data strategy**: Each test file creates its own data via the API in `beforeAll`, uses `E2E_` prefix for cleanup, and tears down in `afterAll`. Tests are self-contained and independent.
+
+**Prerequisites**: Kind cluster running with services exposed (UI at `localhost:30000`, API at `localhost:30080`). Playwright chromium installed (`scripts/install-playwright.sh`).
+
+**How to run**:
+```bash
+make test-system    # or: make test-e2e
+# Individual file:
+cd ui && npx vitest run --config vitest.system.config.ts src/LandingPage.system.test.ts
+```
+
+**Framework**: Vitest + Playwright (direct, not browser mode)
+
+**Files**:
+- `ui/src/test-helpers/system.ts` — shared helpers (browser setup, role switching, API calls, cleanup)
+- `ui/src/LandingPage.system.test.ts` — landing page tests (~4 tests)
+- `ui/src/CatalogVersionDetail.system.test.ts` — CV detail tests (~12 tests)
+- `ui/src/CatalogDetail.system.test.ts` — catalog list and detail tests (~15 tests)
+- `ui/src/DataViewer.system.test.ts` — operational data viewer tests (~17 tests)
+- `ui/src/SecurityFlows.system.test.ts` — cross-cutting security tests (~21 tests)
+- `ui/src/App.system.test.ts` — existing entity type, enum, CV tests (30 tests)
+
+**Not included in `test-all`**: These tests require a live cluster and are invoked explicitly.
+
 ---
 
 ## 3. Feature Area Coverage Matrix

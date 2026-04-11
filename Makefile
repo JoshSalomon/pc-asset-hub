@@ -2,7 +2,7 @@
        docker-build-api docker-build-ui docker-build-operator docker-build-all \
        docker-compose-up docker-compose-down test-postgres \
        kind-create kind-delete kind-load kind-deploy-all kind-undeploy-all \
-       e2e-test deploy test-backend test-browser test-system test-live \
+       e2e-test deploy test-backend test-browser test-system test-e2e test-live \
        test-all coverage-backend coverage-browser
 
 # Resolve project root from Makefile location (works from any directory via make -C or absolute path)
@@ -23,6 +23,8 @@ test-browser:
 
 test-system:
 	cd "$(PROJECT_ROOT)ui" && npx vitest run --config vitest.system.config.ts
+
+test-e2e: test-system
 
 test-live:
 	"$(PROJECT_ROOT)scripts/test-containment-links.sh"
