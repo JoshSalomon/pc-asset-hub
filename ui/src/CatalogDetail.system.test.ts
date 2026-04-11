@@ -19,6 +19,7 @@ import {
   apiCall,
   testName,
   cleanupE2EData,
+  cleanupDnsCatalogs,
   UI_URL,
 } from './test-helpers/system'
 
@@ -43,6 +44,10 @@ beforeAll(async () => {
   browser = setup.browser
   pg = setup.page
 
+  // Clean up stale data from prior crashed runs
+  await cleanupDnsCatalogs(CATALOG_TEST_NAME, CATALOG_COPY_NAME, CATALOG_PUBLISH_NAME, 'e2e-catdetail-delete')
+  await cleanupE2EData()
+
   // Create test entity types with containment association
   etParentName = testName('CatDetail_Parent')
   etChildName = testName('CatDetail_Child')
@@ -53,13 +58,12 @@ beforeAll(async () => {
     description: 'Parent for catalog detail tests',
   })
   etParentId = parentRes.body.entity_type.id
-  const parentVersionId = parentRes.body.version.id
 
   // Add attributes to parent
-  await apiCall('POST', `/api/meta/v1/entity-types/${etParentId}/versions/${parentVersionId}/attributes`, {
+  await apiCall('POST', `/api/meta/v1/entity-types/${etParentId}/attributes`, {
     name: 'size',
-    data_type: 'string',
-    is_required: false,
+    type: 'string',
+    required: false,
     description: 'Size attribute',
   })
 
@@ -69,23 +73,22 @@ beforeAll(async () => {
     description: 'Child for catalog detail tests',
   })
   etChildId = childRes.body.entity_type.id
-  const childVersionId = childRes.body.version.id
 
   // Add attributes to child
-  await apiCall('POST', `/api/meta/v1/entity-types/${etChildId}/versions/${childVersionId}/attributes`, {
+  await apiCall('POST', `/api/meta/v1/entity-types/${etChildId}/attributes`, {
     name: 'color',
-    data_type: 'string',
-    is_required: false,
+    type: 'string',
+    required: false,
     description: 'Color attribute',
   })
 
   // Create containment association from parent to child
-  await apiCall('POST', '/api/meta/v1/associations', {
+  await apiCall('POST', `/api/meta/v1/entity-types/${etParentId}/associations`, {
     name: `${etParentName}_contains_${etChildName}`,
-    source_entity_type_id: etParentId,
     target_entity_type_id: etChildId,
-    relationship_type: 'containment',
-    cardinality: '0..n',
+    type: 'containment',
+    source_cardinality: '1',
+    target_cardinality: '0..n',
   })
   // Create catalog version and pin entity types
   catalogVersionLabel = testName('CatDetail_CV')
@@ -95,31 +98,23 @@ beforeAll(async () => {
   })
   catalogVersionId = cvRes.body.id
 
+  // Get latest versions (attribute/association creation creates new versions)
+  const parentVersions = await apiCall('GET', `/api/meta/v1/entity-types/${etParentId}/versions`)
+  const childVersions = await apiCall('GET', `/api/meta/v1/entity-types/${etChildId}/versions`)
+  const latestParentVersionId = parentVersions.body.items[parentVersions.body.items.length - 1].id
+  const latestChildVersionId = childVersions.body.items[childVersions.body.items.length - 1].id
+
   // Pin both entity types
   await apiCall('POST', `/api/meta/v1/catalog-versions/${catalogVersionId}/pins`, {
-    entity_type_version_id: parentVersionId,
+    entity_type_version_id: latestParentVersionId,
   })
   await apiCall('POST', `/api/meta/v1/catalog-versions/${catalogVersionId}/pins`, {
-    entity_type_version_id: childVersionId,
+    entity_type_version_id: latestChildVersionId,
   })
 })
 
 afterAll(async () => {
-  // Clean up DNS-labeled test catalogs (not handled by cleanupE2EData)
-  const catalogNames = [CATALOG_TEST_NAME, CATALOG_COPY_NAME, CATALOG_PUBLISH_NAME]
-  for (const name of catalogNames) {
-    try {
-      // Unpublish first if published
-      await apiCall('POST', `/api/data/v1/catalogs/${name}/unpublish`, undefined, 'SuperAdmin')
-    } catch {
-      /* ignore */
-    }
-    try {
-      await apiCall('DELETE', `/api/data/v1/catalogs/${name}`, undefined, 'SuperAdmin')
-    } catch {
-      /* ignore */
-    }
-  }
+  await cleanupDnsCatalogs(CATALOG_TEST_NAME, CATALOG_COPY_NAME, CATALOG_PUBLISH_NAME, 'e2e-catdetail-delete')
 
   // Clean up E2E_ prefixed data
   await cleanupE2EData()
@@ -332,7 +327,6 @@ describe('Instance CRUD', () => {
     // If not visible, the create test may have failed - skip
     if (!(await deleteRow.isVisible({ timeout: 2000 }).catch(() => false))) {
       expect.fail('Prerequisite failed: test instance not found')
-      return
     }
 
     // Click Delete
@@ -391,24 +385,21 @@ describe('Containment', () => {
     // Wait for Details panel
     await visible(pg.getByRole('heading', { name: new RegExp(`Details: ${parentName}`) }), 10000)
 
-    // Look for "Add Contained Instance" button
+    // Click "Add Contained Instance" button (containment association must exist)
     const addContainedBtn = pg.getByRole('button', { name: 'Add Contained Instance' })
-    if (!(await addContainedBtn.isVisible({ timeout: 2000 }).catch(() => false))) {
-      console.log('SKIP: No containment association configured (acceptable)')
-      return
-    }
-
+    await visible(addContainedBtn, 5000)
     await addContainedBtn.click()
 
     // Fill contained instance modal
     await visible(pg.getByRole('dialog'))
 
-    // Select child entity type from dropdown if needed
-    const etSelect = pg.locator('button:has-text("Select entity type")')
-    if (await etSelect.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await etSelect.click()
-      await pg.waitForTimeout(300)
-      await pg.getByText(etChildName).click()
+    // Select child entity type from dropdown
+    const childTypeSelect = pg.getByRole('dialog').locator('button:has-text("Select child type")')
+    if (await childTypeSelect.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await childTypeSelect.click()
+      await pg.waitForTimeout(500)
+      await pg.getByText(etChildName, { exact: true }).click()
+      await pg.waitForTimeout(500)
     }
 
     await pg.getByRole('textbox', { name: 'Name' }).fill(childName)
@@ -420,8 +411,8 @@ describe('Containment', () => {
       await colorInput.fill('blue')
     }
 
-    // Submit
-    await pg.getByRole('button', { name: 'Create' }).click()
+    // Submit (use exact match to avoid matching "Create New" mode toggle)
+    await pg.getByRole('dialog').getByRole('button', { name: 'Create', exact: true }).click()
 
     // Wait for modal to close
     await hidden(pg.getByRole('dialog'))

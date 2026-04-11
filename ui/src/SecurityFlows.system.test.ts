@@ -18,6 +18,7 @@ import {
   apiCall,
   testName,
   cleanupE2EData,
+  cleanupDnsCatalogs,
   UI_URL,
 } from './test-helpers/system'
 
@@ -36,7 +37,8 @@ beforeAll(async () => {
   browser = setup.browser
   pg = setup.page
 
-  // Clean up any stale test data
+  // Clean up stale data from prior crashed runs
+  await cleanupDnsCatalogs('e2e-security')
   await cleanupE2EData()
 
   // Create entity type (returns both entity_type and version)
@@ -48,10 +50,10 @@ beforeAll(async () => {
   etvId = et.body.version.id
 
   // Add one attribute
-  await apiCall('POST', `/api/meta/v1/entity-types/${etId}/versions/${etvId}/attributes`, {
+  await apiCall('POST', `/api/meta/v1/entity-types/${etId}/attributes`, {
     name: 'test_attr',
-    data_type: 'string',
-    is_required: true,
+    type: 'string',
+    required: true,
   }, 'SuperAdmin')
 
   // Create catalog version for the regular catalog
@@ -61,9 +63,13 @@ beforeAll(async () => {
   }, 'SuperAdmin')
   cvId = cv.body.id
 
+  // Get latest version (attribute creation creates new version)
+  const versions = await apiCall('GET', `/api/meta/v1/entity-types/${etId}/versions`, undefined, 'SuperAdmin')
+  const latestVersionId = versions.body.items[versions.body.items.length - 1].id
+
   // Pin entity type to CV
   await apiCall('POST', `/api/meta/v1/catalog-versions/${cvId}/pins`, {
-    entity_type_version_id: etvId,
+    entity_type_version_id: latestVersionId,
   }, 'SuperAdmin')
 
   // Create catalog (DNS-label compatible name)
@@ -97,7 +103,7 @@ beforeAll(async () => {
 
   // Pin entity type to production CV
   await apiCall('POST', `/api/meta/v1/catalog-versions/${prodCvId}/pins`, {
-    entity_type_version_id: etvId,
+    entity_type_version_id: latestVersionId,
   }, 'SuperAdmin')
 
   // Promote to testing
@@ -225,7 +231,6 @@ describe('Test 2: Published catalog restrictions', () => {
     const count = await publishedRow.count()
     if (count === 0) {
       expect.fail('Prerequisite failed: no published catalog available')
-      return
     }
 
     await publishedRow.first().getByRole('button').first().click()
@@ -285,7 +290,6 @@ describe('Test 3: Testing CV stage guards', () => {
     const count = await testingRow.count()
     if (count === 0) {
       expect.fail('Prerequisite failed: no testing-stage CV available')
-      return
     }
 
     await testingRow.first().getByRole('button').first().click()
@@ -340,7 +344,6 @@ describe('Test 4: Production CV stage guards', () => {
     const count = await productionRow.count()
     if (count === 0) {
       expect.fail('Prerequisite failed: no production-stage CV available')
-      return
     }
 
     await productionRow.first().getByRole('button').first().click()
@@ -452,7 +455,6 @@ describe('Test 6: Production CV API stage guards', () => {
 
     if (!pinId) {
       expect.fail('Prerequisite failed: no pins on production CV')
-      return
     }
 
     const res = await apiCall('DELETE', `/api/meta/v1/catalog-versions/${prodCvId}/pins/${pinId}`, undefined, 'SuperAdmin')

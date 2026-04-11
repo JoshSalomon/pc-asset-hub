@@ -18,6 +18,7 @@ import {
   apiCall,
   testName,
   cleanupE2EData,
+  cleanupDnsCatalogs,
   UI_URL,
 } from './test-helpers/system'
 
@@ -45,6 +46,10 @@ beforeAll(async () => {
   browser = setup.browser
   pg = setup.page
 
+  // Clean up stale data from prior crashed runs
+  await cleanupDnsCatalogs(CATALOG_NAME, 'e2e-dataviewer-empty')
+  await cleanupE2EData()
+
   // Create test entity types with containment association
   etParentName = testName('DV_Parent')
   etChildName = testName('DV_Child')
@@ -64,7 +69,7 @@ beforeAll(async () => {
   await apiCall('POST', `/api/meta/v1/entity-types/${etParentId}/attributes`, {
     name: 'hostname',
     type: 'string',
-    is_required: true,
+    required: true,
     description: 'Hostname attribute',
   })
 
@@ -80,26 +85,26 @@ beforeAll(async () => {
   await apiCall('POST', `/api/meta/v1/entity-types/${etChildId}/attributes`, {
     name: 'port',
     type: 'string',
-    is_required: false,
+    required: false,
     description: 'Port attribute',
   })
 
   // Create containment association from parent to child
-  await apiCall('POST', '/api/meta/v1/associations', {
+  await apiCall('POST', `/api/meta/v1/entity-types/${etParentId}/associations`, {
     name: `${etParentName}_contains_${etChildName}`,
-    source_entity_type_id: etParentId,
     target_entity_type_id: etChildId,
-    relationship_type: 'containment',
-    cardinality: '0..n',
+    type: 'containment',
+    source_cardinality: '1',
+    target_cardinality: '0..n',
   })
 
   // Create reference association (non-containment) between Parent instances
-  await apiCall('POST', '/api/meta/v1/associations', {
+  await apiCall('POST', `/api/meta/v1/entity-types/${etParentId}/associations`, {
     name: `${etParentName}_references_${etParentName}`,
-    source_entity_type_id: etParentId,
     target_entity_type_id: etParentId,
-    relationship_type: 'reference',
-    cardinality: '0..n',
+    type: 'reference',
+    source_cardinality: '0..n',
+    target_cardinality: '0..n',
   })
   // Get latest versions (attributes/associations create new versions)
   const parentVersions = await apiCall('GET', `/api/meta/v1/entity-types/${etParentId}/versions`)
@@ -166,14 +171,7 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  // Clean up DNS-labeled test catalog (not handled by cleanupE2EData)
-  try {
-    await apiCall('DELETE', `/api/data/v1/catalogs/${CATALOG_NAME}`, undefined, 'SuperAdmin')
-  } catch {
-    /* ignore */
-  }
-
-  // Clean up E2E_ prefixed data
+  await cleanupDnsCatalogs(CATALOG_NAME, 'e2e-dataviewer-empty')
   await cleanupE2EData()
 
   await teardownBrowser(browser)

@@ -92,6 +92,19 @@ export async function navigateToSchema(page: Page) {
   await visible(page.getByRole('tab', { name: /Catalog Versions/i }))
 }
 
+// Clean up specific DNS-labeled catalogs (not covered by cleanupE2EData)
+export async function cleanupDnsCatalogs(...names: string[]) {
+  const headers = { 'Content-Type': 'application/json', 'X-User-Role': 'SuperAdmin' }
+  for (const name of names) {
+    try {
+      await fetch(`${API_URL}/api/data/v1/catalogs/${name}/unpublish`, { method: 'POST', headers })
+    } catch { /* ignore */ }
+    try {
+      await fetch(`${API_URL}/api/data/v1/catalogs/${name}`, { method: 'DELETE', headers })
+    } catch { /* ignore */ }
+  }
+}
+
 // Generate test data name with E2E_ prefix
 export function testName(base: string): string {
   return `E2E_${base}`

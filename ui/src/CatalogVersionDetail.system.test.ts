@@ -40,11 +40,10 @@ beforeAll(async () => {
     description: 'Entity type for CV detail tests',
   })
   etId = etRes.body.entity_type.id
-  const etvId = etRes.body.version.id
-  await apiCall('POST', `/api/meta/v1/entity-types/${etId}/versions/${etvId}/attributes`, {
+  await apiCall('POST', `/api/meta/v1/entity-types/${etId}/attributes`, {
     name: 'hostname',
-    data_type: 'string',
-    is_required: true,
+    type: 'string',
+    required: true,
     description: 'Server hostname',
   })
 
@@ -67,9 +66,13 @@ beforeAll(async () => {
   })
   cvId = cvRes.body.id
 
+  // Get latest version (attribute creation creates a new version)
+  const versions = await apiCall('GET', `/api/meta/v1/entity-types/${etId}/versions`)
+  const latestVersionId = versions.body.items[versions.body.items.length - 1].id
+
   // Add pin to the entity type
   await apiCall('POST', `/api/meta/v1/catalog-versions/${cvId}/pins`, {
-    entity_type_version_id: etvId,
+    entity_type_version_id: latestVersionId,
   })
 })
 
