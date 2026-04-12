@@ -106,7 +106,7 @@ pc-asset-hub/
       repository/            # Repository interfaces (storage-agnostic)
       errors/                # Domain-specific error types
     service/                 # Service layer (depends on domain only)
-      meta/                  # Meta business logic (entity types, attrs, assocs, enums, catalog)
+      meta/                  # Meta business logic (entity types, attrs, assocs, type defs, catalog)
       operational/           # Operational business logic (instances, queries, refs)
       versioning/            # Version management (auto-increment, copy-on-write)
       validation/            # Cycle detection, uniqueness, constraint enforcement
@@ -134,7 +134,7 @@ pc-asset-hub/
       components/            # Reusable UI components
       pages/
         LandingPage.tsx      # Landing page (root URL)
-        meta/                # Schema management pages (entity types, CVs, enums)
+        meta/                # Schema management pages (entity types, CVs, type definitions)
         operational/         # Catalog data viewer pages + catalog CRUD
       hooks/                 # Custom React hooks
       utils/                 # Shared utilities
@@ -158,7 +158,7 @@ Manages the schema layer. Used by Admins and Super Admins.
 - Entity type definitions (CRUD, copy)
 - Attribute management (add, edit, remove, copy, reorder)
 - Association management (with cycle detection)
-- Enum management (CRUD, reusable across types)
+- Type definition management (CRUD, versioning, reusable across types — replaces enums)
 - Catalog version management (create, promote, demote)
 - Version history and comparison
 
@@ -181,12 +181,16 @@ Meta API:
   /api/meta/v1/entity-types/{id}/versions
   /api/meta/v1/entity-types/{id}/versions/{v1}/compare/{v2}
   /api/meta/v1/entity-types/{id}/versions/{version}/snapshot
-  /api/meta/v1/enums
-  /api/meta/v1/enums/{id}
+  /api/meta/v1/type-definitions
+  /api/meta/v1/type-definitions/{id}
+  /api/meta/v1/type-definitions/{id}/versions
+  /api/meta/v1/type-definitions/{id}/versions/{v}
   /api/meta/v1/catalog-versions
   /api/meta/v1/catalog-versions/{id}
   /api/meta/v1/catalog-versions/{id}/pins
   /api/meta/v1/catalog-versions/{id}/pins/{pin-id}
+  /api/meta/v1/catalog-versions/{id}/type-pins
+  /api/meta/v1/catalog-versions/{id}/type-pins/{pin-id}
   /api/meta/v1/catalog-versions/{id}/promote
   /api/meta/v1/catalog-versions/{id}/demote
 
@@ -222,8 +226,8 @@ The database uses a hybrid approach: **fixed relational tables** for the meta/sc
 │ name (unique)│        │ entity_type_id (FK)  │        │ etv_id (FK)  │
 │ created_at   │        │ version              │        │ name         │
 │ updated_at   │        │ description          │        │ description  │
-└──────────────┘        │ created_at           │        │ type         │
-                        │ UNIQUE(et_id, ver)   │        │ enum_id (FK) │
+└──────────────┘        │ created_at           │        │ type_def_ver │
+                        │ UNIQUE(et_id, ver)   │        │   _id (FK)   │
                         └──────────┬───────────┘        │ ordinal      │
                                    │                    │ required     │
                                    │                    └──────────────┘
@@ -239,25 +243,34 @@ The database uses a hybrid approach: **fixed relational tables** for the meta/sc
                             │ target_role  │
                             └──────────────┘
 
-┌──────────────┐        ┌──────────────┐
-│    enums     │──1:N─▶│ enum_values  │
-│              │        │              │
-│ id           │        │ id           │
-│ name (unique)│        │ enum_id (FK) │
-│ created_at   │        │ value        │
-│ updated_at   │        │ ordinal      │
-└──────────────┘        └──────────────┘
+┌──────────────────┐        ┌────────────────────────┐
+│type_definitions  │──1:N─▶│type_definition_versions│
+│                  │        │                        │
+│ id               │        │ id                     │
+│ name (unique)    │        │ type_def_id (FK)       │
+│ description      │        │ version_number         │
+│ base_type        │        │ constraints (JSONB)    │
+│ system           │        └────────────────────────┘
+│ created_at       │
+│ updated_at       │
+└──────────────────┘
 
 ┌──────────────────┐        ┌────────────────────┐      ┌───────────────────────┐
 │ catalog_versions │──1:N─▶│catalog_version_pins│      │lifecycle_transitions  │
-│                  │        │                    │      │                       │
+│                  │        │ (entity types)     │      │                       │
 │ id               │        │ id                 │      │ id                    │
 │ version_label    │──1:N─▶│ catalog_ver_id(FK) │      │ catalog_ver_id (FK)   │
 │ lifecycle_stage  │        │ etv_id (FK)        │      │ from_stage            │
 │ created_at       │        └────────────────────┘      │ to_stage              │
 │ updated_at       │                                    │ performed_by          │
-└──────────────────┘                                    │ performed_at          │
-                                                        └───────────────────────┘
+│                  │        ┌────────────────────────┐  │ performed_at          │
+│                  │──1:N─▶│catalog_version_type_pins│ │ notes                 │
+│                  │        │ (type definitions)     │  └───────────────────────┘
+│                  │        │ id                     │
+│                  │        │ catalog_ver_id (FK)    │
+│                  │        │ type_def_ver_id (FK)   │
+│                  │        └────────────────────────┘
+└──────────────────┘
 ```
 
 ### Data Tables
@@ -327,8 +340,7 @@ attributes (
   entity_type_version_id UUID FK → entity_type_versions.id,
   name TEXT NOT NULL,
   description TEXT,
-  type TEXT NOT NULL,          -- 'string', 'number', 'enum'
-  enum_id UUID FK → enums.id NULLABLE,
+  type_definition_version_id UUID FK → type_definition_versions.id NOT NULL,
   ordinal INTEGER NOT NULL,
   required BOOLEAN DEFAULT FALSE,
   UNIQUE(entity_type_version_id, name)
@@ -345,20 +357,24 @@ associations (
   created_at TIMESTAMP
 )
 
--- Reusable enum definitions
-enums (
+-- Reusable type definitions (replaces enums)
+type_definitions (
   id UUID PK,
   name TEXT UNIQUE NOT NULL,
+  description TEXT,
+  base_type TEXT NOT NULL,    -- 'string', 'integer', 'number', 'boolean', 'date', 'url', 'enum', 'list', 'json'
+  system BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP,
   updated_at TIMESTAMP
 )
 
-enum_values (
+-- Versioned constraints for type definitions
+type_definition_versions (
   id UUID PK,
-  enum_id UUID FK → enums.id,
-  value TEXT NOT NULL,
-  ordinal INTEGER NOT NULL,
-  UNIQUE(enum_id, value)
+  type_definition_id UUID FK → type_definitions.id,
+  version_number INTEGER NOT NULL,
+  constraints JSONB,          -- type-specific constraints (max_length, pattern, min/max, values, etc.)
+  UNIQUE(type_definition_id, version_number)
 )
 
 -- Catalog version snapshots
@@ -376,6 +392,14 @@ catalog_version_pins (
   catalog_version_id UUID FK → catalog_versions.id,
   entity_type_version_id UUID FK → entity_type_versions.id,
   UNIQUE(catalog_version_id, entity_type_version_id)
+)
+
+-- Pins type definition versions to a catalog version
+catalog_version_type_pins (
+  id UUID PK,
+  catalog_version_id UUID FK → catalog_versions.id,
+  type_definition_version_id UUID FK → type_definition_versions.id,
+  UNIQUE(catalog_version_id, type_definition_version_id)
 )
 
 -- Audit trail for lifecycle transitions
@@ -421,9 +445,9 @@ instance_attribute_values (
   instance_id UUID FK → entity_instances.id,
   instance_version INTEGER NOT NULL,
   attribute_id UUID FK → attributes.id,
-  value_string TEXT,
-  value_number DOUBLE,
-  value_enum TEXT,
+  value_string TEXT,           -- string, url, date, boolean, enum
+  value_number DOUBLE,         -- number, integer
+  value_json TEXT,             -- list (JSON array), json (JSON object)
   UNIQUE(instance_id, instance_version, attribute_id)
 )
 
@@ -445,7 +469,9 @@ association_links (
 
 **Associations are versioned**: Associations are tied to `entity_type_versions`, not `entity_types`. This ensures that adding or removing an association only affects the new version. Without this, modifying an association would retroactively affect older catalog versions that reference previous entity type versions.
 
-**EAV for dynamic data**: The `instance_attribute_values` table stores attribute values using type-specific columns (`value_string`, `value_number`, `value_enum`). The structure of this table never changes when entity types are defined — validation of values against the entity type definition happens at the application layer.
+**EAV for dynamic data**: The `instance_attribute_values` table stores attribute values using type-specific columns (`value_string`, `value_number`, `value_json`). `value_string` stores string, url, date, boolean, and enum values. `value_number` stores number and integer values. `value_json` stores list (JSON array) and json (JSON object) values. The structure of this table never changes when entity types are defined — validation of values against the type definition happens at the application layer.
+
+**Type definitions replace enums**: Enums are unified under the type definition system as type definitions with `base_type=enum` and an ordered list of values in their constraints. Type definitions are versioned (copy-on-write) and pinned in catalog versions, solving the enum mutation problem (TD-58) where changing enum values retroactively affected all CVs.
 
 **Instance version history**: `instance_attribute_values` includes `instance_version`, so every historical state of an instance's attributes is preserved.
 
@@ -459,29 +485,34 @@ association_links (
 
 ## 8. Versioning Model
 
-### Three Levels of Versioning
+### Four Levels of Versioning
 
 ```
 Catalog Version (bill of materials)
   │
-  ├── Entity Type A (V1)
-  │     ├── attribute: name (string)
-  │     ├── attribute: status (enum: DeploymentStatus)
-  │     └── association: contains → Tool
+  ├── Entity Type Pins:
+  │   ├── Entity Type A (V1)
+  │   │     ├── attribute: name (string)
+  │   │     ├── attribute: guardrail_id (guardrailID V1)
+  │   │     └── association: contains → Tool
+  │   ├── Entity Type B (V2)
+  │   │     ├── attribute: endpoint (url)
+  │   │     └── attribute: max_tokens (integer)
+  │   └── Entity Type C (V1)
+  │         └── attribute: config (json)
   │
-  ├── Entity Type B (V2)
-  │     ├── attribute: endpoint (string)
-  │     └── attribute: max_tokens (number)
-  │
-  └── Entity Type C (V1)
-        └── attribute: template (string)
+  └── Type Definition Pins:
+      ├── guardrailID (V1) — string, max_length: 12, pattern: [0-9A-F]*
+      └── statusEnum (V1) — enum, values: [active, inactive, deprecated]
 ```
 
-1. **Entity definition versioning**: Every mutation to an entity type definition (add/remove/change attributes or associations) creates a new version automatically. Previous versions are immutable. Unique key: `(name, version)`.
+1. **Type definition versioning**: Every mutation to a type definition's constraints creates a new version. Previous versions are retained. System type definitions (string, integer, number, boolean, date, url) are immutable V1.
 
-2. **Entity instance versioning**: Every mutation to an entity instance auto-increments its version. Previous attribute values are retained per version.
+2. **Entity definition versioning**: Every mutation to an entity type definition (add/remove/change attributes or associations) creates a new version automatically. Previous versions are immutable. Unique key: `(name, version)`.
 
-3. **Catalog versioning**: A catalog version pins specific entity definition versions together as a bill of materials. Pins can be added, removed, or changed to a different version of the same entity type (see US-52). Each entity type can appear at most once in a CV — the `(catalog_version_id, entity_type_id)` pair is unique. Deployments reference a fixed catalog version.
+3. **Entity instance versioning**: Every mutation to an entity instance auto-increments its version. Previous attribute values are retained per version.
+
+4. **Catalog versioning**: A catalog version pins specific entity definition versions and type definition versions together as a bill of materials. Pins can be added, removed, or changed. Each entity type can appear at most once in a CV. Custom type definitions used by pinned entity type attributes are auto-pinned. Deployments reference a fixed catalog version.
 
 ### Lifecycle States
 

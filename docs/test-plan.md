@@ -150,7 +150,8 @@ Each feature area is tested at the appropriate layers:
 | Entity type CRUD + versioning | X | X | X | X | |
 | Attribute management | X | X | X | X | |
 | Association management + cycle detection | X | X | X | X | |
-| Enum management | X | X | X | X | |
+| Type definition management (replaces enums) | X | X | X | X | |
+| Type definition versioning + CV type pins | X | X | X | X | |
 | Copy entity type / copy attributes | X | X | X | X | |
 | Catalog version CRUD | X | X | X | X | |
 | Lifecycle promotion/demotion + CR management | X | X | X | X | X |
@@ -206,6 +207,10 @@ Each feature area is tested at the appropriate layers:
 | Catalog-level RBAC — access check + middleware | X | | X | | |
 | Catalog-level RBAC — catalog list filtering | X | | X | | |
 | Catalog-level RBAC — header mode passthrough | X | | X | | |
+| Type-aware instance forms (9 base types) | | | | X | |
+| Inline field-level validation warnings | | | | X | |
+| Type-aware value display (data viewer) | | | | X | |
+| Type constraint validation (all base types) | X | X | X | | |
 | Catalog validation — required attrs + type check | X | X | X | X | |
 | Catalog validation — mandatory associations | X | X | X | | |
 | Catalog validation — containment consistency | X | X | X | | |
@@ -235,6 +240,41 @@ Each feature area is tested at the appropriate layers:
 | Catalog re-pinning — change CV (US-51) | X | X | X | X | |
 | CV pin add/remove (US-52) | X | X | X | X | |
 | Pin editing stage guards (TD-69) | X | | X | | X |
+
+### Type System Test Strategy (FF-14)
+
+The type system touches every layer. Test strategy by layer:
+
+**Unit tests (Go):**
+- Type definition CRUD service: create, update (new version), delete (reference check), list, get
+- Constraint validation per base type: valid/invalid constraints, edge cases (negative max_length, min > max, invalid regex, empty enum values)
+- Attribute service: create with type_definition_version_id, copy-on-write carries type ref
+- CV type pin service: add/remove pins, auto-pin on entity type pin add, system types don't need pins
+- Instance value validation per base type: string (max_length, pattern), integer (whole number, range), number (range), boolean, date (ISO 8601), url, enum (value set), list (element type, max_length), json (valid JSON)
+- System type seeding on startup
+
+**Integration tests (Go + DB):**
+- Type definition + version round-trip through GORM repos
+- Attribute with type_definition_version_id persists and resolves correctly
+- CV with type pins + entity type pins — full BOM round-trip
+- Instance attribute values with new storage columns (value_json for list/json types)
+- Constraints stored as JSONB/text and deserialized correctly
+
+**API tests (Go + HTTP):**
+- All type definition endpoints: POST, GET, PUT, DELETE, versions list/get
+- CV type pin endpoints: POST, GET, DELETE
+- Attribute creation with type_definition_version_id
+- Instance creation with values for all 9 base types
+- Validation endpoint checks type constraints
+- RBAC: Admin+ for type definition mutations, RO can read
+
+**UI tests (Browser):**
+- Types tab: list (sorted by name, system badge), create, edit (version bump), delete, version history
+- Type creation form: dynamic constraints per base type
+- Add Attribute modal: type definition selector (system types + custom, inline creation)
+- Instance create/edit forms: correct controls per base type (TextInput, TextArea, NumberInput, Switch, DatePicker, Select, repeatable list, TextArea for JSON)
+- Inline field-level validation warnings: string exceeds max_length, string doesn't match pattern, integer/number out of range, invalid URL format, invalid date format, invalid JSON syntax. Warnings are advisory (form still submittable).
+- Data viewer: type-aware value display (clickable URLs, formatted dates, booleans, lists, JSON)
 
 ---
 
