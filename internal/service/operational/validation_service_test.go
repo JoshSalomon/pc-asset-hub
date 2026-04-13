@@ -14,34 +14,36 @@ import (
 )
 
 type validationMocks struct {
-	catRepo     *mocks.MockCatalogRepo
-	instRepo    *mocks.MockEntityInstanceRepo
-	iavRepo     *mocks.MockInstanceAttributeValueRepo
-	pinRepo     *mocks.MockCatalogVersionPinRepo
-	etvRepo     *mocks.MockEntityTypeVersionRepo
-	attrRepo    *mocks.MockAttributeRepo
-	assocRepo   *mocks.MockAssociationRepo
-	enumValRepo *mocks.MockEnumValueRepo
-	linkRepo    *mocks.MockAssociationLinkRepo
-	etRepo      *mocks.MockEntityTypeRepo
+	catRepo   *mocks.MockCatalogRepo
+	instRepo  *mocks.MockEntityInstanceRepo
+	iavRepo   *mocks.MockInstanceAttributeValueRepo
+	pinRepo   *mocks.MockCatalogVersionPinRepo
+	etvRepo   *mocks.MockEntityTypeVersionRepo
+	attrRepo  *mocks.MockAttributeRepo
+	assocRepo *mocks.MockAssociationRepo
+	tdvRepo   *mocks.MockTypeDefinitionVersionRepo
+	tdRepo    *mocks.MockTypeDefinitionRepo
+	linkRepo  *mocks.MockAssociationLinkRepo
+	etRepo    *mocks.MockEntityTypeRepo
 }
 
 func setupValidationService() (*operational.CatalogValidationService, *validationMocks) {
 	m := &validationMocks{
-		catRepo:     new(mocks.MockCatalogRepo),
-		instRepo:    new(mocks.MockEntityInstanceRepo),
-		iavRepo:     new(mocks.MockInstanceAttributeValueRepo),
-		pinRepo:     new(mocks.MockCatalogVersionPinRepo),
-		etvRepo:     new(mocks.MockEntityTypeVersionRepo),
-		attrRepo:    new(mocks.MockAttributeRepo),
-		assocRepo:   new(mocks.MockAssociationRepo),
-		enumValRepo: new(mocks.MockEnumValueRepo),
-		linkRepo:    new(mocks.MockAssociationLinkRepo),
-		etRepo:      new(mocks.MockEntityTypeRepo),
+		catRepo:   new(mocks.MockCatalogRepo),
+		instRepo:  new(mocks.MockEntityInstanceRepo),
+		iavRepo:   new(mocks.MockInstanceAttributeValueRepo),
+		pinRepo:   new(mocks.MockCatalogVersionPinRepo),
+		etvRepo:   new(mocks.MockEntityTypeVersionRepo),
+		attrRepo:  new(mocks.MockAttributeRepo),
+		assocRepo: new(mocks.MockAssociationRepo),
+		tdvRepo:   new(mocks.MockTypeDefinitionVersionRepo),
+		tdRepo:    new(mocks.MockTypeDefinitionRepo),
+		linkRepo:  new(mocks.MockAssociationLinkRepo),
+		etRepo:    new(mocks.MockEntityTypeRepo),
 	}
 	svc := operational.NewCatalogValidationService(
 		m.catRepo, m.instRepo, m.iavRepo, m.pinRepo, m.etvRepo,
-		m.attrRepo, m.assocRepo, m.enumValRepo, m.linkRepo, m.etRepo,
+		m.attrRepo, m.assocRepo, m.tdvRepo, m.tdRepo, m.linkRepo, m.etRepo,
 	)
 	return svc, m
 }
@@ -59,6 +61,23 @@ func (m *validationMocks) setupSingleEntityType(ctx context.Context) {
 		ID: "etv1", EntityTypeID: "et1", Version: 1,
 	}, nil)
 	m.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "Server"}, nil)
+	m.setupCommonTypeDefs(ctx)
+}
+
+// setupCommonTypeDefs sets up type definition mocks for string, number, and enum base types.
+func (m *validationMocks) setupCommonTypeDefs(ctx context.Context) {
+	m.tdvRepo.On("GetByID", ctx, "tdv-string").Return(&models.TypeDefinitionVersion{
+		ID: "tdv-string", TypeDefinitionID: "td-string",
+	}, nil).Maybe()
+	m.tdRepo.On("GetByID", ctx, "td-string").Return(&models.TypeDefinition{
+		ID: "td-string", Name: "String", BaseType: models.BaseTypeString,
+	}, nil).Maybe()
+	m.tdvRepo.On("GetByID", ctx, "tdv-number").Return(&models.TypeDefinitionVersion{
+		ID: "tdv-number", TypeDefinitionID: "td-number",
+	}, nil).Maybe()
+	m.tdRepo.On("GetByID", ctx, "td-number").Return(&models.TypeDefinition{
+		ID: "td-number", Name: "Number", BaseType: models.BaseTypeNumber,
+	}, nil).Maybe()
 }
 
 // T-15.01: Instance missing value for required attribute produces error
@@ -71,7 +90,7 @@ func TestT15_01_RequiredAttrMissing(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
-		{ID: "attr1", Name: "hostname", Type: models.AttributeTypeString, Required: true},
+		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Required: true},
 	}, nil)
 	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
@@ -97,7 +116,7 @@ func TestT15_02_RequiredAttrPresent(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
-		{ID: "attr1", Name: "hostname", Type: models.AttributeTypeString, Required: true},
+		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Required: true},
 	}, nil)
 	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{
 		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueString: "web-01"},
@@ -121,7 +140,7 @@ func TestT15_03_OptionalAttrMissing(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
-		{ID: "attr1", Name: "description", Type: models.AttributeTypeString, Required: false},
+		{ID: "attr1", Name: "description", TypeDefinitionVersionID: "tdv-string", Required: false},
 	}, nil)
 	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
@@ -144,8 +163,8 @@ func TestT15_04_MultipleErrors(t *testing.T) {
 		{ID: "inst2", EntityTypeID: "et1", CatalogID: "c1", Name: "server-2"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
-		{ID: "attr1", Name: "hostname", Type: models.AttributeTypeString, Required: true},
-		{ID: "attr2", Name: "ip", Type: models.AttributeTypeString, Required: true},
+		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Required: true},
+		{ID: "attr2", Name: "ip", TypeDefinitionVersionID: "tdv-string", Required: true},
 	}, nil)
 	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{
 		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueString: "web-01"},
@@ -174,7 +193,7 @@ func TestT15_05_StringAttrValid(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
-		{ID: "attr1", Name: "hostname", Type: models.AttributeTypeString, Required: true},
+		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Required: true},
 	}, nil)
 	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{
 		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueString: "anything goes"},
@@ -199,7 +218,7 @@ func TestT15_06_NumberAttrValid(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
-		{ID: "attr1", Name: "cpu_count", Type: models.AttributeTypeNumber, Required: true},
+		{ID: "attr1", Name: "cpu_count", TypeDefinitionVersionID: "tdv-number", Required: true},
 	}, nil)
 	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{
 		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueNumber: &num},
@@ -223,15 +242,14 @@ func TestT15_08_EnumAttrValid(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
-		{ID: "attr1", Name: "status", Type: models.AttributeTypeEnum, EnumID: "enum1", Required: true},
+		{ID: "attr1", Name: "status", TypeDefinitionVersionID: "tdv-enum1", Required: true},
 	}, nil)
 	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{
-		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueEnum: "active"},
+		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueString: "active"},
 	}, nil)
-	m.enumValRepo.On("ListByEnum", ctx, "enum1").Return([]*models.EnumValue{
-		{ID: "ev1", EnumID: "enum1", Value: "active"},
-		{ID: "ev2", EnumID: "enum1", Value: "inactive"},
-	}, nil)
+	// Type resolution mocks for enum attribute
+	m.tdvRepo.On("GetByID", ctx, "tdv-enum1").Return(&models.TypeDefinitionVersion{ID: "tdv-enum1", TypeDefinitionID: "td-enum1", Constraints: map[string]any{"values": []any{"active", "inactive"}}}, nil)
+	m.tdRepo.On("GetByID", ctx, "td-enum1").Return(&models.TypeDefinition{ID: "td-enum1", BaseType: models.BaseTypeEnum}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusValid).Return(nil)
 
@@ -251,15 +269,14 @@ func TestT15_09_EnumAttrInvalid(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
-		{ID: "attr1", Name: "status", Type: models.AttributeTypeEnum, EnumID: "enum1", Required: true},
+		{ID: "attr1", Name: "status", TypeDefinitionVersionID: "tdv-enum1", Required: true},
 	}, nil)
 	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{
-		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueEnum: "bogus"},
+		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueString: "bogus"},
 	}, nil)
-	m.enumValRepo.On("ListByEnum", ctx, "enum1").Return([]*models.EnumValue{
-		{ID: "ev1", EnumID: "enum1", Value: "active"},
-		{ID: "ev2", EnumID: "enum1", Value: "inactive"},
-	}, nil)
+	// Type resolution mocks for enum attribute
+	m.tdvRepo.On("GetByID", ctx, "tdv-enum1").Return(&models.TypeDefinitionVersion{ID: "tdv-enum1", TypeDefinitionID: "td-enum1", Constraints: map[string]any{"values": []any{"active", "inactive"}}}, nil)
+	m.tdRepo.On("GetByID", ctx, "td-enum1").Return(&models.TypeDefinition{ID: "td-enum1", BaseType: models.BaseTypeEnum}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
 
@@ -440,6 +457,7 @@ func (m *validationMocks) setupTwoEntityTypes(ctx context.Context) {
 	}, nil)
 	m.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "Server"}, nil)
 	m.etRepo.On("GetByID", ctx, "et2").Return(&models.EntityType{ID: "et2", Name: "Tool"}, nil)
+	m.setupCommonTypeDefs(ctx)
 }
 
 // T-15.16: Containment associations are excluded from mandatory assoc checks
@@ -569,7 +587,7 @@ func TestT15_21_AllPassValid(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
-		{ID: "attr1", Name: "hostname", Type: models.AttributeTypeString, Required: true},
+		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Required: true},
 	}, nil)
 	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{
 		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueString: "web-01"},
@@ -593,7 +611,7 @@ func TestT15_22_AnyFailInvalid(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
-		{ID: "attr1", Name: "hostname", Type: models.AttributeTypeString, Required: true},
+		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Required: true},
 	}, nil)
 	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
@@ -644,7 +662,7 @@ func TestT15_25_ErrorStructure(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "my-instance"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
-		{ID: "attr1", Name: "my-field", Type: models.AttributeTypeString, Required: true},
+		{ID: "attr1", Name: "my-field", TypeDefinitionVersionID: "tdv-string", Required: true},
 	}, nil)
 	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
@@ -674,7 +692,7 @@ func TestT15_07_NumberAttrRequiredMissing(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
-		{ID: "attr1", Name: "cpu_count", Type: models.AttributeTypeNumber, Required: true},
+		{ID: "attr1", Name: "cpu_count", TypeDefinitionVersionID: "tdv-number", Required: true},
 	}, nil)
 	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{
 		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueNumber: nil},
@@ -797,7 +815,9 @@ func TestValidation_ETNameFallback(t *testing.T) {
 	m.etRepo.On("GetByID", ctx, "et1").Return(nil, domainerrors.NewNotFound("ET", "et1"))
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
 	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{{ID: "i1", EntityTypeID: "et1", Name: "s1"}}, nil)
-	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{{ID: "a1", Name: "h", Type: models.AttributeTypeString, Required: true}}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{{ID: "a1", Name: "h", TypeDefinitionVersionID: "tdv-string", Required: true}}, nil)
+	m.tdvRepo.On("GetByID", ctx, "tdv-string").Return(&models.TypeDefinitionVersion{ID: "tdv-string", TypeDefinitionID: "td-string"}, nil)
+	m.tdRepo.On("GetByID", ctx, "td-string").Return(&models.TypeDefinition{ID: "td-string", BaseType: models.BaseTypeString}, nil)
 	m.iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
 	result, err := svc.Validate(ctx, "c")
@@ -821,9 +841,9 @@ func TestValidation_EnumValuesListError(t *testing.T) {
 	ctx := context.Background()
 	m.setupSingleEntityType(ctx)
 	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{{ID: "i1", EntityTypeID: "et1"}}, nil)
-	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{{ID: "a1", Name: "s", Type: models.AttributeTypeEnum, EnumID: "e1"}}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{{ID: "a1", Name: "s", TypeDefinitionVersionID: "tdv-e1"}}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
-	m.enumValRepo.On("ListByEnum", ctx, "e1").Return(nil, domainerrors.NewValidation("db"))
+	m.tdvRepo.On("GetByID", ctx, "tdv-e1").Return(nil, domainerrors.NewValidation("db"))
 	_, err := svc.Validate(ctx, "my-catalog")
 	assert.Error(t, err)
 }
@@ -924,9 +944,102 @@ func TestCardinalityMinGE1_ValidValues(t *testing.T) {
 }
 
 func TestIsEmptyValue_UnknownType(t *testing.T) {
-	attr := &models.Attribute{Type: "unknown"}
 	val := &models.InstanceAttributeValue{ValueString: "something"}
-	assert.True(t, operational.IsEmptyValue(attr, val))
+	assert.True(t, operational.IsEmptyValue("unknown", val))
+}
+
+// === Coverage: IsEmptyValue — all base type branches ===
+
+func TestIsEmptyValue_StringNonEmpty(t *testing.T) {
+	val := &models.InstanceAttributeValue{ValueString: "hello"}
+	assert.False(t, operational.IsEmptyValue(models.BaseTypeString, val))
+}
+
+func TestIsEmptyValue_StringEmpty(t *testing.T) {
+	val := &models.InstanceAttributeValue{ValueString: ""}
+	assert.True(t, operational.IsEmptyValue(models.BaseTypeString, val))
+}
+
+func TestIsEmptyValue_BooleanNonEmpty(t *testing.T) {
+	val := &models.InstanceAttributeValue{ValueString: "true"}
+	assert.False(t, operational.IsEmptyValue(models.BaseTypeBoolean, val))
+}
+
+func TestIsEmptyValue_BooleanEmpty(t *testing.T) {
+	val := &models.InstanceAttributeValue{ValueString: ""}
+	assert.True(t, operational.IsEmptyValue(models.BaseTypeBoolean, val))
+}
+
+func TestIsEmptyValue_DateNonEmpty(t *testing.T) {
+	val := &models.InstanceAttributeValue{ValueString: "2026-04-12"}
+	assert.False(t, operational.IsEmptyValue(models.BaseTypeDate, val))
+}
+
+func TestIsEmptyValue_DateEmpty(t *testing.T) {
+	val := &models.InstanceAttributeValue{ValueString: ""}
+	assert.True(t, operational.IsEmptyValue(models.BaseTypeDate, val))
+}
+
+func TestIsEmptyValue_URLNonEmpty(t *testing.T) {
+	val := &models.InstanceAttributeValue{ValueString: "https://example.com"}
+	assert.False(t, operational.IsEmptyValue(models.BaseTypeURL, val))
+}
+
+func TestIsEmptyValue_URLEmpty(t *testing.T) {
+	val := &models.InstanceAttributeValue{ValueString: ""}
+	assert.True(t, operational.IsEmptyValue(models.BaseTypeURL, val))
+}
+
+func TestIsEmptyValue_EnumNonEmpty(t *testing.T) {
+	val := &models.InstanceAttributeValue{ValueString: "active"}
+	assert.False(t, operational.IsEmptyValue(models.BaseTypeEnum, val))
+}
+
+func TestIsEmptyValue_EnumEmpty(t *testing.T) {
+	val := &models.InstanceAttributeValue{ValueString: ""}
+	assert.True(t, operational.IsEmptyValue(models.BaseTypeEnum, val))
+}
+
+func TestIsEmptyValue_NumberNonEmpty(t *testing.T) {
+	num := 42.0
+	val := &models.InstanceAttributeValue{ValueNumber: &num}
+	assert.False(t, operational.IsEmptyValue(models.BaseTypeNumber, val))
+}
+
+func TestIsEmptyValue_NumberEmpty(t *testing.T) {
+	val := &models.InstanceAttributeValue{ValueNumber: nil}
+	assert.True(t, operational.IsEmptyValue(models.BaseTypeNumber, val))
+}
+
+func TestIsEmptyValue_IntegerNonEmpty(t *testing.T) {
+	num := 99.0
+	val := &models.InstanceAttributeValue{ValueNumber: &num}
+	assert.False(t, operational.IsEmptyValue(models.BaseTypeInteger, val))
+}
+
+func TestIsEmptyValue_IntegerEmpty(t *testing.T) {
+	val := &models.InstanceAttributeValue{ValueNumber: nil}
+	assert.True(t, operational.IsEmptyValue(models.BaseTypeInteger, val))
+}
+
+func TestIsEmptyValue_ListNonEmpty(t *testing.T) {
+	val := &models.InstanceAttributeValue{ValueJSON: `["a"]`}
+	assert.False(t, operational.IsEmptyValue(models.BaseTypeList, val))
+}
+
+func TestIsEmptyValue_ListEmpty(t *testing.T) {
+	val := &models.InstanceAttributeValue{ValueJSON: ""}
+	assert.True(t, operational.IsEmptyValue(models.BaseTypeList, val))
+}
+
+func TestIsEmptyValue_JSONNonEmpty(t *testing.T) {
+	val := &models.InstanceAttributeValue{ValueJSON: `{"k":"v"}`}
+	assert.False(t, operational.IsEmptyValue(models.BaseTypeJSON, val))
+}
+
+func TestIsEmptyValue_JSONEmpty(t *testing.T) {
+	val := &models.InstanceAttributeValue{ValueJSON: ""}
+	assert.True(t, operational.IsEmptyValue(models.BaseTypeJSON, val))
 }
 
 // === Bug 2: Full cardinality validation (min + max, both directions) ===
@@ -1323,4 +1436,48 @@ func TestValidation_ContainedTypeWithParentPasses(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, models.ValidationStatusValid, result.Status)
 	assert.Empty(t, result.Errors)
+}
+
+// T-31.XX: Corrupted type definition constraints produce a validation error
+func TestT31_CorruptedConstraintsFlaggedByValidation(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+
+	m.catRepo.On("GetByName", ctx, "corrupt-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "corrupt-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusDraft,
+	}, nil)
+	m.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	m.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	m.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "Server"}, nil)
+
+	// Attribute referencing a type definition with corrupted constraints
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
+		{ID: "a1", Name: "status", TypeDefinitionVersionID: "tdv-corrupt", Required: false},
+	}, nil)
+	m.tdvRepo.On("GetByID", ctx, "tdv-corrupt").Return(&models.TypeDefinitionVersion{
+		ID: "tdv-corrupt", TypeDefinitionID: "td-corrupt",
+		Constraints: map[string]any{"_raw": "not{valid-json"},
+	}, nil)
+	m.tdRepo.On("GetByID", ctx, "td-corrupt").Return(&models.TypeDefinition{
+		ID: "td-corrupt", Name: "BadEnum", BaseType: models.BaseTypeEnum,
+	}, nil)
+
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "i1", EntityTypeID: "et1", Name: "srv-1", Version: 1},
+	}, nil)
+	m.iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.linkRepo.On("GetForwardRefs", ctx, "i1").Return([]*models.AssociationLink{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "corrupt-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusInvalid, result.Status)
+	require.NotEmpty(t, result.Errors)
+	assert.Contains(t, result.Errors[0].Violation, "corrupted")
 }

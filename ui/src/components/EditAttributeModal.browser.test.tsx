@@ -2,10 +2,11 @@ import { render } from 'vitest-browser-react'
 import { expect, test, vi, beforeEach } from 'vitest'
 import { page } from 'vitest/browser'
 import EditAttributeModal from './EditAttributeModal'
-import type { Enum } from '../types'
+import type { TypeDefinition } from '../types'
 
-const mockEnums: Enum[] = [
-  { id: 'enum1', name: 'Colors', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+const mockTypeDefinitions: TypeDefinition[] = [
+  { id: 'td-string', name: 'string', base_type: 'string', system: true, latest_version: 1, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+  { id: 'td1', name: 'Colors', base_type: 'enum', system: false, latest_version: 1, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
 ]
 
 function renderModal(overrides: Partial<React.ComponentProps<typeof EditAttributeModal>> = {}) {
@@ -13,12 +14,11 @@ function renderModal(overrides: Partial<React.ComponentProps<typeof EditAttribut
     isOpen: true,
     onClose: vi.fn(),
     onSubmit: vi.fn().mockResolvedValue(undefined),
-    enums: mockEnums,
+    typeDefinitions: mockTypeDefinitions,
     error: null,
     initialName: 'hostname',
     initialDescription: 'The host',
-    initialType: 'string',
-    initialEnumId: '',
+    initialTypeDefinitionId: '',
     initialRequired: false,
     ...overrides,
   }
@@ -54,7 +54,7 @@ test('T-20.42: EditAttributeModal calls onSubmit', async () => {
   await page.getByRole('button', { name: 'Save' }).click()
   expect(props.onSubmit).toHaveBeenCalledWith(expect.objectContaining({
     name: 'hostname2',
-    type: 'string',
+    typeDefinitionVersionId: '',
   }))
 })
 

@@ -5,11 +5,11 @@ import AttributeFormFields from './AttributeFormFields'
 import type { SnapshotAttribute } from '../types'
 
 const schemaAttrs: SnapshotAttribute[] = [
-  { id: 'sys-name', name: 'name', type: 'string', description: '', ordinal: -2, required: true, system: true },
-  { id: 'sys-desc', name: 'description', type: 'string', description: '', ordinal: -1, required: false, system: true },
-  { id: 'a1', name: 'color', type: 'enum', description: '', ordinal: 1, required: false, enum_id: 'enum1' },
-  { id: 'a2', name: 'port', type: 'number', description: '', ordinal: 2, required: true },
-  { id: 'a3', name: 'hostname', type: 'string', description: '', ordinal: 3, required: false },
+  { id: 'sys-name', name: 'name', base_type: 'string', description: '', ordinal: -2, required: true, system: true },
+  { id: 'sys-desc', name: 'description', base_type: 'string', description: '', ordinal: -1, required: false, system: true },
+  { id: 'a1', name: 'color', base_type: 'enum', description: '', ordinal: 1, required: false, type_definition_version_id: 'enum1' },
+  { id: 'a2', name: 'port', base_type: 'number', description: '', ordinal: 2, required: true },
+  { id: 'a3', name: 'hostname', base_type: 'string', description: '', ordinal: 3, required: false },
 ]
 
 const enumValues = { enum1: ['red', 'green', 'blue'] }
@@ -102,8 +102,8 @@ test('T-20.11: renders custom number attr', async () => {
   await expect.element(input).toHaveValue(8080)
 })
 
-// T-20.12: Renders enum attr with EnumSelect dropdown
-test('T-20.12: renders enum attr with EnumSelect', async () => {
+// T-20.12: Renders enum attr with select dropdown
+test('T-20.12: renders enum attr with select', async () => {
   render(
     <AttributeFormFields
       schemaAttrs={schemaAttrs}
@@ -113,8 +113,9 @@ test('T-20.12: renders enum attr with EnumSelect', async () => {
       idPrefix="test"
     />,
   )
-  // EnumSelect shows 'Select...' when no value
-  await expect.element(page.getByText('Select...')).toBeVisible()
+  // Enum attr renders a native <select> with "Select..." option
+  const selectEl = page.getByRole('combobox', { name: 'color' })
+  await expect.element(selectEl).toBeVisible()
 })
 
 // T-20.13: Calls onChange when text input changes
@@ -146,4 +147,137 @@ test('T-20.14: shows required indicator for required attrs', async () => {
     />,
   )
   await expect.element(page.getByText('port *')).toBeVisible()
+})
+
+// T-20.15: Boolean attr renders checkbox; toggling calls onChange
+test('T-20.15: boolean attr renders checkbox and toggles value', async () => {
+  const onChange = vi.fn()
+  const boolAttrs: SnapshotAttribute[] = [
+    { id: 'b1', name: 'active', base_type: 'boolean', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields
+      schemaAttrs={boolAttrs}
+      values={{ active: 'false' }}
+      onChange={onChange}
+      enumValues={{}}
+      idPrefix="test"
+    />,
+  )
+  const checkbox = page.getByRole('checkbox', { name: 'Yes' })
+  await expect.element(checkbox).toBeVisible()
+  await expect.element(checkbox).not.toBeChecked()
+  await checkbox.click()
+  expect(onChange).toHaveBeenCalledWith('active', 'true')
+})
+
+// T-20.16: Integer attr renders number input with step=1
+test('T-20.16: integer attr renders number input with step=1', async () => {
+  const onChange = vi.fn()
+  const intAttrs: SnapshotAttribute[] = [
+    { id: 'i1', name: 'count', base_type: 'integer', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields
+      schemaAttrs={intAttrs}
+      values={{ count: '42' }}
+      onChange={onChange}
+      enumValues={{}}
+      idPrefix="test"
+    />,
+  )
+  const input = page.getByRole('spinbutton', { name: 'count' })
+  await expect.element(input).toBeVisible()
+  await expect.element(input).toHaveValue(42)
+  await expect.element(input).toHaveAttribute('step', '1')
+  await input.fill('99')
+  expect(onChange).toHaveBeenCalledWith('count', '99')
+})
+
+// T-20.17: Date attr renders text input with YYYY-MM-DD placeholder
+test('T-20.17: date attr renders text input with placeholder', async () => {
+  const onChange = vi.fn()
+  const dateAttrs: SnapshotAttribute[] = [
+    { id: 'd1', name: 'start_date', base_type: 'date', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields
+      schemaAttrs={dateAttrs}
+      values={{}}
+      onChange={onChange}
+      enumValues={{}}
+      idPrefix="test"
+    />,
+  )
+  const input = page.getByRole('textbox', { name: 'start_date' })
+  await expect.element(input).toBeVisible()
+  await expect.element(input).toHaveAttribute('placeholder', 'YYYY-MM-DD')
+  await input.fill('2026-01-15')
+  expect(onChange).toHaveBeenCalledWith('start_date', '2026-01-15')
+})
+
+// T-20.18: URL attr renders text input with https://... placeholder
+test('T-20.18: url attr renders text input with placeholder', async () => {
+  const onChange = vi.fn()
+  const urlAttrs: SnapshotAttribute[] = [
+    { id: 'u1', name: 'website', base_type: 'url', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields
+      schemaAttrs={urlAttrs}
+      values={{}}
+      onChange={onChange}
+      enumValues={{}}
+      idPrefix="test"
+    />,
+  )
+  const input = page.getByRole('textbox', { name: 'website' })
+  await expect.element(input).toBeVisible()
+  await expect.element(input).toHaveAttribute('placeholder', 'https://...')
+  await input.fill('https://example.com')
+  expect(onChange).toHaveBeenCalledWith('website', 'https://example.com')
+})
+
+// T-20.19: JSON attr renders textarea with JSON placeholder
+test('T-20.19: json attr renders textarea with placeholder', async () => {
+  const onChange = vi.fn()
+  const jsonAttrs: SnapshotAttribute[] = [
+    { id: 'j1', name: 'config', base_type: 'json', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields
+      schemaAttrs={jsonAttrs}
+      values={{}}
+      onChange={onChange}
+      enumValues={{}}
+      idPrefix="test"
+    />,
+  )
+  const textarea = page.getByRole('textbox', { name: 'config' })
+  await expect.element(textarea).toBeVisible()
+  await expect.element(textarea).toHaveAttribute('placeholder', '{"key": "value"}')
+  await textarea.fill('{"foo": 1}')
+  expect(onChange).toHaveBeenCalledWith('config', '{"foo": 1}')
+})
+
+// T-20.20: List attr renders textarea with comma-separated placeholder
+test('T-20.20: list attr renders textarea with placeholder', async () => {
+  const onChange = vi.fn()
+  const listAttrs: SnapshotAttribute[] = [
+    { id: 'l1', name: 'tags', base_type: 'list', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields
+      schemaAttrs={listAttrs}
+      values={{}}
+      onChange={onChange}
+      enumValues={{}}
+      idPrefix="test"
+    />,
+  )
+  const textarea = page.getByRole('textbox', { name: 'tags' })
+  await expect.element(textarea).toBeVisible()
+  await expect.element(textarea).toHaveAttribute('placeholder', 'Comma-separated values')
+  await textarea.fill('a, b, c')
+  expect(onChange).toHaveBeenCalledWith('tags', 'a, b, c')
 })

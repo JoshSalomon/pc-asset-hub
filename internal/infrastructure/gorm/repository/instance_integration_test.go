@@ -49,10 +49,10 @@ func setupInstanceTestData(t *testing.T) (*instanceTestData, *repository.EntityI
 
 	// Attributes
 	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{
-		ID: data.attrStringID, EntityTypeVersionID: data.etvID, Name: "hostname", Type: models.AttributeTypeString, Ordinal: 1,
+		ID: data.attrStringID, EntityTypeVersionID: data.etvID, Name: "hostname", TypeDefinitionVersionID: "tdv-string", Ordinal: 1,
 	}))
 	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{
-		ID: data.attrNumID, EntityTypeVersionID: data.etvID, Name: "port", Type: models.AttributeTypeNumber, Ordinal: 2,
+		ID: data.attrNumID, EntityTypeVersionID: data.etvID, Name: "port", TypeDefinitionVersionID: "tdv-number", Ordinal: 2,
 	}))
 
 	// CV + pin
@@ -250,9 +250,9 @@ func TestT11_07_PinResolutionAttributes(t *testing.T) {
 	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etv2ID, EntityTypeID: etID, Version: 2, CreatedAt: now}))
 
 	// V1 has attr "name", V2 has attr "name" + "url"
-	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: instTestID(), EntityTypeVersionID: etv1ID, Name: "name", Type: models.AttributeTypeString, Ordinal: 1}))
-	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: instTestID(), EntityTypeVersionID: etv2ID, Name: "name", Type: models.AttributeTypeString, Ordinal: 1}))
-	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: instTestID(), EntityTypeVersionID: etv2ID, Name: "url", Type: models.AttributeTypeString, Ordinal: 2}))
+	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: instTestID(), EntityTypeVersionID: etv1ID, Name: "name", TypeDefinitionVersionID: "tdv-string", Ordinal: 1}))
+	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: instTestID(), EntityTypeVersionID: etv2ID, Name: "name", TypeDefinitionVersionID: "tdv-string", Ordinal: 1}))
+	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: instTestID(), EntityTypeVersionID: etv2ID, Name: "url", TypeDefinitionVersionID: "tdv-string", Ordinal: 2}))
 
 	// Pin V1 (not latest V2)
 	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{ID: cvID, VersionLabel: "v1", LifecycleStage: "development", CreatedAt: now, UpdatedAt: now}))

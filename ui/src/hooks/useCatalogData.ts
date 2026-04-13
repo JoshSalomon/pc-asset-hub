@@ -13,7 +13,7 @@ export function useCatalogData(catalogName: string | undefined, role: Role) {
   const [schemaAttrs, setSchemaAttrs] = useState<SnapshotAttribute[]>([])
   const [schemaAssocs, setSchemaAssocs] = useState<SnapshotAssociation[]>([])
 
-  // Enum values cache for enum dropdowns
+  // Enum values cache for enum dropdowns (keyed by type_definition_version_id)
   const [enumValues, setEnumValues] = useState<Record<string, string[]>>({})
 
   const loadCatalog = useCallback(async () => {
@@ -47,14 +47,14 @@ export function useCatalogData(catalogName: string | undefined, role: Role) {
       const snapshot = await api.versions.snapshot(pin.entity_type_id, pin.version)
       setSchemaAttrs(snapshot.attributes || [])
       setSchemaAssocs(snapshot.associations || [])
-      // Load enum values for enum attributes
+      // For enum-type attributes, extract values from constraints
       const enumCache: Record<string, string[]> = {}
       for (const attr of snapshot.attributes || []) {
-        if (attr.type === 'enum' && attr.enum_id && !enumCache[attr.enum_id]) {
-          try {
-            const res = await api.enums.listValues(attr.enum_id)
-            enumCache[attr.enum_id] = (res.items || []).map(v => v.value)
-          } catch { /* ignore */ }
+        if (attr.base_type === 'enum' && attr.type_definition_version_id) {
+          const constraintValues = (attr.constraints?.values as string[]) || []
+          if (constraintValues.length > 0) {
+            enumCache[attr.type_definition_version_id] = constraintValues
+          }
         }
       }
       setEnumValues(enumCache)

@@ -41,8 +41,8 @@ import type { EntityType, CatalogVersion, ContainmentTreeNode, Role, VersionSnap
 import EntityTypeDiagram, { type DiagramEntityType, type EdgeClickData } from './components/EntityTypeDiagram'
 import EditAssociationModal from './components/EditAssociationModal'
 import EntityTypeDetailPage from './pages/meta/EntityTypeDetailPage'
-import EnumListPage from './pages/meta/EnumListPage'
-import EnumDetailPage from './pages/meta/EnumDetailPage'
+import TypeDefinitionListPage from './pages/meta/TypeDefinitionListPage'
+import TypeDefinitionDetailPage from './pages/meta/TypeDefinitionDetailPage'
 import CatalogVersionDetailPage from './pages/meta/CatalogVersionDetailPage'
 import CatalogListPage from './pages/meta/CatalogListPage'
 import CatalogDetailPage from './pages/meta/CatalogDetailPage'
@@ -117,7 +117,7 @@ function App() {
     if (!location.pathname.startsWith('/schema')) return ''
     if (location.pathname.startsWith('/schema/catalog-versions')) return 'catalogVersions'
     if (location.pathname.startsWith('/schema/catalogs')) return 'catalogs'
-    if (location.pathname.startsWith('/schema/enums')) return 'enums'
+    if (location.pathname.startsWith('/schema/types')) return 'types'
     if (location.pathname.startsWith('/schema/model-diagram')) return 'modelDiagram'
     return 'entityTypes'
   }
@@ -477,7 +477,7 @@ function App() {
     if (key === 'entityTypes') navigate('/schema')
     else if (key === 'catalogVersions') navigate('/schema/catalog-versions')
     else if (key === 'catalogs') navigate('/schema/catalogs')
-    else if (key === 'enums') navigate('/schema/enums')
+    else if (key === 'types') navigate('/schema/types')
     else if (key === 'modelDiagram') navigate('/schema/model-diagram')
   }
 
@@ -696,7 +696,7 @@ function App() {
         <Route path="/schema/entity-types/:id" element={<EntityTypeDetailPage role={role} />} />
         <Route path="/schema/catalogs/:name" element={<CatalogDetailPage role={role} />} />
         <Route path="/schema/catalog-versions/:id" element={<CatalogVersionDetailPage role={role} />} />
-        <Route path="/schema/enums/:id" element={<EnumDetailPage role={role} />} />
+        <Route path="/schema/types/:id" element={<TypeDefinitionDetailPage role={role} />} />
         <Route path="/schema/*" element={
           <PageSection>
             <Tabs activeKey={activeTab} onSelect={handleTabSelect}>
@@ -709,8 +709,8 @@ function App() {
               <Tab eventKey="catalogs" title={<TabTitleText>Catalogs</TabTitleText>}>
                 <CatalogListPage role={role} />
               </Tab>
-              <Tab eventKey="enums" title={<TabTitleText>Enums</TabTitleText>}>
-                <EnumListPage role={role} />
+              <Tab eventKey="types" title={<TabTitleText>Types</TabTitleText>}>
+                <TypeDefinitionListPage role={role} />
               </Tab>
               <Tab eventKey="modelDiagram" title={<TabTitleText>Model Diagram</TabTitleText>}>
                 <PageSection padding={{ default: 'noPadding' }}>

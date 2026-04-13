@@ -29,7 +29,7 @@ vi.mock('../../api/client', () => ({
       edit: vi.fn(),
       delete: vi.fn(),
     },
-    enums: {
+    typeDefinitions: {
       list: vi.fn(),
     },
     versions: {
@@ -48,11 +48,11 @@ const mockEntityType = {
 }
 
 const mockAttributes = [
-  { id: '', name: 'name', description: 'Instance name', type: 'string', ordinal: -2, required: true, system: true },
-  { id: '', name: 'description', description: 'Instance description', type: 'string', ordinal: -1, required: false, system: true },
-  { id: 'a1', name: 'hostname', description: 'The host', type: 'string', ordinal: 0, required: false },
-  { id: 'a2', name: 'cpu_count', description: '', type: 'number', ordinal: 1, required: false },
-  { id: 'a3', name: 'status', description: '', type: 'enum', enum_id: 'enum1', ordinal: 2, required: false },
+  { id: '', name: 'name', description: 'Instance name', base_type: 'string', ordinal: -2, required: true, system: true },
+  { id: '', name: 'description', description: 'Instance description', base_type: 'string', ordinal: -1, required: false, system: true },
+  { id: 'a1', name: 'hostname', description: 'The host', base_type: 'string', type_name: 'string', ordinal: 0, required: false },
+  { id: 'a2', name: 'cpu_count', description: '', base_type: 'number', type_name: 'number', ordinal: 1, required: false },
+  { id: 'a3', name: 'status', description: '', base_type: 'enum', type_name: 'Status', type_definition_version_id: 'td1', ordinal: 2, required: false },
 ]
 
 const mockAssociations = [
@@ -97,7 +97,7 @@ beforeEach(() => {
   ;(api.associations.create as Mock).mockResolvedValue({ id: 'v3', version: 3 })
   ;(api.associations.edit as Mock).mockResolvedValue({ id: 'v3', version: 3 })
   ;(api.associations.delete as Mock).mockResolvedValue(undefined)
-  ;(api.enums.list as Mock).mockResolvedValue({ items: [{ id: 'enum1', name: 'Status' }], total: 1 })
+  ;(api.typeDefinitions.list as Mock).mockResolvedValue({ items: [{ id: 'td1', name: 'Status', base_type: 'enum', system: false, latest_version: 1 }], total: 1 })
   ;(api.versions.list as Mock).mockResolvedValue({ items: mockVersions, total: 2 })
   ;(api.versions.diff as Mock).mockResolvedValue({
     from_version: 1,
@@ -256,16 +256,19 @@ test('attributes tab shows type labels', async () => {
   // Check that all three attribute types are displayed as labels
   await expect.element(page.getByText('hostname')).toBeVisible()
   await expect.element(page.getByText('cpu_count')).toBeVisible()
-  // Enum attribute should show the enum name
-  await expect.element(page.getByText('enum (Status)')).toBeVisible()
+  // Enum attribute row shows the type_name "Status" — find by the row containing "status" attr name
+  const statusRow = page.getByRole('row').filter({ hasText: 'status' })
+  await expect.element(statusRow.getByText('Status', { exact: true })).toBeVisible()
 })
 
-test('attributes tab shows enum name for enum attributes', async () => {
+test('attributes tab shows type name for enum attributes', async () => {
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
 
   await page.getByRole('tab', { name: /Attributes/i }).click()
-  await expect.element(page.getByText('enum (Status)')).toBeVisible()
+  // Find the status row and check its type label
+  const statusRow = page.getByRole('row').filter({ hasText: 'status' })
+  await expect.element(statusRow.getByText('Status', { exact: true })).toBeVisible()
 })
 
 test('attributes tab with only system attrs shows table', async () => {
@@ -294,13 +297,15 @@ test('T-C.34: add string attribute via modal', async () => {
   await expect.element(page.getByRole('dialog')).toBeVisible()
 
   await page.getByRole('textbox', { name: /Name/i }).fill('newattr')
+  // Select type — open selector and pick "Status (enum)" (only custom type in mock)
+  await page.getByText('Select type...').click()
+  await page.getByText('Status (enum)').click()
   await page.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
 
   expect(api.attributes.add).toHaveBeenCalledWith('et-1', {
     name: 'newattr',
     description: undefined,
-    type: 'string',
-    enum_id: undefined,
+    type_definition_version_id: 'td1',
     required: false,
   })
 })
@@ -313,6 +318,9 @@ test('add attribute error shown in modal', async () => {
   await page.getByRole('tab', { name: /Attributes/i }).click()
   await page.getByRole('button', { name: 'Add Attribute' }).click()
   await page.getByRole('textbox', { name: /Name/i }).fill('hostname')
+  // Select a type so the Add button is enabled
+  await page.getByText('Select type...').click()
+  await page.getByText('Status (enum)').click()
   await page.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
 
   await expect.element(page.getByText('409: duplicate')).toBeVisible()
@@ -758,14 +766,15 @@ test('RO cannot see copy from button', async () => {
 // main attributes table also resolves enum names correctly (same code path).
 // The copy modal source selection is tested via the system test suite.
 
-test('attributes table shows enum name for enum-type attributes', async () => {
+test('attributes table shows type name for enum-type attributes', async () => {
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
 
   await page.getByRole('tab', { name: /Attributes/i }).click()
   await expect.element(page.getByText('hostname')).toBeVisible()
-  // The enum attribute shows resolved enum name, not truncated ID
-  await expect.element(page.getByText('enum (Status)')).toBeVisible()
+  // The enum attribute row shows the type_name "Status"
+  const statusRow = page.getByRole('row').filter({ hasText: 'status' })
+  await expect.element(statusRow.getByText('Status', { exact: true })).toBeVisible()
 })
 
 test('RO cannot see edit buttons on attributes', async () => {
@@ -1634,39 +1643,36 @@ test('add attribute modal with description field', async () => {
   await dialog.getByRole('textbox', { name: /Name/i }).fill('myattr')
   const descInput = dialog.getByLabelText('Description')
   await descInput.fill('A test description')
+  // Select a type
+  await dialog.getByText('Select type...').click()
+  await page.getByText('Status (enum)').click()
 
   // Submit
   await dialog.getByRole('button', { name: 'Add' }).click()
   expect(api.attributes.add).toHaveBeenCalledWith('et-1', expect.objectContaining({
     name: 'myattr',
     description: 'A test description',
-    type: 'string',
+    type_definition_version_id: 'td1',
   }))
 })
 
-// Add attribute modal: change type to enum and select an enum
-test('add attribute modal select enum type and enum value', async () => {
+// Add attribute modal: select a custom (enum) type definition
+test('add attribute modal select custom type definition', async () => {
   renderDetail()
   await page.getByRole('tab', { name: /Attributes/i }).click()
   await page.getByRole('button', { name: 'Add Attribute' }).click()
   const dialog = page.getByRole('dialog')
 
   await dialog.getByRole('textbox', { name: /Name/i }).fill('color')
-  // Open type selector (PatternFly Select with MenuToggle showing "string")
-  await dialog.getByRole('button', { name: 'string' }).click()
-  // Select "enum"
-  await page.getByText('enum', { exact: true }).click()
-  // Now enum selector should appear - click it
-  await dialog.getByRole('button', { name: 'Select enum' }).click()
-  // Select the "Status" enum
-  await page.getByText('Status', { exact: true }).click()
+  // Open type selector and select the "Status" custom type
+  await dialog.getByText('Select type...').click()
+  await page.getByText('Status (enum)').click()
 
   // Submit
   await dialog.getByRole('button', { name: 'Add' }).click()
   expect(api.attributes.add).toHaveBeenCalledWith('et-1', expect.objectContaining({
     name: 'color',
-    type: 'enum',
-    enum_id: 'enum1',
+    type_definition_version_id: 'td1',
   }))
 })
 
@@ -1676,13 +1682,16 @@ test('add attribute success closes modal', async () => {
   await page.getByRole('tab', { name: /Attributes/i }).click()
   await page.getByRole('button', { name: 'Add Attribute' }).click()
   await page.getByRole('textbox', { name: /Name/i }).fill('newone')
+  // Select a type so Add is enabled
+  await page.getByText('Select type...').click()
+  await page.getByText('Status (enum)').click()
   await page.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
   // Modal should close after success
   await expect.element(page.getByRole('dialog')).not.toBeInTheDocument()
 })
 
-// Edit attribute modal: change type to enum
-test('edit attribute change type to enum', async () => {
+// Edit attribute modal: change type to a custom type definition
+test('edit attribute change type to custom type', async () => {
   renderDetail()
   await page.getByRole('tab', { name: /Attributes/i }).click()
   await expect.element(page.getByText('hostname')).toBeVisible()
@@ -1690,17 +1699,13 @@ test('edit attribute change type to enum', async () => {
   await page.getByRole('button', { name: 'Edit' }).first().click()
   const dialog = page.getByRole('dialog')
 
-  // Change type from string to enum
-  await dialog.getByRole('button', { name: 'string' }).click()
-  await page.getByText('enum', { exact: true }).click()
-  // Enum selector should appear
-  await dialog.getByRole('button', { name: 'Select enum' }).click()
-  await page.getByText('Status', { exact: true }).click()
+  // Change type by opening type selector and picking Status (enum)
+  await dialog.getByText('Select type...').click()
+  await page.getByText('Status (enum)').click()
 
   await dialog.getByRole('button', { name: 'Save' }).click()
   expect(api.attributes.edit).toHaveBeenCalledWith('et-1', 'hostname', expect.objectContaining({
-    type: 'enum',
-    enum_id: 'enum1',
+    type_definition_version_id: 'td1',
   }))
 })
 
@@ -2007,6 +2012,9 @@ test('add attribute with required checked', async () => {
   const dialog = page.getByRole('dialog')
 
   await dialog.getByRole('textbox', { name: /Name/i }).fill('reqattr')
+  // Select a type
+  await dialog.getByText('Select type...').click()
+  await page.getByText('Status (enum)').click()
   // Check the required checkbox
   await dialog.getByLabelText('Required').click()
 
@@ -2017,23 +2025,23 @@ test('add attribute with required checked', async () => {
   }))
 })
 
-// Add attribute: type selector opens (covers toggle rendering on line 821)
+// Add attribute: type selector opens (covers toggle rendering)
 test('add attribute type selector opens and shows options', async () => {
   renderDetail()
   await page.getByRole('tab', { name: /Attributes/i }).click()
   await page.getByRole('button', { name: 'Add Attribute' }).click()
   const dialog = page.getByRole('dialog')
 
-  // Open type selector - the button should show "string" (default)
-  const typeToggle = dialog.getByRole('button', { name: 'string' })
+  // Open type selector - the button should show "Select type..." (no default)
+  const typeToggle = dialog.getByText('Select type...')
   await expect.element(typeToggle).toBeVisible()
   await typeToggle.click()
-  // The dropdown should show string, number, enum options
-  await expect.element(page.getByText('string', { exact: true }).last()).toBeVisible()
+  // The dropdown should show type definitions in groups
+  await expect.element(page.getByText('Status (enum)')).toBeVisible()
 })
 
-// Edit attribute: edit the enum attribute (status) - covers openEditAttr enum preload
-test('edit enum attribute pre-fills enum selector', async () => {
+// Edit attribute: edit the enum attribute (status) - covers openEditAttr type preload
+test('edit enum attribute pre-fills type selector', async () => {
   renderDetail()
   await page.getByRole('tab', { name: /Attributes/i }).click()
   await expect.element(page.getByText('status', { exact: true })).toBeVisible()
@@ -2043,10 +2051,8 @@ test('edit enum attribute pre-fills enum selector', async () => {
   await editButtons.nth(2).click()
   const dialog = page.getByRole('dialog')
 
-  // Type should show "enum"
-  await expect.element(dialog.getByRole('button', { name: 'enum' })).toBeVisible()
-  // Enum selector should show "Status"
-  await expect.element(dialog.getByRole('button', { name: 'Status' })).toBeVisible()
+  // Type selector should show "Status (enum)" — the pre-filled type definition
+  await expect.element(dialog.getByText('Status (enum)')).toBeVisible()
 })
 
 // handleLoadSourceAttrs error path
@@ -2202,19 +2208,18 @@ test('edit association modal close via X button', async () => {
   await expect.element(page.getByText('Edit Association')).not.toBeInTheDocument()
 })
 
-// TD-4: Copy attributes picker shows enum name for enum attributes
-test('TD-4: copy picker shows enum (EnumName) using enum_name field', async () => {
-  // Source attrs have enum_name directly (simulating snapshot-style data)
+// TD-4: Copy attributes picker shows type_name for enum attributes
+test('TD-4: copy picker shows type_name for enum attributes', async () => {
+  // Source attrs have type_name directly (type system style data)
   const sourceAttrs = [
-    { id: 'sa1', name: 'priority', description: 'Priority level', type: 'enum', enum_id: 'enum-prio', enum_name: 'MonthName', ordinal: 0, required: false },
+    { id: 'sa1', name: 'priority', description: 'Priority level', base_type: 'enum', type_name: 'MonthName', type_definition_version_id: 'tdv-prio', ordinal: 0, required: false },
   ]
   ;(api.attributes.list as Mock).mockImplementation((etId: string) => {
     if (etId === 'et-2') return Promise.resolve({ items: sourceAttrs, total: 1 })
     return Promise.resolve({ items: mockAttributes, total: 5 })
   })
   ;(api.versions.list as Mock).mockResolvedValue({ items: mockVersions, total: 2 })
-  // Return empty enums list — enum_name on the attr itself should be used
-  ;(api.enums.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  ;(api.typeDefinitions.list as Mock).mockResolvedValue({ items: [], total: 0 })
 
   renderDetail()
   await page.getByRole('tab', { name: /Attributes/i }).click()
@@ -2225,8 +2230,8 @@ test('TD-4: copy picker shows enum (EnumName) using enum_name field', async () =
   await page.getByRole('dialog').getByRole('button', { name: 'Select source type' }).click()
   await page.getByText('Dataset').first().click()
 
-  // The enum attribute should show "enum (MonthName)" using enum_name directly
-  await expect.element(page.getByText('enum (MonthName)')).toBeVisible()
+  // The enum attribute should show "MonthName" using type_name directly
+  await expect.element(page.getByText('MonthName')).toBeVisible()
 })
 
 // Cardinality display for incoming association: target → source

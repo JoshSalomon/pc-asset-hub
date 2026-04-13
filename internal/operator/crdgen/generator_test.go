@@ -15,9 +15,9 @@ import (
 func TestT9_04_GenerateCRD(t *testing.T) {
 	et := &models.EntityType{ID: "et1", Name: "Model"}
 	attrs := []*models.Attribute{
-		{ID: "a1", Name: "endpoint", Type: models.AttributeTypeString},
-		{ID: "a2", Name: "max_tokens", Type: models.AttributeTypeNumber},
-		{ID: "a3", Name: "status", Type: models.AttributeTypeEnum},
+		{ID: "a1", Name: "endpoint", TypeDefinitionVersionID: "tdv-string"},
+		{ID: "a2", Name: "max_tokens", TypeDefinitionVersionID: "tdv-number"},
+		{ID: "a3", Name: "status", TypeDefinitionVersionID: "tdv-enum"},
 	}
 
 	crd, err := crdgen.GenerateCRD(et, attrs)
@@ -39,7 +39,7 @@ func TestT9_04_GenerateCRD(t *testing.T) {
 func TestT9_04b_GenerateCRDJSON(t *testing.T) {
 	et := &models.EntityType{ID: "et1", Name: "Tool"}
 	attrs := []*models.Attribute{
-		{ID: "a1", Name: "command", Type: models.AttributeTypeString},
+		{ID: "a1", Name: "command", TypeDefinitionVersionID: "tdv-string"},
 	}
 
 	jsonStr, err := crdgen.GenerateCRDJSON(et, attrs)
@@ -57,8 +57,8 @@ func TestT9_05_GenerateCR(t *testing.T) {
 	et := &models.EntityType{ID: "et1", Name: "Model"}
 	inst := &models.EntityInstance{ID: "inst1", Name: "llama-3-70b", Version: 1}
 	attrs := []*models.Attribute{
-		{ID: "a1", Name: "endpoint", Type: models.AttributeTypeString},
-		{ID: "a2", Name: "max_tokens", Type: models.AttributeTypeNumber},
+		{ID: "a1", Name: "endpoint", TypeDefinitionVersionID: "tdv-string"},
+		{ID: "a2", Name: "max_tokens", TypeDefinitionVersionID: "tdv-number"},
 	}
 
 	maxTokens := 4096.0
@@ -109,7 +109,7 @@ func TestGenerateCR_UnknownAttrIDSkipped(t *testing.T) {
 	et := &models.EntityType{ID: "et1", Name: "Model"}
 	inst := &models.EntityInstance{ID: "i1", Name: "inst"}
 	attrs := []*models.Attribute{
-		{ID: "a1", Name: "hostname", Type: models.AttributeTypeString},
+		{ID: "a1", Name: "hostname", TypeDefinitionVersionID: "tdv-string"},
 	}
 	values := []*models.InstanceAttributeValue{
 		{AttributeID: "a1", ValueString: "localhost"},
@@ -123,15 +123,15 @@ func TestGenerateCR_UnknownAttrIDSkipped(t *testing.T) {
 	assert.False(t, exists)
 }
 
-// GenerateCR: enum attribute value (line 154)
-func TestGenerateCR_EnumAttribute(t *testing.T) {
+// GenerateCR: JSON attribute value (replaces old enum test)
+func TestGenerateCR_JSONAttribute(t *testing.T) {
 	et := &models.EntityType{ID: "et1", Name: "Model"}
 	inst := &models.EntityInstance{ID: "i1", Name: "inst"}
 	attrs := []*models.Attribute{
-		{ID: "a1", Name: "status", Type: models.AttributeTypeEnum},
+		{ID: "a1", Name: "status", TypeDefinitionVersionID: "tdv-enum"},
 	}
 	values := []*models.InstanceAttributeValue{
-		{AttributeID: "a1", ValueEnum: "active"},
+		{AttributeID: "a1", ValueJSON: "active"},
 	}
 
 	cr, err := crdgen.GenerateCR(et, inst, values, attrs)

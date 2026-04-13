@@ -555,7 +555,7 @@ export default function CatalogVersionDetailPage({ role }: Props) {
                     {snapshot.attributes.map((attr) => (
                       <Tr key={attr.id}>
                         <Td>{attr.name}{attr.required ? ' *' : ''}</Td>
-                        <Td>{attr.type === 'enum' && attr.enum_name ? `${attr.enum_name} (enum)` : attr.type}</Td>
+                        <Td>{attr.type_name || attr.base_type || 'unknown'}</Td>
                         <Td>{attr.description}</Td>
                       </Tr>
                     ))}

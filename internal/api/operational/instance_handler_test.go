@@ -24,7 +24,7 @@ func setupInstanceServer() (*echo.Echo, *instanceMocks) {
 	m := newInstanceMocks()
 	svc := svcop.NewInstanceService(
 		m.instRepo, m.iavRepo, m.catalogRepo, m.cvRepo,
-		m.pinRepo, m.attrRepo, m.etvRepo, m.etRepo, m.enumValRepo,
+		m.pinRepo, m.attrRepo, m.etvRepo, m.etRepo, m.tdvRepo, m.tdRepo,
 		m.assocRepo, m.linkRepo,
 	)
 	handler := apiop.NewInstanceHandler(svc, nil)
@@ -48,7 +48,8 @@ type instanceMocks struct {
 	attrRepo    *mocks.MockAttributeRepo
 	etvRepo     *mocks.MockEntityTypeVersionRepo
 	etRepo      *mocks.MockEntityTypeRepo
-	enumValRepo *mocks.MockEnumValueRepo
+	tdvRepo     *mocks.MockTypeDefinitionVersionRepo
+	tdRepo      *mocks.MockTypeDefinitionRepo
 	assocRepo   *mocks.MockAssociationRepo
 	linkRepo    *mocks.MockAssociationLinkRepo
 }
@@ -63,7 +64,8 @@ func newInstanceMocks() *instanceMocks {
 		attrRepo:    new(mocks.MockAttributeRepo),
 		etvRepo:     new(mocks.MockEntityTypeVersionRepo),
 		etRepo:      new(mocks.MockEntityTypeRepo),
-		enumValRepo: new(mocks.MockEnumValueRepo),
+		tdvRepo:     new(mocks.MockTypeDefinitionVersionRepo),
+		tdRepo:      new(mocks.MockTypeDefinitionRepo),
 		assocRepo:   new(mocks.MockAssociationRepo),
 		linkRepo:    new(mocks.MockAssociationLinkRepo),
 	}
@@ -81,7 +83,13 @@ func (m *instanceMocks) mockPinResolution() {
 		ID: "etv1", EntityTypeID: "et1", Version: 1,
 	}, nil)
 	m.attrRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Attribute{
-		{ID: "a1", Name: "hostname", Type: models.AttributeTypeString},
+		{ID: "a1", Name: "hostname", TypeDefinitionVersionID: "tdv-string"},
+	}, nil)
+	m.tdvRepo.On("GetByID", mock.Anything, "tdv-string").Return(&models.TypeDefinitionVersion{
+		ID: "tdv-string", TypeDefinitionID: "td-string",
+	}, nil)
+	m.tdRepo.On("GetByID", mock.Anything, "td-string").Return(&models.TypeDefinition{
+		ID: "td-string", Name: "String", BaseType: models.BaseTypeString,
 	}, nil)
 }
 
@@ -834,8 +842,14 @@ func TestListInstances_MultipleFilters(t *testing.T) {
 		ID: "etv1", EntityTypeID: "et1", Version: 1,
 	}, nil)
 	m.attrRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Attribute{
-		{ID: "a1", Name: "hostname", Type: models.AttributeTypeString},
-		{ID: "a2", Name: "region", Type: models.AttributeTypeString},
+		{ID: "a1", Name: "hostname", TypeDefinitionVersionID: "tdv-string"},
+		{ID: "a2", Name: "region", TypeDefinitionVersionID: "tdv-string"},
+	}, nil)
+	m.tdvRepo.On("GetByID", mock.Anything, "tdv-string").Return(&models.TypeDefinitionVersion{
+		ID: "tdv-string", TypeDefinitionID: "td-string",
+	}, nil)
+	m.tdRepo.On("GetByID", mock.Anything, "td-string").Return(&models.TypeDefinition{
+		ID: "td-string", Name: "String", BaseType: models.BaseTypeString,
 	}, nil)
 
 	m.instRepo.On("List", mock.Anything, "et1", "cat1", mock.MatchedBy(func(p models.ListParams) bool {
@@ -1071,7 +1085,13 @@ func TestSystemAttrs_CustomAttrRequiredFlag(t *testing.T) {
 		ID: "etv1", EntityTypeID: "et1", Version: 1,
 	}, nil)
 	m.attrRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Attribute{
-		{ID: "a1", Name: "hostname", Type: models.AttributeTypeString, Required: true},
+		{ID: "a1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Required: true},
+	}, nil)
+	m.tdvRepo.On("GetByID", mock.Anything, "tdv-string").Return(&models.TypeDefinitionVersion{
+		ID: "tdv-string", TypeDefinitionID: "td-string",
+	}, nil)
+	m.tdRepo.On("GetByID", mock.Anything, "td-string").Return(&models.TypeDefinition{
+		ID: "td-string", Name: "String", BaseType: models.BaseTypeString,
 	}, nil)
 
 	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{

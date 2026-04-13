@@ -16,7 +16,7 @@ import {
 } from '@patternfly/react-core'
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
 import { useState, useEffect } from 'react'
-import type { EntityType, Attribute, Enum } from '../types'
+import type { EntityType, Attribute } from '../types'
 
 interface Props {
   isOpen: boolean
@@ -27,15 +27,28 @@ interface Props {
   currentEntityTypeId: string | undefined
   sourceAttributes: Attribute[]
   existingAttributes: Attribute[]
-  enums: Enum[]
   error: string | null
+}
+
+function typeLabel(attr: Attribute): string {
+  if (attr.type_name) return attr.type_name
+  if (attr.base_type) return attr.base_type
+  return 'unknown'
+}
+
+function typeLabelColor(attr: Attribute): 'purple' | 'blue' | 'green' | 'grey' {
+  const bt = attr.base_type || ''
+  if (bt === 'enum') return 'purple'
+  if (bt === 'integer' || bt === 'number') return 'blue'
+  if (bt === 'boolean') return 'green'
+  return 'grey'
 }
 
 export default function CopyAttributesModal({
   isOpen, onClose, onSubmit, onLoadSource,
   entityTypes, currentEntityTypeId,
   sourceAttributes, existingAttributes,
-  enums, error,
+  error,
 }: Props) {
   const [sourceOpen, setSourceOpen] = useState(false)
   const [sourceId, setSourceId] = useState('')
@@ -118,10 +131,8 @@ export default function CopyAttributesModal({
                     </Td>
                     <Td>{sa.name}{sa.required ? ' *' : ''}</Td>
                     <Td>
-                      <Label color={sa.type === 'enum' ? 'purple' : sa.type === 'number' ? 'blue' : 'grey'}>
-                        {sa.type === 'enum' && (sa.enum_name || sa.enum_id)
-                          ? `enum (${sa.enum_name || enums.find((en) => en.id === sa.enum_id)?.name || sa.enum_id?.slice(0, 8)})`
-                          : sa.type}
+                      <Label color={typeLabelColor(sa)}>
+                        {typeLabel(sa)}
                       </Label>
                     </Td>
                     <Td>{sa.description || '-'}</Td>

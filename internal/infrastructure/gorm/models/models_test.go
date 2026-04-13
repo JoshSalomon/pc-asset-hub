@@ -35,14 +35,14 @@ func TestEntityTypeVersionConversion(t *testing.T) {
 }
 
 func TestAttributeConversion(t *testing.T) {
-	m := &domain.Attribute{ID: "a1", EntityTypeVersionID: "v1", Name: "attr", Type: domain.AttributeTypeString, EnumID: "e1", Ordinal: 3, Required: true}
+	m := &domain.Attribute{ID: "a1", EntityTypeVersionID: "v1", Name: "attr", TypeDefinitionVersionID: "tdv-1", Ordinal: 3, Required: true}
 	g := AttributeFromModel(m)
-	assert.Equal(t, "string", g.Type)
+	assert.Equal(t, "tdv-1", g.TypeDefinitionVersionID)
 	assert.True(t, g.Required)
 	back := g.ToModel()
-	assert.Equal(t, domain.AttributeTypeString, back.Type)
+	assert.Equal(t, "tdv-1", back.TypeDefinitionVersionID)
 	assert.True(t, back.Required)
-	assert.Equal(t, "e1", back.EnumID)
+	assert.Equal(t, 3, back.Ordinal)
 }
 
 func TestAssociationConversion(t *testing.T) {
@@ -55,22 +55,40 @@ func TestAssociationConversion(t *testing.T) {
 	assert.Equal(t, "src", back.SourceRole)
 }
 
-func TestEnumConversion(t *testing.T) {
+func TestTypeDefinitionConversion(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
-	m := &domain.Enum{ID: "e1", Name: "Status", CreatedAt: now, UpdatedAt: now}
-	g := EnumFromModel(m)
+	m := &domain.TypeDefinition{ID: "td1", Name: "Status", Description: "Status type", BaseType: domain.BaseTypeEnum, System: true, CreatedAt: now, UpdatedAt: now}
+	g := TypeDefinitionFromModel(m)
 	assert.Equal(t, "Status", g.Name)
+	assert.Equal(t, "enum", g.BaseType)
+	assert.True(t, g.System)
 	back := g.ToModel()
 	assert.Equal(t, m.ID, back.ID)
+	assert.Equal(t, domain.BaseTypeEnum, back.BaseType)
+	assert.True(t, back.System)
 }
 
-func TestEnumValueConversion(t *testing.T) {
-	m := &domain.EnumValue{ID: "ev1", EnumID: "e1", Value: "active", Ordinal: 0}
-	g := EnumValueFromModel(m)
-	assert.Equal(t, "active", g.Value)
+func TestTypeDefinitionVersionConversion(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	m := &domain.TypeDefinitionVersion{ID: "tdv1", TypeDefinitionID: "td1", VersionNumber: 1, Constraints: map[string]any{"allowed_values": []string{"active", "inactive"}}, CreatedAt: now}
+	g := TypeDefinitionVersionFromModel(m)
+	assert.Equal(t, "td1", g.TypeDefinitionID)
+	assert.Equal(t, 1, g.VersionNumber)
+	assert.Contains(t, g.Constraints, "allowed_values")
 	back := g.ToModel()
-	assert.Equal(t, m.Value, back.Value)
-	assert.Equal(t, 0, back.Ordinal)
+	assert.Equal(t, m.ID, back.ID)
+	assert.Equal(t, 1, back.VersionNumber)
+	assert.Contains(t, back.Constraints, "allowed_values")
+}
+
+func TestCatalogVersionTypePinConversion(t *testing.T) {
+	m := &domain.CatalogVersionTypePin{ID: "cvtp1", CatalogVersionID: "cv1", TypeDefinitionVersionID: "tdv1"}
+	g := CatalogVersionTypePinFromModel(m)
+	assert.Equal(t, "cv1", g.CatalogVersionID)
+	assert.Equal(t, "tdv1", g.TypeDefinitionVersionID)
+	back := g.ToModel()
+	assert.Equal(t, m.ID, back.ID)
+	assert.Equal(t, "tdv1", back.TypeDefinitionVersionID)
 }
 
 func TestCatalogVersionConversion(t *testing.T) {
@@ -114,12 +132,13 @@ func TestEntityInstanceConversion(t *testing.T) {
 
 func TestInstanceAttributeValueConversion(t *testing.T) {
 	num := 3.14
-	m := &domain.InstanceAttributeValue{ID: "iav1", InstanceID: "i1", InstanceVersion: 1, AttributeID: "a1", ValueString: "hello", ValueNumber: &num, ValueEnum: "active"}
+	m := &domain.InstanceAttributeValue{ID: "iav1", InstanceID: "i1", InstanceVersion: 1, AttributeID: "a1", ValueString: "hello", ValueNumber: &num, ValueJSON: `{"key":"value"}`}
 	g := InstanceAttributeValueFromModel(m)
 	assert.Equal(t, "hello", g.ValueString)
 	assert.NotNil(t, g.ValueNumber)
+	assert.Equal(t, `{"key":"value"}`, g.ValueJSON)
 	back := g.ToModel()
-	assert.Equal(t, "active", back.ValueEnum)
+	assert.Equal(t, `{"key":"value"}`, back.ValueJSON)
 	assert.Equal(t, &num, back.ValueNumber)
 }
 
@@ -150,7 +169,7 @@ func TestCatalogConversion(t *testing.T) {
 
 func TestAllModels(t *testing.T) {
 	models := AllModels()
-	assert.Len(t, models, 13)
+	assert.Len(t, models, 14)
 }
 
 func TestInitDB(t *testing.T) {
@@ -213,6 +232,49 @@ func TestInitDB_Idempotent(t *testing.T) {
 	require.NoError(t, InitDB(db))
 	// Second call should also succeed
 	require.NoError(t, InitDB(db))
+}
+
+// TypeDefinitionVersion ToModel — corrupted JSON in Constraints
+func TestTypeDefinitionVersionToModel_CorruptedJSON(t *testing.T) {
+	g := &TypeDefinitionVersion{
+		ID:               "tdv-corrupt",
+		TypeDefinitionID: "td1",
+		VersionNumber:    1,
+		Constraints:      "not{valid",
+	}
+	m := g.ToModel()
+	require.NotNil(t, m)
+	assert.Equal(t, "tdv-corrupt", m.ID)
+	// Corrupted JSON: should have _raw key with original string
+	assert.Contains(t, m.Constraints, "_raw")
+	assert.Equal(t, "not{valid", m.Constraints["_raw"])
+}
+
+// TypeDefinitionVersion ToModel — empty Constraints
+func TestTypeDefinitionVersionToModel_EmptyConstraints(t *testing.T) {
+	g := &TypeDefinitionVersion{
+		ID:               "tdv-empty",
+		TypeDefinitionID: "td1",
+		VersionNumber:    1,
+		Constraints:      "",
+	}
+	m := g.ToModel()
+	require.NotNil(t, m)
+	assert.Equal(t, map[string]any{}, m.Constraints)
+}
+
+// TypeDefinitionVersion ToModel — "{}" Constraints (empty JSON object)
+func TestTypeDefinitionVersionToModel_EmptyJSONObject(t *testing.T) {
+	g := &TypeDefinitionVersion{
+		ID:               "tdv-empty-obj",
+		TypeDefinitionID: "td1",
+		VersionNumber:    1,
+		Constraints:      "{}",
+	}
+	m := g.ToModel()
+	require.NotNil(t, m)
+	// Both "" and "{}" hit the same nil-constraints branch
+	assert.Equal(t, map[string]any{}, m.Constraints)
 }
 
 // InitDB containment cardinality fix — verifies containment associations get "0..1" source cardinality

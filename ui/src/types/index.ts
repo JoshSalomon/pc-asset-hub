@@ -16,13 +16,15 @@ export interface EntityTypeVersion {
   created_at: string
 }
 
+export type BaseType = 'string' | 'integer' | 'number' | 'boolean' | 'date' | 'url' | 'enum' | 'list' | 'json'
+
 export interface Attribute {
   id: string
   name: string
   description: string
-  type: 'string' | 'number' | 'enum'
-  enum_id?: string
-  enum_name?: string
+  type_definition_version_id?: string
+  type_name?: string
+  base_type?: BaseType
   ordinal: number
   required: boolean
   system?: boolean
@@ -42,18 +44,23 @@ export interface Association {
   source_entity_type_id?: string
 }
 
-export interface Enum {
+export interface TypeDefinition {
   id: string
   name: string
   description?: string
+  base_type: BaseType
+  system: boolean
+  latest_version: number
   created_at: string
   updated_at: string
 }
 
-export interface EnumValue {
+export interface TypeDefinitionVersion {
   id: string
-  value: string
-  ordinal: number
+  type_definition_id: string
+  version_number: number
+  constraints: Record<string, unknown>
+  created_at: string
 }
 
 export interface VersionDiffItem {
@@ -113,9 +120,10 @@ export interface SnapshotAttribute {
   id: string
   name: string
   description: string
-  type: string
-  enum_id?: string
-  enum_name?: string
+  type_definition_version_id?: string
+  type_name?: string
+  base_type?: string
+  constraints?: Record<string, unknown>
   ordinal: number
   required: boolean
   system?: boolean

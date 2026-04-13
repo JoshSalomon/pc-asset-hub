@@ -23,7 +23,8 @@ import (
 func setupValidationServer() (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockEntityInstanceRepo,
 	*mocks.MockCatalogVersionPinRepo, *mocks.MockEntityTypeVersionRepo,
 	*mocks.MockAttributeRepo, *mocks.MockAssociationRepo,
-	*mocks.MockEnumValueRepo, *mocks.MockAssociationLinkRepo, *mocks.MockEntityTypeRepo,
+	*mocks.MockTypeDefinitionVersionRepo, *mocks.MockTypeDefinitionRepo,
+	*mocks.MockAssociationLinkRepo, *mocks.MockEntityTypeRepo,
 	*mocks.MockInstanceAttributeValueRepo) {
 
 	catRepo := new(mocks.MockCatalogRepo)
@@ -33,7 +34,8 @@ func setupValidationServer() (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockEnt
 	etvRepo := new(mocks.MockEntityTypeVersionRepo)
 	attrRepo := new(mocks.MockAttributeRepo)
 	assocRepo := new(mocks.MockAssociationRepo)
-	enumValRepo := new(mocks.MockEnumValueRepo)
+	tdvRepo := new(mocks.MockTypeDefinitionVersionRepo)
+	tdRepo := new(mocks.MockTypeDefinitionRepo)
 	linkRepo := new(mocks.MockAssociationLinkRepo)
 	etRepo := new(mocks.MockEntityTypeRepo)
 	cvRepo := new(mocks.MockCatalogVersionRepo)
@@ -41,7 +43,7 @@ func setupValidationServer() (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockEnt
 	catalogSvc := svcop.NewCatalogService(catRepo, cvRepo, instRepo, nil, "")
 	validationSvc := svcop.NewCatalogValidationService(
 		catRepo, instRepo, iavRepo, pinRepo, etvRepo,
-		attrRepo, assocRepo, enumValRepo, linkRepo, etRepo,
+		attrRepo, assocRepo, tdvRepo, tdRepo, linkRepo, etRepo,
 	)
 	accessChecker := &apimw.HeaderCatalogAccessChecker{}
 	handler := apiop.NewCatalogHandler(catalogSvc, validationSvc, accessChecker)
@@ -53,7 +55,7 @@ func setupValidationServer() (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockEnt
 	requireRW := apimw.RequireRole(apimw.RoleRW)
 	apiop.RegisterCatalogRoutes(g, handler, requireRW, apimw.RequireRole(apimw.RoleAdmin))
 
-	return e, catRepo, instRepo, pinRepo, etvRepo, attrRepo, assocRepo, enumValRepo, linkRepo, etRepo, iavRepo
+	return e, catRepo, instRepo, pinRepo, etvRepo, attrRepo, assocRepo, tdvRepo, tdRepo, linkRepo, etRepo, iavRepo
 }
 
 func doValidateRequest(e *echo.Echo, name string, role apimw.Role) *httptest.ResponseRecorder {
@@ -67,7 +69,7 @@ func doValidateRequest(e *echo.Echo, name string, role apimw.Role) *httptest.Res
 
 // T-15.33: POST /validate returns 200 with valid catalog
 func TestT15_33_ValidateValidCatalog(t *testing.T) {
-	e, catRepo, instRepo, pinRepo, etvRepo, attrRepo, assocRepo, _, _, etRepo, iavRepo := setupValidationServer()
+	e, catRepo, instRepo, pinRepo, etvRepo, attrRepo, assocRepo, _, _, _, etRepo, iavRepo := setupValidationServer()
 
 	catRepo.On("GetByName", mock.Anything, "test-catalog").Return(&models.Catalog{
 		ID: "c1", Name: "test-catalog", CatalogVersionID: "cv1",
@@ -100,7 +102,7 @@ func TestT15_33_ValidateValidCatalog(t *testing.T) {
 
 // T-15.34: POST /validate returns 200 with invalid catalog
 func TestT15_34_ValidateInvalidCatalog(t *testing.T) {
-	e, catRepo, instRepo, pinRepo, etvRepo, attrRepo, assocRepo, _, _, etRepo, iavRepo := setupValidationServer()
+	e, catRepo, instRepo, pinRepo, etvRepo, attrRepo, assocRepo, tdvRepo, tdRepo, _, etRepo, iavRepo := setupValidationServer()
 
 	catRepo.On("GetByName", mock.Anything, "test-catalog").Return(&models.Catalog{
 		ID: "c1", Name: "test-catalog", CatalogVersionID: "cv1",
@@ -116,7 +118,13 @@ func TestT15_34_ValidateInvalidCatalog(t *testing.T) {
 	}, nil)
 	etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "Server"}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Attribute{
-		{ID: "attr1", Name: "hostname", Type: models.AttributeTypeString, Required: true},
+		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Required: true},
+	}, nil)
+	tdvRepo.On("GetByID", mock.Anything, "tdv-string").Return(&models.TypeDefinitionVersion{
+		ID: "tdv-string", TypeDefinitionID: "td-string",
+	}, nil)
+	tdRepo.On("GetByID", mock.Anything, "td-string").Return(&models.TypeDefinition{
+		ID: "td-string", Name: "String", BaseType: models.BaseTypeString,
 	}, nil)
 	iavRepo.On("GetCurrentValues", mock.Anything, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
 	assocRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Association{}, nil)
@@ -135,7 +143,7 @@ func TestT15_34_ValidateInvalidCatalog(t *testing.T) {
 
 // T-15.35: POST /validate with nonexistent catalog → 404
 func TestT15_35_ValidateNotFound(t *testing.T) {
-	e, catRepo, _, _, _, _, _, _, _, _, _ := setupValidationServer()
+	e, catRepo, _, _, _, _, _, _, _, _, _, _ := setupValidationServer()
 
 	catRepo.On("GetByName", mock.Anything, "nonexistent").Return(nil, domainerrors.NewNotFound("Catalog", "nonexistent"))
 
@@ -145,7 +153,7 @@ func TestT15_35_ValidateNotFound(t *testing.T) {
 
 // T-15.36: POST /validate as RO → 403
 func TestT15_36_ValidateRO(t *testing.T) {
-	e, _, _, _, _, _, _, _, _, _, _ := setupValidationServer()
+	e, _, _, _, _, _, _, _, _, _, _, _ := setupValidationServer()
 
 	rec := doValidateRequest(e, "test-catalog", apimw.RoleRO)
 	assert.Equal(t, http.StatusForbidden, rec.Code)
@@ -153,7 +161,7 @@ func TestT15_36_ValidateRO(t *testing.T) {
 
 // T-15.37: POST /validate as RW → 200
 func TestT15_37_ValidateRW(t *testing.T) {
-	e, catRepo, instRepo, _, _, _, _, _, _, _, _ := setupValidationServer()
+	e, catRepo, instRepo, _, _, _, _, _, _, _, _, _ := setupValidationServer()
 
 	catRepo.On("GetByName", mock.Anything, "test-catalog").Return(&models.Catalog{
 		ID: "c1", Name: "test-catalog", CatalogVersionID: "cv1",
@@ -167,7 +175,7 @@ func TestT15_37_ValidateRW(t *testing.T) {
 
 // T-15.38: Validate response errors include all four fields
 func TestT15_38_ValidateErrorFields(t *testing.T) {
-	e, catRepo, instRepo, pinRepo, etvRepo, attrRepo, assocRepo, _, _, etRepo, iavRepo := setupValidationServer()
+	e, catRepo, instRepo, pinRepo, etvRepo, attrRepo, assocRepo, tdvRepo, tdRepo, _, etRepo, iavRepo := setupValidationServer()
 
 	catRepo.On("GetByName", mock.Anything, "test-catalog").Return(&models.Catalog{
 		ID: "c1", Name: "test-catalog", CatalogVersionID: "cv1",
@@ -183,7 +191,13 @@ func TestT15_38_ValidateErrorFields(t *testing.T) {
 	}, nil)
 	etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "Server"}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Attribute{
-		{ID: "attr1", Name: "hostname", Type: models.AttributeTypeString, Required: true},
+		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Required: true},
+	}, nil)
+	tdvRepo.On("GetByID", mock.Anything, "tdv-string").Return(&models.TypeDefinitionVersion{
+		ID: "tdv-string", TypeDefinitionID: "td-string",
+	}, nil)
+	tdRepo.On("GetByID", mock.Anything, "td-string").Return(&models.TypeDefinition{
+		ID: "td-string", Name: "String", BaseType: models.BaseTypeString,
 	}, nil)
 	iavRepo.On("GetCurrentValues", mock.Anything, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
 	assocRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Association{}, nil)
@@ -236,7 +250,8 @@ func (m *mockPublishChecker) IsPublished(_ echo.Context, catalogName string) (bo
 func setupValidationServerWithWriteGuard(publishedCatalogs map[string]bool) (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockEntityInstanceRepo,
 	*mocks.MockCatalogVersionPinRepo, *mocks.MockEntityTypeVersionRepo,
 	*mocks.MockAttributeRepo, *mocks.MockAssociationRepo,
-	*mocks.MockEnumValueRepo, *mocks.MockAssociationLinkRepo, *mocks.MockEntityTypeRepo,
+	*mocks.MockTypeDefinitionVersionRepo, *mocks.MockTypeDefinitionRepo,
+	*mocks.MockAssociationLinkRepo, *mocks.MockEntityTypeRepo,
 	*mocks.MockInstanceAttributeValueRepo) {
 
 	catRepo := new(mocks.MockCatalogRepo)
@@ -246,7 +261,8 @@ func setupValidationServerWithWriteGuard(publishedCatalogs map[string]bool) (*ec
 	etvRepo := new(mocks.MockEntityTypeVersionRepo)
 	attrRepo := new(mocks.MockAttributeRepo)
 	assocRepo := new(mocks.MockAssociationRepo)
-	enumValRepo := new(mocks.MockEnumValueRepo)
+	tdvRepo := new(mocks.MockTypeDefinitionVersionRepo)
+	tdRepo := new(mocks.MockTypeDefinitionRepo)
 	linkRepo := new(mocks.MockAssociationLinkRepo)
 	etRepo := new(mocks.MockEntityTypeRepo)
 	cvRepo := new(mocks.MockCatalogVersionRepo)
@@ -254,7 +270,7 @@ func setupValidationServerWithWriteGuard(publishedCatalogs map[string]bool) (*ec
 	catalogSvc := svcop.NewCatalogService(catRepo, cvRepo, instRepo, nil, "")
 	validationSvc := svcop.NewCatalogValidationService(
 		catRepo, instRepo, iavRepo, pinRepo, etvRepo,
-		attrRepo, assocRepo, enumValRepo, linkRepo, etRepo,
+		attrRepo, assocRepo, tdvRepo, tdRepo, linkRepo, etRepo,
 	)
 	accessChecker := &apimw.HeaderCatalogAccessChecker{}
 	handler := apiop.NewCatalogHandler(catalogSvc, validationSvc, accessChecker)
@@ -269,11 +285,11 @@ func setupValidationServerWithWriteGuard(publishedCatalogs map[string]bool) (*ec
 	requireRW := apimw.RequireRole(apimw.RoleRW)
 	apiop.RegisterCatalogRoutes(g, handler, requireRW, apimw.RequireRole(apimw.RoleAdmin), requireWriteAccess)
 
-	return e, catRepo, instRepo, pinRepo, etvRepo, attrRepo, assocRepo, enumValRepo, linkRepo, etRepo, iavRepo
+	return e, catRepo, instRepo, pinRepo, etvRepo, attrRepo, assocRepo, tdvRepo, tdRepo, linkRepo, etRepo, iavRepo
 }
 
 func TestValidateCatalog_PublishedBlocked_RW(t *testing.T) {
-	e, _, _, _, _, _, _, _, _, _, _ := setupValidationServerWithWriteGuard(map[string]bool{"prod-catalog": true})
+	e, _, _, _, _, _, _, _, _, _, _, _ := setupValidationServerWithWriteGuard(map[string]bool{"prod-catalog": true})
 
 	rec := doValidateRequest(e, "prod-catalog", apimw.RoleRW)
 	assert.Equal(t, http.StatusForbidden, rec.Code)
@@ -281,7 +297,7 @@ func TestValidateCatalog_PublishedBlocked_RW(t *testing.T) {
 }
 
 func TestValidateCatalog_PublishedBlocked_Admin(t *testing.T) {
-	e, _, _, _, _, _, _, _, _, _, _ := setupValidationServerWithWriteGuard(map[string]bool{"prod-catalog": true})
+	e, _, _, _, _, _, _, _, _, _, _, _ := setupValidationServerWithWriteGuard(map[string]bool{"prod-catalog": true})
 
 	rec := doValidateRequest(e, "prod-catalog", apimw.RoleAdmin)
 	assert.Equal(t, http.StatusForbidden, rec.Code)
@@ -289,7 +305,7 @@ func TestValidateCatalog_PublishedBlocked_Admin(t *testing.T) {
 }
 
 func TestValidateCatalog_PublishedAllowed_SuperAdmin(t *testing.T) {
-	e, catRepo, instRepo, pinRepo, _, _, _, _, _, _, _ := setupValidationServerWithWriteGuard(map[string]bool{"prod-catalog": true})
+	e, catRepo, instRepo, pinRepo, _, _, _, _, _, _, _, _ := setupValidationServerWithWriteGuard(map[string]bool{"prod-catalog": true})
 
 	catRepo.On("GetByName", mock.Anything, "prod-catalog").Return(&models.Catalog{
 		ID: "c1", Name: "prod-catalog", CatalogVersionID: "cv1", Published: true,
@@ -303,7 +319,7 @@ func TestValidateCatalog_PublishedAllowed_SuperAdmin(t *testing.T) {
 }
 
 func TestValidateCatalog_UnpublishedAllowed_RW(t *testing.T) {
-	e, catRepo, instRepo, pinRepo, _, _, _, _, _, _, _ := setupValidationServerWithWriteGuard(map[string]bool{"dev-catalog": false})
+	e, catRepo, instRepo, pinRepo, _, _, _, _, _, _, _, _ := setupValidationServerWithWriteGuard(map[string]bool{"dev-catalog": false})
 
 	catRepo.On("GetByName", mock.Anything, "dev-catalog").Return(&models.Catalog{
 		ID: "c1", Name: "dev-catalog", CatalogVersionID: "cv1",

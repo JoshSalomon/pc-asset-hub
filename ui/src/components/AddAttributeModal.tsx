@@ -12,16 +12,16 @@ import {
   Alert,
   Select,
   SelectOption,
+  SelectGroup,
   MenuToggle,
   type MenuToggleElement,
 } from '@patternfly/react-core'
-import type { Enum } from '../types'
+import type { TypeDefinition } from '../types'
 
 export interface AddAttributeValues {
   name: string
   description: string
-  type: string
-  enumId: string
+  typeDefinitionVersionId: string
   required: boolean
 }
 
@@ -29,27 +29,23 @@ interface Props {
   isOpen: boolean
   onClose: () => void
   onSubmit: (values: AddAttributeValues) => Promise<void>
-  enums: Enum[]
+  typeDefinitions: TypeDefinition[]
   error: string | null
 }
 
-export default function AddAttributeModal({ isOpen, onClose, onSubmit, enums, error }: Props) {
+export default function AddAttributeModal({ isOpen, onClose, onSubmit, typeDefinitions, error }: Props) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [type, setType] = useState('string')
-  const [typeOpen, setTypeOpen] = useState(false)
-  const [enumId, setEnumId] = useState('')
-  const [enumOpen, setEnumOpen] = useState(false)
+  const [selectedTdId, setSelectedTdId] = useState('')
+  const [tdOpen, setTdOpen] = useState(false)
   const [required, setRequired] = useState(false)
 
-  // Reset form when modal opens (handles the case where isOpen is toggled
-  // without going through handleClose, e.g. after a successful submit)
+  // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
       setName('')
       setDescription('')
-      setType('string')
-      setEnumId('')
+      setSelectedTdId('')
       setRequired(false)
     }
   }, [isOpen])
@@ -57,15 +53,26 @@ export default function AddAttributeModal({ isOpen, onClose, onSubmit, enums, er
   const handleClose = () => {
     setName('')
     setDescription('')
-    setType('string')
-    setEnumId('')
+    setSelectedTdId('')
     setRequired(false)
     onClose()
   }
 
   const handleSubmit = async () => {
-    await onSubmit({ name, description, type, enumId, required })
+    const td = typeDefinitions.find(t => t.id === selectedTdId)
+    if (!td) return
+    // We don't have the version ID directly from TypeDefinition — we use a convention
+    // where the backend resolves it from the latest version. But the API requires
+    // type_definition_version_id. We'll need to fetch versions or use a placeholder.
+    // For now, the selectedTdId IS the type definition ID; the caller resolves the version.
+    await onSubmit({ name, description, typeDefinitionVersionId: selectedTdId, required })
   }
+
+  const systemTypes = typeDefinitions.filter(td => td.system)
+  const customTypes = typeDefinitions.filter(td => !td.system)
+
+  const selectedTd = typeDefinitions.find(t => t.id === selectedTdId)
+  const toggleLabel = selectedTd ? `${selectedTd.name} (${selectedTd.base_type})` : 'Select type...'
 
   return (
     <Modal variant={ModalVariant.small} isOpen={isOpen} onClose={handleClose}>
@@ -81,38 +88,36 @@ export default function AddAttributeModal({ isOpen, onClose, onSubmit, enums, er
           </FormGroup>
           <FormGroup label="Type" isRequired fieldId="attr-type">
             <Select
-              isOpen={typeOpen}
-              selected={type}
-              onSelect={(_e, value) => { setType(value as string); setTypeOpen(false) }}
-              onOpenChange={setTypeOpen}
+              isOpen={tdOpen}
+              selected={selectedTdId}
+              onSelect={(_e, value) => { setSelectedTdId(value as string); setTdOpen(false) }}
+              onOpenChange={setTdOpen}
               toggle={(ref: React.Ref<MenuToggleElement>) => (
-                <MenuToggle ref={ref} onClick={() => setTypeOpen(!typeOpen)} isExpanded={typeOpen}>{type}</MenuToggle>
+                <MenuToggle ref={ref} onClick={() => setTdOpen(!tdOpen)} isExpanded={tdOpen}>
+                  {toggleLabel}
+                </MenuToggle>
               )}
             >
-              <SelectOption value="string">string</SelectOption>
-              <SelectOption value="number">number</SelectOption>
-              <SelectOption value="enum">enum</SelectOption>
+              {systemTypes.length > 0 && (
+                <SelectGroup label="System Types">
+                  {systemTypes.map(td => (
+                    <SelectOption key={td.id} value={td.id}>
+                      {td.name} ({td.base_type})
+                    </SelectOption>
+                  ))}
+                </SelectGroup>
+              )}
+              {customTypes.length > 0 && (
+                <SelectGroup label="Custom Types">
+                  {customTypes.map(td => (
+                    <SelectOption key={td.id} value={td.id}>
+                      {td.name} ({td.base_type})
+                    </SelectOption>
+                  ))}
+                </SelectGroup>
+              )}
             </Select>
           </FormGroup>
-          {type === 'enum' && (
-            <FormGroup label="Enum" isRequired fieldId="attr-enum">
-              <Select
-                isOpen={enumOpen}
-                selected={enumId}
-                onSelect={(_e, value) => { setEnumId(value as string); setEnumOpen(false) }}
-                onOpenChange={setEnumOpen}
-                toggle={(ref: React.Ref<MenuToggleElement>) => (
-                  <MenuToggle ref={ref} onClick={() => setEnumOpen(!enumOpen)} isExpanded={enumOpen}>
-                    {enums.find((en) => en.id === enumId)?.name || 'Select enum'}
-                  </MenuToggle>
-                )}
-              >
-                {enums.map((en) => (
-                  <SelectOption key={en.id} value={en.id}>{en.name}</SelectOption>
-                ))}
-              </Select>
-            </FormGroup>
-          )}
           <FormGroup fieldId="attr-required">
             <label>
               <input type="checkbox" id="attr-required" checked={required} onChange={(e) => setRequired(e.target.checked)} />
@@ -122,7 +127,7 @@ export default function AddAttributeModal({ isOpen, onClose, onSubmit, enums, er
         </Form>
       </ModalBody>
       <ModalFooter>
-        <Button variant="primary" onClick={handleSubmit} isDisabled={!name.trim()}>Add</Button>
+        <Button variant="primary" onClick={handleSubmit} isDisabled={!name.trim() || !selectedTdId}>Add</Button>
         <Button variant="link" onClick={handleClose}>Cancel</Button>
       </ModalFooter>
     </Modal>

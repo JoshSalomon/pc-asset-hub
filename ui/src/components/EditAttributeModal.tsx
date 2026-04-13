@@ -12,16 +12,16 @@ import {
   Alert,
   Select,
   SelectOption,
+  SelectGroup,
   MenuToggle,
   type MenuToggleElement,
 } from '@patternfly/react-core'
-import type { Enum } from '../types'
+import type { TypeDefinition } from '../types'
 
 export interface EditAttributeValues {
   name: string
   description: string
-  type: string
-  enumId: string
+  typeDefinitionVersionId: string
   required: boolean
 }
 
@@ -29,36 +29,31 @@ interface Props {
   isOpen: boolean
   onClose: () => void
   onSubmit: (values: EditAttributeValues) => Promise<void>
-  enums: Enum[]
+  typeDefinitions: TypeDefinition[]
   error: string | null
   initialName: string
   initialDescription: string
-  initialType: string
-  initialEnumId: string
+  initialTypeDefinitionId: string
   initialRequired: boolean
 }
 
 export default function EditAttributeModal({
-  isOpen, onClose, onSubmit, enums, error,
-  initialName, initialDescription, initialType, initialEnumId, initialRequired,
+  isOpen, onClose, onSubmit, typeDefinitions, error,
+  initialName, initialDescription, initialTypeDefinitionId, initialRequired,
 }: Props) {
   const [name, setName] = useState(initialName)
   const [description, setDescription] = useState(initialDescription)
-  const [type, setType] = useState(initialType)
-  const [typeOpen, setTypeOpen] = useState(false)
-  const [enumId, setEnumId] = useState(initialEnumId)
-  const [enumOpen, setEnumOpen] = useState(false)
+  const [selectedTdId, setSelectedTdId] = useState(initialTypeDefinitionId)
+  const [tdOpen, setTdOpen] = useState(false)
   const [required, setRequired] = useState(initialRequired)
 
   // Reset form when modal opens with new initial values.
-  // eslint-disable-next-line react-hooks/exhaustive-deps — intentionally depend only on isOpen
-  // to avoid mid-edit resets if the parent re-renders with updated initial* props.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (isOpen) {
       setName(initialName)
       setDescription(initialDescription)
-      setType(initialType)
-      setEnumId(initialEnumId)
+      setSelectedTdId(initialTypeDefinitionId)
       setRequired(initialRequired)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,8 +64,14 @@ export default function EditAttributeModal({
   }
 
   const handleSubmit = async () => {
-    await onSubmit({ name, description, type, enumId, required })
+    await onSubmit({ name, description, typeDefinitionVersionId: selectedTdId, required })
   }
+
+  const systemTypes = typeDefinitions.filter(td => td.system)
+  const customTypes = typeDefinitions.filter(td => !td.system)
+
+  const selectedTd = typeDefinitions.find(t => t.id === selectedTdId)
+  const toggleLabel = selectedTd ? `${selectedTd.name} (${selectedTd.base_type})` : 'Select type...'
 
   return (
     <Modal variant={ModalVariant.small} isOpen={isOpen} onClose={handleClose}>
@@ -86,38 +87,36 @@ export default function EditAttributeModal({
           </FormGroup>
           <FormGroup label="Type" isRequired fieldId="edit-attr-type">
             <Select
-              isOpen={typeOpen}
-              selected={type}
-              onSelect={(_e, value) => { setType(value as string); setTypeOpen(false) }}
-              onOpenChange={setTypeOpen}
+              isOpen={tdOpen}
+              selected={selectedTdId}
+              onSelect={(_e, value) => { setSelectedTdId(value as string); setTdOpen(false) }}
+              onOpenChange={setTdOpen}
               toggle={(ref: React.Ref<MenuToggleElement>) => (
-                <MenuToggle ref={ref} onClick={() => setTypeOpen(!typeOpen)} isExpanded={typeOpen}>{type}</MenuToggle>
+                <MenuToggle ref={ref} onClick={() => setTdOpen(!tdOpen)} isExpanded={tdOpen}>
+                  {toggleLabel}
+                </MenuToggle>
               )}
             >
-              <SelectOption value="string">string</SelectOption>
-              <SelectOption value="number">number</SelectOption>
-              <SelectOption value="enum">enum</SelectOption>
+              {systemTypes.length > 0 && (
+                <SelectGroup label="System Types">
+                  {systemTypes.map(td => (
+                    <SelectOption key={td.id} value={td.id}>
+                      {td.name} ({td.base_type})
+                    </SelectOption>
+                  ))}
+                </SelectGroup>
+              )}
+              {customTypes.length > 0 && (
+                <SelectGroup label="Custom Types">
+                  {customTypes.map(td => (
+                    <SelectOption key={td.id} value={td.id}>
+                      {td.name} ({td.base_type})
+                    </SelectOption>
+                  ))}
+                </SelectGroup>
+              )}
             </Select>
           </FormGroup>
-          {type === 'enum' && (
-            <FormGroup label="Enum" isRequired fieldId="edit-attr-enum">
-              <Select
-                isOpen={enumOpen}
-                selected={enumId}
-                onSelect={(_e, value) => { setEnumId(value as string); setEnumOpen(false) }}
-                onOpenChange={setEnumOpen}
-                toggle={(ref: React.Ref<MenuToggleElement>) => (
-                  <MenuToggle ref={ref} onClick={() => setEnumOpen(!enumOpen)} isExpanded={enumOpen}>
-                    {enums.find((en) => en.id === enumId)?.name || 'Select enum'}
-                  </MenuToggle>
-                )}
-              >
-                {enums.map((en) => (
-                  <SelectOption key={en.id} value={en.id}>{en.name}</SelectOption>
-                ))}
-              </Select>
-            </FormGroup>
-          )}
           <FormGroup fieldId="edit-attr-required">
             <label>
               <input type="checkbox" id="edit-attr-required" checked={required} onChange={(e) => setRequired(e.target.checked)} />

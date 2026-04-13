@@ -9,7 +9,6 @@ vi.mock('../api/client', () => ({
     catalogs: { get: vi.fn() },
     catalogVersions: { listPins: vi.fn() },
     versions: { snapshot: vi.fn() },
-    enums: { listValues: vi.fn() },
   },
   setAuthRole: vi.fn(),
 }))
@@ -29,8 +28,8 @@ const mockSnapshot = {
   entity_type: { id: 'et1', name: 'model' },
   version: { id: 'etv1', version: 1 },
   attributes: [
-    { id: 'sys-name', name: 'name', type: 'string', ordinal: -2, required: true, system: true },
-    { id: 'a1', name: 'color', type: 'enum', ordinal: 1, required: false, enum_id: 'enum1' },
+    { id: 'sys-name', name: 'name', base_type: 'string', ordinal: -2, required: true, system: true },
+    { id: 'a1', name: 'color', base_type: 'enum', ordinal: 1, required: false, type_definition_version_id: 'tdv1', constraints: { values: ['red', 'blue'] } },
   ],
   associations: [
     { id: 'assoc1', name: 'tools', type: 'containment', direction: 'outgoing', target_entity_type_id: 'et2', target_entity_type_name: 'tool' },
@@ -64,7 +63,6 @@ test('T-19.01: useCatalogData loads catalog and pins on mount', async () => {
   ;(api.catalogs.get as Mock).mockResolvedValue(mockCatalog)
   ;(api.catalogVersions.listPins as Mock).mockResolvedValue({ items: mockPins, total: 2 })
   ;(api.versions.snapshot as Mock).mockResolvedValue(mockSnapshot)
-  ;(api.enums.listValues as Mock).mockResolvedValue({ items: [{ value: 'red' }, { value: 'blue' }], total: 2 })
 
   render(<TestComponent catalogName="my-catalog" />)
   await expect.element(page.getByTestId('catalog-name')).toHaveTextContent('my-catalog')
@@ -76,7 +74,6 @@ test('T-19.02: useCatalogData sets first pin as activeTab', async () => {
   ;(api.catalogs.get as Mock).mockResolvedValue(mockCatalog)
   ;(api.catalogVersions.listPins as Mock).mockResolvedValue({ items: mockPins, total: 2 })
   ;(api.versions.snapshot as Mock).mockResolvedValue(mockSnapshot)
-  ;(api.enums.listValues as Mock).mockResolvedValue({ items: [], total: 0 })
 
   render(<TestComponent catalogName="my-catalog" />)
   await expect.element(page.getByTestId('active-tab')).toHaveTextContent('model')
@@ -87,7 +84,6 @@ test('T-19.03: useCatalogData loads schema when activeTab is set', async () => {
   ;(api.catalogs.get as Mock).mockResolvedValue(mockCatalog)
   ;(api.catalogVersions.listPins as Mock).mockResolvedValue({ items: mockPins, total: 2 })
   ;(api.versions.snapshot as Mock).mockResolvedValue(mockSnapshot)
-  ;(api.enums.listValues as Mock).mockResolvedValue({ items: [], total: 0 })
 
   render(<TestComponent catalogName="my-catalog" />)
   await expect.element(page.getByTestId('schema-attrs-count')).toHaveTextContent('2')
@@ -99,10 +95,9 @@ test('T-19.04: useCatalogData loads enum values', async () => {
   ;(api.catalogs.get as Mock).mockResolvedValue(mockCatalog)
   ;(api.catalogVersions.listPins as Mock).mockResolvedValue({ items: mockPins, total: 2 })
   ;(api.versions.snapshot as Mock).mockResolvedValue(mockSnapshot)
-  ;(api.enums.listValues as Mock).mockResolvedValue({ items: [{ value: 'red' }, { value: 'blue' }], total: 2 })
 
   render(<TestComponent catalogName="my-catalog" />)
-  await expect.element(page.getByTestId('enum-keys')).toHaveTextContent('enum1')
+  await expect.element(page.getByTestId('enum-keys')).toHaveTextContent('tdv1')
 })
 
 // T-19.05: Returns early when name is undefined
@@ -138,7 +133,6 @@ test('T-19.08: useCatalogData reloads on loadCatalog', async () => {
   ;(api.catalogs.get as Mock).mockResolvedValue(mockCatalog)
   ;(api.catalogVersions.listPins as Mock).mockResolvedValue({ items: mockPins, total: 2 })
   ;(api.versions.snapshot as Mock).mockResolvedValue(mockSnapshot)
-  ;(api.enums.listValues as Mock).mockResolvedValue({ items: [], total: 0 })
 
   render(<TestComponent catalogName="my-catalog" />)
   await expect.element(page.getByTestId('catalog-name')).toHaveTextContent('my-catalog')

@@ -280,8 +280,8 @@ func TestT9_06_ReconcilePromotion(t *testing.T) {
 		{ID: "et2", Name: "Tool"},
 	}
 	attributesByType := map[string][]*models.Attribute{
-		"et1": {{ID: "a1", Name: "endpoint", Type: models.AttributeTypeString}},
-		"et2": {{ID: "a2", Name: "command", Type: models.AttributeTypeString}},
+		"et1": {{ID: "a1", Name: "endpoint", TypeDefinitionVersionID: "tdv-string"}},
+		"et2": {{ID: "a2", Name: "command", TypeDefinitionVersionID: "tdv-string"}},
 	}
 
 	result, err := controllers.ReconcilePromotion(entityTypes, attributesByType)

@@ -13,10 +13,10 @@ vi.mock('../api/client', () => ({
 }))
 
 const schemaAttrs: SnapshotAttribute[] = [
-  { id: 'sys-name', name: 'name', type: 'string', description: '', ordinal: -2, required: true, system: true },
-  { id: 'sys-desc', name: 'description', type: 'string', description: '', ordinal: -1, required: false, system: true },
-  { id: 'a1', name: 'port', type: 'number', description: '', ordinal: 1, required: false },
-  { id: 'a2', name: 'hostname', type: 'string', description: '', ordinal: 2, required: false },
+  { id: 'sys-name', name: 'name', base_type: 'string', description: '', ordinal: -2, required: true, system: true },
+  { id: 'sys-desc', name: 'description', base_type: 'string', description: '', ordinal: -1, required: false, system: true },
+  { id: 'a1', name: 'port', base_type: 'number', description: '', ordinal: 1, required: false },
+  { id: 'a2', name: 'hostname', base_type: 'string', description: '', ordinal: 2, required: false },
 ]
 
 const mockInstances: EntityInstance[] = [

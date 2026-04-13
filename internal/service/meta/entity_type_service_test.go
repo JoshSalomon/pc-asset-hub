@@ -667,8 +667,8 @@ func TestTE59_GetVersionSnapshot_ReturnsAttrsAndAssocs(t *testing.T) {
 	et := &models.EntityType{ID: "et1", Name: "Server"}
 	etv := &models.EntityTypeVersion{ID: "v2-id", EntityTypeID: "et1", Version: 2, Description: "V2"}
 	attrs := []*models.Attribute{
-		{ID: "a1", Name: "hostname", Type: "string", Ordinal: 1},
-		{ID: "a2", Name: "port", Type: "number", Ordinal: 2},
+		{ID: "a1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Ordinal: 1},
+		{ID: "a2", Name: "port", TypeDefinitionVersionID: "tdv-number", Ordinal: 2},
 	}
 	assocs := []*models.Association{
 		{ID: "as1", EntityTypeVersionID: "v2-id", TargetEntityTypeID: "et2", Type: "containment", SourceRole: "server", TargetRole: "tool"},
@@ -746,28 +746,32 @@ func TestGetVersionSnapshot_ListByVersionAssocError(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestGetVersionSnapshot_ResolvesEnumNames(t *testing.T) {
+func TestGetVersionSnapshot_ResolvesTypeInfo(t *testing.T) {
 	etRepo := new(mocks.MockEntityTypeRepo)
 	etvRepo := new(mocks.MockEntityTypeVersionRepo)
 	attrRepo := new(mocks.MockAttributeRepo)
 	assocRepo := new(mocks.MockAssociationRepo)
-	enumRepo := new(mocks.MockEnumRepo)
+	tdRepo := new(mocks.MockTypeDefinitionRepo)
+	tdvRepo := new(mocks.MockTypeDefinitionVersionRepo)
 	svc := meta.NewEntityTypeService(etRepo, etvRepo, attrRepo, assocRepo)
-	meta.WithEnumRepo(svc, enumRepo)
+	meta.WithTypeDefinitionRepos(svc, tdRepo, tdvRepo)
 
 	etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "Server"}, nil)
 	etvRepo.On("GetByEntityTypeAndVersion", mock.Anything, "et1", 1).Return(&models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
-		{ID: "a1", Name: "status", Type: "enum", EnumID: "enum-1", Ordinal: 1},
-		{ID: "a2", Name: "hostname", Type: "string", Ordinal: 2},
+		{ID: "a1", Name: "status", TypeDefinitionVersionID: "tdv-enum1", Ordinal: 1},
+		{ID: "a2", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Ordinal: 2},
 	}, nil)
 	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	assocRepo.On("ListByTargetEntityType", mock.Anything, "et1").Return([]*models.Association{}, nil)
-	enumRepo.On("GetByID", mock.Anything, "enum-1").Return(&models.Enum{ID: "enum-1", Name: "ServerStatus"}, nil)
+	tdvRepo.On("GetByID", mock.Anything, "tdv-enum1").Return(&models.TypeDefinitionVersion{ID: "tdv-enum1", TypeDefinitionID: "td-enum1"}, nil)
+	tdvRepo.On("GetByID", mock.Anything, "tdv-string").Return(&models.TypeDefinitionVersion{ID: "tdv-string", TypeDefinitionID: "td-string"}, nil)
+	tdRepo.On("GetByID", mock.Anything, "td-enum1").Return(&models.TypeDefinition{ID: "td-enum1", Name: "ServerStatus", BaseType: models.BaseTypeEnum}, nil)
+	tdRepo.On("GetByID", mock.Anything, "td-string").Return(&models.TypeDefinition{ID: "td-string", Name: "String", BaseType: models.BaseTypeString}, nil)
 
 	snapshot, err := svc.GetVersionSnapshot(context.Background(), "et1", 1)
 	require.NoError(t, err)
-	assert.Equal(t, "ServerStatus", snapshot.EnumNames["enum-1"])
+	assert.Equal(t, "ServerStatus", snapshot.TypeInfo["tdv-enum1"].TypeName)
 }
 
 func TestGetVersionSnapshot_ResolvesTargetEntityTypeNames(t *testing.T) {

@@ -45,7 +45,8 @@ func main() {
 	etvRepo := gormrepo.NewEntityTypeVersionGormRepo(db)
 	attrRepo := gormrepo.NewAttributeGormRepo(db)
 	assocRepo := gormrepo.NewAssociationGormRepo(db)
-	enumRepo := gormrepo.NewEnumGormRepo(db)
+	tdRepo := gormrepo.NewTypeDefinitionGormRepo(db)
+	tdvRepo := gormrepo.NewTypeDefinitionVersionGormRepo(db)
 	cvRepo := gormrepo.NewCatalogVersionGormRepo(db)
 	pinRepo := gormrepo.NewCatalogVersionPinGormRepo(db)
 	ltRepo := gormrepo.NewLifecycleTransitionGormRepo(db)
@@ -80,27 +81,28 @@ func main() {
 	// Services
 	etSvc := svcmeta.NewEntityTypeService(etRepo, etvRepo, attrRepo, assocRepo)
 	svcmeta.WithCatalogRepos(etSvc, pinRepo, cvRepo)
-	svcmeta.WithEnumRepo(etSvc, enumRepo)
-	attrSvc := svcmeta.NewAttributeService(attrRepo, etvRepo, etRepo, assocRepo, enumRepo)
-	enumSvc := svcmeta.NewEnumService(enumRepo, gormrepo.NewEnumValueGormRepo(db), attrRepo)
+	svcmeta.WithTypeDefinitionRepos(etSvc, tdRepo, tdvRepo)
+	attrSvc := svcmeta.NewAttributeService(attrRepo, etvRepo, etRepo, assocRepo, tdvRepo)
 	assocSvc := svcmeta.NewAssociationService(assocRepo, etvRepo, attrRepo)
 	vhSvc := svcmeta.NewVersionHistoryService(etvRepo, attrRepo, assocRepo)
 	catalogRepo := gormrepo.NewCatalogGormRepo(db)
 	cvSvc := svcmeta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, crManager, watchNamespace, cfg.AllowedStages(), etRepo, etvRepo, catalogRepo)
-	enumValRepo := gormrepo.NewEnumValueGormRepo(db)
 	txManager := gormrepo.NewGormTransactionManager(db)
 	catalogSvc := svcop.NewCatalogService(catalogRepo, cvRepo, instRepo, catalogCRManager, watchNamespace, svcop.WithCopyDeps(iavRepo, linkRepo), svcop.WithTransactionManager(txManager))
-	instanceSvc := svcop.NewInstanceService(instRepo, iavRepo, catalogRepo, cvRepo, pinRepo, attrRepo, etvRepo, etRepo, enumValRepo, assocRepo, linkRepo)
+	instanceSvc := svcop.NewInstanceService(instRepo, iavRepo, catalogRepo, cvRepo, pinRepo, attrRepo, etvRepo, etRepo, tdvRepo, tdRepo, assocRepo, linkRepo)
+
+	// Type Definition Service
+	typeDefSvc := svcmeta.NewTypeDefinitionService(tdRepo, tdvRepo, attrRepo)
 
 	// Handlers
 	etHandler := apimeta.NewEntityTypeHandler(etSvc, etvRepo)
 	attrHandler := apimeta.NewAttributeHandler(attrSvc)
 	assocHandler := apimeta.NewAssociationHandler(assocSvc)
-	enumHandler := apimeta.NewEnumHandler(enumSvc)
+	typeDefHandler := apimeta.NewTypeDefinitionHandler(typeDefSvc)
 	vhHandler := apimeta.NewVersionHistoryHandler(vhSvc)
 	cvHandler := apimeta.NewCatalogVersionHandler(cvSvc)
 	catalogAccessChecker := &middleware.HeaderCatalogAccessChecker{}
-	validationSvc := svcop.NewCatalogValidationService(catalogRepo, instRepo, iavRepo, pinRepo, etvRepo, attrRepo, assocRepo, enumValRepo, linkRepo, etRepo)
+	validationSvc := svcop.NewCatalogValidationService(catalogRepo, instRepo, iavRepo, pinRepo, etvRepo, attrRepo, assocRepo, tdvRepo, tdRepo, linkRepo, etRepo)
 	catalogHandler := apiop.NewCatalogHandler(catalogSvc, validationSvc, catalogAccessChecker)
 	instanceHandler := apiop.NewInstanceHandler(instanceSvc, catalogSvc)
 	healthHandler := apihealth.NewHandler(db)
@@ -127,9 +129,14 @@ func main() {
 	apimeta.RegisterEntityTypeRoutes(metaGroup, etHandler, requireAdmin)
 	apimeta.RegisterAttributeRoutes(metaGroup, attrHandler, requireAdmin)
 	apimeta.RegisterAssociationRoutes(metaGroup, assocHandler, requireAdmin)
-	apimeta.RegisterEnumRoutes(metaGroup, enumHandler, requireAdmin)
+	apimeta.RegisterTypeDefinitionRoutes(metaGroup, typeDefHandler, requireAdmin)
 	apimeta.RegisterVersionHistoryRoutes(metaGroup, vhHandler)
 	apimeta.RegisterCatalogVersionRoutes(metaGroup, cvHandler, requireRW)
+
+	// Seed system type definitions on startup
+	if err := svcmeta.SeedSystemTypes(context.Background(), typeDefSvc, tdRepo); err != nil {
+		log.Printf("warning: failed to seed system types: %v", err)
+	}
 
 	// Operational API — Catalog CRUD
 	catalogGroup := e.Group("/api/data/v1/catalogs")

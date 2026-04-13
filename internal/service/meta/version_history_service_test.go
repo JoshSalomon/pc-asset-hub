@@ -45,7 +45,7 @@ func TestT3_49_CompareVersionsAttributeAdded(t *testing.T) {
 
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v2").Return([]*models.Attribute{
-		{Name: "endpoint", Type: models.AttributeTypeString},
+		{Name: "endpoint", TypeDefinitionVersionID: "tdv-string"},
 	}, nil)
 
 	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
@@ -65,7 +65,7 @@ func TestT3_50_CompareVersionsAttributeRemoved(t *testing.T) {
 	etvRepo.On("GetByEntityTypeAndVersion", mock.Anything, "et1", 2).Return(&models.EntityTypeVersion{ID: "v2"}, nil)
 
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
-		{Name: "endpoint", Type: models.AttributeTypeString},
+		{Name: "endpoint", TypeDefinitionVersionID: "tdv-string"},
 	}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v2").Return([]*models.Attribute{}, nil)
 
@@ -85,10 +85,10 @@ func TestT3_51_CompareVersionsAttributeModified(t *testing.T) {
 	etvRepo.On("GetByEntityTypeAndVersion", mock.Anything, "et1", 2).Return(&models.EntityTypeVersion{ID: "v2"}, nil)
 
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
-		{Name: "endpoint", Type: models.AttributeTypeString, Description: "old desc"},
+		{Name: "endpoint", TypeDefinitionVersionID: "tdv-string", Description: "old desc"},
 	}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v2").Return([]*models.Attribute{
-		{Name: "endpoint", Type: models.AttributeTypeString, Description: "new desc"},
+		{Name: "endpoint", TypeDefinitionVersionID: "tdv-string", Description: "new desc"},
 	}, nil)
 
 	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
@@ -130,7 +130,7 @@ func TestT3_53_CompareVersionsSameVersion(t *testing.T) {
 
 	etvRepo.On("GetByEntityTypeAndVersion", mock.Anything, "et1", 1).Return(&models.EntityTypeVersion{ID: "v1"}, nil)
 
-	attrs := []*models.Attribute{{Name: "a", Type: models.AttributeTypeString}}
+	attrs := []*models.Attribute{{Name: "a", TypeDefinitionVersionID: "tdv-string"}}
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return(attrs, nil)
 	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 

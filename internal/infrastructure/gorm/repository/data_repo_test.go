@@ -316,14 +316,14 @@ func TestT2_13_SetEnumValue(t *testing.T) {
 
 	values := []*models.InstanceAttributeValue{{
 		ID: id(), InstanceID: instID, InstanceVersion: 1,
-		AttributeID: id(), ValueEnum: "active",
+		AttributeID: id(), ValueString: "active",
 	}}
 	require.NoError(t, tc.iavRepo.SetValues(ctx, values))
 
 	found, err := tc.iavRepo.GetCurrentValues(ctx, instID)
 	require.NoError(t, err)
 	assert.Len(t, found, 1)
-	assert.Equal(t, "active", found[0].ValueEnum)
+	assert.Equal(t, "active", found[0].ValueString)
 }
 
 func TestT2_14_VersionedValues(t *testing.T) {
@@ -625,7 +625,7 @@ func TestT13_15_StringFilter_CaseInsensitiveContains(t *testing.T) {
 	tc, ctx := setupTestContext(t)
 	attrID := id()
 	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
-		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "hostname", Type: models.AttributeTypeString, Ordinal: 0,
+		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "hostname", TypeDefinitionVersionID: "tdv-string", Ordinal: 0,
 	}))
 
 	// Create two instances with attribute values
@@ -662,42 +662,42 @@ func TestT13_20_EnumFilter_ExactMatch(t *testing.T) {
 	tc, ctx := setupTestContext(t)
 	attrID := id()
 	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
-		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "status", Type: models.AttributeTypeEnum, Ordinal: 0,
+		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "status", TypeDefinitionVersionID: "tdv-enum", Ordinal: 0,
 	}))
 
 	inst1ID := id()
 	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
 		ID: inst1ID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
-		Name: "active-srv", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		Name: "running-srv", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}))
 	require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{{
-		ID: id(), InstanceID: inst1ID, InstanceVersion: 1, AttributeID: attrID, ValueEnum: "active",
+		ID: id(), InstanceID: inst1ID, InstanceVersion: 1, AttributeID: attrID, ValueString: "running",
 	}}))
 
 	inst2ID := id()
 	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
 		ID: inst2ID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
-		Name: "inactive-srv", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		Name: "stopped-srv", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}))
 	require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{{
-		ID: id(), InstanceID: inst2ID, InstanceVersion: 1, AttributeID: attrID, ValueEnum: "inactive",
+		ID: id(), InstanceID: inst2ID, InstanceVersion: 1, AttributeID: attrID, ValueString: "stopped",
 	}}))
 
 	results, total, err := tc.instRepo.List(ctx, tc.etID, tc.cvID, models.ListParams{
 		Limit:   20,
-		Filters: map[string]string{attrID: "active"},
+		Filters: map[string]string{attrID: "running"},
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, total)
 	require.Len(t, results, 1)
-	assert.Equal(t, "active-srv", results[0].Name)
+	assert.Equal(t, "running-srv", results[0].Name)
 }
 
 func TestT13_22_Filter_NoMatch_ReturnsEmpty(t *testing.T) {
 	tc, ctx := setupTestContext(t)
 	attrID := id()
 	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
-		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "tag", Type: models.AttributeTypeString, Ordinal: 0,
+		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "tag", TypeDefinitionVersionID: "tdv-string", Ordinal: 0,
 	}))
 
 	instID := id()
@@ -723,7 +723,7 @@ func TestT13_17_NumberRangeFilter(t *testing.T) {
 
 	attrID := id()
 	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
-		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "score", Type: models.AttributeTypeNumber, Ordinal: 0,
+		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "score", TypeDefinitionVersionID: "tdv-number", Ordinal: 0,
 	}))
 
 	// Create instances with different numeric values
@@ -768,7 +768,7 @@ func TestT13_16_NumberFilter_ExactMatch(t *testing.T) {
 
 	attrID := id()
 	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
-		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "count", Type: models.AttributeTypeNumber, Ordinal: 0,
+		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "count", TypeDefinitionVersionID: "tdv-number", Ordinal: 0,
 	}))
 
 	for _, pair := range []struct {
@@ -804,7 +804,7 @@ func TestT13_18_NumberFilter_MaxOnly(t *testing.T) {
 
 	attrID := id()
 	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
-		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "score", Type: models.AttributeTypeNumber, Ordinal: 0,
+		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "score", TypeDefinitionVersionID: "tdv-number", Ordinal: 0,
 	}))
 
 	for _, pair := range []struct {
@@ -843,10 +843,10 @@ func TestT13_21_MultipleFilters_ANDLogic(t *testing.T) {
 	attr1ID := id()
 	attr2ID := id()
 	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
-		ID: attr1ID, EntityTypeVersionID: tc.etvID, Name: "env", Type: models.AttributeTypeString, Ordinal: 0,
+		ID: attr1ID, EntityTypeVersionID: tc.etvID, Name: "env", TypeDefinitionVersionID: "tdv-string", Ordinal: 0,
 	}))
 	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
-		ID: attr2ID, EntityTypeVersionID: tc.etvID, Name: "region", Type: models.AttributeTypeString, Ordinal: 1,
+		ID: attr2ID, EntityTypeVersionID: tc.etvID, Name: "region", TypeDefinitionVersionID: "tdv-string", Ordinal: 1,
 	}))
 
 	// inst1: env=prod, region=us
@@ -898,7 +898,7 @@ func TestT13_23_FilterWorksAcrossEAVJoin(t *testing.T) {
 
 	attrID := id()
 	require.NoError(t, tc.attrRepo.Create(ctx, &models.Attribute{
-		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "color", Type: models.AttributeTypeString, Ordinal: 0,
+		ID: attrID, EntityTypeVersionID: tc.etvID, Name: "color", TypeDefinitionVersionID: "tdv-string", Ordinal: 0,
 	}))
 
 	// Create 3 instances, two match the filter

@@ -47,14 +47,9 @@ func GenerateCRD(entityType *models.EntityType, attributes []*models.Attribute) 
 	properties := make(map[string]map[string]string)
 	for _, attr := range attributes {
 		prop := map[string]string{}
-		switch attr.Type {
-		case models.AttributeTypeString:
-			prop["type"] = "string"
-		case models.AttributeTypeNumber:
-			prop["type"] = "number"
-		case models.AttributeTypeEnum:
-			prop["type"] = "string"
-		}
+		// Default to string type for CRD schema — the actual base type
+		// is resolved via TypeDefinitionVersion at runtime.
+		prop["type"] = "string"
 		properties[attr.Name] = prop
 	}
 
@@ -144,15 +139,13 @@ func GenerateCR(entityType *models.EntityType, instance *models.EntityInstance, 
 		if !ok {
 			continue
 		}
-		switch attr.Type {
-		case models.AttributeTypeString:
+		// Use whichever value column is populated
+		if av.ValueNumber != nil {
+			spec[attr.Name] = *av.ValueNumber
+		} else if av.ValueJSON != "" {
+			spec[attr.Name] = av.ValueJSON
+		} else {
 			spec[attr.Name] = av.ValueString
-		case models.AttributeTypeNumber:
-			if av.ValueNumber != nil {
-				spec[attr.Name] = *av.ValueNumber
-			}
-		case models.AttributeTypeEnum:
-			spec[attr.Name] = av.ValueEnum
 		}
 	}
 

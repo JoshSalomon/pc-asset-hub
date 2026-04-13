@@ -157,55 +157,101 @@ func (m *MockAssociationRepo) GetContainmentGraph(ctx context.Context) ([]reposi
 	return args.Get(0).([]repository.ContainmentEdge), args.Error(1)
 }
 
-// MockEnumRepo mocks EnumRepository.
-type MockEnumRepo struct{ mock.Mock }
+// MockTypeDefinitionRepo mocks TypeDefinitionRepository.
+type MockTypeDefinitionRepo struct{ mock.Mock }
 
-func (m *MockEnumRepo) Create(ctx context.Context, e *models.Enum) error {
-	return m.Called(ctx, e).Error(0)
+func (m *MockTypeDefinitionRepo) Create(ctx context.Context, td *models.TypeDefinition) error {
+	return m.Called(ctx, td).Error(0)
 }
-func (m *MockEnumRepo) GetByID(ctx context.Context, id string) (*models.Enum, error) {
+func (m *MockTypeDefinitionRepo) GetByID(ctx context.Context, id string) (*models.TypeDefinition, error) {
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*models.Enum), args.Error(1)
+	return args.Get(0).(*models.TypeDefinition), args.Error(1)
 }
-func (m *MockEnumRepo) GetByName(ctx context.Context, name string) (*models.Enum, error) {
+func (m *MockTypeDefinitionRepo) GetByName(ctx context.Context, name string) (*models.TypeDefinition, error) {
 	args := m.Called(ctx, name)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*models.Enum), args.Error(1)
+	return args.Get(0).(*models.TypeDefinition), args.Error(1)
 }
-func (m *MockEnumRepo) List(ctx context.Context, params models.ListParams) ([]*models.Enum, int, error) {
+func (m *MockTypeDefinitionRepo) List(ctx context.Context, params models.ListParams) ([]*models.TypeDefinition, int, error) {
 	args := m.Called(ctx, params)
-	return args.Get(0).([]*models.Enum), args.Int(1), args.Error(2)
+	return args.Get(0).([]*models.TypeDefinition), args.Int(1), args.Error(2)
 }
-func (m *MockEnumRepo) Update(ctx context.Context, e *models.Enum) error {
-	return m.Called(ctx, e).Error(0)
+func (m *MockTypeDefinitionRepo) Update(ctx context.Context, td *models.TypeDefinition) error {
+	return m.Called(ctx, td).Error(0)
 }
-func (m *MockEnumRepo) Delete(ctx context.Context, id string) error {
+func (m *MockTypeDefinitionRepo) Delete(ctx context.Context, id string) error {
 	return m.Called(ctx, id).Error(0)
 }
 
-// MockEnumValueRepo mocks EnumValueRepository.
-type MockEnumValueRepo struct{ mock.Mock }
+// MockTypeDefinitionVersionRepo mocks TypeDefinitionVersionRepository.
+type MockTypeDefinitionVersionRepo struct{ mock.Mock }
 
-func (m *MockEnumValueRepo) Create(ctx context.Context, ev *models.EnumValue) error {
-	return m.Called(ctx, ev).Error(0)
+func (m *MockTypeDefinitionVersionRepo) Create(ctx context.Context, tdv *models.TypeDefinitionVersion) error {
+	return m.Called(ctx, tdv).Error(0)
 }
-func (m *MockEnumValueRepo) ListByEnum(ctx context.Context, enumID string) ([]*models.EnumValue, error) {
-	args := m.Called(ctx, enumID)
+func (m *MockTypeDefinitionVersionRepo) GetByID(ctx context.Context, id string) (*models.TypeDefinitionVersion, error) {
+	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]*models.EnumValue), args.Error(1)
+	return args.Get(0).(*models.TypeDefinitionVersion), args.Error(1)
 }
-func (m *MockEnumValueRepo) Delete(ctx context.Context, id string) error {
+func (m *MockTypeDefinitionVersionRepo) GetByIDs(ctx context.Context, ids []string) ([]*models.TypeDefinitionVersion, error) {
+	args := m.Called(ctx, ids)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.TypeDefinitionVersion), args.Error(1)
+}
+func (m *MockTypeDefinitionVersionRepo) GetLatestByTypeDefinition(ctx context.Context, typeDefID string) (*models.TypeDefinitionVersion, error) {
+	args := m.Called(ctx, typeDefID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.TypeDefinitionVersion), args.Error(1)
+}
+func (m *MockTypeDefinitionVersionRepo) GetLatestByTypeDefinitions(ctx context.Context, typeDefIDs []string) (map[string]*models.TypeDefinitionVersion, error) {
+	args := m.Called(ctx, typeDefIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]*models.TypeDefinitionVersion), args.Error(1)
+}
+func (m *MockTypeDefinitionVersionRepo) ListByTypeDefinition(ctx context.Context, typeDefID string) ([]*models.TypeDefinitionVersion, error) {
+	args := m.Called(ctx, typeDefID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.TypeDefinitionVersion), args.Error(1)
+}
+
+// MockCatalogVersionTypePinRepo mocks CatalogVersionTypePinRepository.
+type MockCatalogVersionTypePinRepo struct{ mock.Mock }
+
+func (m *MockCatalogVersionTypePinRepo) Create(ctx context.Context, pin *models.CatalogVersionTypePin) error {
+	return m.Called(ctx, pin).Error(0)
+}
+func (m *MockCatalogVersionTypePinRepo) GetByID(ctx context.Context, id string) (*models.CatalogVersionTypePin, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.CatalogVersionTypePin), args.Error(1)
+}
+func (m *MockCatalogVersionTypePinRepo) ListByCatalogVersion(ctx context.Context, catalogVersionID string) ([]*models.CatalogVersionTypePin, error) {
+	args := m.Called(ctx, catalogVersionID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.CatalogVersionTypePin), args.Error(1)
+}
+func (m *MockCatalogVersionTypePinRepo) Delete(ctx context.Context, id string) error {
 	return m.Called(ctx, id).Error(0)
-}
-func (m *MockEnumValueRepo) Reorder(ctx context.Context, enumID string, orderedIDs []string) error {
-	return m.Called(ctx, enumID, orderedIDs).Error(0)
 }
 
 // MockCatalogVersionRepo mocks CatalogVersionRepository.

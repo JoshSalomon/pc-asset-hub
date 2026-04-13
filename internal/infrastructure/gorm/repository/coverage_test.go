@@ -113,17 +113,17 @@ func TestET_ListWithSortAndFilter(t *testing.T) {
 	assert.Equal(t, "Alpha", items[0].Name)
 }
 
-// === Enum repo coverage ===
+// === TypeDefinition repo coverage ===
 
-func TestEnum_GetByID(t *testing.T) {
+func TestTypeDef_GetByID(t *testing.T) {
 	db := testutil.NewTestDB(t)
-	repo := repository.NewEnumGormRepo(db)
+	repo := repository.NewTypeDefinitionGormRepo(db)
 	ctx := context.Background()
 
-	eID := newID()
-	require.NoError(t, repo.Create(ctx, &models.Enum{ID: eID, Name: "Status", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	tdID := newID()
+	require.NoError(t, repo.Create(ctx, &models.TypeDefinition{ID: tdID, Name: "Status", BaseType: models.BaseTypeEnum, CreatedAt: time.Now(), UpdatedAt: time.Now()}))
 
-	found, err := repo.GetByID(ctx, eID)
+	found, err := repo.GetByID(ctx, tdID)
 	require.NoError(t, err)
 	assert.Equal(t, "Status", found.Name)
 
@@ -131,12 +131,12 @@ func TestEnum_GetByID(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestEnum_GetByName(t *testing.T) {
+func TestTypeDef_GetByName(t *testing.T) {
 	db := testutil.NewTestDB(t)
-	repo := repository.NewEnumGormRepo(db)
+	repo := repository.NewTypeDefinitionGormRepo(db)
 	ctx := context.Background()
 
-	require.NoError(t, repo.Create(ctx, &models.Enum{ID: newID(), Name: "Priority", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, repo.Create(ctx, &models.TypeDefinition{ID: newID(), Name: "Priority", BaseType: models.BaseTypeString, CreatedAt: time.Now(), UpdatedAt: time.Now()}))
 
 	found, err := repo.GetByName(ctx, "Priority")
 	require.NoError(t, err)
@@ -146,13 +146,13 @@ func TestEnum_GetByName(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestEnum_List(t *testing.T) {
+func TestTypeDef_List(t *testing.T) {
 	db := testutil.NewTestDB(t)
-	repo := repository.NewEnumGormRepo(db)
+	repo := repository.NewTypeDefinitionGormRepo(db)
 	ctx := context.Background()
 
-	require.NoError(t, repo.Create(ctx, &models.Enum{ID: newID(), Name: "Alpha", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
-	require.NoError(t, repo.Create(ctx, &models.Enum{ID: newID(), Name: "Beta", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, repo.Create(ctx, &models.TypeDefinition{ID: newID(), Name: "Alpha", BaseType: models.BaseTypeString, CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, repo.Create(ctx, &models.TypeDefinition{ID: newID(), Name: "Beta", BaseType: models.BaseTypeNumber, CreatedAt: time.Now(), UpdatedAt: time.Now()}))
 
 	items, total, err := repo.List(ctx, models.ListParams{Limit: 10})
 	require.NoError(t, err)
@@ -171,26 +171,26 @@ func TestEnum_List(t *testing.T) {
 	assert.Len(t, items, 1)
 }
 
-func TestEnum_Update(t *testing.T) {
+func TestTypeDef_Update(t *testing.T) {
 	db := testutil.NewTestDB(t)
-	repo := repository.NewEnumGormRepo(db)
+	repo := repository.NewTypeDefinitionGormRepo(db)
 	ctx := context.Background()
 
-	eID := newID()
-	require.NoError(t, repo.Create(ctx, &models.Enum{ID: eID, Name: "Status", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	tdID := newID()
+	require.NoError(t, repo.Create(ctx, &models.TypeDefinition{ID: tdID, Name: "Status", BaseType: models.BaseTypeEnum, CreatedAt: time.Now(), UpdatedAt: time.Now()}))
 
-	found, _ := repo.GetByID(ctx, eID)
+	found, _ := repo.GetByID(ctx, tdID)
 	found.Name = "UpdatedStatus"
 	require.NoError(t, repo.Update(ctx, found))
 
-	updated, err := repo.GetByID(ctx, eID)
+	updated, err := repo.GetByID(ctx, tdID)
 	require.NoError(t, err)
 	assert.Equal(t, "UpdatedStatus", updated.Name)
 }
 
-func TestEnum_DeleteNotFound(t *testing.T) {
+func TestTypeDef_DeleteNotFound(t *testing.T) {
 	db := testutil.NewTestDB(t)
-	repo := repository.NewEnumGormRepo(db)
+	repo := repository.NewTypeDefinitionGormRepo(db)
 	ctx := context.Background()
 
 	err := repo.Delete(ctx, "nonexistent")
@@ -271,7 +271,7 @@ func TestAttr_Update(t *testing.T) {
 	etvID := newID()
 	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: etID, Version: 1, CreatedAt: time.Now()}))
 	attrID := newID()
-	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: attrID, EntityTypeVersionID: etvID, Name: "a", Type: models.AttributeTypeString, Ordinal: 0}))
+	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: attrID, EntityTypeVersionID: etvID, Name: "a", TypeDefinitionVersionID: "tdv-string", Ordinal: 0}))
 
 	found, _ := attrRepo.GetByID(ctx, attrID)
 	found.Description = "updated"
@@ -294,7 +294,7 @@ func TestAttr_Delete(t *testing.T) {
 	etvID := newID()
 	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: etID, Version: 1, CreatedAt: time.Now()}))
 	attrID := newID()
-	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: attrID, EntityTypeVersionID: etvID, Name: "a", Type: models.AttributeTypeString, Ordinal: 0}))
+	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: attrID, EntityTypeVersionID: etvID, Name: "a", TypeDefinitionVersionID: "tdv-string", Ordinal: 0}))
 
 	require.NoError(t, attrRepo.Delete(ctx, attrID))
 	_, err := attrRepo.GetByID(ctx, attrID)

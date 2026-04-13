@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '../api/client'
-import type { EntityType, EntityTypeVersion, Attribute, Association, Enum } from '../types'
+import type { EntityType, EntityTypeVersion, Attribute, Association, TypeDefinition } from '../types'
 
 export function useEntityTypeData(entityTypeId: string | undefined, initialTab?: string) {
   const [entityType, setEntityType] = useState<EntityType | null>(null)
@@ -21,8 +21,8 @@ export function useEntityTypeData(entityTypeId: string | undefined, initialTab?:
   const [versions, setVersions] = useState<EntityTypeVersion[]>([])
   const [versionsLoading, setVersionsLoading] = useState(false)
 
-  // Enums for attribute creation
-  const [enums, setEnums] = useState<Enum[]>([])
+  // Type definitions for attribute creation
+  const [typeDefinitions, setTypeDefinitions] = useState<TypeDefinition[]>([])
 
   const loadEntityType = useCallback(async () => {
     if (!entityTypeId) return
@@ -84,7 +84,7 @@ export function useEntityTypeData(entityTypeId: string | undefined, initialTab?:
   useEffect(() => {
     if (activeTab === 'attributes') {
       loadAttributes()
-      api.enums.list().then((r) => setEnums(r.items || [])).catch(() => {})
+      api.typeDefinitions.list().then((r) => setTypeDefinitions(r.items || [])).catch(() => {})
     }
     if (activeTab === 'associations') {
       loadAssociations()
@@ -107,8 +107,8 @@ export function useEntityTypeData(entityTypeId: string | undefined, initialTab?:
     assocsLoading,
     versions,
     versionsLoading,
-    enums,
-    setEnums,
+    typeDefinitions,
+    setTypeDefinitions,
     entityTypes,
     setEntityTypes,
     loadEntityType,

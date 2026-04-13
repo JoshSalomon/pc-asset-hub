@@ -1,6 +1,5 @@
-import { FormGroup, TextInput } from '@patternfly/react-core'
+import { FormGroup, TextInput, TextArea } from '@patternfly/react-core'
 import type { SnapshotAttribute } from '../types'
-import EnumSelect from './EnumSelect'
 
 interface Props {
   schemaAttrs: SnapshotAttribute[]
@@ -38,19 +37,87 @@ export default function AttributeFormFields({
             </FormGroup>
           )
         }
+
+        const baseType = attr.base_type || 'string'
+        // For enum types, check constraints.values or look up from enumValues cache using type_definition_version_id
+        const enumId = attr.type_definition_version_id || ''
+        const constraintValues = (attr.constraints?.values as string[]) || []
+        const cachedValues = enumId ? enumValues[enumId] : undefined
+        const enumOpts = constraintValues.length > 0 ? constraintValues : (cachedValues || [])
+
         return (
           <FormGroup key={attr.name} label={`${attr.name}${attr.required ? ' *' : ''}`} fieldId={`${idPrefix}-attr-${attr.name}`}>
-            {attr.type === 'enum' && attr.enum_id && enumValues[attr.enum_id] ? (
-              <EnumSelect
+            {baseType === 'enum' && enumOpts.length > 0 ? (
+              <select
                 id={`${idPrefix}-attr-${attr.name}`}
                 value={values[attr.name] || ''}
-                options={enumValues[attr.enum_id]}
-                onChange={(v) => onChange(attr.name, v)}
+                onChange={(e) => onChange(attr.name, e.target.value)}
+                style={{ width: '100%', padding: '6px 12px' }}
+              >
+                <option value="">Select...</option>
+                {enumOpts.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+            ) : baseType === 'boolean' ? (
+              <label>
+                <input
+                  type="checkbox"
+                  id={`${idPrefix}-attr-${attr.name}`}
+                  checked={values[attr.name] === 'true'}
+                  onChange={(e) => onChange(attr.name, e.target.checked ? 'true' : 'false')}
+                />
+                {' '}Yes
+              </label>
+            ) : baseType === 'integer' ? (
+              <TextInput
+                id={`${idPrefix}-attr-${attr.name}`}
+                type="number"
+                value={values[attr.name] || ''}
+                onChange={(_e, v) => onChange(attr.name, v)}
+                step={1}
+              />
+            ) : baseType === 'number' ? (
+              <TextInput
+                id={`${idPrefix}-attr-${attr.name}`}
+                type="number"
+                value={values[attr.name] || ''}
+                onChange={(_e, v) => onChange(attr.name, v)}
+              />
+            ) : baseType === 'date' ? (
+              <TextInput
+                id={`${idPrefix}-attr-${attr.name}`}
+                type="text"
+                value={values[attr.name] || ''}
+                onChange={(_e, v) => onChange(attr.name, v)}
+                placeholder="YYYY-MM-DD"
+              />
+            ) : baseType === 'url' ? (
+              <TextInput
+                id={`${idPrefix}-attr-${attr.name}`}
+                type="text"
+                value={values[attr.name] || ''}
+                onChange={(_e, v) => onChange(attr.name, v)}
+                placeholder="https://..."
+              />
+            ) : baseType === 'json' ? (
+              <TextArea
+                id={`${idPrefix}-attr-${attr.name}`}
+                value={values[attr.name] || ''}
+                onChange={(_e, v) => onChange(attr.name, v)}
+                placeholder='{"key": "value"}'
+                rows={3}
+              />
+            ) : baseType === 'list' ? (
+              <TextArea
+                id={`${idPrefix}-attr-${attr.name}`}
+                value={values[attr.name] || ''}
+                onChange={(_e, v) => onChange(attr.name, v)}
+                placeholder="Comma-separated values"
+                rows={2}
               />
             ) : (
               <TextInput
                 id={`${idPrefix}-attr-${attr.name}`}
-                type={attr.type === 'number' ? 'number' : 'text'}
+                type="text"
                 value={values[attr.name] || ''}
                 onChange={(_e, v) => onChange(attr.name, v)}
               />

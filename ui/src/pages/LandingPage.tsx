@@ -69,7 +69,7 @@ export default function LandingPage({ role }: { role: Role }) {
                 <CardTitle>Entity Types &amp; Model</CardTitle>
               </CardHeader>
               <CardBody>
-                Define entity types, attributes, associations, enums, and catalog versions. View the model diagram.
+                Define entity types, attributes, associations, type definitions, and catalog versions. View the model diagram.
               </CardBody>
             </Card>
           </GalleryItem>

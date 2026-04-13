@@ -37,11 +37,10 @@ type CopyEntityTypeRequest struct {
 // === Attribute DTOs ===
 
 type CreateAttributeRequest struct {
-	Name        string `json:"name" validate:"required"`
-	Description string `json:"description"`
-	Type        string `json:"type" validate:"required"`
-	EnumID      string `json:"enum_id"`
-	Required    bool   `json:"required"`
+	Name                    string `json:"name" validate:"required"`
+	Description             string `json:"description"`
+	TypeDefinitionVersionID string `json:"type_definition_version_id" validate:"required"`
+	Required                bool   `json:"required"`
 }
 
 type CopyAttributesRequest struct {
@@ -55,22 +54,22 @@ type ReorderAttributesRequest struct {
 }
 
 type AttributeResponse struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Type        string `json:"type"`
-	EnumID      string `json:"enum_id,omitempty"`
-	Ordinal     int    `json:"ordinal"`
-	Required    bool   `json:"required"`
-	System      bool   `json:"system"`
+	ID                      string `json:"id,omitempty"`
+	Name                    string `json:"name"`
+	Description             string `json:"description,omitempty"`
+	TypeDefinitionVersionID string `json:"type_definition_version_id,omitempty"`
+	TypeName                string `json:"type_name,omitempty"`
+	BaseType                string `json:"base_type,omitempty"`
+	Ordinal                 int    `json:"ordinal"`
+	Required                bool   `json:"required"`
+	System                  bool   `json:"system,omitempty"`
 }
 
 type UpdateAttributeRequest struct {
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
-	Type        *string `json:"type"`
-	EnumID      *string `json:"enum_id"`
-	Required    *bool   `json:"required"`
+	Name                    *string `json:"name"`
+	Description             *string `json:"description"`
+	TypeDefinitionVersionID *string `json:"type_definition_version_id"`
+	Required                *bool   `json:"required"`
 }
 
 type RenameEntityTypeRequest struct {
@@ -122,39 +121,52 @@ type UpdateAssociationRequest struct {
 	TargetCardinality *string `json:"target_cardinality"`
 }
 
-// === Enum DTOs ===
+// === Type Definition DTOs ===
 
-type CreateEnumRequest struct {
-	Name        string   `json:"name" validate:"required"`
-	Description string   `json:"description"`
-	Values      []string `json:"values"`
+type CreateTypeDefinitionRequest struct {
+	Name        string         `json:"name" validate:"required"`
+	Description string         `json:"description"`
+	BaseType    string         `json:"base_type" validate:"required"`
+	Constraints map[string]any `json:"constraints"`
 }
 
-type UpdateEnumRequest struct {
-	Name        string  `json:"name" validate:"required"`
-	Description *string `json:"description"`
+type UpdateTypeDefinitionRequest struct {
+	Description *string        `json:"description"`
+	Constraints map[string]any `json:"constraints"`
 }
 
-type EnumResponse struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+type TypeDefinitionResponse struct {
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description"`
+	BaseType      string    `json:"base_type"`
+	System        bool      `json:"system"`
+	LatestVersion int       `json:"latest_version"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
-type EnumValueResponse struct {
-	ID      string `json:"id"`
-	Value   string `json:"value"`
-	Ordinal int    `json:"ordinal"`
+type TypeDefinitionVersionResponse struct {
+	ID               string         `json:"id"`
+	TypeDefinitionID string         `json:"type_definition_id"`
+	VersionNumber    int            `json:"version_number"`
+	Constraints      map[string]any `json:"constraints"`
+	CreatedAt        time.Time      `json:"created_at"`
 }
 
-type AddEnumValueRequest struct {
-	Value string `json:"value" validate:"required"`
+// === CV Type Pin DTOs ===
+
+type AddTypePinRequest struct {
+	TypeDefinitionVersionID string `json:"type_definition_version_id" validate:"required"`
 }
 
-type ReorderEnumValuesRequest struct {
-	OrderedIDs []string `json:"ordered_ids" validate:"required"`
+type TypePinResponse struct {
+	PinID                   string `json:"pin_id"`
+	TypeDefinitionName      string `json:"type_definition_name"`
+	TypeDefinitionID        string `json:"type_definition_id"`
+	TypeDefinitionVersionID string `json:"type_definition_version_id"`
+	VersionNumber           int    `json:"version_number"`
+	BaseType                string `json:"base_type"`
 }
 
 // === Catalog Version DTOs ===
@@ -215,15 +227,16 @@ type VersionDiffItemDTO struct {
 // === Version Snapshot DTOs ===
 
 type SnapshotAttributeResponse struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Type        string `json:"type"`
-	EnumID      string `json:"enum_id,omitempty"`
-	EnumName    string `json:"enum_name,omitempty"`
-	Ordinal     int    `json:"ordinal"`
-	Required    bool   `json:"required"`
-	System      bool   `json:"system"`
+	ID                      string         `json:"id"`
+	Name                    string         `json:"name"`
+	Description             string         `json:"description"`
+	TypeDefinitionVersionID string         `json:"type_definition_version_id,omitempty"`
+	TypeName                string         `json:"type_name,omitempty"`
+	BaseType                string         `json:"base_type,omitempty"`
+	Constraints             map[string]any `json:"constraints,omitempty"`
+	Ordinal                 int            `json:"ordinal"`
+	Required                bool           `json:"required"`
+	System                  bool           `json:"system"`
 }
 
 type SnapshotAssociationResponse struct {

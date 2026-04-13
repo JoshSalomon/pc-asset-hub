@@ -2,8 +2,8 @@ import { describe, test, expect } from 'vitest'
 import { buildTypedAttrs } from './buildTypedAttrs'
 import type { SnapshotAttribute } from '../types'
 
-const makeAttr = (name: string, type: string): SnapshotAttribute => ({
-  id: `attr-${name}`, name, type, description: '', ordinal: 0, required: false,
+const makeAttr = (name: string, base_type: string): SnapshotAttribute => ({
+  id: `attr-${name}`, name, base_type, description: '', ordinal: 0, required: false,
 })
 
 // T-20.01: Converts string value to parseFloat for number-type attr
@@ -46,5 +46,10 @@ describe('buildTypedAttrs', () => {
     ]
     const result = buildTypedAttrs({ port: '8080', hostname: 'srv-1', empty: '' }, attrs)
     expect(result).toEqual({ port: 8080, hostname: 'srv-1' })
+  })
+
+  test('T-20.07: converts integer type to parseFloat', () => {
+    const result = buildTypedAttrs({ count: '42' }, [makeAttr('count', 'integer')])
+    expect(result).toEqual({ count: 42 })
   })
 })

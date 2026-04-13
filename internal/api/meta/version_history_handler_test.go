@@ -58,7 +58,7 @@ func TestTC27_CompareVersions(t *testing.T) {
 	etvRepo.On("GetByEntityTypeAndVersion", mock.Anything, "et1", 2).Return(&models.EntityTypeVersion{ID: "v2", EntityTypeID: "et1", Version: 2}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v2").Return([]*models.Attribute{
-		{ID: "a1", Name: "hostname", Type: models.AttributeTypeString},
+		{ID: "a1", Name: "hostname", TypeDefinitionVersionID: "tdv-string"},
 	}, nil)
 	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	assocRepo.On("ListByVersion", mock.Anything, "v2").Return([]*models.Association{}, nil)

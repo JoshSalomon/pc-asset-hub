@@ -11,11 +11,11 @@ import (
 )
 
 type AttributeService struct {
-	attrRepo  repository.AttributeRepository
-	etvRepo   repository.EntityTypeVersionRepository
-	etRepo    repository.EntityTypeRepository
+	attrRepo repository.AttributeRepository
+	etvRepo  repository.EntityTypeVersionRepository
+	etRepo   repository.EntityTypeRepository
 	assocRepo repository.AssociationRepository
-	enumRepo  repository.EnumRepository
+	tdvRepo  repository.TypeDefinitionVersionRepository
 }
 
 func NewAttributeService(
@@ -23,19 +23,19 @@ func NewAttributeService(
 	etvRepo repository.EntityTypeVersionRepository,
 	etRepo repository.EntityTypeRepository,
 	assocRepo repository.AssociationRepository,
-	enumRepo repository.EnumRepository,
+	tdvRepo repository.TypeDefinitionVersionRepository,
 ) *AttributeService {
 	return &AttributeService{
 		attrRepo:  attrRepo,
 		etvRepo:   etvRepo,
 		etRepo:    etRepo,
 		assocRepo: assocRepo,
-		enumRepo:  enumRepo,
+		tdvRepo:   tdvRepo,
 	}
 }
 
 // AddAttribute adds an attribute to an entity type, creating a new version.
-func (s *AttributeService) AddAttribute(ctx context.Context, entityTypeID string, name, description string, attrType models.AttributeType, enumID string, required bool) (*models.EntityTypeVersion, error) {
+func (s *AttributeService) AddAttribute(ctx context.Context, entityTypeID string, name, description string, typeDefinitionVersionID string, required bool) (*models.EntityTypeVersion, error) {
 	if name == "" {
 		return nil, domainerrors.NewValidation("attribute name is required")
 	}
@@ -43,14 +43,12 @@ func (s *AttributeService) AddAttribute(ctx context.Context, entityTypeID string
 		return nil, domainerrors.NewValidation("attribute name \"" + name + "\" is reserved for system attributes")
 	}
 
-	// Validate enum reference
-	if attrType == models.AttributeTypeEnum {
-		if enumID == "" {
-			return nil, domainerrors.NewValidation("enum_id is required for enum type attributes")
-		}
-		if _, err := s.enumRepo.GetByID(ctx, enumID); err != nil {
-			return nil, domainerrors.NewValidation("invalid enum_id: " + enumID)
-		}
+	// Validate type definition version reference
+	if typeDefinitionVersionID == "" {
+		return nil, domainerrors.NewValidation("type_definition_version_id is required")
+	}
+	if _, err := s.tdvRepo.GetByID(ctx, typeDefinitionVersionID); err != nil {
+		return nil, domainerrors.NewValidation("invalid type_definition_version_id: " + typeDefinitionVersionID)
 	}
 
 	// Create new version with copy-on-write
@@ -100,14 +98,13 @@ func (s *AttributeService) AddAttribute(ctx context.Context, entityTypeID string
 
 	// Add the new attribute
 	attr := &models.Attribute{
-		ID:                  uuid.Must(uuid.NewV7()).String(),
-		EntityTypeVersionID: newVersion.ID,
-		Name:                name,
-		Description:         description,
-		Type:                attrType,
-		EnumID:              enumID,
-		Ordinal:             len(attrs),
-		Required:            required,
+		ID:                      uuid.Must(uuid.NewV7()).String(),
+		EntityTypeVersionID:     newVersion.ID,
+		Name:                    name,
+		Description:             description,
+		TypeDefinitionVersionID: typeDefinitionVersionID,
+		Ordinal:                 len(attrs),
+		Required:                required,
 	}
 	if err := s.attrRepo.Create(ctx, attr); err != nil {
 		return nil, err
@@ -235,14 +232,13 @@ func (s *AttributeService) CopyAttributesFromType(ctx context.Context, targetEnt
 	// Add copied attributes
 	for i, src := range toCopy {
 		attr := &models.Attribute{
-			ID:                  uuid.Must(uuid.NewV7()).String(),
-			EntityTypeVersionID: newVersion.ID,
-			Name:                src.Name,
-			Description:         src.Description,
-			Type:                src.Type,
-			EnumID:              src.EnumID,
-			Ordinal:             len(targetAttrs) + i,
-			Required:            src.Required,
+			ID:                      uuid.Must(uuid.NewV7()).String(),
+			EntityTypeVersionID:     newVersion.ID,
+			Name:                    src.Name,
+			Description:             src.Description,
+			TypeDefinitionVersionID: src.TypeDefinitionVersionID,
+			Ordinal:                 len(targetAttrs) + i,
+			Required:                src.Required,
 		}
 		if err := s.attrRepo.Create(ctx, attr); err != nil {
 			return nil, err
@@ -254,17 +250,14 @@ func (s *AttributeService) CopyAttributesFromType(ctx context.Context, targetEnt
 
 // EditAttribute edits an attribute on an entity type, creating a new version (copy-on-write).
 // Only non-nil fields are updated. The attribute is identified by currentName.
-func (s *AttributeService) EditAttribute(ctx context.Context, entityTypeID, currentName string, newName, newDesc *string, newType *models.AttributeType, newEnumID *string, newRequired *bool) (*models.EntityTypeVersion, error) {
+func (s *AttributeService) EditAttribute(ctx context.Context, entityTypeID, currentName string, newName, newDesc *string, newTypeDefVersionID *string, newRequired *bool) (*models.EntityTypeVersion, error) {
 	if newName != nil && models.IsSystemAttributeName(*newName) {
 		return nil, domainerrors.NewValidation("attribute name \"" + *newName + "\" is reserved for system attributes")
 	}
-	// Validate enum reference if changing type to enum
-	if newType != nil && *newType == models.AttributeTypeEnum {
-		if newEnumID == nil || *newEnumID == "" {
-			return nil, domainerrors.NewValidation("enum_id is required for enum type attributes")
-		}
-		if _, err := s.enumRepo.GetByID(ctx, *newEnumID); err != nil {
-			return nil, domainerrors.NewValidation("invalid enum_id: " + *newEnumID)
+	// Validate type definition version reference if changing
+	if newTypeDefVersionID != nil && *newTypeDefVersionID != "" {
+		if _, err := s.tdvRepo.GetByID(ctx, *newTypeDefVersionID); err != nil {
+			return nil, domainerrors.NewValidation("invalid type_definition_version_id: " + *newTypeDefVersionID)
 		}
 	}
 
@@ -336,11 +329,8 @@ func (s *AttributeService) EditAttribute(ctx context.Context, entityTypeID, curr
 			if newDesc != nil {
 				a.Description = *newDesc
 			}
-			if newType != nil {
-				a.Type = *newType
-			}
-			if newEnumID != nil {
-				a.EnumID = *newEnumID
+			if newTypeDefVersionID != nil {
+				a.TypeDefinitionVersionID = *newTypeDefVersionID
 			}
 			if newRequired != nil {
 				a.Required = *newRequired

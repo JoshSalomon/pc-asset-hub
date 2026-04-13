@@ -17,7 +17,7 @@ vi.mock('./api/client', () => ({
       promote: vi.fn(),
       demote: vi.fn(),
     },
-    enums: {
+    typeDefinitions: {
       list: vi.fn(),
     },
   },
@@ -40,8 +40,8 @@ beforeEach(() => {
   ;(api.catalogVersions.list as Mock).mockResolvedValue({ items: [], total: 0 })
   ;(api.entityTypes.create as Mock).mockResolvedValue({ entity_type: mockEntityTypes[0] })
   ;(api.entityTypes.delete as Mock).mockResolvedValue(undefined)
-  if (api.enums?.list) {
-    ;(api.enums.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  if (api.typeDefinitions?.list) {
+    ;(api.typeDefinitions.list as Mock).mockResolvedValue({ items: [], total: 0 })
   }
 })
 

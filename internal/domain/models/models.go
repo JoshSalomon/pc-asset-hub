@@ -17,23 +17,81 @@ type EntityTypeVersion struct {
 	CreatedAt    time.Time
 }
 
-type AttributeType string
+// BaseType represents the fundamental data type of a type definition.
+type BaseType string
 
 const (
-	AttributeTypeString AttributeType = "string"
-	AttributeTypeNumber AttributeType = "number"
-	AttributeTypeEnum   AttributeType = "enum"
+	BaseTypeString  BaseType = "string"
+	BaseTypeInteger BaseType = "integer"
+	BaseTypeNumber  BaseType = "number"
+	BaseTypeBoolean BaseType = "boolean"
+	BaseTypeDate    BaseType = "date"
+	BaseTypeURL     BaseType = "url"
+	BaseTypeEnum    BaseType = "enum"
+	BaseTypeList    BaseType = "list"
+	BaseTypeJSON    BaseType = "json"
 )
 
+// ValidBaseTypes is the set of allowed base types.
+var ValidBaseTypes = map[BaseType]bool{
+	BaseTypeString: true, BaseTypeInteger: true, BaseTypeNumber: true,
+	BaseTypeBoolean: true, BaseTypeDate: true, BaseTypeURL: true,
+	BaseTypeEnum: true, BaseTypeList: true, BaseTypeJSON: true,
+}
+
+// TypeDefinition is a reusable, versioned type definition (replaces Enum).
+type TypeDefinition struct {
+	ID          string
+	Name        string
+	Description string
+	BaseType    BaseType
+	System      bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// TypeDefinitionVersion is a versioned snapshot of a type definition's constraints.
+type TypeDefinitionVersion struct {
+	ID               string
+	TypeDefinitionID string
+	VersionNumber    int
+	Constraints      map[string]any
+	CreatedAt        time.Time
+}
+
+// IsCorruptedConstraints returns true if the constraints map contains a _raw key,
+// indicating that the original JSON in the database was malformed.
+func IsCorruptedConstraints(constraints map[string]any) bool {
+	_, ok := constraints["_raw"]
+	return ok
+}
+
+// ExtractRawConstraints returns the original raw string from corrupted constraints,
+// or an empty string if constraints are not corrupted.
+func ExtractRawConstraints(constraints map[string]any) string {
+	raw, ok := constraints["_raw"]
+	if !ok {
+		return ""
+	}
+	s, _ := raw.(string)
+	return s
+}
+
+// CatalogVersionTypePin pins a type definition version to a catalog version.
+type CatalogVersionTypePin struct {
+	ID                      string
+	CatalogVersionID        string
+	TypeDefinitionVersionID string
+}
+
 type Attribute struct {
-	ID                  string
-	EntityTypeVersionID string
-	Name                string
-	Description         string
-	Type                AttributeType
-	EnumID              string // empty if not enum type
-	Ordinal             int
-	Required            bool
+	ID                      string
+	EntityTypeVersionID     string
+	Name                    string
+	Description             string
+	TypeDefinitionVersionID string
+	Ordinal                 int
+	Required                bool
 }
 
 type AssociationType string
@@ -57,20 +115,6 @@ type Association struct {
 	CreatedAt           time.Time
 }
 
-type Enum struct {
-	ID          string
-	Name        string
-	Description string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-}
-
-type EnumValue struct {
-	ID      string
-	EnumID  string
-	Value   string
-	Ordinal int
-}
 
 type LifecycleStage string
 
@@ -145,7 +189,7 @@ type InstanceAttributeValue struct {
 	AttributeID     string
 	ValueString     string
 	ValueNumber     *float64
-	ValueEnum       string
+	ValueJSON       string
 }
 
 type AssociationLink struct {
@@ -161,7 +205,6 @@ type AssociationLink struct {
 const (
 	SystemAttrName        = "name"
 	SystemAttrDescription = "description"
-	SystemAttrType        = "string"
 	SystemAttrNameOrdinal = -2
 	SystemAttrDescOrdinal = -1
 )

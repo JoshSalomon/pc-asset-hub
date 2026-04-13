@@ -11,7 +11,6 @@ vi.mock('../../api/client', () => ({
     catalogVersions: { listPins: vi.fn(), list: vi.fn() },
     versions: { snapshot: vi.fn() },
     instances: { list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), createContained: vi.fn(), listContained: vi.fn(), setParent: vi.fn() },
-    enums: { listValues: vi.fn() },
     links: { create: vi.fn(), delete: vi.fn(), forwardRefs: vi.fn(), reverseRefs: vi.fn() },
   },
   setAuthRole: vi.fn(),
@@ -32,10 +31,10 @@ const mockSnapshot = {
   entity_type: { id: 'et1', name: 'model' },
   version: { id: 'etv1', version: 1 },
   attributes: [
-    { id: 'sys-name', name: 'name', type: 'string', ordinal: -2, required: true, system: true },
-    { id: 'sys-desc', name: 'description', type: 'string', ordinal: -1, required: false, system: true },
-    { id: 'a1', name: 'hostname', type: 'string', ordinal: 1, required: false },
-    { id: 'a2', name: 'port', type: 'number', ordinal: 2, required: true },
+    { id: 'sys-name', name: 'name', base_type: 'string', ordinal: -2, required: true, system: true },
+    { id: 'sys-desc', name: 'description', base_type: 'string', ordinal: -1, required: false, system: true },
+    { id: 'a1', name: 'hostname', base_type: 'string', ordinal: 1, required: false },
+    { id: 'a2', name: 'port', base_type: 'number', ordinal: 2, required: true },
   ],
   associations: [
     { id: 'assoc1', name: 'tools', type: 'containment', direction: 'outgoing', target_entity_type_id: 'et2', target_entity_type_name: 'tool' },
@@ -55,8 +54,8 @@ const mockToolSnapshot = {
   entity_type: { id: 'et2', name: 'tool' },
   version: { id: 'etv2', version: 1 },
   attributes: [
-    { id: 'sys-name', name: 'name', type: 'string', ordinal: -2, required: true, system: true },
-    { id: 'sys-desc', name: 'description', type: 'string', ordinal: -1, required: false, system: true },
+    { id: 'sys-name', name: 'name', base_type: 'string', ordinal: -2, required: true, system: true },
+    { id: 'sys-desc', name: 'description', base_type: 'string', ordinal: -1, required: false, system: true },
   ],
   associations: [],
 }
@@ -102,7 +101,6 @@ beforeEach(() => {
   ;(api.instances.create as Mock).mockResolvedValue({ id: 'i2', name: 'new-inst' })
   ;(api.instances.update as Mock).mockResolvedValue({ id: 'i1', name: 'inst-a', version: 2 })
   ;(api.instances.delete as Mock).mockResolvedValue(undefined)
-  ;(api.enums.listValues as Mock).mockResolvedValue({ items: [], total: 0 })
   ;(api.instances.listContained as Mock).mockResolvedValue({ items: [], total: 0 })
   ;(api.instances.createContained as Mock).mockResolvedValue({ id: 'c1', name: 'new-child' })
   ;(api.links.forwardRefs as Mock).mockResolvedValue(mockForwardRefs)
@@ -541,10 +539,10 @@ test('TD-42: add contained modal shows child type schema attributes', async () =
     entity_type: { id: 'et2', name: 'tool' },
     version: { id: 'etv2', version: 1 },
     attributes: [
-      { id: 'sys-name', name: 'name', type: 'string', ordinal: -2, required: true, system: true },
-      { id: 'sys-desc', name: 'description', type: 'string', ordinal: -1, required: false, system: true },
-      { id: 'ta1', name: 'tool-version', type: 'string', ordinal: 1, required: false },
-      { id: 'ta2', name: 'weight', type: 'number', ordinal: 2, required: true },
+      { id: 'sys-name', name: 'name', base_type: 'string', ordinal: -2, required: true, system: true },
+      { id: 'sys-desc', name: 'description', base_type: 'string', ordinal: -1, required: false, system: true },
+      { id: 'ta1', name: 'tool-version', base_type: 'string', ordinal: 1, required: false },
+      { id: 'ta2', name: 'weight', base_type: 'number', ordinal: 2, required: true },
     ],
     associations: [],
   }
@@ -573,9 +571,9 @@ test('TD-42: add contained modal submits custom attributes', async () => {
     entity_type: { id: 'et2', name: 'tool' },
     version: { id: 'etv2', version: 1 },
     attributes: [
-      { id: 'sys-name', name: 'name', type: 'string', ordinal: -2, required: true, system: true },
-      { id: 'sys-desc', name: 'description', type: 'string', ordinal: -1, required: false, system: true },
-      { id: 'ta1', name: 'tool-version', type: 'string', ordinal: 1, required: false },
+      { id: 'sys-name', name: 'name', base_type: 'string', ordinal: -2, required: true, system: true },
+      { id: 'sys-desc', name: 'description', base_type: 'string', ordinal: -1, required: false, system: true },
+      { id: 'ta1', name: 'tool-version', base_type: 'string', ordinal: 1, required: false },
     ],
     associations: [],
   }
@@ -611,9 +609,9 @@ test('TD-42: contained modal submits number attribute as parsed float', async ()
     entity_type: { id: 'et2', name: 'tool' },
     version: { id: 'etv2', version: 1 },
     attributes: [
-      { id: 'sys-name', name: 'name', type: 'string', ordinal: -2, required: true, system: true },
-      { id: 'sys-desc', name: 'description', type: 'string', ordinal: -1, required: false, system: true },
-      { id: 'ta1', name: 'weight', type: 'number', ordinal: 1, required: false },
+      { id: 'sys-name', name: 'name', base_type: 'string', ordinal: -2, required: true, system: true },
+      { id: 'sys-desc', name: 'description', base_type: 'string', ordinal: -1, required: false, system: true },
+      { id: 'ta1', name: 'weight', base_type: 'number', ordinal: 1, required: false },
     ],
     associations: [],
   }
@@ -643,9 +641,9 @@ test('TD-42: contained modal shows enum select for enum attributes', async () =>
     entity_type: { id: 'et2', name: 'tool' },
     version: { id: 'etv2', version: 1 },
     attributes: [
-      { id: 'sys-name', name: 'name', type: 'string', ordinal: -2, required: true, system: true },
-      { id: 'sys-desc', name: 'description', type: 'string', ordinal: -1, required: false, system: true },
-      { id: 'ta1', name: 'status', type: 'enum', enum_id: 'enum1', ordinal: 1, required: false },
+      { id: 'sys-name', name: 'name', base_type: 'string', ordinal: -2, required: true, system: true },
+      { id: 'sys-desc', name: 'description', base_type: 'string', ordinal: -1, required: false, system: true },
+      { id: 'ta1', name: 'status', base_type: 'enum', type_definition_version_id: 'tdv-enum1', constraints: { values: ['active', 'inactive'] }, ordinal: 1, required: false },
     ],
     associations: [],
   }
@@ -653,7 +651,6 @@ test('TD-42: contained modal shows enum select for enum attributes', async () =>
     if (etId === 'et2') return Promise.resolve(toolSnapshot)
     return Promise.resolve(mockSnapshot)
   })
-  ;(api.enums.listValues as Mock).mockResolvedValue({ items: [{ value: 'active' }, { value: 'inactive' }] })
   renderDetail('Admin')
   await waitForInstances()
   await page.getByRole('button', { name: 'Details' }).first().click()
@@ -829,24 +826,23 @@ test('SuperAdmin can see create button', async () => {
   await expect.element(page.getByRole('button', { name: /Create model/ })).toBeVisible()
 })
 
-// Enum attributes render EnumSelect in create modal
+// Enum attributes render select in create modal
 test('enum attributes render select in create modal', async () => {
   const snapshotWithEnum = {
     ...mockSnapshot,
     attributes: [
-      { id: 'a1', name: 'hostname', type: 'string', ordinal: 1, required: false },
-      { id: 'a3', name: 'status', type: 'enum', enum_id: 'enum1', ordinal: 3, required: false },
+      { id: 'a1', name: 'hostname', base_type: 'string', ordinal: 1, required: false },
+      { id: 'a3', name: 'status', base_type: 'enum', type_definition_version_id: 'tdv-enum1', constraints: { values: ['active', 'inactive'] }, ordinal: 3, required: false },
     ],
   }
   ;(api.versions.snapshot as Mock).mockResolvedValue(snapshotWithEnum)
-  ;(api.enums.listValues as Mock).mockResolvedValue({ items: [{ value: 'active' }, { value: 'inactive' }], total: 2 })
 
   renderDetail('Admin')
   await waitForInstances()
   await page.getByRole('button', { name: /Create model/ }).click()
   await expect.element(page.getByRole('dialog')).toBeVisible()
-  // The enum attribute should have "Select..." text (the EnumSelect component)
-  await expect.element(page.getByRole('dialog').getByText('Select...')).toBeVisible()
+  // The enum attribute should render a native <select> element
+  await expect.element(page.getByRole('dialog').getByRole('combobox', { name: 'status' })).toBeVisible()
 })
 
 // Link modal open shows association and target selectors
@@ -1850,27 +1846,25 @@ test('delete modal X button closes modal', async () => {
   expect(page.getByRole('dialog').elements().length).toBe(0)
 })
 
-// Cat 9: EnumSelect component open/select (lines 1195-1198)
+// Cat 9: Enum select open/select in create modal
 test('enum select opens and selects value in create modal', async () => {
   const snapshotWithEnum = {
     ...mockSnapshot,
     attributes: [
-      { id: 'sys-name', name: 'name', type: 'string', ordinal: -2, required: true, system: true },
-      { id: 'sys-desc', name: 'description', type: 'string', ordinal: -1, required: false, system: true },
-      { id: 'a3', name: 'status', type: 'enum', enum_id: 'enum1', ordinal: 3, required: false },
+      { id: 'sys-name', name: 'name', base_type: 'string', ordinal: -2, required: true, system: true },
+      { id: 'sys-desc', name: 'description', base_type: 'string', ordinal: -1, required: false, system: true },
+      { id: 'a3', name: 'status', base_type: 'enum', type_definition_version_id: 'tdv-enum1', constraints: { values: ['active', 'inactive'] }, ordinal: 3, required: false },
     ],
   }
   ;(api.versions.snapshot as Mock).mockResolvedValue(snapshotWithEnum)
-  ;(api.enums.listValues as Mock).mockResolvedValue({ items: [{ value: 'active' }, { value: 'inactive' }], total: 2 })
   renderDetail('Admin')
   await waitForInstances()
   await page.getByRole('button', { name: /Create model/ }).click()
   await expect.element(page.getByRole('dialog')).toBeVisible()
 
-  // Click the enum select toggle to open
-  await page.getByRole('dialog').getByText('Select...').click()
-  // Select "active" from the dropdown
-  await page.getByRole('option', { name: 'active', exact: true }).click()
+  // Select "active" from the native <select> element
+  const enumSelect = page.getByRole('dialog').getByRole('combobox', { name: 'status' })
+  await userEvent.selectOptions(enumSelect, 'active')
 
   // Fill name and submit
   await page.getByRole('dialog').getByRole('textbox').first().fill('enum-inst')
@@ -1881,14 +1875,14 @@ test('enum select opens and selects value in create modal', async () => {
   }))
 })
 
-// Cat 9: EnumSelect in edit modal (lines 840)
+// Cat 9: Enum select in edit modal
 test('enum select works in edit modal', async () => {
   const snapshotWithEnum = {
     ...mockSnapshot,
     attributes: [
-      { id: 'sys-name', name: 'name', type: 'string', ordinal: -2, required: true, system: true },
-      { id: 'sys-desc', name: 'description', type: 'string', ordinal: -1, required: false, system: true },
-      { id: 'a3', name: 'status', type: 'enum', enum_id: 'enum1', ordinal: 3, required: false },
+      { id: 'sys-name', name: 'name', base_type: 'string', ordinal: -2, required: true, system: true },
+      { id: 'sys-desc', name: 'description', base_type: 'string', ordinal: -1, required: false, system: true },
+      { id: 'a3', name: 'status', base_type: 'enum', type_definition_version_id: 'tdv-enum1', constraints: { values: ['active', 'inactive'] }, ordinal: 3, required: false },
     ],
   }
   const instancesWithEnum = [{
@@ -1901,7 +1895,6 @@ test('enum select works in edit modal', async () => {
     created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
   }]
   ;(api.versions.snapshot as Mock).mockResolvedValue(snapshotWithEnum)
-  ;(api.enums.listValues as Mock).mockResolvedValue({ items: [{ value: 'active' }, { value: 'inactive' }], total: 2 })
   ;(api.instances.list as Mock).mockResolvedValue({ items: instancesWithEnum, total: 1 })
   renderDetail('Admin')
   await expect.element(page.getByRole('gridcell', { name: 'inst-a' })).toBeVisible()
@@ -1909,10 +1902,10 @@ test('enum select works in edit modal', async () => {
   await expect.element(page.getByRole('dialog')).toBeVisible()
 
   // Should show enum select with current value "active"
-  await expect.element(page.getByRole('dialog').getByText('active')).toBeVisible()
-  // Click to open and change to "inactive"
-  await page.getByRole('dialog').getByText('active').click()
-  await page.getByText('inactive').click()
+  const enumSelect = page.getByRole('dialog').getByRole('combobox', { name: 'status' })
+  await expect.element(enumSelect).toHaveValue('active')
+  // Change to "inactive"
+  await userEvent.selectOptions(enumSelect, 'inactive')
 
   await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
   expect(api.instances.update).toHaveBeenCalledWith('my-catalog', 'model', 'i1', expect.objectContaining({
@@ -2002,15 +1995,15 @@ test('add child modal description input works', async () => {
   })
 })
 
-// Cat 7: Child attr enum select onChange in add child modal (line 930)
+// Cat 7: Child attr enum select onChange in add child modal
 test('add child modal enum attr select works', async () => {
   const toolSnapshot = {
     entity_type: { id: 'et2', name: 'tool' },
     version: { id: 'etv2', version: 1 },
     attributes: [
-      { id: 'sys-name', name: 'name', type: 'string', ordinal: -2, required: true, system: true },
-      { id: 'sys-desc', name: 'description', type: 'string', ordinal: -1, required: false, system: true },
-      { id: 'ta1', name: 'priority', type: 'enum', enum_id: 'enum2', ordinal: 1, required: false },
+      { id: 'sys-name', name: 'name', base_type: 'string', ordinal: -2, required: true, system: true },
+      { id: 'sys-desc', name: 'description', base_type: 'string', ordinal: -1, required: false, system: true },
+      { id: 'ta1', name: 'priority', base_type: 'enum', type_definition_version_id: 'tdv-enum2', constraints: { values: ['high', 'low'] }, ordinal: 1, required: false },
     ],
     associations: [],
   }
@@ -2018,7 +2011,6 @@ test('add child modal enum attr select works', async () => {
     if (etId === 'et2') return Promise.resolve(toolSnapshot)
     return Promise.resolve(mockSnapshot)
   })
-  ;(api.enums.listValues as Mock).mockResolvedValue({ items: [{ value: 'high' }, { value: 'low' }], total: 2 })
   renderDetail('Admin')
   await waitForInstances()
   await page.getByRole('button', { name: 'Details' }).first().click()
@@ -2028,9 +2020,9 @@ test('add child modal enum attr select works', async () => {
   // Fill name
   await page.getByRole('dialog').getByRole('textbox', { name: /Name/i }).fill('child-with-enum')
 
-  // The enum attr should show "Select..." toggle — click it and select "high"
-  await page.getByRole('dialog').getByText('Select...').click()
-  await page.getByRole('option', { name: 'high' }).click()
+  // The enum attr should render as a native <select> — select "high"
+  const enumSelect = page.getByRole('dialog').getByRole('combobox', { name: 'priority' })
+  await userEvent.selectOptions(enumSelect, 'high')
 
   await page.getByRole('dialog').getByRole('button', { name: 'Create', exact: true }).click()
   expect(api.instances.createContained).toHaveBeenCalledWith('my-catalog', 'model', 'i1', 'tool', {

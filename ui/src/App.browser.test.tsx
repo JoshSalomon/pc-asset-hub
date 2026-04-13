@@ -23,7 +23,7 @@ vi.mock('./api/client', () => ({
     catalogs: {
       list: vi.fn(),
     },
-    enums: {
+    typeDefinitions: {
       list: vi.fn(),
     },
     versions: {
@@ -109,8 +109,8 @@ beforeEach(() => {
   ;(api.catalogVersions.demote as Mock).mockResolvedValue({ status: 'demoted' })
   ;(api.catalogVersions.delete as Mock).mockResolvedValue(undefined)
   ;(api.catalogs.list as Mock).mockResolvedValue({ items: [], total: 0 })
-  if (api.enums?.list) {
-    ;(api.enums.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  if (api.typeDefinitions?.list) {
+    ;(api.typeDefinitions.list as Mock).mockResolvedValue({ items: [], total: 0 })
   }
   if (api.entityTypes?.containmentTree) {
     ;(api.entityTypes.containmentTree as Mock).mockResolvedValue(mockContainmentTree)
@@ -123,8 +123,8 @@ beforeEach(() => {
         version: { id: `v-${etId}`, version: 1 },
         attributes: etId === 'et-1'
           ? [
-              { id: 'a1', name: 'hostname', type: 'string', ordinal: 0, required: false },
-              { id: 'a2', name: 'status', type: 'enum', enum_name: 'server-status', ordinal: 1, required: false },
+              { id: 'a1', name: 'hostname', base_type: 'string', ordinal: 0, required: false },
+              { id: 'a2', name: 'status', base_type: 'enum', type_name: 'server-status', ordinal: 1, required: false },
             ]
           : [],
         associations: [],
@@ -572,9 +572,9 @@ test('RO role hides Promote/Demote on Catalog Versions tab', async () => {
 
 // === Enums Tab ===
 
-test('shows Enums tab', async () => {
+test('shows Types tab', async () => {
   renderApp()
-  await expect.element(page.getByRole('tab', { name: /Enums/i })).toBeVisible()
+  await expect.element(page.getByRole('tab', { name: 'Types', exact: true })).toBeVisible()
 })
 
 // === Catalog Version Delete ===
@@ -767,9 +767,9 @@ test('T-E.129: Diagram nodes show attributes with types', async () => {
       entity_type: { id: _id, name: _id === 'et-1' ? 'MLModel' : 'Dataset' },
       version: { id: 'v1', version: 1 },
       attributes: _id === 'et-1'
-        ? [{ id: 'a1', name: 'hostname', type: 'string', ordinal: 0, required: false },
-           { id: 'a2', name: 'status', type: 'enum', enum_name: 'server-status', ordinal: 1, required: false }]
-        : [{ id: 'a3', name: 'format', type: 'string', ordinal: 0, required: false }],
+        ? [{ id: 'a1', name: 'hostname', base_type: 'string', ordinal: 0, required: false },
+           { id: 'a2', name: 'status', base_type: 'enum', type_name: 'server-status', ordinal: 1, required: false }]
+        : [{ id: 'a3', name: 'format', base_type: 'string', ordinal: 0, required: false }],
       associations: [],
     })
   })

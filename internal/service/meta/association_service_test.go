@@ -465,7 +465,7 @@ func TestTE108_CreateAssociationNameConflictsWithAttribute(t *testing.T) {
 	v1 := &models.EntityTypeVersion{ID: "v1", EntityTypeID: "et-a", Version: 1}
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-a").Return(v1, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
-		{ID: "a1", Name: "hostname", Type: models.AttributeTypeString},
+		{ID: "a1", Name: "hostname", TypeDefinitionVersionID: "tdv-string"},
 	}, nil)
 	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 
@@ -561,7 +561,7 @@ func TestTE111_EditAssociationRenameConflictsWithAttribute(t *testing.T) {
 		{ID: "assoc-1", Name: "tools", EntityTypeVersionID: "v1", TargetEntityTypeID: "et-b", Type: models.AssociationTypeDirectional},
 	}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
-		{ID: "a1", Name: "hostname", Type: models.AttributeTypeString},
+		{ID: "a1", Name: "hostname", TypeDefinitionVersionID: "tdv-string"},
 	}, nil)
 
 	_, err := svc.EditAssociation(context.Background(), "et-a", "tools", strPtr("hostname"), nil, nil, nil, nil, nil)

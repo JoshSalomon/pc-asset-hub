@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 
 	"gorm.io/gorm"
@@ -65,39 +66,36 @@ func EntityTypeVersionFromModel(m *domain.EntityTypeVersion) *EntityTypeVersion 
 }
 
 type Attribute struct {
-	ID                  string `gorm:"primaryKey;size:36"`
-	EntityTypeVersionID string `gorm:"not null;size:36;uniqueIndex:idx_attr_version_name"`
-	Name                string `gorm:"not null;size:255;uniqueIndex:idx_attr_version_name"`
-	Description         string `gorm:"size:1024"`
-	Type                string `gorm:"not null;size:20"` // string, number, enum
-	EnumID              string `gorm:"size:36"`
-	Ordinal             int    `gorm:"not null"`
-	Required            bool   `gorm:"not null;default:false"`
+	ID                      string `gorm:"primaryKey;size:36"`
+	EntityTypeVersionID     string `gorm:"not null;size:36;uniqueIndex:idx_attr_version_name"`
+	Name                    string `gorm:"not null;size:255;uniqueIndex:idx_attr_version_name"`
+	Description             string `gorm:"size:1024"`
+	TypeDefinitionVersionID string `gorm:"not null;size:36"`
+	Ordinal                 int    `gorm:"not null"`
+	Required                bool   `gorm:"not null;default:false"`
 }
 
 func (a *Attribute) ToModel() *domain.Attribute {
 	return &domain.Attribute{
-		ID:                  a.ID,
-		EntityTypeVersionID: a.EntityTypeVersionID,
-		Name:                a.Name,
-		Description:         a.Description,
-		Type:                domain.AttributeType(a.Type),
-		EnumID:              a.EnumID,
-		Ordinal:             a.Ordinal,
-		Required:            a.Required,
+		ID:                      a.ID,
+		EntityTypeVersionID:     a.EntityTypeVersionID,
+		Name:                    a.Name,
+		Description:             a.Description,
+		TypeDefinitionVersionID: a.TypeDefinitionVersionID,
+		Ordinal:                 a.Ordinal,
+		Required:                a.Required,
 	}
 }
 
 func AttributeFromModel(m *domain.Attribute) *Attribute {
 	return &Attribute{
-		ID:                  m.ID,
-		EntityTypeVersionID: m.EntityTypeVersionID,
-		Name:                m.Name,
-		Description:         m.Description,
-		Type:                string(m.Type),
-		EnumID:              m.EnumID,
-		Ordinal:             m.Ordinal,
-		Required:            m.Required,
+		ID:                      m.ID,
+		EntityTypeVersionID:     m.EntityTypeVersionID,
+		Name:                    m.Name,
+		Description:             m.Description,
+		TypeDefinitionVersionID: m.TypeDefinitionVersionID,
+		Ordinal:                 m.Ordinal,
+		Required:                m.Required,
 	}
 }
 
@@ -144,57 +142,106 @@ func AssociationFromModel(m *domain.Association) *Association {
 	}
 }
 
-type Enum struct {
+type TypeDefinition struct {
 	ID          string `gorm:"primaryKey;size:36"`
 	Name        string `gorm:"uniqueIndex;not null;size:255"`
 	Description string `gorm:"size:1024"`
+	BaseType    string `gorm:"not null;size:20"`
+	System      bool   `gorm:"not null;default:false"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
-	Values      []EnumValue `gorm:"foreignKey:EnumID;constraint:OnDelete:CASCADE"`
+	Versions    []TypeDefinitionVersion `gorm:"foreignKey:TypeDefinitionID;constraint:OnDelete:CASCADE"`
 }
 
-func (e *Enum) ToModel() *domain.Enum {
-	return &domain.Enum{
-		ID:          e.ID,
-		Name:        e.Name,
-		Description: e.Description,
-		CreatedAt:   e.CreatedAt,
-		UpdatedAt:   e.UpdatedAt,
+func (t *TypeDefinition) ToModel() *domain.TypeDefinition {
+	return &domain.TypeDefinition{
+		ID:          t.ID,
+		Name:        t.Name,
+		Description: t.Description,
+		BaseType:    domain.BaseType(t.BaseType),
+		System:      t.System,
+		CreatedAt:   t.CreatedAt,
+		UpdatedAt:   t.UpdatedAt,
 	}
 }
 
-func EnumFromModel(m *domain.Enum) *Enum {
-	return &Enum{
+func TypeDefinitionFromModel(m *domain.TypeDefinition) *TypeDefinition {
+	return &TypeDefinition{
 		ID:          m.ID,
 		Name:        m.Name,
 		Description: m.Description,
+		BaseType:    string(m.BaseType),
+		System:      m.System,
 		CreatedAt:   m.CreatedAt,
 		UpdatedAt:   m.UpdatedAt,
 	}
 }
 
-type EnumValue struct {
-	ID      string `gorm:"primaryKey;size:36"`
-	EnumID  string `gorm:"not null;size:36;uniqueIndex:idx_enum_value"`
-	Value   string `gorm:"not null;size:255;uniqueIndex:idx_enum_value"`
-	Ordinal int    `gorm:"not null"`
+type TypeDefinitionVersion struct {
+	ID               string `gorm:"primaryKey;size:36"`
+	TypeDefinitionID string `gorm:"not null;size:36;uniqueIndex:idx_tdv_type_version"`
+	VersionNumber    int    `gorm:"not null;uniqueIndex:idx_tdv_type_version"`
+	Constraints      string `gorm:"type:text"`
+	CreatedAt        time.Time
 }
 
-func (e *EnumValue) ToModel() *domain.EnumValue {
-	return &domain.EnumValue{
-		ID:      e.ID,
-		EnumID:  e.EnumID,
-		Value:   e.Value,
-		Ordinal: e.Ordinal,
+func (t *TypeDefinitionVersion) ToModel() *domain.TypeDefinitionVersion {
+	var constraints map[string]any
+	if t.Constraints != "" && t.Constraints != "{}" {
+		if err := json.Unmarshal([]byte(t.Constraints), &constraints); err != nil {
+			// Corrupted JSON: preserve the raw string wrapped in a map so it's
+			// visible during validation rather than silently lost.
+			constraints = map[string]any{"_raw": t.Constraints}
+		}
+	}
+	if constraints == nil {
+		constraints = map[string]any{}
+	}
+	return &domain.TypeDefinitionVersion{
+		ID:               t.ID,
+		TypeDefinitionID: t.TypeDefinitionID,
+		VersionNumber:    t.VersionNumber,
+		Constraints:      constraints,
+		CreatedAt:        t.CreatedAt,
 	}
 }
 
-func EnumValueFromModel(m *domain.EnumValue) *EnumValue {
-	return &EnumValue{
-		ID:      m.ID,
-		EnumID:  m.EnumID,
-		Value:   m.Value,
-		Ordinal: m.Ordinal,
+func TypeDefinitionVersionFromModel(m *domain.TypeDefinitionVersion) *TypeDefinitionVersion {
+	constraintsJSON := "{}"
+	if len(m.Constraints) > 0 {
+		b, err := json.Marshal(m.Constraints)
+		if err == nil {
+			constraintsJSON = string(b)
+		}
+	}
+	return &TypeDefinitionVersion{
+		ID:               m.ID,
+		TypeDefinitionID: m.TypeDefinitionID,
+		VersionNumber:    m.VersionNumber,
+		Constraints:      constraintsJSON,
+		CreatedAt:        m.CreatedAt,
+	}
+}
+
+type CatalogVersionTypePin struct {
+	ID                      string `gorm:"primaryKey;size:36"`
+	CatalogVersionID        string `gorm:"not null;size:36;uniqueIndex:idx_cvtp_unique"`
+	TypeDefinitionVersionID string `gorm:"not null;size:36;uniqueIndex:idx_cvtp_unique"`
+}
+
+func (c *CatalogVersionTypePin) ToModel() *domain.CatalogVersionTypePin {
+	return &domain.CatalogVersionTypePin{
+		ID:                      c.ID,
+		CatalogVersionID:        c.CatalogVersionID,
+		TypeDefinitionVersionID: c.TypeDefinitionVersionID,
+	}
+}
+
+func CatalogVersionTypePinFromModel(m *domain.CatalogVersionTypePin) *CatalogVersionTypePin {
+	return &CatalogVersionTypePin{
+		ID:                      m.ID,
+		CatalogVersionID:        m.CatalogVersionID,
+		TypeDefinitionVersionID: m.TypeDefinitionVersionID,
 	}
 }
 
@@ -379,7 +426,7 @@ type InstanceAttributeValue struct {
 	AttributeID     string `gorm:"not null;size:36;uniqueIndex:idx_iav_unique"`
 	ValueString     string `gorm:"size:4096"`
 	ValueNumber     *float64
-	ValueEnum       string `gorm:"size:255"`
+	ValueJSON       string `gorm:"type:text"`
 }
 
 func (i *InstanceAttributeValue) ToModel() *domain.InstanceAttributeValue {
@@ -390,7 +437,7 @@ func (i *InstanceAttributeValue) ToModel() *domain.InstanceAttributeValue {
 		AttributeID:     i.AttributeID,
 		ValueString:     i.ValueString,
 		ValueNumber:     i.ValueNumber,
-		ValueEnum:       i.ValueEnum,
+		ValueJSON:       i.ValueJSON,
 	}
 }
 
@@ -402,7 +449,7 @@ func InstanceAttributeValueFromModel(m *domain.InstanceAttributeValue) *Instance
 		AttributeID:     m.AttributeID,
 		ValueString:     m.ValueString,
 		ValueNumber:     m.ValueNumber,
-		ValueEnum:       m.ValueEnum,
+		ValueJSON:       m.ValueJSON,
 	}
 }
 
@@ -441,10 +488,11 @@ func AllModels() []any {
 		&EntityTypeVersion{},
 		&Attribute{},
 		&Association{},
-		&Enum{},
-		&EnumValue{},
+		&TypeDefinition{},
+		&TypeDefinitionVersion{},
 		&CatalogVersion{},
 		&CatalogVersionPin{},
+		&CatalogVersionTypePin{},
 		&LifecycleTransition{},
 		&Catalog{},
 		&EntityInstance{},
@@ -455,6 +503,35 @@ func AllModels() []any {
 
 // InitDB initializes the database with auto-migration and data fixups.
 func InitDB(db *gorm.DB) error {
+	// Drop legacy tables that have been replaced by the type system
+	for _, table := range []string{"enum_values", "enums"} {
+		if db.Migrator().HasTable(table) {
+			if err := db.Migrator().DropTable(table); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Drop legacy columns from attributes table (replaced by type_definition_version_id)
+	if db.Migrator().HasTable("attributes") {
+		for _, col := range []string{"type", "enum_id"} {
+			if db.Migrator().HasColumn(&Attribute{}, col) {
+				if err := db.Migrator().DropColumn(&Attribute{}, col); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	// Drop legacy column from instance_attribute_values table (replaced by value_json)
+	if db.Migrator().HasTable("instance_attribute_values") {
+		if db.Migrator().HasColumn(&InstanceAttributeValue{}, "value_enum") {
+			if err := db.Migrator().DropColumn(&InstanceAttributeValue{}, "value_enum"); err != nil {
+				return err
+			}
+		}
+	}
+
 	if err := db.AutoMigrate(AllModels()...); err != nil {
 		return err
 	}

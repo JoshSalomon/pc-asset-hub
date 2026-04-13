@@ -91,10 +91,10 @@ func (s *VersionHistoryService) CompareVersions(ctx context.Context, entityTypeI
 			diff.Changes = append(diff.Changes, VersionDiffItem{
 				Name: name, ChangeType: "added", Category: "attribute",
 			})
-		} else if a1.Type != a2.Type || a1.Description != a2.Description || a1.EnumID != a2.EnumID {
+		} else if a1.TypeDefinitionVersionID != a2.TypeDefinitionVersionID || a1.Description != a2.Description {
 			diff.Changes = append(diff.Changes, VersionDiffItem{
 				Name: name, ChangeType: "modified", Category: "attribute",
-				OldValue: string(a1.Type), NewValue: string(a2.Type),
+				OldValue: a1.TypeDefinitionVersionID, NewValue: a2.TypeDefinitionVersionID,
 			})
 		}
 	}
