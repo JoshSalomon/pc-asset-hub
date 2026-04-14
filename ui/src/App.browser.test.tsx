@@ -56,7 +56,7 @@ const mockContainmentTree = [
     versions: [
       { id: 'vs1', entity_type_id: 'et-server', version: 1, description: 'V1', created_at: '2026-01-01T00:00:00Z' },
     ],
-    latest_version: 1,
+    latest_version: 1, latest_version_id: 'tdv-auto',
     children: [
       {
         entity_type: { id: 'et-tool', name: 'Tool', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
@@ -64,14 +64,14 @@ const mockContainmentTree = [
           { id: 'vt1', entity_type_id: 'et-tool', version: 1, description: 'V1', created_at: '2026-01-01T00:00:00Z' },
           { id: 'vt2', entity_type_id: 'et-tool', version: 2, description: 'V2', created_at: '2026-01-02T00:00:00Z' },
         ],
-        latest_version: 2,
+        latest_version: 2, latest_version_id: 'tdv-auto',
         children: [
           {
             entity_type: { id: 'et-sub', name: 'Subcomponent', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
             versions: [
               { id: 'vsc1', entity_type_id: 'et-sub', version: 1, description: 'V1', created_at: '2026-01-01T00:00:00Z' },
             ],
-            latest_version: 1,
+            latest_version: 1, latest_version_id: 'tdv-auto',
             children: [],
           },
         ],
@@ -85,7 +85,7 @@ const mockContainmentTree = [
       { id: 'vd2', entity_type_id: 'et-dataset', version: 2, description: 'V2', created_at: '2026-01-02T00:00:00Z' },
       { id: 'vd3', entity_type_id: 'et-dataset', version: 3, description: 'V3', created_at: '2026-01-03T00:00:00Z' },
     ],
-    latest_version: 3,
+    latest_version: 3, latest_version_id: 'tdv-auto',
     children: [],
   },
 ]

@@ -36,14 +36,15 @@ func (h *TypeDefinitionHandler) Create(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusCreated, dto.TypeDefinitionResponse{
-		ID:            td.ID,
-		Name:          td.Name,
-		Description:   td.Description,
-		BaseType:      string(td.BaseType),
-		System:        td.System,
-		LatestVersion: tdv.VersionNumber,
-		CreatedAt:     td.CreatedAt,
-		UpdatedAt:     td.UpdatedAt,
+		ID:              td.ID,
+		Name:            td.Name,
+		Description:     td.Description,
+		BaseType:        string(td.BaseType),
+		System:          td.System,
+		LatestVersion:   tdv.VersionNumber,
+		LatestVersionID: tdv.ID,
+		CreatedAt:       td.CreatedAt,
+		UpdatedAt:       td.UpdatedAt,
 	})
 }
 
@@ -61,24 +62,25 @@ func (h *TypeDefinitionHandler) List(c echo.Context) error {
 		return mapError(err)
 	}
 
-	// Batch-fetch latest version numbers to avoid N+1 queries
+	// Batch-fetch latest version info to avoid N+1 queries
 	typeDefIDs := make([]string, len(items))
 	for i, td := range items {
 		typeDefIDs[i] = td.ID
 	}
-	versionMap, _ := h.svc.GetLatestVersionNumbers(c.Request().Context(), typeDefIDs)
+	versionNumbers, versionIDs, _ := h.svc.GetLatestVersionInfo(c.Request().Context(), typeDefIDs)
 
 	resp := make([]dto.TypeDefinitionResponse, len(items))
 	for i, td := range items {
 		resp[i] = dto.TypeDefinitionResponse{
-			ID:            td.ID,
-			Name:          td.Name,
-			Description:   td.Description,
-			BaseType:      string(td.BaseType),
-			System:        td.System,
-			LatestVersion: versionMap[td.ID],
-			CreatedAt:     td.CreatedAt,
-			UpdatedAt:     td.UpdatedAt,
+			ID:              td.ID,
+			Name:            td.Name,
+			Description:     td.Description,
+			BaseType:        string(td.BaseType),
+			System:          td.System,
+			LatestVersion:   versionNumbers[td.ID],
+			LatestVersionID: versionIDs[td.ID],
+			CreatedAt:       td.CreatedAt,
+			UpdatedAt:       td.UpdatedAt,
 		}
 	}
 
@@ -94,14 +96,15 @@ func (h *TypeDefinitionHandler) GetByID(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, dto.TypeDefinitionResponse{
-		ID:            td.ID,
-		Name:          td.Name,
-		Description:   td.Description,
-		BaseType:      string(td.BaseType),
-		System:        td.System,
-		LatestVersion: tdv.VersionNumber,
-		CreatedAt:     td.CreatedAt,
-		UpdatedAt:     td.UpdatedAt,
+		ID:              td.ID,
+		Name:            td.Name,
+		Description:     td.Description,
+		BaseType:        string(td.BaseType),
+		System:          td.System,
+		LatestVersion:   tdv.VersionNumber,
+		LatestVersionID: tdv.ID,
+		CreatedAt:       td.CreatedAt,
+		UpdatedAt:       td.UpdatedAt,
 	})
 }
 

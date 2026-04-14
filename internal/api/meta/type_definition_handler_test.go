@@ -76,8 +76,8 @@ func TestTypeDefHandler_List(t *testing.T) {
 	}, 2, nil)
 	// Batch version lookup
 	tdvRepo.On("GetLatestByTypeDefinitions", mock.Anything, []string{"td-1", "td-2"}).Return(map[string]*models.TypeDefinitionVersion{
-		"td-1": {VersionNumber: 1},
-		"td-2": {VersionNumber: 3},
+		"td-1": {ID: "tdv-1", VersionNumber: 1},
+		"td-2": {ID: "tdv-2", VersionNumber: 3},
 	}, nil)
 
 	rec := doRequest(e, http.MethodGet, "/api/meta/v1/type-definitions", "", apimw.RoleRO)
@@ -87,6 +87,11 @@ func TestTypeDefHandler_List(t *testing.T) {
 	err := json.Unmarshal(rec.Body.Bytes(), &resp)
 	require.NoError(t, err)
 	assert.Equal(t, 2, resp.Total)
+
+	// Verify latest_version_id is present in response
+	body := rec.Body.String()
+	assert.Contains(t, body, `"latest_version_id":"tdv-1"`)
+	assert.Contains(t, body, `"latest_version_id":"tdv-2"`)
 }
 
 func TestTypeDefHandler_GetByID(t *testing.T) {

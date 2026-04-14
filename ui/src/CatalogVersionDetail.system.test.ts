@@ -18,6 +18,7 @@ import {
   apiCall,
   testName,
   cleanupE2EData,
+  getTypeVersionId,
   UI_URL,
 } from './test-helpers/system'
 
@@ -40,9 +41,10 @@ beforeAll(async () => {
     description: 'Entity type for CV detail tests',
   })
   etId = etRes.body.entity_type.id
+  const stringVersionId = await getTypeVersionId('string')
   await apiCall('POST', `/api/meta/v1/entity-types/${etId}/attributes`, {
     name: 'hostname',
-    type: 'string',
+    type_definition_version_id: stringVersionId,
     required: true,
     description: 'Server hostname',
   })
@@ -51,12 +53,6 @@ beforeAll(async () => {
   await apiCall('POST', '/api/meta/v1/entity-types', {
     name: testName('CVDetail_ET2'),
     description: 'Second entity type',
-  })
-
-  // Create test enum
-  await apiCall('POST', '/api/meta/v1/enums', {
-    name: testName('CVDetail_Enum'),
-    values: ['enabled', 'disabled'],
   })
 
   // Create catalog version with pin to the entity type

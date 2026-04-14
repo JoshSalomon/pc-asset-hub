@@ -22,7 +22,7 @@ const mockSystemType = {
   description: 'Built-in string type',
   base_type: 'string' as const,
   system: true,
-  latest_version: 1,
+  latest_version: 1, latest_version_id: 'tdv-auto',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 }
@@ -33,7 +33,7 @@ const mockEnumType = {
   description: 'A status enum',
   base_type: 'enum' as const,
   system: false,
-  latest_version: 2,
+  latest_version: 2, latest_version_id: 'tdv-auto',
   created_at: '2026-02-01T00:00:00Z',
   updated_at: '2026-02-15T00:00:00Z',
 }
@@ -44,7 +44,7 @@ const mockIntegerType = {
   description: '',
   base_type: 'integer' as const,
   system: false,
-  latest_version: 1,
+  latest_version: 1, latest_version_id: 'tdv-auto',
   created_at: '2026-03-01T00:00:00Z',
   updated_at: '2026-03-01T00:00:00Z',
 }
@@ -54,7 +54,7 @@ const mockBooleanType = {
   name: 'IsEnabled',
   base_type: 'boolean' as const,
   system: false,
-  latest_version: 1,
+  latest_version: 1, latest_version_id: 'tdv-auto',
   created_at: '2026-03-02T00:00:00Z',
   updated_at: '2026-03-02T00:00:00Z',
 }
@@ -106,7 +106,7 @@ beforeEach(() => {
   ;(api.typeDefinitions.list as Mock).mockResolvedValue({ items: allTypes, total: allTypes.length })
   ;(api.typeDefinitions.create as Mock).mockResolvedValue({
     id: 'td-new', name: 'NewType', base_type: 'string', system: false,
-    latest_version: 1, created_at: '2026-04-01T00:00:00Z', updated_at: '2026-04-01T00:00:00Z',
+    latest_version: 1, latest_version_id: 'tdv-auto', created_at: '2026-04-01T00:00:00Z', updated_at: '2026-04-01T00:00:00Z',
   })
   ;(api.typeDefinitions.delete as Mock).mockResolvedValue(undefined)
 })
@@ -292,6 +292,23 @@ test('create with number base type', async () => {
   await dialog.getByRole('button', { name: 'Create' }).click()
   expect(api.typeDefinitions.create).toHaveBeenCalledWith({
     name: 'Pct', description: undefined, base_type: 'number', constraints: { min: 0.5, max: 100.5 },
+  })
+})
+
+test('TD-94: number type constraint preserves decimal precision (0.01)', async () => {
+  renderPage()
+  const dialog = await openCreateModal()
+  await dialog.getByRole('textbox', { name: 'Name' }).fill('Precise')
+  await selectBaseType('string', 'number')
+  // Type character by character to simulate real user input
+  // This is where the bug manifests: parseFloat("0.0") = 0 on each keystroke
+  const minInput = dialog.getByLabelText('Min')
+  await userEvent.type(minInput.element(), '0.01')
+  const maxInput = dialog.getByLabelText('Max')
+  await userEvent.type(maxInput.element(), '10.05')
+  await dialog.getByRole('button', { name: 'Create' }).click()
+  expect(api.typeDefinitions.create).toHaveBeenCalledWith({
+    name: 'Precise', description: undefined, base_type: 'number', constraints: { min: 0.01, max: 10.05 },
   })
 })
 

@@ -61,11 +61,7 @@ export default function AddAttributeModal({ isOpen, onClose, onSubmit, typeDefin
   const handleSubmit = async () => {
     const td = typeDefinitions.find(t => t.id === selectedTdId)
     if (!td) return
-    // We don't have the version ID directly from TypeDefinition — we use a convention
-    // where the backend resolves it from the latest version. But the API requires
-    // type_definition_version_id. We'll need to fetch versions or use a placeholder.
-    // For now, the selectedTdId IS the type definition ID; the caller resolves the version.
-    await onSubmit({ name, description, typeDefinitionVersionId: selectedTdId, required })
+    await onSubmit({ name, description, typeDefinitionVersionId: td.latest_version_id, required })
   }
 
   const systemTypes = typeDefinitions.filter(td => td.system)

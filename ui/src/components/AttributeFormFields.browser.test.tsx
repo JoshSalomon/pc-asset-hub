@@ -260,6 +260,27 @@ test('T-20.19: json attr renders textarea with placeholder', async () => {
   expect(onChange).toHaveBeenCalledWith('config', '{"foo": 1}')
 })
 
+// T-20.21: Multiline string attr renders TextArea and onChange fires
+test('T-20.21: multiline string attr renders textarea and calls onChange', async () => {
+  const onChange = vi.fn()
+  const multilineAttrs: SnapshotAttribute[] = [
+    { id: 'm1', name: 'notes', base_type: 'string', description: '', ordinal: 1, required: false, constraints: { multiline: true } },
+  ]
+  render(
+    <AttributeFormFields
+      schemaAttrs={multilineAttrs}
+      values={{}}
+      onChange={onChange}
+      enumValues={{}}
+      idPrefix="test"
+    />,
+  )
+  const textarea = page.getByRole('textbox', { name: 'notes' })
+  await expect.element(textarea).toBeVisible()
+  await textarea.fill('Line 1\nLine 2')
+  expect(onChange).toHaveBeenCalledWith('notes', 'Line 1\nLine 2')
+})
+
 // T-20.20: List attr renders textarea with comma-separated placeholder
 test('T-20.20: list attr renders textarea with placeholder', async () => {
   const onChange = vi.fn()

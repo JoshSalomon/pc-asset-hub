@@ -3470,6 +3470,14 @@ Replaces inline type system (string/number/enum) and separate enum management wi
 | T-31.155 | Data viewer: URL displayed as clickable link | Live | Link navigable |
 | T-31.156 | Data viewer: boolean displayed as "Yes"/"No" | Live | Formatted display |
 | T-31.157 | End-to-end: create type → create attribute → create instance → validate | Live | Full flow works |
+| T-31.158 | Single-line string attribute renders TextInput (not TextArea) | Live | input[type=text] element |
+| T-31.159 | Multiline string preserves formatting on create and retrieve | Live | Newlines stored and displayed correctly |
+| T-31.160 | Date attribute renders date input with YYYY-MM-DD placeholder | Live | Date input rendered |
+| T-31.161 | URL attribute — create instance with URL, verify stored and retrieved | Live | URL value round-trips correctly |
+| T-31.162 | Integer out of range — validate catalog (TD-90: constraint check pending) | Live | Currently passes; will fail when TD-90 implemented |
+| T-31.163 | Type definition versioning — old CV uses old version constraints | Live | Validation against pinned version, not latest |
+| T-31.164 | Data viewer: URL value displayed in detail panel | Live | URL text visible (TD-91: clickable link pending) |
+| T-31.165 | Data viewer: boolean value displayed in detail panel | Live | Value visible as Yes or true |
 
 ---
 
@@ -3509,7 +3517,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All test cases (T-1.01 through T-31.157; T-13.78–13.85 retired; T-31.79 subsumed by T-31.96–102; 29 enum-specific tests retired — see T-31 retired test cases list) pass
+- All test cases (T-1.01 through T-31.165; T-13.78–13.85 retired; T-31.79 subsumed by T-31.96–102; 29 enum-specific tests retired — see T-31 retired test cases list) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

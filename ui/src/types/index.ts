@@ -51,6 +51,7 @@ export interface TypeDefinition {
   base_type: BaseType
   system: boolean
   latest_version: number
+  latest_version_id: string
   created_at: string
   updated_at: string
 }

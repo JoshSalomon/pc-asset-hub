@@ -136,14 +136,15 @@ type UpdateTypeDefinitionRequest struct {
 }
 
 type TypeDefinitionResponse struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	Description   string    `json:"description"`
-	BaseType      string    `json:"base_type"`
-	System        bool      `json:"system"`
-	LatestVersion int       `json:"latest_version"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	BaseType        string    `json:"base_type"`
+	System          bool      `json:"system"`
+	LatestVersion   int       `json:"latest_version"`
+	LatestVersionID string    `json:"latest_version_id"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type TypeDefinitionVersionResponse struct {

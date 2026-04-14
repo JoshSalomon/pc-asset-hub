@@ -135,6 +135,21 @@ func (s *TypeDefinitionService) GetLatestVersionNumbers(ctx context.Context, typ
 	return result, nil
 }
 
+// GetLatestVersionInfo returns both version number and version ID for a batch of type definitions.
+func (s *TypeDefinitionService) GetLatestVersionInfo(ctx context.Context, typeDefIDs []string) (map[string]int, map[string]string, error) {
+	versions, err := s.tdvRepo.GetLatestByTypeDefinitions(ctx, typeDefIDs)
+	if err != nil {
+		return nil, nil, err
+	}
+	numbers := make(map[string]int, len(versions))
+	ids := make(map[string]string, len(versions))
+	for tdID, v := range versions {
+		numbers[tdID] = v.VersionNumber
+		ids[tdID] = v.ID
+	}
+	return numbers, ids, nil
+}
+
 // UpdateTypeDefinition creates a new version of a type definition with updated constraints.
 func (s *TypeDefinitionService) UpdateTypeDefinition(ctx context.Context, id string, description *string, constraints map[string]any) (*models.TypeDefinitionVersion, error) {
 	td, err := s.tdRepo.GetByID(ctx, id)

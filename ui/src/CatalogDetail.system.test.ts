@@ -20,6 +20,7 @@ import {
   testName,
   cleanupE2EData,
   cleanupDnsCatalogs,
+  getTypeVersionId,
   UI_URL,
 } from './test-helpers/system'
 
@@ -60,9 +61,10 @@ beforeAll(async () => {
   etParentId = parentRes.body.entity_type.id
 
   // Add attributes to parent
+  const stringVersionId = await getTypeVersionId('string')
   await apiCall('POST', `/api/meta/v1/entity-types/${etParentId}/attributes`, {
     name: 'size',
-    type: 'string',
+    type_definition_version_id: stringVersionId,
     required: false,
     description: 'Size attribute',
   })
@@ -77,7 +79,7 @@ beforeAll(async () => {
   // Add attributes to child
   await apiCall('POST', `/api/meta/v1/entity-types/${etChildId}/attributes`, {
     name: 'color',
-    type: 'string',
+    type_definition_version_id: stringVersionId,
     required: false,
     description: 'Color attribute',
   })
@@ -110,6 +112,13 @@ beforeAll(async () => {
   })
   await apiCall('POST', `/api/meta/v1/catalog-versions/${catalogVersionId}/pins`, {
     entity_type_version_id: latestChildVersionId,
+  })
+
+  // Create the test catalog
+  await apiCall('POST', '/api/data/v1/catalogs', {
+    name: CATALOG_TEST_NAME,
+    description: 'Test catalog for detail tests',
+    catalog_version_id: catalogVersionId,
   })
 })
 
@@ -147,14 +156,14 @@ describe('Catalog List Page', () => {
     await pg.getByRole('button', { name: 'Create Catalog' }).click()
     await visible(pg.getByRole('dialog'))
 
-    // Fill form fields
-    await pg.locator('#cat-name').fill(CATALOG_TEST_NAME)
-    await pg.locator('#cat-desc').fill('Test catalog for detail tests')
+    // Fill form fields (use PUBLISH_NAME — CATALOG_TEST_NAME already exists from beforeAll)
+    await pg.locator('#cat-name').fill(CATALOG_PUBLISH_NAME)
+    await pg.locator('#cat-desc').fill('Catalog created via UI')
 
-    // Select CV from dropdown
-    await pg.getByText('Select a catalog version').click()
+    // Select CV from dropdown (scope to dialog to avoid matching table cells)
+    await pg.getByRole('dialog').getByText('Select a catalog version').click()
     await pg.waitForTimeout(500)
-    await pg.getByText(catalogVersionLabel).click()
+    await pg.getByRole('option', { name: catalogVersionLabel }).or(pg.locator('button').filter({ hasText: catalogVersionLabel })).first().click()
 
     // Submit
     await pg.getByRole('button', { name: 'Create' }).click()
@@ -163,7 +172,7 @@ describe('Catalog List Page', () => {
     await hidden(pg.getByRole('dialog'))
 
     // Verify catalog appears in list
-    await visible(pg.getByRole('gridcell', { name: CATALOG_TEST_NAME }))
+    await visible(pg.getByRole('gridcell', { name: CATALOG_PUBLISH_NAME }))
   })
 
   test('delete catalog: click Delete, confirm, removed from list', async () => {

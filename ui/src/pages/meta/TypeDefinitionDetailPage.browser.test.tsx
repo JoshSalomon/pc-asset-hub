@@ -23,7 +23,7 @@ const mockTypeDef = {
   description: 'Allowed status values',
   base_type: 'enum' as const,
   system: false,
-  latest_version: 2,
+  latest_version: 2, latest_version_id: 'tdv-auto',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-02T00:00:00Z',
 }

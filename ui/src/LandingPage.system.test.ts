@@ -27,8 +27,8 @@ afterAll(async () => { await teardownBrowser(browser) })
 test('landing page loads with title and sections', async () => {
   await pg.goto(UI_URL)
   await visible(pg.getByRole('heading', { name: 'AI Asset Hub', exact: true }))
-  await visible(pg.getByText('Schema Management'))
-  await visible(pg.getByText('Catalogs'))
+  await visible(pg.getByRole('heading', { name: 'Schema Management' }))
+  await visible(pg.getByRole('heading', { name: 'Catalogs' }))
 })
 
 test('schema management card navigates to /schema', async () => {

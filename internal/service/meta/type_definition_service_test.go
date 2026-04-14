@@ -358,6 +358,32 @@ func TestGetLatestVersionNumbers_Error(t *testing.T) {
 	assert.Contains(t, err.Error(), "batch error")
 }
 
+func TestGetLatestVersionInfo_Success(t *testing.T) {
+	svc, _, tdvRepo, _ := newTypeDefSvc()
+
+	tdvRepo.On("GetLatestByTypeDefinitions", mock.Anything, []string{"td-1", "td-2"}).Return(map[string]*models.TypeDefinitionVersion{
+		"td-1": {ID: "v-1-3", VersionNumber: 3},
+		"td-2": {ID: "v-2-1", VersionNumber: 1},
+	}, nil)
+
+	numbers, ids, err := svc.GetLatestVersionInfo(context.Background(), []string{"td-1", "td-2"})
+	assert.NoError(t, err)
+	assert.Equal(t, 3, numbers["td-1"])
+	assert.Equal(t, 1, numbers["td-2"])
+	assert.Equal(t, "v-1-3", ids["td-1"])
+	assert.Equal(t, "v-2-1", ids["td-2"])
+}
+
+func TestGetLatestVersionInfo_Error(t *testing.T) {
+	svc, _, tdvRepo, _ := newTypeDefSvc()
+
+	tdvRepo.On("GetLatestByTypeDefinitions", mock.Anything, mock.Anything).Return(nil, errors.New("batch error"))
+
+	_, _, err := svc.GetLatestVersionInfo(context.Background(), []string{"td-1"})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "batch error")
+}
+
 // === UpdateTypeDefinition error paths ===
 
 func TestUpdateTypeDefinition_GetByIDError(t *testing.T) {

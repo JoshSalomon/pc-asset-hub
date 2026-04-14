@@ -114,6 +114,14 @@ export default function AttributeFormFields({
                 placeholder="Comma-separated values"
                 rows={2}
               />
+            ) : attr.constraints?.multiline ? (
+              <TextArea
+                id={`${idPrefix}-attr-${attr.name}`}
+                aria-label={attr.name}
+                value={values[attr.name] || ''}
+                onChange={(_e, v) => onChange(attr.name, v)}
+                rows={4}
+              />
             ) : (
               <TextInput
                 id={`${idPrefix}-attr-${attr.name}`}

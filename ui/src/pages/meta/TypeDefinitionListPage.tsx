@@ -36,6 +36,55 @@ interface Props {
   role: Role
 }
 
+// Separate component for min/max inputs that uses local string state
+// to avoid parseFloat round-trip on every keystroke (TD-94: 0.01 → 0.1 bug)
+function NumericConstraintFields({
+  baseType, constraints, onChange, idPrefix,
+}: {
+  baseType: BaseType
+  constraints: Record<string, unknown>
+  onChange: (c: Record<string, unknown>) => void
+  idPrefix: string
+}) {
+  const [minText, setMinText] = useState(constraints.min != null ? String(constraints.min) : '')
+  const [maxText, setMaxText] = useState(constraints.max != null ? String(constraints.max) : '')
+
+  // Sync from parent when constraints change externally (e.g., modal open)
+  useEffect(() => {
+    setMinText(constraints.min != null ? String(constraints.min) : '')
+    setMaxText(constraints.max != null ? String(constraints.max) : '')
+  }, [constraints.min, constraints.max])
+
+  const parseValue = (v: string) => {
+    if (v === '') return undefined
+    const parsed = baseType === 'integer' ? parseInt(v, 10) : parseFloat(v)
+    return isNaN(parsed) ? undefined : parsed
+  }
+
+  return (
+    <>
+      <FormGroup label="Min" fieldId={`${idPrefix}-min`}>
+        <TextInput
+          id={`${idPrefix}-min`}
+          type="text"
+          value={minText}
+          onChange={(_e, v) => setMinText(v)}
+          onBlur={() => onChange({ ...constraints, min: parseValue(minText) })}
+        />
+      </FormGroup>
+      <FormGroup label="Max" fieldId={`${idPrefix}-max`}>
+        <TextInput
+          id={`${idPrefix}-max`}
+          type="text"
+          value={maxText}
+          onChange={(_e, v) => setMaxText(v)}
+          onBlur={() => onChange({ ...constraints, max: parseValue(maxText) })}
+        />
+      </FormGroup>
+    </>
+  )
+}
+
 function ConstraintsForm({
   baseType,
   constraints,
@@ -91,30 +140,12 @@ function ConstraintsForm({
     case 'integer':
     case 'number':
       return (
-        <>
-          <FormGroup label="Min" fieldId={`${idPrefix}-min`}>
-            <TextInput
-              id={`${idPrefix}-min`}
-              type="number"
-              value={constraints.min != null ? String(constraints.min) : ''}
-              onChange={(_e, v) => {
-                const parsed = baseType === 'integer' ? parseInt(v, 10) : parseFloat(v)
-                onChange({ ...constraints, min: v === '' ? undefined : (isNaN(parsed) ? undefined : parsed) })
-              }}
-            />
-          </FormGroup>
-          <FormGroup label="Max" fieldId={`${idPrefix}-max`}>
-            <TextInput
-              id={`${idPrefix}-max`}
-              type="number"
-              value={constraints.max != null ? String(constraints.max) : ''}
-              onChange={(_e, v) => {
-                const parsed = baseType === 'integer' ? parseInt(v, 10) : parseFloat(v)
-                onChange({ ...constraints, max: v === '' ? undefined : (isNaN(parsed) ? undefined : parsed) })
-              }}
-            />
-          </FormGroup>
-        </>
+        <NumericConstraintFields
+          baseType={baseType}
+          constraints={constraints}
+          onChange={onChange}
+          idPrefix={idPrefix}
+        />
       )
     case 'enum': {
       const values = (constraints.values as string[]) || []

@@ -8,12 +8,12 @@ Last updated: 2026-04-13
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1570 | 100% | 97.6% (4023/4121) | — |
+| Backend (Go) | 1572 | 100% | 97.6% (4032/4130) | — |
 | UI — Unit tests (jsdom) | 75 | 100% | — | — |
-| UI — Browser tests (Playwright) | 926 | 100% | 94.6% (2521/2664) | 97.2% (2278/2344) |
-| UI — System tests (Playwright + live server) | 30 | 100% | — | — |
+| UI — Browser tests (Playwright) | 929 | 100% | 94.7% (2537/2680) | 97.2% (2291/2357) |
+| UI — System tests (Playwright + live server) | 121 | 100% | — | — |
 | Live system (bash scripts) | 303 | 100% | — | — |
-| **Total** | **2904** | **100%** | — | — |
+| **Total** | **3000** | **100%** | — | — |
 
 ---
 
@@ -34,7 +34,7 @@ Last updated: 2026-04-13
 | `internal/operator/api/v1alpha1` | 97.7% (85/87) | `DeepCopyObject` nil-receiver guard |
 | `internal/operator/controllers` | 94.3% (198/210) | `SetupWithManager` (envtest — deferred to Phase B), `SetOwnerReference` error branches |
 | `internal/operator/crdgen` | 94.3% (33/35) | `json.Marshal` error guards on well-formed inputs |
-| `internal/service/meta` | 99.6% (950/954) | BulkCopy error paths, requiresDeepCopy edge cases |
+| `internal/service/meta` | 99.6% (959/963) | BulkCopy error paths, requiresDeepCopy edge cases |
 | `internal/service/operational` | 99.8% (987/989) | Cycle guard in resolveParentChain, partial DB failure paths |
 | `internal/service/validation` | 95.6% (43/45) | |
 
@@ -171,7 +171,7 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | `client.browser.test.ts` | 61 | Pass |
 | `EntityTypeDetailPage.browser.test.tsx` | 135 | Pass |
 | `EntityTypeListPage.browser.test.tsx` | 12 | Pass |
-| `TypeDefinitionListPage.browser.test.tsx` | 59 | Pass |
+| `TypeDefinitionListPage.browser.test.tsx` | 60 | Pass |
 | `TypeDefinitionDetailPage.browser.test.tsx` | 47 | Pass |
 | `CatalogVersionDetailPage.browser.test.tsx` | 57 | Pass |
 | `CatalogListPage.browser.test.tsx` | 20 | Pass |
@@ -187,8 +187,8 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | `useEntityTypeData.browser.test.tsx` | 8 | Pass |
 | `useAttributeManagement.browser.test.tsx` | 11 | Pass |
 | `useAssociationManagement.browser.test.tsx` | 7 | Pass |
-| `AddAttributeModal.browser.test.tsx` | 7 | Pass |
-| `EditAttributeModal.browser.test.tsx` | 4 | Pass |
+| `AddAttributeModal.browser.test.tsx` | 9 | Pass |
+| `EditAttributeModal.browser.test.tsx` | 6 | Pass |
 | `AddAssociationModal.browser.test.tsx` | 7 | Pass |
 | `CopyAttributesModal.browser.test.tsx` | 7 | Pass |
 | `RenameEntityTypeModal.browser.test.tsx` | 4 | Pass |
@@ -200,17 +200,23 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | `useValidation.browser.test.tsx` | 6 | Pass |
 | `useCatalogDiagram.browser.test.tsx` | 5 | Pass |
 | `CopyCatalogModal.browser.test.tsx` | 5 | Pass |
-| `AttributeFormFields.browser.test.tsx` | 8 | Pass |
+| `AttributeFormFields.browser.test.tsx` | 15 | Pass |
 | `EntityTypeDiagram.browser.test.tsx` | 3 | Pass |
 | `LandingPage.browser.test.tsx` | 12 | Pass |
-| **Total** | **926** | **100% pass** |
+| **Total** | **929** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
 | Test File | Tests | Status |
 |-----------|-------|--------|
 | `App.system.test.ts` | 30 | Pass |
-| **Total** | **30** | **100% pass** |
+| `CatalogDetail.system.test.ts` | 15 | Pass |
+| `CatalogVersionDetail.system.test.ts` | 12 | Pass |
+| `DataViewer.system.test.ts` | 17 | Pass |
+| `LandingPage.system.test.ts` | 4 | Pass |
+| `SecurityFlows.system.test.ts` | 21 | Pass |
+| `TypeSystem.system.test.ts` | 22 | Pass |
+| **Total** | **121** | **100% pass** |
 
 ### Code Coverage (v8 provider)
 
@@ -225,13 +231,13 @@ Coverage is measured using `@vitest/coverage-v8`. The two test suites run indepe
 | `components/AddAssociationModal.tsx` | 87/87 | 100.0% | 79/79 | 100.0% |
 | `components/AddAttributeModal.tsx` | 41/42 | 97.6% | 35/35 | 100.0% |
 | `components/AddChildModal.tsx` | 89/90 | 98.9% | 75/75 | 100.0% |
-| `components/AttributeFormFields.tsx` | 28/28 | 100.0% | 26/26 | 100.0% |
+| `components/AttributeFormFields.tsx` | 29/29 | 100.0% | 27/27 | 100.0% |
 | `components/CopyAttributesModal.tsx` | 49/49 | 100.0% | 39/39 | 100.0% |
 | `components/CopyCatalogModal.tsx` | 12/12 | 100.0% | 12/12 | 100.0% |
 | `components/CreateInstanceModal.tsx` | 14/14 | 100.0% | 13/13 | 100.0% |
 | `components/DiagramTabContent.tsx` | 4/4 | 100.0% | 3/3 | 100.0% |
 | `components/EditAssociationModal.tsx` | 85/92 | 92.4% | 76/82 | 92.7% |
-| `components/EditAttributeModal.tsx` | 34/34 | 100.0% | 29/29 | 100.0% |
+| `components/EditAttributeModal.tsx` | 38/38 | 100.0% | 31/31 | 100.0% |
 | `components/EditInstanceModal.tsx` | 19/19 | 100.0% | 17/17 | 100.0% |
 | `components/EntityTypeDiagram.tsx` | 94/102 | 92.2% | 89/97 | 91.8% |
 | `components/InstanceDetailPanel.tsx` | 8/8 | 100.0% | 8/8 | 100.0% |
@@ -259,12 +265,12 @@ Coverage is measured using `@vitest/coverage-v8`. The two test suites run indepe
 | `pages/meta/EntityTypeDetailPage.tsx` | 155/161 | 96.3% | 134/134 | 100.0% |
 | `pages/meta/EntityTypeListPage.tsx` | 11/12 | 91.7% | 11/12 | 91.7% |
 | `pages/meta/TypeDefinitionDetailPage.tsx` | 86/90 | 95.6% | 76/76 | 100.0% |
-| `pages/meta/TypeDefinitionListPage.tsx` | 118/121 | 97.5% | 111/112 | 99.1% |
+| `pages/meta/TypeDefinitionListPage.tsx` | 129/132 | 97.7% | 121/122 | 99.2% |
 | `pages/operational/OperationalCatalogDetailPage.tsx` | 60/61 | 98.4% | 52/52 | 100.0% |
 | `utils/buildTypedAttrs.ts` | 15/15 | 100.0% | 13/13 | 100.0% |
 | `utils/dnsLabel.ts` | 3/3 | 100.0% | 2/2 | 100.0% |
 | `utils/statusColor.ts` | 5/6 | 83.3% | 5/6 | 83.3% |
-| **All files (44)** | **2521/2664** | **94.6%** | **2278/2344** | **97.2%** |
+| **All files (44)** | **2537/2680** | **94.7%** | **2291/2357** | **97.2%** |
 
 **Unit tests** (supplemental — covers components that work in jsdom without browser):
 
@@ -736,11 +742,11 @@ Live test count: 242 → 303 (+61 tests across multiple scripts).
 
 | File | Coverage |
 |------|----------|
-| `TypeDefinitionListPage.tsx` | 97.5% (118/121) — 3 defensive guards |
+| `TypeDefinitionListPage.tsx` | 97.7% (129/132) — 3 defensive guards |
 | `TypeDefinitionDetailPage.tsx` | 95.6% (86/90) — 4 useParams guards |
-| `AttributeFormFields.tsx` | 100% (28/28) — all 9 base type controls |
+| `AttributeFormFields.tsx` | 100% (29/29) — all 9 base type controls + multiline |
 | `AddAttributeModal.tsx` | 97.6% (41/42) — 1 Select-state guard |
-| `EditAttributeModal.tsx` | 100% (34/34) |
+| `EditAttributeModal.tsx` | 100% (38/38) |
 | `CopyAttributesModal.tsx` | 100% (49/49) |
 | `buildTypedAttrs.ts` | 100% (15/15) |
 
@@ -751,6 +757,63 @@ Per-file regressions from 100%: AddAttributeModal.tsx (39/39 → 41/42, +1 unrea
 Deleted: EnumSelect.tsx, EnumDetailPage.tsx, EnumListPage.tsx. Excluded from coverage: test-helpers/system.ts.
 
 Quality review fixes applied: (1) N+1 query in List handler → batch `GetLatestByTypeDefinitions`. (2) `resolveBaseTypes` duplication → extracted to `type_resolver.go`. (3) Corrupted JSON constraints → `{"_raw": ...}` wrapper + `IsCorruptedConstraints`/`ExtractRawConstraints` + validation flags it. (4) Missing nil check in `mapAttributeValues`.
+
+### New Code Coverage (Session 018 — Type System: latest_version_id, multiline string)
+
+**Backend:** Added `GetLatestVersionInfo()` service method and `LatestVersionID` field to DTO. All new Go lines covered.
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/meta/type_definition_service.go` | `GetLatestVersionInfo` | 100% |
+| `api/meta/type_definition_handler.go` | `Create`, `List`, `GetByID` (populate LatestVersionID) | 100% |
+| `api/dto/dto.go` | `TypeDefinitionResponse.LatestVersionID` field | N/A (struct field) |
+
+**UI:** Fixed AddAttributeModal/EditAttributeModal to use `td.latest_version_id` instead of `td.id`. Added multiline string TextArea in AttributeFormFields.
+
+| File | Coverage |
+|------|----------|
+| `AttributeFormFields.tsx` | 100% (29/29) — multiline TextArea onChange covered |
+| `EditAttributeModal.tsx` | 100% (38/38) — new guard + td.latest_version_id covered |
+| `AddAttributeModal.tsx` | 97.6% (41/42) — 1 pre-existing guard (unchanged) |
+| `types/index.ts` | N/A (type definition only) |
+
+Backend test count: 1572. Browser test count: 926 → 928 (+2 coverage tests).
+
+Per-file coverage deltas:
+
+| File | Before | After | Delta |
+|------|--------|-------|-------|
+| `service/meta` | 99.6% (950/954) 4 uncov | 99.6% (959/963) 4 uncov | +9 covered, +9 total |
+| `api/meta` | 99.8% (473/474) 1 uncov | 99.8% (473/474) 1 uncov | unchanged |
+| `EditAttributeModal.tsx` | 100% (34/34) | 100% (38/38) | +4 covered, +4 total |
+| `AttributeFormFields.tsx` | 100% (28/28) | 100% (29/29) | +1 covered, +1 total |
+| `AddAttributeModal.tsx` | 97.6% (41/42) | 97.6% (41/42) | unchanged |
+
+Test fixture fixes: Updated 14 browser test expectations to use `latest_version_id` instead of type definition ID for `typeDefinitionVersionId`. Added `type_definition_version_id` to mock attributes in EntityTypeDetailPage tests. Added system type definitions (string, number) to mock data.
+
+### New Code Coverage (Session 019 — TD-94: Number min/max leading zeros fix)
+
+**Bug fix:** Extracted `NumericConstraintFields` component from `ConstraintsForm` in `TypeDefinitionListPage.tsx`. Uses local string state and parses on blur instead of onChange, preventing leading zeros after decimal point from being dropped during typing.
+
+| File | Change | Coverage |
+|------|--------|----------|
+| `TypeDefinitionListPage.tsx` | Extracted `NumericConstraintFields` component (+45 lines, -25 lines) | 97.7% (129/132) |
+| `AttributeFormFields.tsx` | Added multiline TextArea branch | 100% (29/29) |
+| `EditAttributeModal.tsx` | Updated to use `td.latest_version_id` | 100% (38/38) |
+| `AddAttributeModal.tsx` | Updated to use `td.latest_version_id` | 97.6% (41/42) |
+
+New lines: **0 uncovered** (verified by arithmetic: baseline 143 uncovered stmts, current 143 uncovered stmts, delta = 0).
+
+Per-file coverage deltas:
+
+| File | Before | After | Delta |
+|------|--------|-------|-------|
+| `TypeDefinitionListPage.tsx` | 97.5% (118/121) 3 uncov | 97.7% (129/132) 3 uncov | +11 covered, +11 total |
+| `AttributeFormFields.tsx` | 100% (28/28) 0 uncov | 100% (29/29) 0 uncov | +1 covered, +1 total |
+| `EditAttributeModal.tsx` | 100% (34/34) 0 uncov | 100% (38/38) 0 uncov | +4 covered, +4 total |
+| `AddAttributeModal.tsx` | 97.6% (41/42) 1 uncov | 97.6% (41/42) 1 uncov | unchanged |
+
+Browser test count: 926 -> 929 (+3 tests: TD-94 keystroke test + 2 from session 018).
 
 ### Coverage Gaps to Address
 

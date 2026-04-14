@@ -50,9 +50,9 @@ const mockEntityType = {
 const mockAttributes = [
   { id: '', name: 'name', description: 'Instance name', base_type: 'string', ordinal: -2, required: true, system: true },
   { id: '', name: 'description', description: 'Instance description', base_type: 'string', ordinal: -1, required: false, system: true },
-  { id: 'a1', name: 'hostname', description: 'The host', base_type: 'string', type_name: 'string', ordinal: 0, required: false },
-  { id: 'a2', name: 'cpu_count', description: '', base_type: 'number', type_name: 'number', ordinal: 1, required: false },
-  { id: 'a3', name: 'status', description: '', base_type: 'enum', type_name: 'Status', type_definition_version_id: 'td1', ordinal: 2, required: false },
+  { id: 'a1', name: 'hostname', description: 'The host', base_type: 'string', type_name: 'string', type_definition_version_id: 'tdv-string', ordinal: 0, required: false },
+  { id: 'a2', name: 'cpu_count', description: '', base_type: 'number', type_name: 'number', type_definition_version_id: 'tdv-number', ordinal: 1, required: false },
+  { id: 'a3', name: 'status', description: '', base_type: 'enum', type_name: 'Status', type_definition_version_id: 'tdv-status', ordinal: 2, required: false },
 ]
 
 const mockAssociations = [
@@ -97,7 +97,11 @@ beforeEach(() => {
   ;(api.associations.create as Mock).mockResolvedValue({ id: 'v3', version: 3 })
   ;(api.associations.edit as Mock).mockResolvedValue({ id: 'v3', version: 3 })
   ;(api.associations.delete as Mock).mockResolvedValue(undefined)
-  ;(api.typeDefinitions.list as Mock).mockResolvedValue({ items: [{ id: 'td1', name: 'Status', base_type: 'enum', system: false, latest_version: 1 }], total: 1 })
+  ;(api.typeDefinitions.list as Mock).mockResolvedValue({ items: [
+    { id: 'td-string', name: 'string', base_type: 'string', system: true, latest_version: 1, latest_version_id: 'tdv-string' },
+    { id: 'td-number', name: 'number', base_type: 'number', system: true, latest_version: 1, latest_version_id: 'tdv-number' },
+    { id: 'td1', name: 'Status', base_type: 'enum', system: false, latest_version: 1, latest_version_id: 'tdv-status' },
+  ], total: 3 })
   ;(api.versions.list as Mock).mockResolvedValue({ items: mockVersions, total: 2 })
   ;(api.versions.diff as Mock).mockResolvedValue({
     from_version: 1,
@@ -305,7 +309,7 @@ test('T-C.34: add string attribute via modal', async () => {
   expect(api.attributes.add).toHaveBeenCalledWith('et-1', {
     name: 'newattr',
     description: undefined,
-    type_definition_version_id: 'td1',
+    type_definition_version_id: 'tdv-status',
     required: false,
   })
 })
@@ -1652,7 +1656,7 @@ test('add attribute modal with description field', async () => {
   expect(api.attributes.add).toHaveBeenCalledWith('et-1', expect.objectContaining({
     name: 'myattr',
     description: 'A test description',
-    type_definition_version_id: 'td1',
+    type_definition_version_id: 'tdv-status',
   }))
 })
 
@@ -1672,7 +1676,7 @@ test('add attribute modal select custom type definition', async () => {
   await dialog.getByRole('button', { name: 'Add' }).click()
   expect(api.attributes.add).toHaveBeenCalledWith('et-1', expect.objectContaining({
     name: 'color',
-    type_definition_version_id: 'td1',
+    type_definition_version_id: 'tdv-status',
   }))
 })
 
@@ -1699,13 +1703,13 @@ test('edit attribute change type to custom type', async () => {
   await page.getByRole('button', { name: 'Edit' }).first().click()
   const dialog = page.getByRole('dialog')
 
-  // Change type by opening type selector and picking Status (enum)
-  await dialog.getByText('Select type...').click()
+  // Change type by opening type selector (shows "string (string)" since hostname is pre-typed) and picking Status (enum)
+  await dialog.getByText('string (string)').click()
   await page.getByText('Status (enum)').click()
 
   await dialog.getByRole('button', { name: 'Save' }).click()
   expect(api.attributes.edit).toHaveBeenCalledWith('et-1', 'hostname', expect.objectContaining({
-    type_definition_version_id: 'td1',
+    type_definition_version_id: 'tdv-status',
   }))
 })
 

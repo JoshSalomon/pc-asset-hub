@@ -6,10 +6,10 @@ import AddAttributeModal from './AddAttributeModal'
 import type { TypeDefinition } from '../types'
 
 const mockTypeDefinitions: TypeDefinition[] = [
-  { id: 'td-string', name: 'string', base_type: 'string', system: true, latest_version: 1, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-  { id: 'td-number', name: 'number', base_type: 'number', system: true, latest_version: 1, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-  { id: 'td1', name: 'Colors', base_type: 'enum', system: false, latest_version: 1, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-  { id: 'td2', name: 'Sizes', base_type: 'enum', system: false, latest_version: 1, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+  { id: 'td-string', name: 'string', base_type: 'string', system: true, latest_version: 1, latest_version_id: 'tdv-string', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+  { id: 'td-number', name: 'number', base_type: 'number', system: true, latest_version: 1, latest_version_id: 'tdv-number', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+  { id: 'td1', name: 'Colors', base_type: 'enum', system: false, latest_version: 1, latest_version_id: 'tdv-colors', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+  { id: 'td2', name: 'Sizes', base_type: 'enum', system: false, latest_version: 1, latest_version_id: 'tdv-sizes', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
 ]
 
 function renderModal(overrides: Partial<React.ComponentProps<typeof AddAttributeModal>> = {}) {
@@ -72,7 +72,7 @@ test('T-20.35: AddAttributeModal calls onSubmit', async () => {
   await page.getByRole('button', { name: 'Add' }).click()
   expect(props.onSubmit).toHaveBeenCalledWith(expect.objectContaining({
     name: 'hostname',
-    typeDefinitionVersionId: 'td-string',
+    typeDefinitionVersionId: 'tdv-string',
     required: false,
   }))
 })
