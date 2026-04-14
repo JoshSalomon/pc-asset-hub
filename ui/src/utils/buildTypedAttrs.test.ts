@@ -48,7 +48,7 @@ describe('buildTypedAttrs', () => {
     expect(result).toEqual({ port: 8080, hostname: 'srv-1' })
   })
 
-  test('T-20.07: converts integer type to parseFloat', () => {
+  test('T-20.07: converts integer type to parseInt', () => {
     const result = buildTypedAttrs({ count: '42' }, [makeAttr('count', 'integer')])
     expect(result).toEqual({ count: 42 })
   })

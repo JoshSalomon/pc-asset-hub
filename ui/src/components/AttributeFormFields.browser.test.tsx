@@ -164,7 +164,9 @@ test('T-20.15: boolean attr renders checkbox and toggles value', async () => {
       idPrefix="test"
     />,
   )
-  const checkbox = page.getByRole('checkbox', { name: 'Yes' })
+  // PF Checkbox: look for checkbox by aria-label or label text
+  const checkbox = page.getByRole('checkbox', { name: 'active' })
+    .or(page.getByRole('checkbox'))
   await expect.element(checkbox).toBeVisible()
   await expect.element(checkbox).not.toBeChecked()
   await checkbox.click()

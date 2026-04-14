@@ -124,11 +124,11 @@ func TestGenerateCR_UnknownAttrIDSkipped(t *testing.T) {
 }
 
 // GenerateCR: JSON attribute value (replaces old enum test)
-func TestGenerateCR_JSONAttribute(t *testing.T) {
+func TestGenerateCR_ValueJSONSerialization(t *testing.T) {
 	et := &models.EntityType{ID: "et1", Name: "Model"}
 	inst := &models.EntityInstance{ID: "i1", Name: "inst"}
 	attrs := []*models.Attribute{
-		{ID: "a1", Name: "status", TypeDefinitionVersionID: "tdv-enum"},
+		{ID: "a1", Name: "status", TypeDefinitionVersionID: "tdv-1"},
 	}
 	values := []*models.InstanceAttributeValue{
 		{AttributeID: "a1", ValueJSON: "active"},

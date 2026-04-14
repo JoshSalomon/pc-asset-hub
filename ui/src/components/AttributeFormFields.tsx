@@ -1,4 +1,4 @@
-import { FormGroup, TextInput, TextArea } from '@patternfly/react-core'
+import { FormGroup, TextInput, TextArea, Checkbox } from '@patternfly/react-core'
 import type { SnapshotAttribute } from '../types'
 
 interface Props {
@@ -58,15 +58,13 @@ export default function AttributeFormFields({
                 {enumOpts.map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             ) : baseType === 'boolean' ? (
-              <label>
-                <input
-                  type="checkbox"
-                  id={`${idPrefix}-attr-${attr.name}`}
-                  checked={values[attr.name] === 'true'}
-                  onChange={(e) => onChange(attr.name, e.target.checked ? 'true' : 'false')}
-                />
-                {' '}Yes
-              </label>
+              <Checkbox
+                id={`${idPrefix}-attr-${attr.name}`}
+                label="Yes"
+                aria-label={attr.name}
+                isChecked={values[attr.name] === 'true'}
+                onChange={(_e, checked) => onChange(attr.name, checked ? 'true' : 'false')}
+              />
             ) : baseType === 'integer' ? (
               <TextInput
                 id={`${idPrefix}-attr-${attr.name}`}

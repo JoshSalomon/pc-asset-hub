@@ -580,7 +580,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
         // Find the type definition ID from the attribute's type_definition_version_id
         // For the edit modal, we pass the type definition ID (not version ID)
         const editTdId = editingAttr?.type_definition_version_id
-          ? (data.typeDefinitions.find(td => td.name === editingAttr.type_name)?.id || editingAttr.type_definition_version_id)
+          ? (data.typeDefinitions.find(td => td.name === editingAttr.type_name)?.id || '')
           : ''
         return (
           <EditAttributeModal
