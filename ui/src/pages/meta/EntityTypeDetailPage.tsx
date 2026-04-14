@@ -292,9 +292,11 @@ export default function EntityTypeDetailPage({ role }: Props) {
                     <Tr key={attr.id || attr.name}>
                       <Td>{attr.name}{attr.required ? ' *' : ''}{attr.system ? <>{' '}<Label color="blue" isCompact>System</Label></> : ''}</Td>
                       <Td>
-                        <Label color={attr.base_type === 'enum' ? 'purple' : (attr.base_type === 'number' || attr.base_type === 'integer') ? 'blue' : 'grey'}>
-                          {attr.type_name || attr.base_type || 'unknown'}
-                        </Label>
+                        {attr.system ? null : (
+                          <Label color={attr.base_type === 'enum' ? 'purple' : (attr.base_type === 'number' || attr.base_type === 'integer') ? 'blue' : 'grey'}>
+                            {attr.type_name || attr.base_type || 'unknown'}
+                          </Label>
+                        )}
                       </Td>
                       <Td>{attr.description || '-'}</Td>
                       <Td>{attr.ordinal}</Td>

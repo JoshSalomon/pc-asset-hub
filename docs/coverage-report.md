@@ -10,10 +10,10 @@ Last updated: 2026-04-12
 |-------|-------|-----------|------------|-------|
 | Backend (Go) | 1572 | 100% | 97.6% (4051/4149) | — |
 | UI — Unit tests (jsdom) | 75 | 100% | — | — |
-| UI — Browser tests (Playwright) | 929 | 100% | 94.7% (2537/2680) | 97.2% (2291/2357) |
+| UI — Browser tests (Playwright) | 930 | 100% | 94.7% (2537/2680) | 97.2% (2291/2357) |
 | UI — System tests (Playwright + live server) | 121 | 100% | — | — |
 | Live system (bash scripts) | 303 | 100% | — | — |
-| **Total** | **3000** | **100%** | — | — |
+| **Total** | **3001** | **100%** | — | — |
 
 ---
 
@@ -169,7 +169,7 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 |-----------|-------|--------|
 | `App.browser.test.tsx` | 51 | Pass |
 | `client.browser.test.ts` | 61 | Pass |
-| `EntityTypeDetailPage.browser.test.tsx` | 135 | Pass |
+| `EntityTypeDetailPage.browser.test.tsx` | 136 | Pass |
 | `EntityTypeListPage.browser.test.tsx` | 12 | Pass |
 | `TypeDefinitionListPage.browser.test.tsx` | 60 | Pass |
 | `TypeDefinitionDetailPage.browser.test.tsx` | 47 | Pass |
@@ -203,7 +203,7 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | `AttributeFormFields.browser.test.tsx` | 15 | Pass |
 | `EntityTypeDiagram.browser.test.tsx` | 3 | Pass |
 | `LandingPage.browser.test.tsx` | 12 | Pass |
-| **Total** | **929** | **100% pass** |
+| **Total** | **930** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
@@ -836,6 +836,24 @@ Per-file coverage deltas:
 Backend test count: 1572 (unchanged). Overall: 97.6% (4051/4149).
 
 `cmd/api-server/main.go` is excluded from coverage (deferred to Phase B — server bootstrap).
+
+### New Code Coverage (Session 021 — System attributes "unknown" type fix)
+
+**Bug fix:** Added conditional in `EntityTypeDetailPage.tsx` to show "string" for system attributes instead of resolving `type_name`/`base_type` (which are empty for system attrs, causing "unknown" display).
+
+| File | Change | Coverage |
+|------|--------|----------|
+| `EntityTypeDetailPage.tsx` | System attr type conditional (4 lines changed) | 96.3% (155/161) — all new lines covered |
+
+New lines: **0 uncovered** (verified by arithmetic: baseline 143 uncovered stmts, current 143 uncovered stmts, delta = 0).
+
+Per-file coverage deltas:
+
+| File | Before | After | Delta |
+|------|--------|-------|-------|
+| `EntityTypeDetailPage.tsx` | 96.3% (155/161) 6 uncov | 96.3% (155/161) 6 uncov | unchanged (new code replaces old code with same stmt count) |
+
+Browser test count: 929 -> 930 (+1 test for system attribute type display).
 
 ### Coverage Gaps to Address
 

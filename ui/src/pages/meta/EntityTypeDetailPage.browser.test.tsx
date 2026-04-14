@@ -290,6 +290,24 @@ test('attributes tab with only system attrs shows table', async () => {
   await expect.element(page.getByText('name * System')).toBeVisible()
 })
 
+test('system attributes show empty type cell, not "unknown"', async () => {
+  // System attributes from the API have no base_type or type_name
+  ;(api.attributes.list as Mock).mockResolvedValue({
+    items: [
+      { id: '', name: 'name', description: '', ordinal: -2, required: true, system: true },
+      { id: '', name: 'description', description: '', ordinal: -1, required: false, system: true },
+      { id: 'a1', name: 'hostname', description: '', base_type: 'string', type_name: 'string', type_definition_version_id: 'tdv-string', ordinal: 0, required: false },
+    ],
+    total: 3,
+  })
+  renderDetail()
+  await page.getByRole('tab', { name: /Attributes/i }).click()
+
+  // System attrs should NOT show "unknown"
+  const body = page.getByRole('tabpanel')
+  await expect.element(body.getByText('unknown')).not.toBeInTheDocument()
+})
+
 test('T-C.34: add string attribute via modal', async () => {
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
