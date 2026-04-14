@@ -96,7 +96,7 @@ func main() {
 
 	// Handlers
 	etHandler := apimeta.NewEntityTypeHandler(etSvc, etvRepo)
-	attrHandler := apimeta.NewAttributeHandler(attrSvc)
+	attrHandler := apimeta.NewAttributeHandler(attrSvc, tdvRepo, tdRepo)
 	assocHandler := apimeta.NewAssociationHandler(assocSvc)
 	typeDefHandler := apimeta.NewTypeDefinitionHandler(typeDefSvc)
 	vhHandler := apimeta.NewVersionHistoryHandler(vhSvc)

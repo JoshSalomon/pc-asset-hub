@@ -13,6 +13,7 @@ import (
 	"github.com/project-catalyst/pc-asset-hub/internal/api/dto"
 	apimeta "github.com/project-catalyst/pc-asset-hub/internal/api/meta"
 	apimw "github.com/project-catalyst/pc-asset-hub/internal/api/middleware"
+	"github.com/project-catalyst/pc-asset-hub/internal/domain/repository"
 	domainerrors "github.com/project-catalyst/pc-asset-hub/internal/domain/errors"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/repository/mocks"
@@ -20,9 +21,22 @@ import (
 )
 
 func setupAttrServer(attrRepo *mocks.MockAttributeRepo, etvRepo *mocks.MockEntityTypeVersionRepo, assocRepo *mocks.MockAssociationRepo, tdvRepo *mocks.MockTypeDefinitionVersionRepo) *echo.Echo {
+	return setupAttrServerWithTypeRepos(attrRepo, etvRepo, assocRepo, tdvRepo, nil, nil)
+}
+
+func setupAttrServerWithTypeRepos(attrRepo *mocks.MockAttributeRepo, etvRepo *mocks.MockEntityTypeVersionRepo, assocRepo *mocks.MockAssociationRepo, tdvRepo *mocks.MockTypeDefinitionVersionRepo, resolveTdvRepo *mocks.MockTypeDefinitionVersionRepo, tdRepo *mocks.MockTypeDefinitionRepo) *echo.Echo {
 	e := echo.New()
 	svc := svcmeta.NewAttributeService(attrRepo, etvRepo, nil, assocRepo, tdvRepo)
-	handler := apimeta.NewAttributeHandler(svc)
+	// Avoid Go typed-nil interface trap: only pass non-nil repos
+	var resolveRepo repository.TypeDefinitionVersionRepository
+	var typeRepo repository.TypeDefinitionRepository
+	if resolveTdvRepo != nil {
+		resolveRepo = resolveTdvRepo
+	}
+	if tdRepo != nil {
+		typeRepo = tdRepo
+	}
+	handler := apimeta.NewAttributeHandler(svc, resolveRepo, typeRepo)
 
 	g := e.Group("/api/meta/v1")
 	rbac := &apimw.HeaderRBACProvider{}
@@ -37,7 +51,6 @@ func setupAttrServer(attrRepo *mocks.MockAttributeRepo, etvRepo *mocks.MockEntit
 func TestTC01_ListAttributes(t *testing.T) {
 	attrRepo := new(mocks.MockAttributeRepo)
 	etvRepo := new(mocks.MockEntityTypeVersionRepo)
-	e := setupAttrServer(attrRepo, etvRepo, nil, nil)
 
 	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
@@ -45,10 +58,25 @@ func TestTC01_ListAttributes(t *testing.T) {
 		{ID: "a2", Name: "cpu_count", TypeDefinitionVersionID: "tdv-number", Ordinal: 1},
 	}, nil)
 
-	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types/et1/attributes", "", apimw.RoleRO)
+	// Set up with type definition repos for type info resolution
+	tdvRepoResolve := new(mocks.MockTypeDefinitionVersionRepo)
+	tdRepo := new(mocks.MockTypeDefinitionRepo)
+	tdvRepoResolve.On("GetByIDs", mock.Anything, mock.Anything).Return([]*models.TypeDefinitionVersion{
+		{ID: "tdv-string", TypeDefinitionID: "td-string", VersionNumber: 1},
+		{ID: "tdv-number", TypeDefinitionID: "td-number", VersionNumber: 1},
+	}, nil)
+	tdRepo.On("GetByID", mock.Anything, "td-string").Return(&models.TypeDefinition{ID: "td-string", Name: "string", BaseType: models.BaseTypeString}, nil)
+	tdRepo.On("GetByID", mock.Anything, "td-number").Return(&models.TypeDefinition{ID: "td-number", Name: "number", BaseType: models.BaseTypeNumber}, nil)
+
+	e2 := setupAttrServerWithTypeRepos(attrRepo, etvRepo, nil, nil, tdvRepoResolve, tdRepo)
+	rec := doRequest(e2, http.MethodGet, "/api/meta/v1/entity-types/et1/attributes", "", apimw.RoleRO)
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), `"hostname"`)
 	assert.Contains(t, rec.Body.String(), `"cpu_count"`)
+	// Type info must be resolved — type_name and base_type must be present
+	assert.Contains(t, rec.Body.String(), `"type_name":"string"`)
+	assert.Contains(t, rec.Body.String(), `"base_type":"string"`)
+	assert.Contains(t, rec.Body.String(), `"base_type":"number"`)
 }
 
 // T-C.02: Add string attribute

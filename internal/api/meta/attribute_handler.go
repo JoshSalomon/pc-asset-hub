@@ -7,15 +7,18 @@ import (
 
 	"github.com/project-catalyst/pc-asset-hub/internal/api/dto"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
+	"github.com/project-catalyst/pc-asset-hub/internal/domain/repository"
 	svcmeta "github.com/project-catalyst/pc-asset-hub/internal/service/meta"
 )
 
 type AttributeHandler struct {
-	svc *svcmeta.AttributeService
+	svc     *svcmeta.AttributeService
+	tdvRepo repository.TypeDefinitionVersionRepository
+	tdRepo  repository.TypeDefinitionRepository
 }
 
-func NewAttributeHandler(svc *svcmeta.AttributeService) *AttributeHandler {
-	return &AttributeHandler{svc: svc}
+func NewAttributeHandler(svc *svcmeta.AttributeService, tdvRepo repository.TypeDefinitionVersionRepository, tdRepo repository.TypeDefinitionRepository) *AttributeHandler {
+	return &AttributeHandler{svc: svc, tdvRepo: tdvRepo, tdRepo: tdRepo}
 }
 
 func (h *AttributeHandler) List(c echo.Context) error {
@@ -30,13 +33,44 @@ func (h *AttributeHandler) List(c echo.Context) error {
 		{Name: models.SystemAttrName, Ordinal: models.SystemAttrNameOrdinal, Required: true, System: true},
 		{Name: models.SystemAttrDescription, Ordinal: models.SystemAttrDescOrdinal, Required: false, System: true},
 	}
+	// Resolve type names and base types for attributes
+	typeNames := make(map[string]string)  // tdv_id → type name
+	baseTypes := make(map[string]string)  // tdv_id → base type
+	var tdvIDs []string
+	for _, a := range attrs {
+		if a.TypeDefinitionVersionID != "" {
+			tdvIDs = append(tdvIDs, a.TypeDefinitionVersionID)
+		}
+	}
+	if len(tdvIDs) > 0 && h.tdvRepo != nil {
+		tdvs, _ := h.tdvRepo.GetByIDs(c.Request().Context(), tdvIDs)
+		tdIDs := make(map[string]bool)
+		for _, tdv := range tdvs {
+			tdIDs[tdv.TypeDefinitionID] = true
+		}
+		tdCache := make(map[string]*models.TypeDefinition)
+		for tdID := range tdIDs {
+			if td, err := h.tdRepo.GetByID(c.Request().Context(), tdID); err == nil {
+				tdCache[tdID] = td
+			}
+		}
+		for _, tdv := range tdvs {
+			if td, ok := tdCache[tdv.TypeDefinitionID]; ok {
+				typeNames[tdv.ID] = td.Name
+				baseTypes[tdv.ID] = string(td.BaseType)
+			}
+		}
+	}
+
 	resp := make([]dto.AttributeResponse, 0, len(systemAttrs)+len(attrs))
 	resp = append(resp, systemAttrs...)
 	for _, a := range attrs {
 		resp = append(resp, dto.AttributeResponse{
 			ID: a.ID, Name: a.Name, Description: a.Description,
 			TypeDefinitionVersionID: a.TypeDefinitionVersionID,
-			Ordinal: a.Ordinal, Required: a.Required,
+			TypeName:                typeNames[a.TypeDefinitionVersionID],
+			BaseType:                baseTypes[a.TypeDefinitionVersionID],
+			Ordinal:                 a.Ordinal, Required: a.Required,
 		})
 	}
 	return c.JSON(http.StatusOK, dto.ListResponse{Items: resp, Total: len(resp)})

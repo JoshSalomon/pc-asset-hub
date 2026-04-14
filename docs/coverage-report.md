@@ -1,6 +1,6 @@
 e# AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-04-13
+Last updated: 2026-04-12
 
 ---
 
@@ -8,7 +8,7 @@ Last updated: 2026-04-13
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1572 | 100% | 97.6% (4032/4130) | — |
+| Backend (Go) | 1572 | 100% | 97.6% (4051/4149) | — |
 | UI — Unit tests (jsdom) | 75 | 100% | — | — |
 | UI — Browser tests (Playwright) | 929 | 100% | 94.7% (2537/2680) | 97.2% (2291/2357) |
 | UI — System tests (Playwright + live server) | 121 | 100% | — | — |
@@ -22,7 +22,7 @@ Last updated: 2026-04-13
 | Package | Coverage | Notes |
 |---------|----------|-------|
 | `internal/api/health` | 90.0% (9/10) | Readyz DB-ping error path |
-| `internal/api/meta` | 99.8% (473/474) | VersionSnapshot handler: 1 pre-existing uncovered branch |
+| `internal/api/meta` | 99.8% (492/493) | `defaultListParams` in version_history_handler: 1 pre-existing uncovered function |
 | `internal/api/middleware` | 100.0% (69/69) | |
 | `internal/api/operational` | 98.4% (307/312) | Copy/Replace/Update handlers bind-error branches only |
 | `internal/domain/errors` | 100.0% (32/32) | |
@@ -814,6 +814,28 @@ Per-file coverage deltas:
 | `AddAttributeModal.tsx` | 97.6% (41/42) 1 uncov | 97.6% (41/42) 1 uncov | unchanged |
 
 Browser test count: 926 -> 929 (+3 tests: TD-94 keystroke test + 2 from session 018).
+
+### New Code Coverage (Session 020 — Attribute List type_name/base_type resolution)
+
+**Bug fix:** `AttributeHandler.List` now resolves `type_name` and `base_type` from type definitions for each attribute. Added `tdvRepo` and `tdRepo` to `AttributeHandler` struct. `cmd/api-server/main.go` updated to pass the new repos.
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `api/meta/attribute_handler.go` | `NewAttributeHandler` | 100% |
+| `api/meta/attribute_handler.go` | `List` (type resolution) | 100% |
+| `api/meta/attribute_handler.go` | All 8 functions | 100% |
+
+New lines: **0 uncovered** (verified by arithmetic: baseline 98 uncovered, current 98 uncovered, delta = 0).
+
+Per-file coverage deltas:
+
+| Package | Before | After | Delta |
+|---------|--------|-------|-------|
+| `api/meta` | 99.8% (473/474) 1 uncov | 99.8% (492/493) 1 uncov | +19 covered, +19 total |
+
+Backend test count: 1572 (unchanged). Overall: 97.6% (4051/4149).
+
+`cmd/api-server/main.go` is excluded from coverage (deferred to Phase B — server bootstrap).
 
 ### Coverage Gaps to Address
 
