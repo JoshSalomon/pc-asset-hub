@@ -2,6 +2,7 @@ package meta_test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 
@@ -80,6 +81,26 @@ func TestTC01_ListAttributes(t *testing.T) {
 }
 
 // T-C.02: Add string attribute
+func TestTC01b_ListAttributes_TypeResolutionError(t *testing.T) {
+	attrRepo := new(mocks.MockAttributeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	tdvRepoResolve := new(mocks.MockTypeDefinitionVersionRepo)
+
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "a1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Ordinal: 0},
+	}, nil)
+	// GetByIDs returns error — type resolution should fail gracefully
+	tdvRepoResolve.On("GetByIDs", mock.Anything, mock.Anything).Return(nil, errors.New("db error"))
+
+	e := setupAttrServerWithTypeRepos(attrRepo, etvRepo, nil, nil, tdvRepoResolve, nil)
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types/et1/attributes", "", apimw.RoleRO)
+	// Should still return 200 with attributes, just without type_name/base_type
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"hostname"`)
+	assert.NotContains(t, rec.Body.String(), `"type_name":"string"`)
+}
+
 func TestTC02_AddStringAttribute(t *testing.T) {
 	attrRepo := new(mocks.MockAttributeRepo)
 	etvRepo := new(mocks.MockEntityTypeVersionRepo)

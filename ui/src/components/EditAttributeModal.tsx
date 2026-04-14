@@ -65,7 +65,7 @@ export default function EditAttributeModal({
 
   const handleSubmit = async () => {
     const td = typeDefinitions.find(t => t.id === selectedTdId)
-    if (!td) return
+    if (!td || !td.latest_version_id) return
     await onSubmit({ name, description, typeDefinitionVersionId: td.latest_version_id, required })
   }
 

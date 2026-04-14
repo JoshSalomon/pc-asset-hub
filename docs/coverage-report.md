@@ -1,6 +1,6 @@
 e# AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-04-12
+Last updated: 2026-04-14
 
 ---
 
@@ -8,12 +8,12 @@ Last updated: 2026-04-12
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1572 | 100% | 97.6% (4051/4149) | — |
+| Backend (Go) | 1575 | 100% | 97.6% (4054/4152) | — |
 | UI — Unit tests (jsdom) | 75 | 100% | — | — |
-| UI — Browser tests (Playwright) | 930 | 100% | 94.7% (2537/2680) | 97.2% (2291/2357) |
+| UI — Browser tests (Playwright) | 931 | 100% | 94.7% (2537/2680) | 97.2% (2291/2357) |
 | UI — System tests (Playwright + live server) | 121 | 100% | — | — |
 | Live system (bash scripts) | 303 | 100% | — | — |
-| **Total** | **3001** | **100%** | — | — |
+| **Total** | **3005** | **100%** | — | — |
 
 ---
 
@@ -22,7 +22,7 @@ Last updated: 2026-04-12
 | Package | Coverage | Notes |
 |---------|----------|-------|
 | `internal/api/health` | 90.0% (9/10) | Readyz DB-ping error path |
-| `internal/api/meta` | 99.8% (492/493) | `defaultListParams` in version_history_handler: 1 pre-existing uncovered function |
+| `internal/api/meta` | 99.8% (495/496) | `defaultListParams` in version_history_handler: 1 pre-existing uncovered function |
 | `internal/api/middleware` | 100.0% (69/69) | |
 | `internal/api/operational` | 98.4% (307/312) | Copy/Replace/Update handlers bind-error branches only |
 | `internal/domain/errors` | 100.0% (32/32) | |

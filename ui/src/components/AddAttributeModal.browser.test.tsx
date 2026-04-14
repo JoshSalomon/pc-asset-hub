@@ -77,6 +77,22 @@ test('T-20.35: AddAttributeModal calls onSubmit', async () => {
   }))
 })
 
+test('AddAttributeModal does not submit when type has no latest_version_id', async () => {
+  // Render with a type definition that has empty latest_version_id
+  const badTypes: TypeDefinition[] = [
+    { id: 'td-broken', name: 'broken', base_type: 'string', system: false, latest_version: 1, latest_version_id: '', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+  ]
+  const onSubmit = vi.fn()
+  render(
+    <AddAttributeModal isOpen onClose={vi.fn()} onSubmit={onSubmit} error={null} typeDefinitions={badTypes} />
+  )
+  await page.getByRole('textbox', { name: 'Name' }).fill('test')
+  await page.getByText('Select type...').click()
+  await page.getByText('broken (string)').click()
+  await page.getByRole('button', { name: 'Add' }).click()
+  expect(onSubmit).not.toHaveBeenCalled()
+})
+
 // T-20.36: Cancel calls onClose
 test('T-20.36: AddAttributeModal cancel calls onClose', async () => {
   const { props } = renderModal()

@@ -67,7 +67,10 @@ func (h *TypeDefinitionHandler) List(c echo.Context) error {
 	for i, td := range items {
 		typeDefIDs[i] = td.ID
 	}
-	versionNumbers, versionIDs, _ := h.svc.GetLatestVersionInfo(c.Request().Context(), typeDefIDs)
+	versionNumbers, versionIDs, err := h.svc.GetLatestVersionInfo(c.Request().Context(), typeDefIDs)
+	if err != nil {
+		return mapError(err)
+	}
 
 	resp := make([]dto.TypeDefinitionResponse, len(items))
 	for i, td := range items {

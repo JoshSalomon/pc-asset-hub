@@ -42,22 +42,25 @@ func (h *AttributeHandler) List(c echo.Context) error {
 			tdvIDs = append(tdvIDs, a.TypeDefinitionVersionID)
 		}
 	}
-	if len(tdvIDs) > 0 && h.tdvRepo != nil {
-		tdvs, _ := h.tdvRepo.GetByIDs(c.Request().Context(), tdvIDs)
-		tdIDs := make(map[string]bool)
-		for _, tdv := range tdvs {
-			tdIDs[tdv.TypeDefinitionID] = true
-		}
-		tdCache := make(map[string]*models.TypeDefinition)
-		for tdID := range tdIDs {
-			if td, err := h.tdRepo.GetByID(c.Request().Context(), tdID); err == nil {
-				tdCache[tdID] = td
+	// Best-effort type resolution — errors don't block the response
+	if len(tdvIDs) > 0 && h.tdvRepo != nil && h.tdRepo != nil {
+		tdvs, err := h.tdvRepo.GetByIDs(c.Request().Context(), tdvIDs)
+		if err == nil && len(tdvs) > 0 {
+			tdIDs := make(map[string]bool)
+			for _, tdv := range tdvs {
+				tdIDs[tdv.TypeDefinitionID] = true
 			}
-		}
-		for _, tdv := range tdvs {
-			if td, ok := tdCache[tdv.TypeDefinitionID]; ok {
-				typeNames[tdv.ID] = td.Name
-				baseTypes[tdv.ID] = string(td.BaseType)
+			tdCache := make(map[string]*models.TypeDefinition)
+			for tdID := range tdIDs {
+				if td, tdErr := h.tdRepo.GetByID(c.Request().Context(), tdID); tdErr == nil {
+					tdCache[tdID] = td
+				}
+			}
+			for _, tdv := range tdvs {
+				if td, ok := tdCache[tdv.TypeDefinitionID]; ok {
+					typeNames[tdv.ID] = td.Name
+					baseTypes[tdv.ID] = string(td.BaseType)
+				}
 			}
 		}
 	}

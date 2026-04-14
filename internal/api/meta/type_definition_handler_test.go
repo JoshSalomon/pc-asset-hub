@@ -211,6 +211,20 @@ func TestTypeDefHandler_List_ServiceError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
 
+func TestTypeDefHandler_List_VersionInfoError(t *testing.T) {
+	tdRepo := new(mocks.MockTypeDefinitionRepo)
+	tdvRepo := new(mocks.MockTypeDefinitionVersionRepo)
+	e := setupTypeDefServer(tdRepo, tdvRepo)
+
+	tdRepo.On("List", mock.Anything, mock.Anything).Return([]*models.TypeDefinition{
+		{ID: "td-1", Name: "string", BaseType: models.BaseTypeString, System: true},
+	}, 1, nil)
+	tdvRepo.On("GetLatestByTypeDefinitions", mock.Anything, []string{"td-1"}).Return(nil, errors.New("version lookup failed"))
+
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/type-definitions", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
 func TestTypeDefHandler_List_WithFilters(t *testing.T) {
 	tdRepo := new(mocks.MockTypeDefinitionRepo)
 	tdvRepo := new(mocks.MockTypeDefinitionVersionRepo)
