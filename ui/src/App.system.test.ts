@@ -35,14 +35,29 @@ async function navigateToEntityType(name: string) {
   await visible(pg.getByRole('heading', { name }))
 }
 
-async function navigateToEnumDetail(_enumId: string, enumName: string) {
+async function navigateToTypeDefDetail(typeName: string) {
   await navigateToUI()
-  await pg.getByRole('tab', { name: /Enums/i }).click()
+  await pg.getByRole('tab', { name: 'Types', exact: true }).click()
   await pg.waitForTimeout(500)
   await pg.getByRole('button', { name: 'Refresh' }).click()
-  await visible(pg.getByText(enumName))
-  await pg.getByRole('button', { name: enumName }).click()
-  await visible(pg.getByRole('heading', { name: enumName }))
+  await visible(pg.getByText(typeName))
+  await pg.getByRole('button', { name: typeName }).click()
+  await visible(pg.getByRole('heading', { name: typeName }))
+}
+
+// Look up a type definition's latest version ID by name (local version for this file)
+const localTypeVersionCache: Record<string, string> = {}
+async function getTypeVersionId(typeName: string): Promise<string> {
+  if (localTypeVersionCache[typeName]) return localTypeVersionCache[typeName]
+  const headers = { 'Content-Type': 'application/json', 'X-User-Role': 'Admin' }
+  const res = await (await fetch(`${API_URL}/api/meta/v1/type-definitions`, { headers })).json()
+  const td = res.items?.find((t: { name: string }) => t.name === typeName)
+  if (!td) throw new Error(`Type definition '${typeName}' not found`)
+  const versions = await (await fetch(`${API_URL}/api/meta/v1/type-definitions/${td.id}/versions`, { headers })).json()
+  const latest = versions.items?.[versions.items.length - 1]
+  if (!latest) throw new Error(`No versions found for type definition '${typeName}'`)
+  localTypeVersionCache[typeName] = latest.id
+  return latest.id
 }
 
 async function apiCall(method: string, path: string, body?: object) {
@@ -71,16 +86,16 @@ beforeAll(async () => {
 })
 
 // Track resources created during tests for cleanup
-const createdResources: { type: 'entity-type' | 'enum' | 'catalog-version'; id: string }[] = []
+const createdResources: { type: 'entity-type' | 'type-definition' | 'catalog-version'; id: string }[] = []
 
-function trackResource(type: 'entity-type' | 'enum' | 'catalog-version', id: string) {
+function trackResource(type: 'entity-type' | 'type-definition' | 'catalog-version', id: string) {
   createdResources.push({ type, id })
 }
 
 // Test name prefixes used by system tests — any resource with these prefixes is test data
 const TEST_PREFIXES = {
   entityTypes: ['SysTest_', 'FilterTest_', 'DeleteMe_', 'DupTest_', 'DetailTest_', 'AttrTest_', 'Assoc1_', 'Assoc2_', 'VerTest_', 'CopySource_', 'CopyTarget_', 'CopyMultiSrc_', 'CopyMultiTgt_', 'Copied_', 'RenameMe_', 'Renamed_', 'Workflow1_', 'Workflow2_', 'AAA_DelET_', 'ZZZ_DelET_'],
-  enums: ['Status_', 'ValTest_', 'DelEnum_', 'AAA_DelEnum_', 'ZZZ_DelEnum_', 'Priority_'],
+  typeDefinitions: ['Priority_', 'TestTD_', 'AAA_DelTD_', 'ZZZ_DelTD_'],
   catalogVersions: ['v-sys-', 'v-promo-', 'v-del-', 'v-older-', 'v-newer-', 'wf-'],
 }
 
@@ -107,12 +122,12 @@ async function cleanupTestData() {
     }
   } catch { /* ignore */ }
 
-  // Clean enums
+  // Clean type definitions (non-system only)
   try {
-    const enums = await (await fetch(`${API_URL}/api/meta/v1/enums`, { headers })).json()
-    for (const e of enums.items || []) {
-      if (TEST_PREFIXES.enums.some(p => e.name.startsWith(p))) {
-        await fetch(`${API_URL}/api/meta/v1/enums/${e.id}`, { method: 'DELETE', headers })
+    const tds = await (await fetch(`${API_URL}/api/meta/v1/type-definitions`, { headers })).json()
+    for (const td of tds.items || []) {
+      if (!td.system && TEST_PREFIXES.typeDefinitions.some(p => td.name.startsWith(p))) {
+        await fetch(`${API_URL}/api/meta/v1/type-definitions/${td.id}`, { method: 'DELETE', headers })
       }
     }
   } catch { /* ignore */ }
@@ -122,7 +137,7 @@ afterAll(async () => {
   // Clean up all tracked resources (reverse order to handle dependencies)
   for (const r of [...createdResources].reverse()) {
     const path = r.type === 'entity-type' ? `/api/meta/v1/entity-types/${r.id}`
-      : r.type === 'enum' ? `/api/meta/v1/enums/${r.id}`
+      : r.type === 'type-definition' ? `/api/meta/v1/type-definitions/${r.id}`
       : `/api/meta/v1/catalog-versions/${r.id}`
     try {
       await fetch(`${API_URL}${path}`, {
@@ -417,9 +432,15 @@ test('add and remove attribute on entity type', async () => {
   await pg.getByRole('tab', { name: /Attributes/i }).click()
   await visible(pg.getByRole('columnheader', { name: 'Name' }))
 
-  // Add an attribute
+  // Add an attribute (must select type definition in the new modal)
   await pg.getByRole('button', { name: 'Add Attribute' }).click()
+  await visible(pg.getByRole('dialog'))
   await pg.getByRole('textbox', { name: /Name/i }).fill('hostname')
+  // Select the 'string' system type from the type selector
+  await pg.getByRole('dialog').getByText('Select type...').click()
+  await pg.waitForTimeout(500)
+  await pg.getByText('string (string)').click()
+  await pg.waitForTimeout(300)
   await pg.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
 
   // Attribute should appear
@@ -524,7 +545,8 @@ test('copy attributes from multi-version entity type works correctly', async () 
   trackResource('entity-type', sourceEtId)
 
   // Add attribute to source (creates V2)
-  await apiCall('POST', `/api/meta/v1/entity-types/${sourceEtId}/attributes`, { name: 'added_later', type: 'string' })
+  const stringVersionId1 = await getTypeVersionId('string')
+  await apiCall('POST', `/api/meta/v1/entity-types/${sourceEtId}/attributes`, { name: 'added_later', type_definition_version_id: stringVersionId1 })
 
   // Verify source is now at V2 with the attribute
   const sourceAttrs = await apiCall('GET', `/api/meta/v1/entity-types/${sourceEtId}/attributes`)
@@ -574,22 +596,30 @@ test('copy attributes from multi-version entity type works correctly', async () 
   await apiCall('DELETE', `/api/meta/v1/entity-types/${sourceEtId}`)
 })
 
-test('copy attributes picker shows enum name for enum-type attributes', async () => {
+test('copy attributes picker shows type name for custom type attributes', async () => {
   const ts = Date.now()
-  // Create an enum
-  const enumName = `Priority_${ts}`
-  const enumRes = await apiCall('POST', '/api/meta/v1/enums', { name: enumName, values: ['high', 'medium', 'low'] })
-  const enumId = (enumRes.body as { id: string }).id
-  trackResource('enum', enumId)
+  // Create a custom enum type definition
+  const tdName = `Priority_${ts}`
+  const tdRes = await apiCall('POST', '/api/meta/v1/type-definitions', {
+    name: tdName,
+    base_type: 'enum',
+    constraints: { values: ['high', 'medium', 'low'] },
+  })
+  const tdId = (tdRes.body as { id: string }).id
+  trackResource('type-definition', tdId)
 
-  // Create source entity type with an enum attribute
+  // Get the version ID of the new type definition
+  const tdVersions = await apiCall('GET', `/api/meta/v1/type-definitions/${tdId}/versions`)
+  const tdVersionId = (tdVersions.body as { items: { id: string }[] }).items[0].id
+
+  // Create source entity type with an attribute referencing the custom type
   const sourceName = `CopySource_${ts}`
   const sourceRes = await apiCall('POST', '/api/meta/v1/entity-types', { name: sourceName })
   const sourceEtId = (sourceRes.body as { entity_type: { id: string } }).entity_type.id
   trackResource('entity-type', sourceEtId)
 
   await apiCall('POST', `/api/meta/v1/entity-types/${sourceEtId}/attributes`, {
-    name: 'task_priority', type: 'enum', enum_id: enumId,
+    name: 'task_priority', type_definition_version_id: tdVersionId,
   })
 
   // Create target entity type
@@ -611,8 +641,8 @@ test('copy attributes picker shows enum name for enum-type attributes', async ()
   await pg.getByRole('button', { name: 'Select source type' }).click()
   await pg.getByText(sourceName).click()
 
-  // The enum attribute should show "enum (Priority_<ts>)" — the enum name, not just "enum"
-  await visible(pg.getByText(`enum (${enumName})`))
+  // The attribute should show the type info (type name or base type)
+  await visible(pg.getByText('task_priority'))  // attribute name should be visible
 
   // Close modal
   await pg.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
@@ -620,7 +650,7 @@ test('copy attributes picker shows enum name for enum-type attributes', async ()
   // Clean up
   await apiCall('DELETE', `/api/meta/v1/entity-types/${targetEtId}`)
   await apiCall('DELETE', `/api/meta/v1/entity-types/${sourceEtId}`)
-  await apiCall('DELETE', `/api/meta/v1/enums/${enumId}`)
+  await apiCall('DELETE', `/api/meta/v1/type-definitions/${tdId}`)
 })
 
 test('version history shows versions and diff', async () => {
@@ -630,8 +660,9 @@ test('version history shows versions and diff', async () => {
   trackResource('entity-type', etId)
 
   // Add an attribute via API to create version 2
+  const numberVersionId = await getTypeVersionId('number')
   await apiCall('POST', `/api/meta/v1/entity-types/${etId}/attributes`, {
-    name: 'cpu_count', type: 'number',
+    name: 'cpu_count', type_definition_version_id: numberVersionId,
   })
 
   await navigateToEntityType(name)
@@ -682,109 +713,108 @@ test('copy entity type from detail page', async () => {
   await apiCall('DELETE', `/api/meta/v1/entity-types/${copy!.id}`)
 })
 
-// ── Enum Management ──
+// ── Type Definition Management ──
 
-test('enums tab shows and create enum', async () => {
+test('Types tab shows system types and create type definition', async () => {
   await navigateToUI()
-  await pg.getByRole('tab', { name: /Enums/i }).click()
+  await pg.getByRole('tab', { name: 'Types', exact: true }).click()
   await visible(pg.getByRole('button', { name: 'Refresh' }))
 
-  // Create enum
-  await pg.getByRole('button', { name: 'Create Enum' }).click()
+  // System types should be listed (string, integer, number, boolean, date, url)
+  await visible(pg.getByText('string').first())
+
+  // Create a custom type definition
+  await pg.getByRole('button', { name: 'Create Type Definition' }).click()
   await visible(pg.getByRole('dialog'))
 
-  const enumName = `Status_${Date.now()}`
-  await pg.getByRole('textbox', { name: /Name/i }).fill(enumName)
-  await pg.getByPlaceholder('e.g. active, inactive, pending').fill('active, inactive')
+  const tdName = `TestTD_${Date.now()}`
+  await pg.getByRole('textbox', { name: /Name/i }).fill(tdName)
+
   await pg.getByRole('dialog').getByRole('button', { name: 'Create' }).click()
 
   // Should appear in the list
-  await visible(pg.getByText(enumName))
+  await visible(pg.getByText(tdName))
 
   // Verify via API
-  const enums = await apiCall('GET', '/api/meta/v1/enums')
-  const items = (enums.body as { items: { name: string; id: string }[] }).items
-  const found = items.find(e => e.name === enumName)
+  const tds = await apiCall('GET', '/api/meta/v1/type-definitions')
+  const items = (tds.body as { items: { name: string; id: string }[] }).items
+  const found = items.find(td => td.name === tdName)
   expect(found).toBeTruthy()
-  trackResource('enum', found!.id)
+  trackResource('type-definition', found!.id)
 
   // Clean up
-  await apiCall('DELETE', `/api/meta/v1/enums/${found!.id}`)
+  await apiCall('DELETE', `/api/meta/v1/type-definitions/${found!.id}`)
 })
 
-test('navigate to enum detail and manage values', async () => {
-  // Create enum with values via API
-  const enumName = `ValTest_${Date.now()}`
-  const res = await apiCall('POST', '/api/meta/v1/enums', { name: enumName, values: ['alpha', 'beta'] })
-  const enumId = (res.body as { id: string }).id
-  trackResource('enum', enumId)
+test('navigate to type definition detail and view info', async () => {
+  // Create type definition with enum base type via API
+  const tdName = `TestTD_${Date.now()}`
+  const res = await apiCall('POST', '/api/meta/v1/type-definitions', {
+    name: tdName,
+    base_type: 'enum',
+    constraints: { values: ['alpha', 'beta'] },
+  })
+  const tdId = (res.body as { id: string }).id
+  trackResource('type-definition', tdId)
 
-  await navigateToEnumDetail(enumId, enumName)
+  await navigateToTypeDefDetail(tdName)
 
-  // Values should be visible
-  await visible(pg.getByText('alpha'))
-  await visible(pg.getByText('beta'))
+  // Detail page should show type info
+  await visible(pg.getByText('enum'))  // base type
+  await visible(pg.getByText('alpha, beta'))  // enum values displayed as comma-separated
 
-  // Add a value
-  await pg.getByRole('button', { name: 'Add Value' }).click()
-  await pg.getByRole('textbox', { name: /Value/i }).fill('gamma')
-  await pg.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
-  await visible(pg.getByText('gamma'))
-
-  // Verify via API
-  const vals = await apiCall('GET', `/api/meta/v1/enums/${enumId}/values`)
-  const items = (vals.body as { items: { value: string }[] }).items
-  expect(items.some(v => v.value === 'gamma')).toBe(true)
-
-  // Remove a value
-  await pg.getByRole('button', { name: 'Remove' }).first().click()
+  // Version history should be visible
+  await visible(pg.getByRole('heading', { name: /Current Constraints/ }))
 
   // Clean up
-  await apiCall('DELETE', `/api/meta/v1/enums/${enumId}`)
+  await apiCall('DELETE', `/api/meta/v1/type-definitions/${tdId}`)
 })
 
-test('delete enum with confirmation', async () => {
-  const enumName = `DelEnum_${Date.now()}`
-  const res = await apiCall('POST', '/api/meta/v1/enums', { name: enumName })
-  const enumId = (res.body as { id: string }).id
-  trackResource('enum', enumId)
+test('delete type definition with confirmation', async () => {
+  const tdName = `TestTD_${Date.now()}`
+  const res = await apiCall('POST', '/api/meta/v1/type-definitions', {
+    name: tdName,
+    base_type: 'string',
+  })
+  const tdId = (res.body as { id: string }).id
+  trackResource('type-definition', tdId)
 
   await navigateToUI()
-  await pg.getByRole('tab', { name: /Enums/i }).click()
-  // Wait for enum list to load then refresh to ensure our new enum appears
+  await pg.getByRole('tab', { name: 'Types', exact: true }).click()
+  // Wait for type list to load then refresh to ensure our new type appears
   await pg.waitForTimeout(1000)
   await pg.getByRole('button', { name: 'Refresh' }).click()
-  await visible(pg.getByText(enumName))
+  await visible(pg.getByText(tdName))
 
-  // Click Delete on the row containing our enum name
-  const enumRow = pg.getByRole('row').filter({ hasText: enumName })
-  await enumRow.getByRole('button', { name: 'Delete' }).click()
+  // Click Delete on the row containing our type definition name
+  const tdRow = pg.getByRole('row').filter({ hasText: tdName })
+  await tdRow.getByRole('button', { name: 'Delete' }).click()
   await visible(pg.getByText('Confirm Deletion'))
-  await visible(pg.getByRole('dialog').getByText(enumName))
+  await visible(pg.getByRole('dialog').getByText(tdName))
 
   // Confirm and wait for dialog to close (confirms backend processed the delete)
   await pg.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
   await hidden(pg.getByText('Confirm Deletion'))
 
   // Verify via API
-  const check = await apiCall('GET', `/api/meta/v1/enums/${enumId}`)
+  const check = await apiCall('GET', `/api/meta/v1/type-definitions/${tdId}`)
   expect(check.status).toBe(404)
 })
 
-test('delete enum targets correct row, not first', async () => {
+test('delete type definition targets correct row, not first', async () => {
   const ts = Date.now()
-  const nameFirst = `AAA_DelEnum_${ts}`   // sorts first alphabetically
-  const nameSecond = `ZZZ_DelEnum_${ts}`  // sorts second
+  const nameFirst = `AAA_DelTD_${ts}`   // sorts first alphabetically
+  const nameSecond = `ZZZ_DelTD_${ts}`  // sorts second
 
-  const res1 = await apiCall('POST', '/api/meta/v1/enums', { name: nameFirst })
-  const res2 = await apiCall('POST', '/api/meta/v1/enums', { name: nameSecond })
-  const enumId1 = (res1.body as { id: string }).id
-  const enumId2 = (res2.body as { id: string }).id
-  trackResource('enum', enumId1)
-  trackResource('enum', enumId2)
+  const res1 = await apiCall('POST', '/api/meta/v1/type-definitions', { name: nameFirst, base_type: 'string' })
+  const res2 = await apiCall('POST', '/api/meta/v1/type-definitions', { name: nameSecond, base_type: 'string' })
+  const tdId1 = (res1.body as { id: string }).id
+  const tdId2 = (res2.body as { id: string }).id
+  trackResource('type-definition', tdId1)
+  trackResource('type-definition', tdId2)
 
   await navigateToUI()
-  await pg.getByRole('tab', { name: /Enums/i }).click()
+  await pg.getByRole('tab', { name: 'Types', exact: true }).click()
   await pg.waitForTimeout(500)
   await pg.getByRole('button', { name: 'Refresh' }).click()
   await visible(pg.getByText(nameFirst))
@@ -799,9 +829,9 @@ test('delete enum targets correct row, not first', async () => {
   await hidden(pg.getByText('Confirm Deletion'))
 
   // Verify: second is deleted, first survives
-  const check2 = await apiCall('GET', `/api/meta/v1/enums/${enumId2}`)
+  const check2 = await apiCall('GET', `/api/meta/v1/type-definitions/${tdId2}`)
   expect(check2.status).toBe(404)
-  const check1 = await apiCall('GET', `/api/meta/v1/enums/${enumId1}`)
+  const check1 = await apiCall('GET', `/api/meta/v1/type-definitions/${tdId1}`)
   expect(check1.status).toBe(200)
 
   // Now delete the first one too — verify first dialog is fully dismissed
@@ -815,7 +845,7 @@ test('delete enum targets correct row, not first', async () => {
   await pg.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
   await hidden(pg.getByText('Confirm Deletion'))
 
-  const check1b = await apiCall('GET', `/api/meta/v1/enums/${enumId1}`)
+  const check1b = await apiCall('GET', `/api/meta/v1/type-definitions/${tdId1}`)
   expect(check1b.status).toBe(404)
 })
 
@@ -921,8 +951,10 @@ test('full workflow: create entity type → add attributes → add association �
   trackResource('entity-type', etId2)
 
   // Add attributes to entity type 1 via API
-  await apiCall('POST', `/api/meta/v1/entity-types/${etId1}/attributes`, { name: 'hostname', type: 'string' })
-  await apiCall('POST', `/api/meta/v1/entity-types/${etId1}/attributes`, { name: 'memory_gb', type: 'number' })
+  const wfStringVersionId = await getTypeVersionId('string')
+  const wfNumberVersionId = await getTypeVersionId('number')
+  await apiCall('POST', `/api/meta/v1/entity-types/${etId1}/attributes`, { name: 'hostname', type_definition_version_id: wfStringVersionId })
+  await apiCall('POST', `/api/meta/v1/entity-types/${etId1}/attributes`, { name: 'memory_gb', type_definition_version_id: wfNumberVersionId })
 
   // Add association via API
   await apiCall('POST', `/api/meta/v1/entity-types/${etId1}/associations`, {

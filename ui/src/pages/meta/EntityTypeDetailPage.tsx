@@ -68,10 +68,10 @@ export default function EntityTypeDetailPage({ role }: Props) {
   const attrMgmt = useAttributeManagement({
     entityTypeId: id,
     attributes: data.attributes,
-    enums: data.enums,
+    typeDefinitions: data.typeDefinitions,
     onRefresh,
     setAttributes: data.setAttributes,
-    setEnums: data.setEnums,
+    setTypeDefinitions: data.setTypeDefinitions,
     setError: data.setError,
   })
 
@@ -269,7 +269,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
                     <Button variant="primary" onClick={() => attrMgmt.setAddAttrOpen(true)}>Add Attribute</Button>
                   </ToolbarItem>
                   <ToolbarItem>
-                    <Button variant="secondary" onClick={() => { attrMgmt.setCopyAttrsOpen(true); api.entityTypes.list().then((r) => data.setEntityTypes(r.items || [])).catch(() => {}); if (data.enums.length === 0) api.enums.list().then((r) => data.setEnums(r.items || [])).catch(() => {}) }}>Copy from...</Button>
+                    <Button variant="secondary" onClick={() => { attrMgmt.setCopyAttrsOpen(true); api.entityTypes.list().then((r) => data.setEntityTypes(r.items || [])).catch(() => {}); if (data.typeDefinitions.length === 0) api.typeDefinitions.list().then((r) => data.setTypeDefinitions(r.items || [])).catch(() => {}) }}>Copy from...</Button>
                   </ToolbarItem>
                 </ToolbarContent>
               </Toolbar>
@@ -292,9 +292,11 @@ export default function EntityTypeDetailPage({ role }: Props) {
                     <Tr key={attr.id || attr.name}>
                       <Td>{attr.name}{attr.required ? ' *' : ''}{attr.system ? <>{' '}<Label color="blue" isCompact>System</Label></> : ''}</Td>
                       <Td>
-                        <Label color={attr.type === 'enum' ? 'purple' : attr.type === 'number' ? 'blue' : 'grey'}>
-                          {attr.type === 'enum' && attr.enum_id ? `enum (${data.enums.find((en) => en.id === attr.enum_id)?.name || attr.enum_id.slice(0, 8)})` : attr.type}
-                        </Label>
+                        {attr.system ? null : (
+                          <Label color={attr.base_type === 'enum' ? 'purple' : (attr.base_type === 'number' || attr.base_type === 'integer') ? 'blue' : 'grey'}>
+                            {attr.type_name || attr.base_type || 'unknown'}
+                          </Label>
+                        )}
                       </Td>
                       <Td>{attr.description || '-'}</Td>
                       <Td>{attr.ordinal}</Td>
@@ -520,7 +522,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
         isOpen={attrMgmt.addAttrOpen}
         onClose={() => { attrMgmt.setAddAttrOpen(false); attrMgmt.setAddAttrError(null) }}
         onSubmit={attrMgmt.handleAddAttribute}
-        enums={data.enums}
+        typeDefinitions={data.typeDefinitions}
         error={attrMgmt.addAttrError}
       />
 
@@ -575,17 +577,21 @@ export default function EntityTypeDetailPage({ role }: Props) {
       {/* Edit Attribute Modal */}
       {(() => {
         const editingAttr = data.attributes.find(a => a.name === attrMgmt.editAttrOrigName)
+        // Find the type definition ID from the attribute's type_definition_version_id
+        // For the edit modal, we pass the type definition ID (not version ID)
+        const editTdId = editingAttr?.type_definition_version_id
+          ? (data.typeDefinitions.find(td => td.name === editingAttr.type_name)?.id || '')
+          : ''
         return (
           <EditAttributeModal
             isOpen={attrMgmt.editAttrOpen}
             onClose={() => { attrMgmt.setEditAttrOpen(false); attrMgmt.setEditAttrError(null) }}
             onSubmit={attrMgmt.handleEditAttribute}
-            enums={data.enums}
+            typeDefinitions={data.typeDefinitions}
             error={attrMgmt.editAttrError}
             initialName={attrMgmt.editAttrOrigName}
             initialDescription={editingAttr?.description || ''}
-            initialType={editingAttr?.type || 'string'}
-            initialEnumId={editingAttr?.enum_id || ''}
+            initialTypeDefinitionId={editTdId}
             initialRequired={editingAttr?.required || false}
           />
         )
@@ -614,7 +620,6 @@ export default function EntityTypeDetailPage({ role }: Props) {
         currentEntityTypeId={id}
         sourceAttributes={attrMgmt.sourceAttributes}
         existingAttributes={data.attributes}
-        enums={data.enums}
         error={attrMgmt.copyAttrsError}
       />
     </PageSection>

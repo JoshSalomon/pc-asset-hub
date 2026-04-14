@@ -1,26 +1,26 @@
 import { useState, useCallback } from 'react'
 import { api } from '../api/client'
-import type { Attribute, Enum } from '../types'
+import type { Attribute, TypeDefinition } from '../types'
 import type { AddAttributeValues } from '../components/AddAttributeModal'
 import type { EditAttributeValues } from '../components/EditAttributeModal'
 
 interface UseAttributeManagementOptions {
   entityTypeId: string | undefined
   attributes: Attribute[]
-  enums: Enum[]
+  typeDefinitions: TypeDefinition[]
   onRefresh: () => void
   setAttributes: React.Dispatch<React.SetStateAction<Attribute[]>>
-  setEnums: React.Dispatch<React.SetStateAction<Enum[]>>
+  setTypeDefinitions: React.Dispatch<React.SetStateAction<TypeDefinition[]>>
   setError: React.Dispatch<React.SetStateAction<string | null>>
 }
 
 export function useAttributeManagement({
   entityTypeId,
   attributes,
-  enums,
+  typeDefinitions,
   onRefresh,
   setAttributes,
-  setEnums,
+  setTypeDefinitions,
   setError,
 }: UseAttributeManagementOptions) {
   // Add attribute modal
@@ -41,14 +41,13 @@ export function useAttributeManagement({
   const [copyAttrsError, setCopyAttrsError] = useState<string | null>(null)
 
   const handleAddAttribute = useCallback(async (values: AddAttributeValues) => {
-    if (!entityTypeId || !values.name.trim() || !values.type) return
+    if (!entityTypeId || !values.name.trim() || !values.typeDefinitionVersionId) return
     setAddAttrError(null)
     try {
       await api.attributes.add(entityTypeId, {
         name: values.name.trim(),
         description: values.description.trim() || undefined,
-        type: values.type,
-        enum_id: values.type === 'enum' ? values.enumId : undefined,
+        type_definition_version_id: values.typeDefinitionVersionId,
         required: values.required,
       })
       setAddAttrOpen(false)
@@ -86,10 +85,10 @@ export function useAttributeManagement({
     setEditAttrOrigName(attr.name)
     setEditAttrError(null)
     setEditAttrOpen(true)
-    if (enums.length === 0) {
-      api.enums.list().then((r) => setEnums(r.items || [])).catch(() => {})
+    if (typeDefinitions.length === 0) {
+      api.typeDefinitions.list().then((r) => setTypeDefinitions(r.items || [])).catch(() => {})
     }
-  }, [enums.length, setEnums])
+  }, [typeDefinitions.length, setTypeDefinitions])
 
   const handleEditAttribute = useCallback(async (values: EditAttributeValues) => {
     if (!entityTypeId) return
@@ -98,8 +97,7 @@ export function useAttributeManagement({
       const data: Record<string, string | boolean | undefined> = {}
       if (values.name !== editAttrOrigName) data.name = values.name
       if (values.description !== undefined) data.description = values.description
-      data.type = values.type
-      if (values.type === 'enum') data.enum_id = values.enumId
+      if (values.typeDefinitionVersionId) data.type_definition_version_id = values.typeDefinitionVersionId
       data.required = values.required
       await api.attributes.edit(entityTypeId, editAttrOrigName, data)
       setEditAttrOpen(false)
@@ -113,20 +111,20 @@ export function useAttributeManagement({
     setCopyAttrsSourceId(sourceId)
     setSelectedCopyAttrs([])
     try {
-      const [attrRes, versRes, enumRes] = await Promise.all([
+      const [attrRes, versRes, tdRes] = await Promise.all([
         api.attributes.list(sourceId),
         api.versions.list(sourceId),
-        api.enums.list(),
+        api.typeDefinitions.list(),
       ])
       setSourceAttributes(attrRes.items || [])
-      setEnums(enumRes.items || [])
+      setTypeDefinitions(tdRes.items || [])
       const srcVersions = versRes.items || []
       const latest = srcVersions.length > 0 ? Math.max(...srcVersions.map((v: { version: number }) => v.version)) : 1
       setSourceLatestVersion(latest)
     } catch {
       setSourceAttributes([])
     }
-  }, [setEnums])
+  }, [setTypeDefinitions])
 
   const handleCopyAttributes = useCallback(async (attrNames?: string[]) => {
     const attrsToUse = attrNames || selectedCopyAttrs

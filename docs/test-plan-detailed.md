@@ -976,7 +976,7 @@ These tests cover the remaining CRUD gaps identified in the meta model gap analy
 ### Bidirectional Association Listing (`coverage_test.go`, `meta_repo_test.go`)
 
 | ID | Test Case | Layer | Expected |
-|----|-----------|-------|----------|
+|----|----	-------|-------|----------|
 | T-E.41 | ListAllAssociations returns incoming associations | Unit | Entity type targeted by containment from another type shows "incoming" association with source entity type ID |
 | T-E.42 | ListAllAssociations returns both outgoing and incoming | Unit | Entity type with outgoing directional and incoming containment shows both with correct directions |
 | T-E.43 | ListAllAssociations skips old version associations | Unit | Incoming association from an old version of the source entity type is filtered out |
@@ -3208,6 +3208,279 @@ Two authorization fixes: (1) `POST /catalogs/{name}/validate` on published catal
 
 ---
 
+## 31. Comprehensive Type System (FF-14, US-5, US-53, US-54)
+
+Replaces inline type system (string/number/enum) and separate enum management with versioned type definitions. 9 base types with optional constraints, CV-pinned type definition versions, type-aware UI forms with inline validation warnings.
+
+**Retired test cases** (superseded by T-31.xx — enums replaced by type definitions):
+- T-1.09–1.14 (enum repo integration tests) → T-31.01–12, T-31.26–27
+- T-1.17 (attribute with enum FK) → T-31.34–37
+- T-1.22 (delete enum referenced) → T-31.08
+- T-2.13 (set enum attribute value) → T-31.44
+- T-3.13–3.14 (AddAttribute with enum) → T-31.34–35
+- T-3.29–3.34 (enum service CRUD) → T-31.01–12
+- T-4.03 (invalid enum value validation) → T-31.59
+- T-5.35–5.39 (enum API endpoints) → T-31.67–78
+- T-7.12, T-7.19 (enum type dropdown, inline creation) → T-31.112–115
+- T-7.28–7.30 (enum list/create/edit UI) → T-31.103–111
+- T-8.05 (enum dropdown in form) → T-31.123
+
+### Type Definition CRUD — Service Layer
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.01 | Create type definition with base_type=string and constraints | Unit | TypeDefinition + TypeDefinitionVersion V1 created |
+| T-31.02 | Create type definition with base_type=enum and values | Unit | TypeDefinition created, constraints contain ordered values array |
+| T-31.03 | Create type definition with base_type=list and element_base_type | Unit | Constraints contain element_base_type and optional max_length |
+| T-31.04 | Create type definition with duplicate name → error | Unit | Validation error: name already exists |
+| T-31.05 | Update type definition constraints → creates new version | Unit | New TypeDefinitionVersion with version_number=2, old V1 unchanged |
+| T-31.06 | Update system type definition → error | Unit | Validation error: system types are immutable |
+| T-31.07 | Delete type definition not referenced by any attribute | Unit | TypeDefinition and all versions deleted |
+| T-31.08 | Delete type definition referenced by an attribute → error | Unit | Validation error: referenced by attributes |
+| T-31.09 | Delete system type definition → error | Unit | Validation error: system types cannot be deleted |
+| T-31.10 | List type definitions returns all (system + custom) | Unit | All type definitions returned |
+| T-31.11 | Get type definition by ID returns latest version info | Unit | Type definition with current version details |
+| T-31.12 | List versions returns all versions ordered by version_number | Unit | Versions in ascending order |
+
+### Constraint Validation — Service Layer
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.13 | String constraint: max_length negative → error | Unit | Validation error |
+| T-31.14 | String constraint: pattern invalid regex → error | Unit | Validation error |
+| T-31.15 | String constraint: multiline=true valid | Unit | Constraint accepted |
+| T-31.16 | Integer constraint: min > max → error | Unit | Validation error |
+| T-31.17 | Number constraint: min > max → error | Unit | Validation error |
+| T-31.18 | Enum constraint: empty values array → error | Unit | Validation error |
+| T-31.19 | Enum constraint: duplicate values → error | Unit | Validation error |
+| T-31.20 | List constraint: invalid element_base_type → error | Unit | Validation error |
+| T-31.21 | List constraint: element_base_type=list → error (no nesting) | Unit | Validation error |
+| T-31.22 | List constraint: element_base_type=enum → error (no nesting) | Unit | Validation error |
+| T-31.23 | Boolean/date/url: constraints rejected (no constraints allowed) | Unit | Validation error if non-empty constraints |
+| T-31.24 | JSON constraint: schema is optional (empty constraints OK) | Unit | Constraint accepted |
+| T-31.25 | Integer constraint: valid min/max range | Unit | Constraint accepted |
+
+### System Type Seeding
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.26 | System types seeded on startup (6 types: string, integer, number, boolean, date, url) | Integration | All 6 exist with system=true, version V1 |
+| T-31.27 | System types seeded idempotently (second call is no-op) | Integration | No duplicates, no errors |
+
+### CV Type Pins — Service Layer
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.28 | Add type pin to CV | Unit | CatalogVersionTypePin created |
+| T-31.29 | Add duplicate type pin → error | Unit | Validation error: already pinned |
+| T-31.30 | Remove type pin from CV | Unit | Pin deleted |
+| T-31.31 | Add entity type pin auto-pins required custom type definitions | Unit | Type pins created for custom types used by attributes |
+| T-31.32 | Add entity type pin does not auto-pin system types | Unit | No type pins created for system type attributes |
+| T-31.33 | List type pins returns all pinned type definitions | Unit | All type pins returned |
+
+### Attribute Model — Service Layer
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.34 | Create attribute with type_definition_version_id | Unit | Attribute created with FK to type definition version |
+| T-31.35 | Create attribute with non-existent type_definition_version_id → error | Unit | Validation error |
+| T-31.36 | Copy-on-write attribute carries type_definition_version_id forward | Unit | New version has same type ref |
+| T-31.37 | Copy attributes copies type_definition_version_id | Unit | Copied attribute has same type ref |
+
+### Instance Value Storage — Integration
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.38 | Store and retrieve string value | Integration | value_string populated correctly |
+| T-31.39 | Store and retrieve integer value | Integration | value_number populated, validated as whole number |
+| T-31.40 | Store and retrieve number (float) value | Integration | value_number populated correctly |
+| T-31.41 | Store and retrieve boolean value ("true"/"false") | Integration | value_string = "true" or "false" |
+| T-31.42 | Store and retrieve date value (ISO 8601) | Integration | value_string = ISO date string |
+| T-31.43 | Store and retrieve url value | Integration | value_string = URL string |
+| T-31.44 | Store and retrieve enum value | Integration | value_string = enum value |
+| T-31.45 | Store and retrieve list value (JSON array) | Integration | value_json = JSON array string |
+| T-31.46 | Store and retrieve json value (JSON object) | Integration | value_json = JSON object string |
+
+### Catalog Validation — Type Constraints
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.47 | Validate string exceeding max_length → invalid | Unit | Validation error on field |
+| T-31.48 | Validate string not matching pattern → invalid | Unit | Validation error on field |
+| T-31.49 | Validate string within max_length and matching pattern → valid | Unit | No error |
+| T-31.50 | Validate integer not whole number → invalid | Unit | Validation error |
+| T-31.51 | Validate integer below min → invalid | Unit | Validation error |
+| T-31.52 | Validate integer above max → invalid | Unit | Validation error |
+| T-31.53 | Validate integer within range → valid | Unit | No error |
+| T-31.54 | Validate number below min → invalid | Unit | Validation error |
+| T-31.55 | Validate number above max → invalid | Unit | Validation error |
+| T-31.56 | Validate boolean not "true"/"false" → invalid | Unit | Validation error |
+| T-31.57 | Validate date not ISO 8601 → invalid | Unit | Validation error |
+| T-31.58 | Validate url not valid URL → invalid | Unit | Validation error |
+| T-31.59 | Validate enum value not in values list → invalid | Unit | Validation error |
+| T-31.60 | Validate enum value in values list → valid | Unit | No error |
+| T-31.61 | Validate list exceeding max_length → invalid | Unit | Validation error |
+| T-31.62 | Validate list element wrong type → invalid | Unit | Validation error |
+| T-31.63 | Validate list with valid elements → valid | Unit | No error |
+| T-31.64 | Validate json not valid JSON → invalid | Unit | Validation error |
+| T-31.65 | Validate json valid JSON → valid | Unit | No error |
+| T-31.66 | Validate uses type definition version pinned in CV (not latest) | Unit | Validation against pinned version constraints |
+
+### API — Type Definition Endpoints
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.67 | POST /type-definitions with valid body → 201 | API | Created with V1 |
+| T-31.68 | POST /type-definitions with duplicate name → 409 | API | 409 Conflict |
+| T-31.69 | POST /type-definitions with invalid constraints → 400 | API | 400 with validation message |
+| T-31.70 | GET /type-definitions → 200 with all types | API | List includes system + custom |
+| T-31.71 | GET /type-definitions/:id → 200 | API | Type definition with latest version |
+| T-31.72 | PUT /type-definitions/:id → 200, creates new version | API | New version number, constraints updated |
+| T-31.73 | PUT /type-definitions/:id (system type) → 400 | API | 400: system types immutable |
+| T-31.74 | DELETE /type-definitions/:id (unreferenced) → 204 | API | Deleted |
+| T-31.75 | DELETE /type-definitions/:id (referenced) → 409 | API | 409: referenced by attributes |
+| T-31.76 | DELETE /type-definitions/:id (system) → 400 | API | 400: system types cannot be deleted |
+| T-31.77 | GET /type-definitions/:id/versions → 200 | API | All versions listed |
+| T-31.78 | GET /type-definitions/:id/versions/:v → 200 | API | Specific version with constraints |
+
+### API — CV Type Pin Endpoints
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.80 | POST /catalog-versions/:id/type-pins → 201 | API | Type pin created |
+| T-31.81 | POST /catalog-versions/:id/type-pins duplicate → 409 | API | 409: already pinned |
+| T-31.82 | DELETE /catalog-versions/:id/type-pins/:pid → 204 | API | Pin removed |
+| T-31.83 | GET /catalog-versions/:id/type-pins → 200 | API | List of type pins |
+
+### API — Attribute with Type Definition
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.84 | POST /entity-types/:id/attributes with type_definition_version_id → 201 | API | Attribute created with type ref |
+| T-31.85 | POST /entity-types/:id/attributes with invalid type_definition_version_id → 400 | API | 400: type definition version not found |
+| T-31.86 | GET /entity-types/:id/attributes includes resolved type info (base_type, constraints, type_name) | API | Response includes type details |
+
+### API — Instance Values for All Types
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.87 | Create instance with string attribute value | API | 201, value stored in value_string |
+| T-31.88 | Create instance with integer attribute value | API | 201, value stored in value_number |
+| T-31.89 | Create instance with boolean attribute value | API | 201, value stored as "true"/"false" |
+| T-31.90 | Create instance with date attribute value | API | 201, value stored as ISO string |
+| T-31.91 | Create instance with url attribute value | API | 201, value stored in value_string |
+| T-31.92 | Create instance with enum attribute value | API | 201, value stored in value_string |
+| T-31.93 | Create instance with list attribute value | API | 201, value stored in value_json |
+| T-31.94 | Create instance with json attribute value | API | 201, value stored in value_json |
+| T-31.95 | Validate catalog with type constraint violations → invalid | API | Validation errors reference type constraints |
+
+### API — RBAC for Type Definitions
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.96 | POST /type-definitions as RW → 403 | API | 403: Admin+ required for type mutations |
+| T-31.97 | PUT /type-definitions/:id as RW → 403 | API | 403: Admin+ required |
+| T-31.98 | DELETE /type-definitions/:id as RW → 403 | API | 403: Admin+ required |
+| T-31.99 | GET /type-definitions as RO → 200 | API | 200: read access for all roles |
+| T-31.100 | POST /type-definitions as Admin → 201 | API | 201: Admin can create |
+| T-31.101 | PUT /type-definitions/:id as Admin → 200 | API | 200: Admin can update |
+| T-31.102 | DELETE /type-definitions/:id as Admin → 204 | API | 204: Admin can delete |
+
+### UI — Types Tab
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.103 | Types tab shows all type definitions sorted by name | Browser | System types with badge, custom types listed |
+| T-31.104 | Types tab filter by base type | Browser | Filtered list shows only matching base type |
+| T-31.105 | Create type definition with string base type and constraints | Browser | Type created, appears in list |
+| T-31.106 | Create type definition with enum base type and values | Browser | Type created with ordered values |
+| T-31.107 | Edit type definition constraints → version incremented | Browser | Version number increases, old version in history |
+| T-31.108 | Delete custom type definition | Browser | Type removed from list |
+| T-31.109 | Delete system type definition → blocked | Browser | Delete button hidden or disabled for system types |
+| T-31.110 | Type detail view shows version history | Browser | All versions listed with constraints |
+| T-31.111 | Type detail view shows referencing attributes | Browser | List of attributes/entity types using this type |
+
+### UI — Attribute Type Selector
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.112 | Add Attribute modal shows type definition selector | Browser | Grouped selector: system types first, then custom |
+| T-31.113 | Add Attribute with system type (string) | Browser | Attribute created with system type ref |
+| T-31.114 | Add Attribute with custom type | Browser | Attribute created with custom type ref |
+| T-31.115 | Inline type creation from Add Attribute modal | Browser | "Create new type" opens type form, new type available for selection |
+
+### UI — Instance Forms (Type-Aware)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.116 | String attribute renders TextInput | Browser | TextInput rendered |
+| T-31.117 | String (multiline) attribute renders TextArea | Browser | TextArea rendered |
+| T-31.118 | Integer attribute renders NumberInput with step=1 | Browser | NumberInput with integer step |
+| T-31.119 | Number attribute renders NumberInput | Browser | NumberInput rendered |
+| T-31.120 | Boolean attribute renders Switch/Toggle | Browser | Switch control rendered |
+| T-31.121 | Date attribute renders DatePicker | Browser | DatePicker rendered |
+| T-31.122 | URL attribute renders TextInput | Browser | TextInput rendered |
+| T-31.123 | Enum attribute renders Select dropdown with values | Browser | Dropdown with enum values from pinned type version |
+| T-31.124 | List attribute renders repeatable input group | Browser | Add/remove item controls rendered |
+| T-31.125 | JSON attribute renders TextArea | Browser | TextArea rendered |
+
+### UI — Inline Field-Level Validation Warnings
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.126 | String exceeding max_length shows warning | Browser | Warning on field, form still submittable |
+| T-31.127 | String not matching pattern shows warning | Browser | Warning on field, form still submittable |
+| T-31.128 | Integer out of range shows warning | Browser | Warning on field, form still submittable |
+| T-31.129 | Number out of range shows warning | Browser | Warning on field, form still submittable |
+| T-31.130 | Invalid URL format shows warning | Browser | Warning on field, form still submittable |
+| T-31.131 | Invalid date format shows warning | Browser | Warning on field, form still submittable |
+| T-31.132 | Invalid JSON syntax shows warning | Browser | Warning on field, form still submittable |
+| T-31.133 | Form with warnings can still be submitted (draft mode) | Browser | Submit succeeds, instance created |
+| T-31.134 | Valid values show no warning | Browser | No warning displayed |
+
+### UI — Data Viewer (Type-Aware Display)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.135 | URL value displayed as clickable link | Browser | Rendered as anchor tag |
+| T-31.136 | Date value displayed formatted | Browser | Human-readable date format |
+| T-31.137 | Boolean value displayed as "Yes"/"No" | Browser | Text rendering, not raw true/false |
+| T-31.138 | List value displayed as comma-separated or bullet list | Browser | Formatted list display |
+| T-31.139 | JSON value displayed as formatted/collapsible | Browser | Formatted JSON display |
+
+### Live Browser Tests (Playwright)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.140 | Types tab: create custom type definition, verify in list | Live | Type created, sorted in list |
+| T-31.141 | Types tab: edit type definition, verify version incremented | Live | New version shown |
+| T-31.142 | Types tab: delete custom type definition | Live | Type removed from list |
+| T-31.143 | Types tab: system types shown with badge, cannot edit/delete | Live | System badge visible, no edit/delete controls |
+| T-31.144 | Types tab: RBAC — RO sees no create/edit/delete controls | Live | Controls hidden for RO role |
+| T-31.145 | Add Attribute with type definition selector (system type) | Live | Attribute created, type shown in table |
+| T-31.146 | Add Attribute with type definition selector (custom type) | Live | Attribute created with custom type ref |
+| T-31.147 | CV BOM shows type pins alongside entity type pins | Live | Type pins section visible in BOM |
+| T-31.148 | Create instance with boolean attribute → Switch control rendered | Live | Toggle works, value saved |
+| T-31.149 | Create instance with enum attribute → Select dropdown with values | Live | Dropdown shows pinned version values |
+| T-31.150 | Create instance with multiline string → TextArea rendered | Live | TextArea visible, value saved |
+| T-31.151 | Create instance with integer attribute → NumberInput with constraints | Live | Min/max enforced in form |
+| T-31.152 | Inline validation warning: string exceeding max_length | Live | Warning shown, form still submittable |
+| T-31.153 | Inline validation warning: pattern mismatch | Live | Warning shown, form still submittable |
+| T-31.154 | Catalog validation with type constraint violations → errors shown | Live | Validation fails, errors reference type constraints |
+| T-31.155 | Data viewer: URL displayed as clickable link | Live | Link navigable |
+| T-31.156 | Data viewer: boolean displayed as "Yes"/"No" | Live | Formatted display |
+| T-31.157 | End-to-end: create type → create attribute → create instance → validate | Live | Full flow works |
+| T-31.158 | Single-line string attribute renders TextInput (not TextArea) | Live | input[type=text] element |
+| T-31.159 | Multiline string preserves formatting on create and retrieve | Live | Newlines stored and displayed correctly |
+| T-31.160 | Date attribute renders date input with YYYY-MM-DD placeholder | Live | Date input rendered |
+| T-31.161 | URL attribute — create instance with URL, verify stored and retrieved | Live | URL value round-trips correctly |
+| T-31.162 | Integer out of range — validate catalog (TD-90: constraint check pending) | Live | Currently passes; will fail when TD-90 implemented |
+| T-31.163 | Type definition versioning — old CV uses old version constraints | Live | Validation against pinned version, not latest |
+| T-31.164 | Data viewer: URL value displayed in detail panel | Live | URL text visible (TD-91: clickable link pending) |
+| T-31.165 | Data viewer: boolean value displayed in detail panel | Live | Value visible as Yes or true |
+
+---
+
 ## Coverage Criteria
 
 ### Pass Rate
@@ -3244,7 +3517,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All 1173 test cases (T-1.01 through T-28.23; T-13.78 through T-13.85 retired) pass
+- All test cases (T-1.01 through T-31.165; T-13.78–13.85 retired; T-31.79 subsumed by T-31.96–102; 29 enum-specific tests retired — see T-31 retired test cases list) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

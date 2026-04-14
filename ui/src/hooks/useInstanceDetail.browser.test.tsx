@@ -153,3 +153,31 @@ test('TD-50: selectInstance fetches instance by ID from API', async () => {
   // selectInstance('i1') should call api.instances.get to fetch the instance
   expect(api.instances.get).toHaveBeenCalledWith('my-catalog', 'model', 'i1')
 })
+
+// Lines 30-34: api.instances.get rejects — clears all state and returns early
+test('selectInstance clears state when api.instances.get rejects', async () => {
+  // First select an instance so state is populated
+  render(<TestComponent catalogName="my-catalog" entityTypeName="model" />)
+  await page.getByTestId('select').click()
+  await expect.element(page.getByTestId('selected')).toHaveTextContent('inst-a')
+  await expect.element(page.getByTestId('children-count')).toHaveTextContent('1')
+
+  // Now make api.instances.get reject for ALL calls
+  ;(api.instances.get as Mock).mockRejectedValue(new Error('Instance not found'))
+
+  // Re-select to trigger the error path (lines 30-34)
+  await page.getByTestId('select').click()
+
+  // State should be cleared by the catch block
+  await expect.element(page.getByTestId('selected')).toHaveTextContent('')
+  await expect.element(page.getByTestId('children-count')).toHaveTextContent('0')
+  await expect.element(page.getByTestId('fwd-refs-count')).toHaveTextContent('0')
+  await expect.element(page.getByTestId('rev-refs-count')).toHaveTextContent('0')
+})
+
+// Line 58: outer catch on containment children loading — setChildren([])
+// UNREACHABLE: The outer try block (lines 46-58) wraps Array.filter() and
+// a for loop with its own inner try/catch. Array.filter() on schemaAssocs
+// (always an array) cannot throw, and setChildren (a React state setter)
+// cannot throw. The inner try/catch (line 51-54) catches per-iteration API
+// errors. No code path in the outer try can throw past the inner catch.

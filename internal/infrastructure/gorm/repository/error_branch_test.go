@@ -96,10 +96,10 @@ func TestAttribute_ErrorBranches(t *testing.T) {
 	_, err = repo.ListByVersion(ctx, "x")
 	assert.Error(t, err)
 
-	err = repo.Create(ctx, &models.Attribute{ID: "x", EntityTypeVersionID: "v1", Name: "a", Type: models.AttributeTypeString})
+	err = repo.Create(ctx, &models.Attribute{ID: "x", EntityTypeVersionID: "v1", Name: "a", TypeDefinitionVersionID: "tdv-string"})
 	assert.Error(t, err)
 
-	err = repo.Update(ctx, &models.Attribute{ID: "x", EntityTypeVersionID: "v1", Name: "a", Type: models.AttributeTypeString})
+	err = repo.Update(ctx, &models.Attribute{ID: "x", EntityTypeVersionID: "v1", Name: "a", TypeDefinitionVersionID: "tdv-string"})
 	assert.Error(t, err)
 
 	err = repo.Delete(ctx, "x")
@@ -136,40 +136,43 @@ func TestAssociation_ErrorBranches(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestEnum_ErrorBranches(t *testing.T) {
+func TestTypeDefinition_ErrorBranches(t *testing.T) {
 	db := closedDB(t)
-	enumRepo := repository.NewEnumGormRepo(db)
-	evRepo := repository.NewEnumValueGormRepo(db)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	tdvRepo := repository.NewTypeDefinitionVersionGormRepo(db)
 	ctx := context.Background()
 
-	_, err := enumRepo.GetByID(ctx, "x")
+	_, err := tdRepo.GetByID(ctx, "x")
 	assert.Error(t, err)
 
-	_, err = enumRepo.GetByName(ctx, "x")
+	_, err = tdRepo.GetByName(ctx, "x")
 	assert.Error(t, err)
 
-	_, _, err = enumRepo.List(ctx, models.ListParams{Limit: 10})
+	_, _, err = tdRepo.List(ctx, models.ListParams{Limit: 10})
 	assert.Error(t, err)
 
-	err = enumRepo.Create(ctx, &models.Enum{ID: "x", Name: "x", CreatedAt: time.Now(), UpdatedAt: time.Now()})
+	err = tdRepo.Create(ctx, &models.TypeDefinition{ID: "x", Name: "x", BaseType: "string", CreatedAt: time.Now(), UpdatedAt: time.Now()})
 	assert.Error(t, err)
 
-	err = enumRepo.Update(ctx, &models.Enum{ID: "x", Name: "x", CreatedAt: time.Now(), UpdatedAt: time.Now()})
+	err = tdRepo.Update(ctx, &models.TypeDefinition{ID: "x", Name: "x", BaseType: "string", CreatedAt: time.Now(), UpdatedAt: time.Now()})
 	assert.Error(t, err)
 
-	err = enumRepo.Delete(ctx, "x")
+	err = tdRepo.Delete(ctx, "x")
 	assert.Error(t, err)
 
-	err = evRepo.Create(ctx, &models.EnumValue{ID: "x", EnumID: "e1", Value: "v", Ordinal: 0})
+	err = tdvRepo.Create(ctx, &models.TypeDefinitionVersion{ID: "x", TypeDefinitionID: "td1", VersionNumber: 1, Constraints: map[string]any{}, CreatedAt: time.Now()})
 	assert.Error(t, err)
 
-	_, err = evRepo.ListByEnum(ctx, "x")
+	_, err = tdvRepo.GetByID(ctx, "x")
 	assert.Error(t, err)
 
-	err = evRepo.Delete(ctx, "x")
+	_, err = tdvRepo.GetLatestByTypeDefinition(ctx, "x")
 	assert.Error(t, err)
 
-	err = evRepo.Reorder(ctx, "e1", []string{"v1"})
+	_, err = tdvRepo.ListByTypeDefinition(ctx, "x")
+	assert.Error(t, err)
+
+	_, err = tdvRepo.GetByIDs(ctx, []string{"x"})
 	assert.Error(t, err)
 }
 
@@ -271,6 +274,54 @@ func TestEntityInstance_ErrorBranches(t *testing.T) {
 
 	err = instRepo.DeleteByCatalogID(ctx, "x")
 	assert.Error(t, err)
+}
+
+func TestCatalogVersionTypePin_ErrorBranches(t *testing.T) {
+	db := closedDB(t)
+	repo := repository.NewCatalogVersionTypePinGormRepo(db)
+	ctx := context.Background()
+
+	err := repo.Create(ctx, &models.CatalogVersionTypePin{ID: "x", CatalogVersionID: "cv1", TypeDefinitionVersionID: "tdv1"})
+	assert.Error(t, err)
+
+	_, err = repo.GetByID(ctx, "x")
+	assert.Error(t, err)
+
+	_, err = repo.ListByCatalogVersion(ctx, "x")
+	assert.Error(t, err)
+
+	err = repo.Delete(ctx, "x")
+	assert.Error(t, err)
+}
+
+func TestTypeDefinitionGormRepo_Delete_DBError(t *testing.T) {
+	// The regular Delete error path for the SQL statement itself (not RowsAffected == 0)
+	db := closedDB(t)
+	repo := repository.NewTypeDefinitionGormRepo(db)
+	ctx := context.Background()
+
+	err := repo.Delete(ctx, "x")
+	assert.Error(t, err)
+}
+
+func TestTypeDefinitionGormRepo_List_FindError(t *testing.T) {
+	// The List Find() error path
+	db := closedDB(t)
+	repo := repository.NewTypeDefinitionGormRepo(db)
+	ctx := context.Background()
+
+	_, _, err := repo.List(ctx, models.ListParams{Limit: 10})
+	assert.Error(t, err)
+}
+
+func TestTypeDefinitionVersionGormRepo_GetLatestByTypeDefinitions_DBError(t *testing.T) {
+	db := closedDB(t)
+	repo := repository.NewTypeDefinitionVersionGormRepo(db)
+	ctx := context.Background()
+
+	_, err := repo.GetLatestByTypeDefinitions(ctx, []string{"td1", "td2"})
+	// Should not error — the fallback handles individual errors gracefully
+	assert.NoError(t, err)
 }
 
 func TestCatalog_ErrorBranches(t *testing.T) {

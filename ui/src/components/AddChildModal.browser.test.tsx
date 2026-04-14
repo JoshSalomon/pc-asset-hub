@@ -9,7 +9,6 @@ vi.mock('../api/client', () => ({
   api: {
     instances: { list: vi.fn() },
     versions: { snapshot: vi.fn() },
-    enums: { listValues: vi.fn() },
   },
   setAuthRole: vi.fn(),
 }))
@@ -36,7 +35,6 @@ beforeEach(() => {
   vi.clearAllMocks()
   ;(api.instances.list as Mock).mockResolvedValue({ items: [], total: 0 })
   ;(api.versions.snapshot as Mock).mockResolvedValue({ attributes: [], associations: [] })
-  ;(api.enums.listValues as Mock).mockResolvedValue({ items: [], total: 0 })
 })
 
 function renderModal(overrides: Partial<React.ComponentProps<typeof AddChildModal>> = {}) {
@@ -151,3 +149,25 @@ test('T-20.29: AddChildModal onSubmit receives typed args', async () => {
     name: 'my-tool',
   }))
 })
+
+// Line 69: loadAvailableInstances guard when catalogName is undefined
+test('AddChildModal guard: loadAvailableInstances with undefined catalogName clears instances', async () => {
+  // Render with catalogName=undefined — the useEffect on isOpen with initialChildType
+  // will call handleChildTypeChange which calls loadAvailableInstances.
+  // With catalogName undefined, line 69 guard fires: setAvailableInstances([]); return
+  renderModal({ catalogName: undefined, initialChildType: 'tool' })
+  // The modal renders but the api.instances.list should NOT be called
+  expect(api.instances.list).not.toHaveBeenCalled()
+})
+
+// Line 78: loadChildSchema guard when pins is empty
+test('AddChildModal guard: loadChildSchema with empty pins clears schema attrs', async () => {
+  // With empty pins, line 78 fires: setChildSchemaAttrs([]); return
+  renderModal({ pins: [], initialChildType: 'tool' })
+  // api.versions.snapshot should NOT be called since pins is empty
+  expect(api.versions.snapshot).not.toHaveBeenCalled()
+})
+
+// Line 121: if (!childTypeName) return — guard in handleSubmit
+// UNREACHABLE: The submit button (Create/Adopt) is disabled when !childTypeName (line 228),
+// so handleSubmit can only be called when childTypeName is set.

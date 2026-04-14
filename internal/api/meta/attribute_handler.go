@@ -7,15 +7,18 @@ import (
 
 	"github.com/project-catalyst/pc-asset-hub/internal/api/dto"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
+	"github.com/project-catalyst/pc-asset-hub/internal/domain/repository"
 	svcmeta "github.com/project-catalyst/pc-asset-hub/internal/service/meta"
 )
 
 type AttributeHandler struct {
-	svc *svcmeta.AttributeService
+	svc     *svcmeta.AttributeService
+	tdvRepo repository.TypeDefinitionVersionRepository
+	tdRepo  repository.TypeDefinitionRepository
 }
 
-func NewAttributeHandler(svc *svcmeta.AttributeService) *AttributeHandler {
-	return &AttributeHandler{svc: svc}
+func NewAttributeHandler(svc *svcmeta.AttributeService, tdvRepo repository.TypeDefinitionVersionRepository, tdRepo repository.TypeDefinitionRepository) *AttributeHandler {
+	return &AttributeHandler{svc: svc, tdvRepo: tdvRepo, tdRepo: tdRepo}
 }
 
 func (h *AttributeHandler) List(c echo.Context) error {
@@ -27,15 +30,50 @@ func (h *AttributeHandler) List(c echo.Context) error {
 
 	// Prepend system attributes (Name — required, Description — optional)
 	systemAttrs := []dto.AttributeResponse{
-		{Name: models.SystemAttrName, Type: models.SystemAttrType, Ordinal: models.SystemAttrNameOrdinal, Required: true, System: true},
-		{Name: models.SystemAttrDescription, Type: models.SystemAttrType, Ordinal: models.SystemAttrDescOrdinal, Required: false, System: true},
+		{Name: models.SystemAttrName, Ordinal: models.SystemAttrNameOrdinal, Required: true, System: true},
+		{Name: models.SystemAttrDescription, Ordinal: models.SystemAttrDescOrdinal, Required: false, System: true},
 	}
+	// Resolve type names and base types for attributes
+	typeNames := make(map[string]string)  // tdv_id → type name
+	baseTypes := make(map[string]string)  // tdv_id → base type
+	var tdvIDs []string
+	for _, a := range attrs {
+		if a.TypeDefinitionVersionID != "" {
+			tdvIDs = append(tdvIDs, a.TypeDefinitionVersionID)
+		}
+	}
+	// Best-effort type resolution — errors don't block the response
+	if len(tdvIDs) > 0 && h.tdvRepo != nil && h.tdRepo != nil {
+		tdvs, err := h.tdvRepo.GetByIDs(c.Request().Context(), tdvIDs)
+		if err == nil && len(tdvs) > 0 {
+			tdIDs := make(map[string]bool)
+			for _, tdv := range tdvs {
+				tdIDs[tdv.TypeDefinitionID] = true
+			}
+			tdCache := make(map[string]*models.TypeDefinition)
+			for tdID := range tdIDs {
+				if td, tdErr := h.tdRepo.GetByID(c.Request().Context(), tdID); tdErr == nil {
+					tdCache[tdID] = td
+				}
+			}
+			for _, tdv := range tdvs {
+				if td, ok := tdCache[tdv.TypeDefinitionID]; ok {
+					typeNames[tdv.ID] = td.Name
+					baseTypes[tdv.ID] = string(td.BaseType)
+				}
+			}
+		}
+	}
+
 	resp := make([]dto.AttributeResponse, 0, len(systemAttrs)+len(attrs))
 	resp = append(resp, systemAttrs...)
 	for _, a := range attrs {
 		resp = append(resp, dto.AttributeResponse{
 			ID: a.ID, Name: a.Name, Description: a.Description,
-			Type: string(a.Type), EnumID: a.EnumID, Ordinal: a.Ordinal, Required: a.Required,
+			TypeDefinitionVersionID: a.TypeDefinitionVersionID,
+			TypeName:                typeNames[a.TypeDefinitionVersionID],
+			BaseType:                baseTypes[a.TypeDefinitionVersionID],
+			Ordinal:                 a.Ordinal, Required: a.Required,
 		})
 	}
 	return c.JSON(http.StatusOK, dto.ListResponse{Items: resp, Total: len(resp)})
@@ -53,11 +91,11 @@ func (h *AttributeHandler) Add(c echo.Context) error {
 	if models.IsSystemAttributeName(req.Name) {
 		return echo.NewHTTPError(http.StatusBadRequest, "attribute name \""+req.Name+"\" is reserved for system attributes")
 	}
-	if req.Type == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "type is required")
+	if req.TypeDefinitionVersionID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "type_definition_version_id is required")
 	}
 
-	newVersion, err := h.svc.AddAttribute(c.Request().Context(), entityTypeID, req.Name, req.Description, models.AttributeType(req.Type), req.EnumID, req.Required)
+	newVersion, err := h.svc.AddAttribute(c.Request().Context(), entityTypeID, req.Name, req.Description, req.TypeDefinitionVersionID, req.Required)
 	if err != nil {
 		return mapError(err)
 	}
@@ -112,13 +150,7 @@ func (h *AttributeHandler) Edit(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "attribute name \""+*req.Name+"\" is reserved for system attributes")
 	}
 
-	var newType *models.AttributeType
-	if req.Type != nil {
-		t := models.AttributeType(*req.Type)
-		newType = &t
-	}
-
-	newVersion, err := h.svc.EditAttribute(c.Request().Context(), entityTypeID, name, req.Name, req.Description, newType, req.EnumID, req.Required)
+	newVersion, err := h.svc.EditAttribute(c.Request().Context(), entityTypeID, name, req.Name, req.Description, req.TypeDefinitionVersionID, req.Required)
 	if err != nil {
 		return mapError(err)
 	}

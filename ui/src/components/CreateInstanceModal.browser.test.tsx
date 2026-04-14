@@ -5,10 +5,10 @@ import CreateInstanceModal from './CreateInstanceModal'
 import type { SnapshotAttribute } from '../types'
 
 const schemaAttrs: SnapshotAttribute[] = [
-  { id: 'sys-name', name: 'name', type: 'string', description: '', ordinal: -2, required: true, system: true },
-  { id: 'sys-desc', name: 'description', type: 'string', description: '', ordinal: -1, required: false, system: true },
-  { id: 'a1', name: 'color', type: 'enum', description: '', ordinal: 1, required: false, enum_id: 'enum1' },
-  { id: 'a2', name: 'port', type: 'number', description: '', ordinal: 2, required: true },
+  { id: 'sys-name', name: 'name', base_type: 'string', description: '', ordinal: -2, required: true, system: true },
+  { id: 'sys-desc', name: 'description', base_type: 'string', description: '', ordinal: -1, required: false, system: true },
+  { id: 'a1', name: 'color', base_type: 'enum', description: '', ordinal: 1, required: false, type_definition_version_id: 'enum1' },
+  { id: 'a2', name: 'port', base_type: 'number', description: '', ordinal: 2, required: true },
 ]
 
 const enumValues = { enum1: ['red', 'green', 'blue'] }
@@ -47,8 +47,9 @@ test('T-19.28: CreateInstanceModal renders custom attrs', async () => {
 // T-19.29: Renders enum select for enum attributes
 test('T-19.29: CreateInstanceModal renders enum select', async () => {
   renderModal()
-  // The enum attr 'color' should show a Select (MenuToggle with 'Select...')
-  await expect.element(page.getByText('Select...')).toBeVisible()
+  // The enum attr 'color' should show a native <select> element
+  const selectEl = page.getByRole('combobox', { name: 'color' })
+  await expect.element(selectEl).toBeVisible()
 })
 
 // T-19.30: Submit button disabled when name empty

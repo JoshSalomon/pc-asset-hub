@@ -496,7 +496,7 @@ func (s *CatalogService) CopyCatalog(ctx context.Context, sourceName, targetName
 						AttributeID:     v.AttributeID,
 						ValueString:     v.ValueString,
 						ValueNumber:     v.ValueNumber,
-						ValueEnum:       v.ValueEnum,
+						ValueJSON:       v.ValueJSON,
 					}
 				}
 				if err := s.iavRepo.SetValues(txCtx, newValues); err != nil {

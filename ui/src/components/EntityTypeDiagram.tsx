@@ -103,7 +103,7 @@ const EntityTypeNode: React.FunctionComponent<{
           {node.getLabel()} (V{version})
         </text>
         {attrs.map((attr, i) => {
-          const typeName = attr.enum_name || attr.type
+          const typeName = attr.type_name || attr.base_type || 'unknown'
           return (
             <text key={attr.id || i} x={8} y={headerHeight + 14 + i * 14}
               fontSize={10} fill="#6a6e73" fontFamily="var(--pf-t--global--font--family--mono, monospace)">
@@ -246,7 +246,7 @@ export function buildModel(
     // Compute width dynamically from the longest attribute label
     let longestLabel = 0
     for (const attr of et.attributes) {
-      const typeName = attr.enum_name || attr.type
+      const typeName = attr.type_name || attr.base_type || 'unknown'
       const prefix = attr.required ? '* ' : ''
       const label = `${prefix}${attr.name} : ${typeName}`
       longestLabel = Math.max(longestLabel, label.length)

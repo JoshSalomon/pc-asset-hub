@@ -92,7 +92,7 @@ func applyAttrFilters(query *gorm.DB, filters map[string]string) (*gorm.DB, erro
 				Where(fmt.Sprintf("%s.value_number <= ?", alias), numVal)
 		} else {
 			query = query.Joins(joinCond, key).
-				Where(fmt.Sprintf("(LOWER(%s.value_string) LIKE ? OR %s.value_enum = ?)", alias, alias), "%"+strings.ToLower(val)+"%", val)
+				Where(fmt.Sprintf("LOWER(%s.value_string) LIKE ?", alias), "%"+strings.ToLower(val)+"%")
 		}
 	}
 	return query, nil

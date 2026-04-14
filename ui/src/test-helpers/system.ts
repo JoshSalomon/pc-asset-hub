@@ -110,6 +110,26 @@ export function testName(base: string): string {
   return `E2E_${base}`
 }
 
+// Look up a system type definition's latest version ID by name
+// Caches results so multiple calls don't hit the API repeatedly
+const typeVersionCache: Record<string, string> = {}
+
+export async function getTypeVersionId(typeName: string): Promise<string> {
+  if (typeVersionCache[typeName]) return typeVersionCache[typeName]
+
+  const headers = { 'Content-Type': 'application/json', 'X-User-Role': 'Admin' }
+  const res = await (await fetch(`${API_URL}/api/meta/v1/type-definitions`, { headers })).json()
+  const td = res.items?.find((t: { name: string }) => t.name === typeName)
+  if (!td) throw new Error(`Type definition '${typeName}' not found`)
+
+  const versions = await (await fetch(`${API_URL}/api/meta/v1/type-definitions/${td.id}/versions`, { headers })).json()
+  const latest = versions.items?.[versions.items.length - 1]
+  if (!latest) throw new Error(`No versions found for type definition '${typeName}'`)
+
+  typeVersionCache[typeName] = latest.id
+  return latest.id
+}
+
 // Clean up all test data with E2E_ prefix
 export async function cleanupE2EData() {
   const headers = { 'Content-Type': 'application/json', 'X-User-Role': 'SuperAdmin' }
@@ -175,12 +195,12 @@ export async function cleanupE2EData() {
     /* ignore */
   }
 
-  // Clean enums
+  // Clean type definitions (non-system only)
   try {
-    const enums = await (await fetch(`${API_URL}/api/meta/v1/enums`, { headers })).json()
-    for (const e of enums.items || []) {
-      if (e.name.startsWith('E2E_')) {
-        await fetch(`${API_URL}/api/meta/v1/enums/${e.id}`, {
+    const tds = await (await fetch(`${API_URL}/api/meta/v1/type-definitions`, { headers })).json()
+    for (const td of tds.items || []) {
+      if (!td.system && td.name.startsWith('E2E_')) {
+        await fetch(`${API_URL}/api/meta/v1/type-definitions/${td.id}`, {
           method: 'DELETE',
           headers,
         })

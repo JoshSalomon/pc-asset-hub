@@ -33,7 +33,8 @@ type CatalogValidationService struct {
 	etvRepo     repository.EntityTypeVersionRepository
 	attrRepo    repository.AttributeRepository
 	assocRepo   repository.AssociationRepository
-	enumValRepo repository.EnumValueRepository
+	tdvRepo     repository.TypeDefinitionVersionRepository
+	tdRepo      repository.TypeDefinitionRepository
 	linkRepo    repository.AssociationLinkRepository
 	etRepo      repository.EntityTypeRepository
 }
@@ -46,7 +47,8 @@ func NewCatalogValidationService(
 	etvRepo repository.EntityTypeVersionRepository,
 	attrRepo repository.AttributeRepository,
 	assocRepo repository.AssociationRepository,
-	enumValRepo repository.EnumValueRepository,
+	tdvRepo repository.TypeDefinitionVersionRepository,
+	tdRepo repository.TypeDefinitionRepository,
 	linkRepo repository.AssociationLinkRepository,
 	etRepo repository.EntityTypeRepository,
 ) *CatalogValidationService {
@@ -58,7 +60,8 @@ func NewCatalogValidationService(
 		etvRepo:     etvRepo,
 		attrRepo:    attrRepo,
 		assocRepo:   assocRepo,
-		enumValRepo: enumValRepo,
+		tdvRepo:     tdvRepo,
+		tdRepo:      tdRepo,
 		linkRepo:    linkRepo,
 		etRepo:      etRepo,
 	}
@@ -176,20 +179,42 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 			return nil, err
 		}
 
-		// Cache enum values for enum attributes
+		// Resolve type definitions for attributes using shared helper
+		attrTypes, err := ResolveAttrTypeInfo(ctx, attrs, s.tdvRepo, s.tdRepo)
+		if err != nil {
+			return nil, err
+		}
+
+		// Check for corrupted constraints on any attribute's type definition
+		for _, attr := range attrs {
+			ti := attrTypes[attr.ID]
+			if ti != nil && models.IsCorruptedConstraints(ti.Constraints) {
+				validationErrors = append(validationErrors, ValidationError{
+					EntityType:   etName,
+					InstanceName: "(schema)",
+					Field:        attr.Name,
+					Violation:    fmt.Sprintf("type definition for attribute %q has corrupted constraints (raw: %s)", attr.Name, models.ExtractRawConstraints(ti.Constraints)),
+				})
+			}
+		}
+
+		// Build enum allowed values cache from resolved constraints
 		enumAllowed := make(map[string]map[string]bool)
 		for _, attr := range attrs {
-			if attr.Type == models.AttributeTypeEnum && attr.EnumID != "" {
-				if _, cached := enumAllowed[attr.EnumID]; !cached {
-					evs, err := s.enumValRepo.ListByEnum(ctx, attr.EnumID)
-					if err != nil {
-						return nil, err
-					}
+			ti := attrTypes[attr.ID]
+			if ti != nil && ti.BaseType == models.BaseTypeEnum {
+				if _, cached := enumAllowed[attr.TypeDefinitionVersionID]; !cached {
 					allowed := make(map[string]bool)
-					for _, ev := range evs {
-						allowed[ev.Value] = true
+					if vals, ok := ti.Constraints["values"]; ok {
+						if valArr, ok := vals.([]any); ok {
+							for _, v := range valArr {
+								if s, ok := v.(string); ok {
+									allowed[s] = true
+								}
+							}
+						}
 					}
-					enumAllowed[attr.EnumID] = allowed
+					enumAllowed[attr.TypeDefinitionVersionID] = allowed
 				}
 			}
 		}
@@ -218,9 +243,14 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 
 			for _, attr := range attrs {
 				val, hasVal := valueByAttrID[attr.ID]
+				ti := attrTypes[attr.ID]
+				baseType := models.BaseTypeString // default if type info missing
+				if ti != nil {
+					baseType = ti.BaseType
+				}
 
 				// Required check
-				if attr.Required && (!hasVal || IsEmptyValue(attr, val)) {
+				if attr.Required && (!hasVal || IsEmptyValue(baseType, val)) {
 					validationErrors = append(validationErrors, ValidationError{
 						EntityType:   etName,
 						InstanceName: inst.Name,
@@ -231,15 +261,15 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 				}
 
 				// Type check (only if value present)
-				if hasVal && !IsEmptyValue(attr, val) {
-					if attr.Type == models.AttributeTypeEnum && attr.EnumID != "" {
-						allowed := enumAllowed[attr.EnumID]
-						if !allowed[val.ValueEnum] {
+				if hasVal && !IsEmptyValue(baseType, val) {
+					if baseType == models.BaseTypeEnum {
+						allowed := enumAllowed[attr.TypeDefinitionVersionID]
+						if !allowed[val.ValueString] {
 							validationErrors = append(validationErrors, ValidationError{
 								EntityType:   etName,
 								InstanceName: inst.Name,
 								Field:        attr.Name,
-								Violation:    fmt.Sprintf("invalid enum value %q for attribute %q", val.ValueEnum, attr.Name),
+								Violation:    fmt.Sprintf("invalid enum value %q for attribute %q", val.ValueString, attr.Name),
 							})
 						}
 					}
@@ -444,14 +474,14 @@ func CardinalityMinGE1(cardinality string) bool {
 	return min >= 1
 }
 
-func IsEmptyValue(attr *models.Attribute, val *models.InstanceAttributeValue) bool {
-	switch attr.Type {
-	case models.AttributeTypeString:
+func IsEmptyValue(baseType models.BaseType, val *models.InstanceAttributeValue) bool {
+	switch baseType {
+	case models.BaseTypeString, models.BaseTypeURL, models.BaseTypeDate, models.BaseTypeBoolean, models.BaseTypeEnum:
 		return val.ValueString == ""
-	case models.AttributeTypeNumber:
+	case models.BaseTypeNumber, models.BaseTypeInteger:
 		return val.ValueNumber == nil
-	case models.AttributeTypeEnum:
-		return val.ValueEnum == ""
+	case models.BaseTypeList, models.BaseTypeJSON:
+		return val.ValueJSON == ""
 	}
 	return true
 }

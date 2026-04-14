@@ -10,7 +10,7 @@ vi.mock('../api/client', () => ({
     attributes: { list: vi.fn() },
     associations: { list: vi.fn() },
     versions: { list: vi.fn(), diff: vi.fn() },
-    enums: { list: vi.fn() },
+    typeDefinitions: { list: vi.fn() },
   },
   setAuthRole: vi.fn(),
 }))
@@ -32,8 +32,8 @@ const mockVersions = [
   { id: 'v1', entity_type_id: 'et-1', version: 1, description: 'Initial', created_at: '2026-01-01T00:00:00Z' },
 ]
 
-const mockEnums = [
-  { id: 'enum1', name: 'Colors', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+const mockTypeDefinitions = [
+  { id: 'td1', name: 'Colors', base_type: 'enum', system: false, latest_version: 1, latest_version_id: 'tdv-auto', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
 ]
 
 const mockEntityTypes = [
@@ -54,7 +54,7 @@ function TestComponent({ entityTypeId, initialTab }: { entityTypeId?: string; in
       <span data-testid="assocs-loading">{String(data.assocsLoading)}</span>
       <span data-testid="versions-count">{data.versions.length}</span>
       <span data-testid="versions-loading">{String(data.versionsLoading)}</span>
-      <span data-testid="enums-count">{data.enums.length}</span>
+      <span data-testid="td-count">{data.typeDefinitions.length}</span>
       <span data-testid="entity-types-count">{data.entityTypes.length}</span>
       <span data-testid="active-tab">{String(data.activeTab)}</span>
       <button onClick={() => data.setActiveTab('attributes')}>Go Attributes</button>
@@ -93,14 +93,14 @@ test('T-20.02: useEntityTypeData shows error on load failure', async () => {
 test('T-20.03: useEntityTypeData loads attributes on tab switch', async () => {
   ;(api.entityTypes.get as Mock).mockResolvedValue(mockEntityType)
   ;(api.attributes.list as Mock).mockResolvedValue({ items: mockAttributes, total: 1 })
-  ;(api.enums.list as Mock).mockResolvedValue({ items: mockEnums, total: 1 })
+  ;(api.typeDefinitions.list as Mock).mockResolvedValue({ items: mockTypeDefinitions, total: 1 })
 
   render(<TestComponent entityTypeId="et-1" />)
   await expect.element(page.getByTestId('et-name')).toHaveTextContent('MLModel')
 
   await page.getByRole('button', { name: 'Go Attributes' }).click()
   await expect.element(page.getByTestId('attrs-count')).toHaveTextContent('1')
-  await expect.element(page.getByTestId('enums-count')).toHaveTextContent('1')
+  await expect.element(page.getByTestId('td-count')).toHaveTextContent('1')
 })
 
 // T-20.04: Loads associations when switching to associations tab
@@ -133,7 +133,7 @@ test('T-20.05: useEntityTypeData loads versions on tab switch', async () => {
 test('T-20.06: useEntityTypeData respects initial tab', async () => {
   ;(api.entityTypes.get as Mock).mockResolvedValue(mockEntityType)
   ;(api.attributes.list as Mock).mockResolvedValue({ items: mockAttributes, total: 1 })
-  ;(api.enums.list as Mock).mockResolvedValue({ items: mockEnums, total: 1 })
+  ;(api.typeDefinitions.list as Mock).mockResolvedValue({ items: mockTypeDefinitions, total: 1 })
 
   render(<TestComponent entityTypeId="et-1" initialTab="attributes" />)
   await expect.element(page.getByTestId('active-tab')).toHaveTextContent('attributes')

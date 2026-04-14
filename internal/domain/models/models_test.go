@@ -31,15 +31,71 @@ func TestEntityTypeVersionInstantiation(t *testing.T) {
 	}
 }
 
-func TestAttributeTypes(t *testing.T) {
-	if AttributeTypeString != "string" {
-		t.Fatal("AttributeTypeString should be 'string'")
+func TestBaseTypes(t *testing.T) {
+	if BaseTypeString != "string" {
+		t.Fatal("BaseTypeString should be 'string'")
 	}
-	if AttributeTypeNumber != "number" {
-		t.Fatal("AttributeTypeNumber should be 'number'")
+	if BaseTypeInteger != "integer" {
+		t.Fatal("BaseTypeInteger should be 'integer'")
 	}
-	if AttributeTypeEnum != "enum" {
-		t.Fatal("AttributeTypeEnum should be 'enum'")
+	if BaseTypeNumber != "number" {
+		t.Fatal("BaseTypeNumber should be 'number'")
+	}
+	if BaseTypeBoolean != "boolean" {
+		t.Fatal("BaseTypeBoolean should be 'boolean'")
+	}
+	if BaseTypeDate != "date" {
+		t.Fatal("BaseTypeDate should be 'date'")
+	}
+	if BaseTypeURL != "url" {
+		t.Fatal("BaseTypeURL should be 'url'")
+	}
+	if BaseTypeEnum != "enum" {
+		t.Fatal("BaseTypeEnum should be 'enum'")
+	}
+	if BaseTypeList != "list" {
+		t.Fatal("BaseTypeList should be 'list'")
+	}
+	if BaseTypeJSON != "json" {
+		t.Fatal("BaseTypeJSON should be 'json'")
+	}
+	if !ValidBaseTypes[BaseTypeString] {
+		t.Fatal("BaseTypeString should be in ValidBaseTypes")
+	}
+}
+
+func TestIsCorruptedConstraints(t *testing.T) {
+	// Normal constraints — not corrupted
+	normal := map[string]any{"max_length": float64(12)}
+	if IsCorruptedConstraints(normal) {
+		t.Fatal("normal constraints should not be corrupted")
+	}
+
+	// Empty constraints — not corrupted
+	empty := map[string]any{}
+	if IsCorruptedConstraints(empty) {
+		t.Fatal("empty constraints should not be corrupted")
+	}
+
+	// Corrupted constraints — has _raw key
+	corrupted := map[string]any{"_raw": "not{valid json"}
+	if !IsCorruptedConstraints(corrupted) {
+		t.Fatal("constraints with _raw should be detected as corrupted")
+	}
+}
+
+func TestExtractRawConstraints(t *testing.T) {
+	corrupted := map[string]any{"_raw": "not{valid json"}
+	raw := ExtractRawConstraints(corrupted)
+	if raw != "not{valid json" {
+		t.Fatalf("expected raw string, got %q", raw)
+	}
+
+	// Non-corrupted returns empty
+	normal := map[string]any{"max_length": float64(12)}
+	raw = ExtractRawConstraints(normal)
+	if raw != "" {
+		t.Fatalf("expected empty string for non-corrupted, got %q", raw)
 	}
 }
 

@@ -39,39 +39,47 @@ func setupValidationIntegration(t *testing.T) (
 	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
 	attrRepo := repository.NewAttributeGormRepo(db)
 	assocRepo := repository.NewAssociationGormRepo(db)
-	enumValRepo := repository.NewEnumValueGormRepo(db)
+	tdvRepo := repository.NewTypeDefinitionVersionGormRepo(db)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
 	linkRepo := repository.NewAssociationLinkGormRepo(db)
 	etRepo := repository.NewEntityTypeGormRepo(db)
 	cvRepo := repository.NewCatalogVersionGormRepo(db)
 
+	// Seed system type definitions for validation
+	now := time.Now()
+	tdString := &models.TypeDefinition{ID: "sys-td-string", Name: "string", BaseType: models.BaseTypeString, System: true, CreatedAt: now, UpdatedAt: now}
+	require.NoError(t, tdRepo.Create(ctx, tdString))
+	tdvString := &models.TypeDefinitionVersion{ID: "sys-tdv-string", TypeDefinitionID: tdString.ID, VersionNumber: 1, Constraints: map[string]any{}, CreatedAt: now}
+	require.NoError(t, tdvRepo.Create(ctx, tdvString))
+
 	svc := operational.NewCatalogValidationService(
 		catRepo, instRepo, iavRepo, pinRepo, etvRepo,
-		attrRepo, assocRepo, enumValRepo, linkRepo, etRepo,
+		attrRepo, assocRepo, tdvRepo, tdRepo, linkRepo, etRepo,
 	)
 
 	// Create entity type "Server"
 	etID := newID()
-	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: etID, Name: "Server", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: etID, Name: "Server", CreatedAt: now, UpdatedAt: now}))
 
 	// Create entity type version
 	etvID := newID()
-	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: etID, Version: 1, CreatedAt: time.Now()}))
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: etID, Version: 1, CreatedAt: now}))
 
 	// Create required attribute "hostname"
 	attrID := newID()
 	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{
-		ID: attrID, EntityTypeVersionID: etvID, Name: "hostname", Type: models.AttributeTypeString, Required: true, Ordinal: 1,
+		ID: attrID, EntityTypeVersionID: etvID, Name: "hostname", TypeDefinitionVersionID: tdvString.ID, Required: true, Ordinal: 1,
 	}))
 
 	// Create optional attribute "description"
 	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{
-		ID: newID(), EntityTypeVersionID: etvID, Name: "description", Type: models.AttributeTypeString, Required: false, Ordinal: 2,
+		ID: newID(), EntityTypeVersionID: etvID, Name: "description", TypeDefinitionVersionID: tdvString.ID, Required: false, Ordinal: 2,
 	}))
 
 	// Create catalog version + pin
 	cvID := newID()
 	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{
-		ID: cvID, VersionLabel: "v1", LifecycleStage: "development", CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		ID: cvID, VersionLabel: "v1", LifecycleStage: "development", CreatedAt: now, UpdatedAt: now,
 	}))
 	require.NoError(t, pinRepo.Create(ctx, &models.CatalogVersionPin{ID: newID(), CatalogVersionID: cvID, EntityTypeVersionID: etvID}))
 
@@ -79,7 +87,7 @@ func setupValidationIntegration(t *testing.T) (
 	catalogID := newID()
 	require.NoError(t, catRepo.Create(ctx, &models.Catalog{
 		ID: catalogID, Name: "test-catalog", CatalogVersionID: cvID,
-		ValidationStatus: models.ValidationStatusDraft, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		ValidationStatus: models.ValidationStatusDraft, CreatedAt: now, UpdatedAt: now,
 	}))
 
 	return svc, ctx, catalogID, etID, etvID, attrID, catRepo, instRepo, iavRepo, linkRepo
@@ -132,6 +140,7 @@ func TestT15_27_IntegrationMissingRequired(t *testing.T) {
 func TestT15_28_IntegrationInvalidEnum(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	ctx := context.Background()
+	now := time.Now()
 
 	catRepo := repository.NewCatalogGormRepo(db)
 	instRepo := repository.NewEntityInstanceGormRepo(db)
@@ -140,47 +149,48 @@ func TestT15_28_IntegrationInvalidEnum(t *testing.T) {
 	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
 	attrRepo := repository.NewAttributeGormRepo(db)
 	assocRepo := repository.NewAssociationGormRepo(db)
-	enumValRepo := repository.NewEnumValueGormRepo(db)
+	tdvRepo := repository.NewTypeDefinitionVersionGormRepo(db)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
 	linkRepo := repository.NewAssociationLinkGormRepo(db)
 	etRepo := repository.NewEntityTypeGormRepo(db)
 	cvRepo := repository.NewCatalogVersionGormRepo(db)
 
+	// Create enum type definition with values
+	tdEnum := &models.TypeDefinition{ID: newID(), Name: "status", BaseType: models.BaseTypeEnum, CreatedAt: now, UpdatedAt: now}
+	require.NoError(t, tdRepo.Create(ctx, tdEnum))
+	tdvEnum := &models.TypeDefinitionVersion{ID: newID(), TypeDefinitionID: tdEnum.ID, VersionNumber: 1,
+		Constraints: map[string]any{"values": []any{"active", "inactive"}}, CreatedAt: now}
+	require.NoError(t, tdvRepo.Create(ctx, tdvEnum))
+
 	svc := operational.NewCatalogValidationService(
 		catRepo, instRepo, iavRepo, pinRepo, etvRepo,
-		attrRepo, assocRepo, enumValRepo, linkRepo, etRepo,
+		attrRepo, assocRepo, tdvRepo, tdRepo, linkRepo, etRepo,
 	)
 
 	// Create entity type + version
 	etID := newID()
-	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: etID, Name: "Server", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: etID, Name: "Server", CreatedAt: now, UpdatedAt: now}))
 	etvID := newID()
-	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: etID, Version: 1, CreatedAt: time.Now()}))
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: etID, Version: 1, CreatedAt: now}))
 
-	// Create enum + values
-	enumRepo := repository.NewEnumGormRepo(db)
-	enumID := newID()
-	require.NoError(t, enumRepo.Create(ctx, &models.Enum{ID: enumID, Name: "Status", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
-	require.NoError(t, enumValRepo.Create(ctx, &models.EnumValue{ID: newID(), EnumID: enumID, Value: "active", Ordinal: 1}))
-	require.NoError(t, enumValRepo.Create(ctx, &models.EnumValue{ID: newID(), EnumID: enumID, Value: "inactive", Ordinal: 2}))
-
-	// Create enum attribute
+	// Create enum attribute referencing the type definition version
 	attrID := newID()
 	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{
-		ID: attrID, EntityTypeVersionID: etvID, Name: "status", Type: models.AttributeTypeEnum, EnumID: enumID, Required: true, Ordinal: 1,
+		ID: attrID, EntityTypeVersionID: etvID, Name: "status", TypeDefinitionVersionID: tdvEnum.ID, Required: true, Ordinal: 1,
 	}))
 
 	// Create CV + pin + catalog
 	cvID := newID()
-	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{ID: cvID, VersionLabel: "v1", LifecycleStage: "development", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{ID: cvID, VersionLabel: "v1", LifecycleStage: "development", CreatedAt: now, UpdatedAt: now}))
 	require.NoError(t, pinRepo.Create(ctx, &models.CatalogVersionPin{ID: newID(), CatalogVersionID: cvID, EntityTypeVersionID: etvID}))
 	catalogID := newID()
-	require.NoError(t, catRepo.Create(ctx, &models.Catalog{ID: catalogID, Name: "enum-test", CatalogVersionID: cvID, ValidationStatus: models.ValidationStatusDraft, CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, catRepo.Create(ctx, &models.Catalog{ID: catalogID, Name: "enum-test", CatalogVersionID: cvID, ValidationStatus: models.ValidationStatusDraft, CreatedAt: now, UpdatedAt: now}))
 
-	// Create instance with invalid enum value
+	// Create instance with invalid enum value (stored in ValueString)
 	instID := newID()
-	require.NoError(t, instRepo.Create(ctx, &models.EntityInstance{ID: instID, EntityTypeID: etID, CatalogID: catalogID, Name: "server-1", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, instRepo.Create(ctx, &models.EntityInstance{ID: instID, EntityTypeID: etID, CatalogID: catalogID, Name: "server-1", Version: 1, CreatedAt: now, UpdatedAt: now}))
 	require.NoError(t, iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{
-		{ID: newID(), InstanceID: instID, InstanceVersion: 1, AttributeID: attrID, ValueEnum: "bogus"},
+		{ID: newID(), InstanceID: instID, InstanceVersion: 1, AttributeID: attrID, ValueString: "bogus"},
 	}))
 
 	result, err := svc.Validate(ctx, "enum-test")

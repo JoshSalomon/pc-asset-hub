@@ -83,11 +83,11 @@ export default function AddChildModal({
       setChildSchemaAttrs(snapshot.attributes || [])
       const cache: Record<string, string[]> = {}
       for (const attr of snapshot.attributes || []) {
-        if (attr.type === 'enum' && attr.enum_id && !cache[attr.enum_id]) {
-          try {
-            const res = await api.enums.listValues(attr.enum_id)
-            cache[attr.enum_id] = (res.items || []).map((v: { value: string }) => v.value)
-          } catch { /* ignore */ }
+        if (attr.base_type === 'enum' && attr.type_definition_version_id) {
+          const constraintValues = (attr.constraints?.values as string[]) || []
+          if (constraintValues.length > 0) {
+            cache[attr.type_definition_version_id] = constraintValues
+          }
         }
       }
       setChildEnumValues(cache)

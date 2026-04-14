@@ -162,108 +162,75 @@ func TestT1_08_DeleteEntityTypeCascades(t *testing.T) {
 	assert.True(t, domainerrors.IsNotFound(err))
 }
 
-// === Enums (T-1.09 through T-1.14) ===
+// === Type Definitions ===
 
-func TestT1_09_CreateEnumWithValues(t *testing.T) {
+func TestT31_CreateTypeDefinition(t *testing.T) {
 	db := testutil.NewTestDB(t)
-	enumRepo := repository.NewEnumGormRepo(db)
-	evRepo := repository.NewEnumValueGormRepo(db)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	tdvRepo := repository.NewTypeDefinitionVersionGormRepo(db)
 	ctx := context.Background()
 
-	e := &models.Enum{ID: newID(), Name: "Status", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	require.NoError(t, enumRepo.Create(ctx, e))
+	now := time.Now()
+	td := &models.TypeDefinition{ID: newID(), Name: "status", BaseType: "enum", CreatedAt: now, UpdatedAt: now}
+	require.NoError(t, tdRepo.Create(ctx, td))
 
-	for i, v := range []string{"active", "inactive", "deprecated"} {
-		require.NoError(t, evRepo.Create(ctx, &models.EnumValue{ID: newID(), EnumID: e.ID, Value: v, Ordinal: i}))
-	}
+	tdv := &models.TypeDefinitionVersion{ID: newID(), TypeDefinitionID: td.ID, VersionNumber: 1, Constraints: map[string]any{"values": []any{"active", "inactive"}}, CreatedAt: now}
+	require.NoError(t, tdvRepo.Create(ctx, tdv))
 
-	values, err := evRepo.ListByEnum(ctx, e.ID)
+	found, err := tdRepo.GetByID(ctx, td.ID)
 	require.NoError(t, err)
-	assert.Len(t, values, 3)
-	assert.Equal(t, "active", values[0].Value)
-	assert.Equal(t, 0, values[0].Ordinal)
+	assert.Equal(t, "status", found.Name)
+
+	versions, err := tdvRepo.ListByTypeDefinition(ctx, td.ID)
+	require.NoError(t, err)
+	assert.Len(t, versions, 1)
+	assert.Equal(t, 1, versions[0].VersionNumber)
 }
 
-func TestT1_10_CreateDuplicateEnumName(t *testing.T) {
+func TestT31_DuplicateTypeDefinitionName(t *testing.T) {
 	db := testutil.NewTestDB(t)
-	repo := repository.NewEnumGormRepo(db)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
 	ctx := context.Background()
+	now := time.Now()
 
-	require.NoError(t, repo.Create(ctx, &models.Enum{ID: newID(), Name: "Status", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
-	err := repo.Create(ctx, &models.Enum{ID: newID(), Name: "Status", CreatedAt: time.Now(), UpdatedAt: time.Now()})
+	require.NoError(t, tdRepo.Create(ctx, &models.TypeDefinition{ID: newID(), Name: "status", BaseType: "enum", CreatedAt: now, UpdatedAt: now}))
+	err := tdRepo.Create(ctx, &models.TypeDefinition{ID: newID(), Name: "status", BaseType: "enum", CreatedAt: now, UpdatedAt: now})
 	assert.True(t, domainerrors.IsConflict(err))
 }
 
-func TestT1_11_AddValueToEnum(t *testing.T) {
+func TestT31_TypeDefinitionVersions(t *testing.T) {
 	db := testutil.NewTestDB(t)
-	enumRepo := repository.NewEnumGormRepo(db)
-	evRepo := repository.NewEnumValueGormRepo(db)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	tdvRepo := repository.NewTypeDefinitionVersionGormRepo(db)
 	ctx := context.Background()
+	now := time.Now()
 
-	e := &models.Enum{ID: newID(), Name: "Status", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	require.NoError(t, enumRepo.Create(ctx, e))
-	require.NoError(t, evRepo.Create(ctx, &models.EnumValue{ID: newID(), EnumID: e.ID, Value: "active", Ordinal: 0}))
-	require.NoError(t, evRepo.Create(ctx, &models.EnumValue{ID: newID(), EnumID: e.ID, Value: "inactive", Ordinal: 1}))
+	td := &models.TypeDefinition{ID: newID(), Name: "guardrailID", BaseType: "string", CreatedAt: now, UpdatedAt: now}
+	require.NoError(t, tdRepo.Create(ctx, td))
+	require.NoError(t, tdvRepo.Create(ctx, &models.TypeDefinitionVersion{ID: newID(), TypeDefinitionID: td.ID, VersionNumber: 1, Constraints: map[string]any{"max_length": float64(12)}, CreatedAt: now}))
+	require.NoError(t, tdvRepo.Create(ctx, &models.TypeDefinitionVersion{ID: newID(), TypeDefinitionID: td.ID, VersionNumber: 2, Constraints: map[string]any{"max_length": float64(16)}, CreatedAt: now}))
 
-	values, err := evRepo.ListByEnum(ctx, e.ID)
+	latest, err := tdvRepo.GetLatestByTypeDefinition(ctx, td.ID)
 	require.NoError(t, err)
-	assert.Len(t, values, 2)
+	assert.Equal(t, 2, latest.VersionNumber)
+
+	versions, err := tdvRepo.ListByTypeDefinition(ctx, td.ID)
+	require.NoError(t, err)
+	assert.Len(t, versions, 2)
 }
 
-func TestT1_12_RemoveValueFromEnum(t *testing.T) {
+func TestT31_DeleteTypeDefinition(t *testing.T) {
 	db := testutil.NewTestDB(t)
-	enumRepo := repository.NewEnumGormRepo(db)
-	evRepo := repository.NewEnumValueGormRepo(db)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
 	ctx := context.Background()
+	now := time.Now()
 
-	e := &models.Enum{ID: newID(), Name: "Status", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	require.NoError(t, enumRepo.Create(ctx, e))
+	td := &models.TypeDefinition{ID: newID(), Name: "test", BaseType: "string", CreatedAt: now, UpdatedAt: now}
+	require.NoError(t, tdRepo.Create(ctx, td))
+	require.NoError(t, tdRepo.Delete(ctx, td.ID))
 
-	v1ID := newID()
-	require.NoError(t, evRepo.Create(ctx, &models.EnumValue{ID: v1ID, EnumID: e.ID, Value: "active", Ordinal: 0}))
-	require.NoError(t, evRepo.Create(ctx, &models.EnumValue{ID: newID(), EnumID: e.ID, Value: "inactive", Ordinal: 1}))
-
-	require.NoError(t, evRepo.Delete(ctx, v1ID))
-	values, err := evRepo.ListByEnum(ctx, e.ID)
-	require.NoError(t, err)
-	assert.Len(t, values, 1)
-	assert.Equal(t, "inactive", values[0].Value)
-}
-
-func TestT1_13_ReorderEnumValues(t *testing.T) {
-	db := testutil.NewTestDB(t)
-	enumRepo := repository.NewEnumGormRepo(db)
-	evRepo := repository.NewEnumValueGormRepo(db)
-	ctx := context.Background()
-
-	e := &models.Enum{ID: newID(), Name: "Status", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	require.NoError(t, enumRepo.Create(ctx, e))
-
-	id1, id2 := newID(), newID()
-	require.NoError(t, evRepo.Create(ctx, &models.EnumValue{ID: id1, EnumID: e.ID, Value: "active", Ordinal: 0}))
-	require.NoError(t, evRepo.Create(ctx, &models.EnumValue{ID: id2, EnumID: e.ID, Value: "inactive", Ordinal: 1}))
-
-	// Reverse order
-	require.NoError(t, evRepo.Reorder(ctx, e.ID, []string{id2, id1}))
-	values, err := evRepo.ListByEnum(ctx, e.ID)
-	require.NoError(t, err)
-	assert.Equal(t, "inactive", values[0].Value)
-	assert.Equal(t, "active", values[1].Value)
-}
-
-func TestT1_14_CreateDuplicateEnumValue(t *testing.T) {
-	db := testutil.NewTestDB(t)
-	enumRepo := repository.NewEnumGormRepo(db)
-	evRepo := repository.NewEnumValueGormRepo(db)
-	ctx := context.Background()
-
-	e := &models.Enum{ID: newID(), Name: "Status", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	require.NoError(t, enumRepo.Create(ctx, e))
-	require.NoError(t, evRepo.Create(ctx, &models.EnumValue{ID: newID(), EnumID: e.ID, Value: "active", Ordinal: 0}))
-
-	err := evRepo.Create(ctx, &models.EnumValue{ID: newID(), EnumID: e.ID, Value: "active", Ordinal: 1})
-	assert.Error(t, err)
-	assert.True(t, domainerrors.IsConflict(err))
+	_, err := tdRepo.GetByID(ctx, td.ID)
+	assert.True(t, domainerrors.IsNotFound(err))
 }
 
 // TD-59: GetLatestByEntityTypes batch query
@@ -312,12 +279,12 @@ func TestT1_15_CreateAttributeString(t *testing.T) {
 	etvID := newID()
 	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: etID, Version: 1, CreatedAt: time.Now()}))
 
-	attr := &models.Attribute{ID: newID(), EntityTypeVersionID: etvID, Name: "endpoint", Description: "API endpoint", Type: models.AttributeTypeString, Ordinal: 0}
+	attr := &models.Attribute{ID: newID(), EntityTypeVersionID: etvID, Name: "endpoint", Description: "API endpoint", TypeDefinitionVersionID: "tdv-string", Ordinal: 0}
 	require.NoError(t, attrRepo.Create(ctx, attr))
 
 	found, err := attrRepo.GetByID(ctx, attr.ID)
 	require.NoError(t, err)
-	assert.Equal(t, models.AttributeTypeString, found.Type)
+	assert.Equal(t, "tdv-string", found.TypeDefinitionVersionID)
 }
 
 func TestT1_16_CreateAttributeNumber(t *testing.T) {
@@ -332,37 +299,32 @@ func TestT1_16_CreateAttributeNumber(t *testing.T) {
 	etvID := newID()
 	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: etID, Version: 1, CreatedAt: time.Now()}))
 
-	attr := &models.Attribute{ID: newID(), EntityTypeVersionID: etvID, Name: "max_tokens", Type: models.AttributeTypeNumber, Ordinal: 0}
+	attr := &models.Attribute{ID: newID(), EntityTypeVersionID: etvID, Name: "max_tokens", TypeDefinitionVersionID: "tdv-number", Ordinal: 0}
 	require.NoError(t, attrRepo.Create(ctx, attr))
 
 	found, err := attrRepo.GetByID(ctx, attr.ID)
 	require.NoError(t, err)
-	assert.Equal(t, models.AttributeTypeNumber, found.Type)
+	assert.Equal(t, "tdv-number", found.TypeDefinitionVersionID)
 }
 
-func TestT1_17_CreateAttributeEnum(t *testing.T) {
+func TestT1_17_CreateAttributeWithTypeRef(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	etRepo := repository.NewEntityTypeGormRepo(db)
 	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
 	attrRepo := repository.NewAttributeGormRepo(db)
-	enumRepo := repository.NewEnumGormRepo(db)
 	ctx := context.Background()
-
-	enumID := newID()
-	require.NoError(t, enumRepo.Create(ctx, &models.Enum{ID: enumID, Name: "Status", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
 
 	etID := newID()
 	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: etID, Name: "Model", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
 	etvID := newID()
 	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: etID, Version: 1, CreatedAt: time.Now()}))
 
-	attr := &models.Attribute{ID: newID(), EntityTypeVersionID: etvID, Name: "status", Type: models.AttributeTypeEnum, EnumID: enumID, Ordinal: 0}
+	attr := &models.Attribute{ID: newID(), EntityTypeVersionID: etvID, Name: "status", TypeDefinitionVersionID: "tdv-enum-status", Ordinal: 0}
 	require.NoError(t, attrRepo.Create(ctx, attr))
 
 	found, err := attrRepo.GetByID(ctx, attr.ID)
 	require.NoError(t, err)
-	assert.Equal(t, models.AttributeTypeEnum, found.Type)
-	assert.Equal(t, enumID, found.EnumID)
+	assert.Equal(t, "tdv-enum-status", found.TypeDefinitionVersionID)
 }
 
 func TestT1_18_CreateDuplicateAttributeName(t *testing.T) {
@@ -377,8 +339,8 @@ func TestT1_18_CreateDuplicateAttributeName(t *testing.T) {
 	etvID := newID()
 	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: etID, Version: 1, CreatedAt: time.Now()}))
 
-	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: etvID, Name: "endpoint", Type: models.AttributeTypeString, Ordinal: 0}))
-	err := attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: etvID, Name: "endpoint", Type: models.AttributeTypeString, Ordinal: 1})
+	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: etvID, Name: "endpoint", TypeDefinitionVersionID: "tdv-string", Ordinal: 0}))
+	err := attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: etvID, Name: "endpoint", TypeDefinitionVersionID: "tdv-string", Ordinal: 1})
 	assert.True(t, domainerrors.IsConflict(err))
 }
 
@@ -396,8 +358,8 @@ func TestT1_19_SameAttributeNameDifferentVersions(t *testing.T) {
 	etvID2 := newID()
 	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID2, EntityTypeID: etID, Version: 2, CreatedAt: time.Now()}))
 
-	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: etvID1, Name: "endpoint", Type: models.AttributeTypeString, Ordinal: 0}))
-	err := attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: etvID2, Name: "endpoint", Type: models.AttributeTypeString, Ordinal: 0})
+	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: etvID1, Name: "endpoint", TypeDefinitionVersionID: "tdv-string", Ordinal: 0}))
+	err := attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: etvID2, Name: "endpoint", TypeDefinitionVersionID: "tdv-string", Ordinal: 0})
 	assert.NoError(t, err) // Different versions, same name should be allowed
 }
 
@@ -414,9 +376,9 @@ func TestT1_20_ReorderAttributes(t *testing.T) {
 	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: etID, Version: 1, CreatedAt: time.Now()}))
 
 	id1, id2, id3 := newID(), newID(), newID()
-	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: id1, EntityTypeVersionID: etvID, Name: "a", Type: models.AttributeTypeString, Ordinal: 0}))
-	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: id2, EntityTypeVersionID: etvID, Name: "b", Type: models.AttributeTypeString, Ordinal: 1}))
-	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: id3, EntityTypeVersionID: etvID, Name: "c", Type: models.AttributeTypeString, Ordinal: 2}))
+	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: id1, EntityTypeVersionID: etvID, Name: "a", TypeDefinitionVersionID: "tdv-string", Ordinal: 0}))
+	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: id2, EntityTypeVersionID: etvID, Name: "b", TypeDefinitionVersionID: "tdv-string", Ordinal: 1}))
+	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: id3, EntityTypeVersionID: etvID, Name: "c", TypeDefinitionVersionID: "tdv-string", Ordinal: 2}))
 
 	require.NoError(t, attrRepo.Reorder(ctx, etvID, []string{id3, id1, id2}))
 
@@ -441,8 +403,8 @@ func TestT1_21_BulkCopyAttributes(t *testing.T) {
 	v2ID := newID()
 	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: v2ID, EntityTypeID: etID, Version: 2, CreatedAt: time.Now()}))
 
-	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: v1ID, Name: "a", Type: models.AttributeTypeString, Ordinal: 0}))
-	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: v1ID, Name: "b", Type: models.AttributeTypeNumber, Ordinal: 1}))
+	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: v1ID, Name: "a", TypeDefinitionVersionID: "tdv-string", Ordinal: 0}))
+	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: v1ID, Name: "b", TypeDefinitionVersionID: "tdv-number", Ordinal: 1}))
 
 	require.NoError(t, attrRepo.BulkCopyToVersion(ctx, v1ID, v2ID))
 
@@ -454,26 +416,29 @@ func TestT1_21_BulkCopyAttributes(t *testing.T) {
 	assert.NotEqual(t, v1Attrs[0].ID, v2Attrs[0].ID)
 }
 
-func TestT1_22_DeleteEnumReferencedByAttribute(t *testing.T) {
+func TestT31_DeleteTypeDefReferencedByAttribute(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	etRepo := repository.NewEntityTypeGormRepo(db)
 	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
 	attrRepo := repository.NewAttributeGormRepo(db)
-	enumRepo := repository.NewEnumGormRepo(db)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	tdvRepo := repository.NewTypeDefinitionVersionGormRepo(db)
 	ctx := context.Background()
+	now := time.Now()
 
-	enumID := newID()
-	require.NoError(t, enumRepo.Create(ctx, &models.Enum{ID: enumID, Name: "Status", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	td := &models.TypeDefinition{ID: newID(), Name: "status", BaseType: "enum", CreatedAt: now, UpdatedAt: now}
+	require.NoError(t, tdRepo.Create(ctx, td))
+	tdv := &models.TypeDefinitionVersion{ID: newID(), TypeDefinitionID: td.ID, VersionNumber: 1, Constraints: map[string]any{}, CreatedAt: now}
+	require.NoError(t, tdvRepo.Create(ctx, tdv))
 
 	etID := newID()
-	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: etID, Name: "Model", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: etID, Name: "Model", CreatedAt: now, UpdatedAt: now}))
 	etvID := newID()
-	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: etID, Version: 1, CreatedAt: time.Now()}))
-	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: etvID, Name: "status", Type: models.AttributeTypeEnum, EnumID: enumID, Ordinal: 0}))
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: etID, Version: 1, CreatedAt: now}))
+	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: etvID, Name: "status", TypeDefinitionVersionID: tdv.ID, Ordinal: 0}))
 
-	err := enumRepo.Delete(ctx, enumID)
+	err := tdRepo.Delete(ctx, td.ID)
 	assert.Error(t, err)
-	assert.True(t, domainerrors.IsReferencedEnum(err))
 }
 
 func TestT1_23_ListAttributesByVersion(t *testing.T) {
@@ -490,8 +455,8 @@ func TestT1_23_ListAttributesByVersion(t *testing.T) {
 	v2ID := newID()
 	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: v2ID, EntityTypeID: etID, Version: 2, CreatedAt: time.Now()}))
 
-	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: v1ID, Name: "a", Type: models.AttributeTypeString, Ordinal: 0}))
-	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: v2ID, Name: "b", Type: models.AttributeTypeString, Ordinal: 0}))
+	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: v1ID, Name: "a", TypeDefinitionVersionID: "tdv-string", Ordinal: 0}))
+	require.NoError(t, attrRepo.Create(ctx, &models.Attribute{ID: newID(), EntityTypeVersionID: v2ID, Name: "b", TypeDefinitionVersionID: "tdv-string", Ordinal: 0}))
 
 	v1Attrs, err := attrRepo.ListByVersion(ctx, v1ID)
 	require.NoError(t, err)
@@ -1192,4 +1157,347 @@ func TestGetByIDs(t *testing.T) {
 	partial, err := etvRepo.GetByIDs(ctx, []string{v1.ID, "nonexistent"})
 	require.NoError(t, err)
 	assert.Len(t, partial, 1)
+}
+
+// === CatalogVersionTypePinGormRepo ===
+
+func TestCVTypePin_CreateAndGetByID(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	tdvRepo := repository.NewTypeDefinitionVersionGormRepo(db)
+	pinRepo := repository.NewCatalogVersionTypePinGormRepo(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	// Create required parent objects
+	cvID := newID()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{ID: cvID, VersionLabel: "tp-v1.0", LifecycleStage: models.LifecycleStageDevelopment, CreatedAt: now, UpdatedAt: now}))
+
+	tdID := newID()
+	require.NoError(t, tdRepo.Create(ctx, &models.TypeDefinition{ID: tdID, Name: "tp-status", BaseType: "enum", CreatedAt: now, UpdatedAt: now}))
+	tdvID := newID()
+	require.NoError(t, tdvRepo.Create(ctx, &models.TypeDefinitionVersion{ID: tdvID, TypeDefinitionID: tdID, VersionNumber: 1, Constraints: map[string]any{}, CreatedAt: now}))
+
+	pinID := newID()
+	pin := &models.CatalogVersionTypePin{ID: pinID, CatalogVersionID: cvID, TypeDefinitionVersionID: tdvID}
+	require.NoError(t, pinRepo.Create(ctx, pin))
+
+	found, err := pinRepo.GetByID(ctx, pinID)
+	require.NoError(t, err)
+	assert.Equal(t, pinID, found.ID)
+	assert.Equal(t, cvID, found.CatalogVersionID)
+	assert.Equal(t, tdvID, found.TypeDefinitionVersionID)
+}
+
+func TestCVTypePin_GetByID_NotFound(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	pinRepo := repository.NewCatalogVersionTypePinGormRepo(db)
+	ctx := context.Background()
+
+	_, err := pinRepo.GetByID(ctx, "nonexistent")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestCVTypePin_ListByCatalogVersion(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	tdvRepo := repository.NewTypeDefinitionVersionGormRepo(db)
+	pinRepo := repository.NewCatalogVersionTypePinGormRepo(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	cvID := newID()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{ID: cvID, VersionLabel: "tpl-v1.0", LifecycleStage: models.LifecycleStageDevelopment, CreatedAt: now, UpdatedAt: now}))
+
+	td1ID := newID()
+	require.NoError(t, tdRepo.Create(ctx, &models.TypeDefinition{ID: td1ID, Name: "tpl-type1", BaseType: "string", CreatedAt: now, UpdatedAt: now}))
+	tdv1ID := newID()
+	require.NoError(t, tdvRepo.Create(ctx, &models.TypeDefinitionVersion{ID: tdv1ID, TypeDefinitionID: td1ID, VersionNumber: 1, Constraints: map[string]any{}, CreatedAt: now}))
+
+	td2ID := newID()
+	require.NoError(t, tdRepo.Create(ctx, &models.TypeDefinition{ID: td2ID, Name: "tpl-type2", BaseType: "integer", CreatedAt: now, UpdatedAt: now}))
+	tdv2ID := newID()
+	require.NoError(t, tdvRepo.Create(ctx, &models.TypeDefinitionVersion{ID: tdv2ID, TypeDefinitionID: td2ID, VersionNumber: 1, Constraints: map[string]any{}, CreatedAt: now}))
+
+	require.NoError(t, pinRepo.Create(ctx, &models.CatalogVersionTypePin{ID: newID(), CatalogVersionID: cvID, TypeDefinitionVersionID: tdv1ID}))
+	require.NoError(t, pinRepo.Create(ctx, &models.CatalogVersionTypePin{ID: newID(), CatalogVersionID: cvID, TypeDefinitionVersionID: tdv2ID}))
+
+	pins, err := pinRepo.ListByCatalogVersion(ctx, cvID)
+	require.NoError(t, err)
+	assert.Len(t, pins, 2)
+
+	// Empty result for non-existent CV
+	pins2, err := pinRepo.ListByCatalogVersion(ctx, "nonexistent")
+	require.NoError(t, err)
+	assert.Len(t, pins2, 0)
+}
+
+func TestCVTypePin_DuplicateCreate(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	tdvRepo := repository.NewTypeDefinitionVersionGormRepo(db)
+	pinRepo := repository.NewCatalogVersionTypePinGormRepo(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	cvID := newID()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{ID: cvID, VersionLabel: "tpd-v1.0", LifecycleStage: models.LifecycleStageDevelopment, CreatedAt: now, UpdatedAt: now}))
+	tdID := newID()
+	require.NoError(t, tdRepo.Create(ctx, &models.TypeDefinition{ID: tdID, Name: "tpd-status", BaseType: "enum", CreatedAt: now, UpdatedAt: now}))
+	tdvID := newID()
+	require.NoError(t, tdvRepo.Create(ctx, &models.TypeDefinitionVersion{ID: tdvID, TypeDefinitionID: tdID, VersionNumber: 1, Constraints: map[string]any{}, CreatedAt: now}))
+
+	require.NoError(t, pinRepo.Create(ctx, &models.CatalogVersionTypePin{ID: newID(), CatalogVersionID: cvID, TypeDefinitionVersionID: tdvID}))
+	err := pinRepo.Create(ctx, &models.CatalogVersionTypePin{ID: newID(), CatalogVersionID: cvID, TypeDefinitionVersionID: tdvID})
+	assert.True(t, domainerrors.IsConflict(err))
+}
+
+func TestCVTypePin_Delete(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	tdvRepo := repository.NewTypeDefinitionVersionGormRepo(db)
+	pinRepo := repository.NewCatalogVersionTypePinGormRepo(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	cvID := newID()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{ID: cvID, VersionLabel: "tpdel-v1.0", LifecycleStage: models.LifecycleStageDevelopment, CreatedAt: now, UpdatedAt: now}))
+	tdID := newID()
+	require.NoError(t, tdRepo.Create(ctx, &models.TypeDefinition{ID: tdID, Name: "tpdel-status", BaseType: "enum", CreatedAt: now, UpdatedAt: now}))
+	tdvID := newID()
+	require.NoError(t, tdvRepo.Create(ctx, &models.TypeDefinitionVersion{ID: tdvID, TypeDefinitionID: tdID, VersionNumber: 1, Constraints: map[string]any{}, CreatedAt: now}))
+
+	pinID := newID()
+	require.NoError(t, pinRepo.Create(ctx, &models.CatalogVersionTypePin{ID: pinID, CatalogVersionID: cvID, TypeDefinitionVersionID: tdvID}))
+
+	require.NoError(t, pinRepo.Delete(ctx, pinID))
+
+	_, err := pinRepo.GetByID(ctx, pinID)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestCVTypePin_Delete_NotFound(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	pinRepo := repository.NewCatalogVersionTypePinGormRepo(db)
+	ctx := context.Background()
+
+	err := pinRepo.Delete(ctx, "nonexistent")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// === GetLatestByTypeDefinitions (batch) ===
+
+func TestGetLatestByTypeDefinitions(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	tdvRepo := repository.NewTypeDefinitionVersionGormRepo(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	td1 := &models.TypeDefinition{ID: newID(), Name: "gltd-type1", BaseType: "string", CreatedAt: now, UpdatedAt: now}
+	td2 := &models.TypeDefinition{ID: newID(), Name: "gltd-type2", BaseType: "integer", CreatedAt: now, UpdatedAt: now}
+	require.NoError(t, tdRepo.Create(ctx, td1))
+	require.NoError(t, tdRepo.Create(ctx, td2))
+
+	// td1: V1 and V2
+	require.NoError(t, tdvRepo.Create(ctx, &models.TypeDefinitionVersion{ID: newID(), TypeDefinitionID: td1.ID, VersionNumber: 1, Constraints: map[string]any{}, CreatedAt: now}))
+	require.NoError(t, tdvRepo.Create(ctx, &models.TypeDefinitionVersion{ID: newID(), TypeDefinitionID: td1.ID, VersionNumber: 2, Constraints: map[string]any{"max_length": float64(16)}, CreatedAt: now}))
+	// td2: V1 only
+	require.NoError(t, tdvRepo.Create(ctx, &models.TypeDefinitionVersion{ID: newID(), TypeDefinitionID: td2.ID, VersionNumber: 1, Constraints: map[string]any{}, CreatedAt: now}))
+
+	result, err := tdvRepo.GetLatestByTypeDefinitions(ctx, []string{td1.ID, td2.ID})
+	require.NoError(t, err)
+	assert.Len(t, result, 2)
+	assert.Equal(t, 2, result[td1.ID].VersionNumber)
+	assert.Equal(t, 1, result[td2.ID].VersionNumber)
+}
+
+func TestGetLatestByTypeDefinitions_Empty(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	tdvRepo := repository.NewTypeDefinitionVersionGormRepo(db)
+	ctx := context.Background()
+
+	result, err := tdvRepo.GetLatestByTypeDefinitions(ctx, []string{})
+	require.NoError(t, err)
+	assert.Empty(t, result)
+}
+
+// === TypeDefinitionVersion GetByIDs ===
+
+func TestTypeDefVersionGetByIDs(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	tdvRepo := repository.NewTypeDefinitionVersionGormRepo(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	td := &models.TypeDefinition{ID: newID(), Name: "tdv-ids-test", BaseType: "string", CreatedAt: now, UpdatedAt: now}
+	require.NoError(t, tdRepo.Create(ctx, td))
+
+	tdv1 := &models.TypeDefinitionVersion{ID: newID(), TypeDefinitionID: td.ID, VersionNumber: 1, Constraints: map[string]any{}, CreatedAt: now}
+	tdv2 := &models.TypeDefinitionVersion{ID: newID(), TypeDefinitionID: td.ID, VersionNumber: 2, Constraints: map[string]any{}, CreatedAt: now}
+	require.NoError(t, tdvRepo.Create(ctx, tdv1))
+	require.NoError(t, tdvRepo.Create(ctx, tdv2))
+
+	// Fetch both
+	results, err := tdvRepo.GetByIDs(ctx, []string{tdv1.ID, tdv2.ID})
+	require.NoError(t, err)
+	assert.Len(t, results, 2)
+
+	// Empty
+	empty, err := tdvRepo.GetByIDs(ctx, []string{})
+	require.NoError(t, err)
+	assert.Empty(t, empty)
+
+	// Partial match
+	partial, err := tdvRepo.GetByIDs(ctx, []string{tdv1.ID, "nonexistent"})
+	require.NoError(t, err)
+	assert.Len(t, partial, 1)
+}
+
+// === TypeDefinition List with filters ===
+
+func TestTypeDefinitionListWithFilters(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	require.NoError(t, tdRepo.Create(ctx, &models.TypeDefinition{ID: newID(), Name: "filter-str", BaseType: "string", CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, tdRepo.Create(ctx, &models.TypeDefinition{ID: newID(), Name: "filter-int", BaseType: "integer", CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, tdRepo.Create(ctx, &models.TypeDefinition{ID: newID(), Name: "filter-str-sys", BaseType: "string", System: true, CreatedAt: now, UpdatedAt: now}))
+
+	// Filter by base_type
+	items, total, err := tdRepo.List(ctx, models.ListParams{Filters: map[string]string{"base_type": "string"}})
+	require.NoError(t, err)
+	assert.Equal(t, 2, total)
+	assert.Len(t, items, 2)
+
+	// Filter by name
+	items, total, err = tdRepo.List(ctx, models.ListParams{Filters: map[string]string{"name": "filter-int"}})
+	require.NoError(t, err)
+	assert.Equal(t, 1, total)
+	assert.Equal(t, "filter-int", items[0].Name)
+
+	// Pagination
+	items, total, err = tdRepo.List(ctx, models.ListParams{Limit: 1, Offset: 0, Filters: map[string]string{}})
+	require.NoError(t, err)
+	assert.Equal(t, 3, total)
+	assert.Len(t, items, 1)
+}
+
+// === TypeDefinition Update ===
+
+func TestTypeDefinitionUpdate(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	td := &models.TypeDefinition{ID: newID(), Name: "td-upd", BaseType: "string", Description: "old", CreatedAt: now, UpdatedAt: now}
+	require.NoError(t, tdRepo.Create(ctx, td))
+
+	td.Description = "new"
+	td.UpdatedAt = time.Now()
+	require.NoError(t, tdRepo.Update(ctx, td))
+
+	found, err := tdRepo.GetByID(ctx, td.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "new", found.Description)
+}
+
+func TestTypeDefinitionUpdate_DuplicateName(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	require.NoError(t, tdRepo.Create(ctx, &models.TypeDefinition{ID: newID(), Name: "td-upd-a", BaseType: "string", CreatedAt: now, UpdatedAt: now}))
+	td2 := &models.TypeDefinition{ID: newID(), Name: "td-upd-b", BaseType: "string", CreatedAt: now, UpdatedAt: now}
+	require.NoError(t, tdRepo.Create(ctx, td2))
+
+	td2.Name = "td-upd-a" // duplicate
+	err := tdRepo.Update(ctx, td2)
+	assert.True(t, domainerrors.IsConflict(err))
+}
+
+// === TypeDefinition Delete not found ===
+
+func TestTypeDefinitionDelete_NotFound(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	ctx := context.Background()
+
+	err := tdRepo.Delete(ctx, "nonexistent")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// === TypeDefinition GetByName not found ===
+
+func TestTypeDefinitionGetByName_NotFound(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	ctx := context.Background()
+
+	_, err := tdRepo.GetByName(ctx, "nonexistent")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// === TypeDefinition GetByID not found ===
+
+func TestTypeDefinitionGetByID_NotFound(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	ctx := context.Background()
+
+	_, err := tdRepo.GetByID(ctx, "nonexistent")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// === TypeDefinitionVersion GetByID not found ===
+
+func TestTypeDefVersionGetByID_NotFound(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	tdvRepo := repository.NewTypeDefinitionVersionGormRepo(db)
+	ctx := context.Background()
+
+	_, err := tdvRepo.GetByID(ctx, "nonexistent")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// === TypeDefinitionVersion GetLatestByTypeDefinition not found ===
+
+func TestTypeDefVersionGetLatest_NotFound(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	tdvRepo := repository.NewTypeDefinitionVersionGormRepo(db)
+	ctx := context.Background()
+
+	_, err := tdvRepo.GetLatestByTypeDefinition(ctx, "nonexistent")
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// === TypeDefinitionVersion Create — duplicate version triggers unique constraint ===
+
+func TestTypeDefVersionCreate_DuplicateVersion(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	tdvRepo := repository.NewTypeDefinitionVersionGormRepo(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	td := &models.TypeDefinition{ID: newID(), Name: "tdv-dup-test", BaseType: "string", CreatedAt: now, UpdatedAt: now}
+	require.NoError(t, tdRepo.Create(ctx, td))
+
+	tdv1 := &models.TypeDefinitionVersion{ID: newID(), TypeDefinitionID: td.ID, VersionNumber: 1, Constraints: map[string]any{}, CreatedAt: now}
+	require.NoError(t, tdvRepo.Create(ctx, tdv1))
+
+	// Same type_definition_id + version_number → unique constraint error
+	tdv2 := &models.TypeDefinitionVersion{ID: newID(), TypeDefinitionID: td.ID, VersionNumber: 1, Constraints: map[string]any{}, CreatedAt: now}
+	err := tdvRepo.Create(ctx, tdv2)
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsConflict(err))
 }

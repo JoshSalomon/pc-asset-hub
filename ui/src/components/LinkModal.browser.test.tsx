@@ -116,3 +116,30 @@ test('T-20.30: LinkModal onSubmit receives correct args', async () => {
   await page.getByRole('button', { name: 'Link' }).click()
   expect(props.onSubmit).toHaveBeenCalledWith('i2', 'uses')
 })
+
+// Line 46: loadLinkTargetInstances guard — catalogName undefined
+test('LinkModal guard: loadLinkTargetInstances with undefined catalogName returns early', async () => {
+  renderModal({ catalogName: undefined })
+  // Open association dropdown and select one
+  await page.getByText('Select association...').click()
+  await page.getByText(/^uses/).click()
+  // api.instances.list should NOT be called because catalogName guard fires
+  expect(api.instances.list).not.toHaveBeenCalled()
+})
+
+// Line 48: loadLinkTargetInstances guard — assoc not found (no matching outgoing assoc)
+// UNREACHABLE: The Select dropdown on line 91 filters to outgoing non-containment
+// assocs: `schemaAssocs.filter(a => a.type !== 'containment' && a.direction === 'outgoing')`.
+// The find() on line 47 searches by the same criteria (name + outgoing direction).
+// Since the user can only select from the filtered list, find() always succeeds.
+// This guard cannot be triggered through the component's UI.
+
+// Line 50: loadLinkTargetInstances guard — targetPin not found
+test('LinkModal guard: loadLinkTargetInstances with no matching pin returns early', async () => {
+  // Provide assocs but NO matching pins, so targetPin = undefined on line 50
+  renderModal({ pins: [] })
+  await page.getByText('Select association...').click()
+  await page.getByText(/^uses/).click()
+  // api.instances.list should NOT be called because targetPin guard fires
+  expect(api.instances.list).not.toHaveBeenCalled()
+})

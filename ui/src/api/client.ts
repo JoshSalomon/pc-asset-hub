@@ -3,8 +3,8 @@ import type {
   EntityTypeVersion,
   Attribute,
   Association,
-  Enum,
-  EnumValue,
+  TypeDefinition,
+  TypeDefinitionVersion,
   Catalog,
   CatalogVersion,
   CatalogVersionPin,
@@ -82,7 +82,7 @@ export const api = {
   attributes: {
     list: (entityTypeId: string) =>
       fetchJSON<ListResponse<Attribute>>(`${BASE_URL}/entity-types/${entityTypeId}/attributes`),
-    add: (entityTypeId: string, data: { name: string; description?: string; type: string; enum_id?: string; required?: boolean }) =>
+    add: (entityTypeId: string, data: { name: string; description?: string; type_definition_version_id: string; required?: boolean }) =>
       fetchJSON<EntityTypeVersion>(`${BASE_URL}/entity-types/${entityTypeId}/attributes`, {
         method: 'POST',
         body: JSON.stringify(data),
@@ -96,7 +96,7 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify({ ordered_ids: orderedIds }),
       }),
-    edit: (entityTypeId: string, name: string, data: { name?: string; description?: string; type?: string; enum_id?: string; required?: boolean }) =>
+    edit: (entityTypeId: string, name: string, data: { name?: string; description?: string; type_definition_version_id?: string; required?: boolean }) =>
       fetchJSON<EntityTypeVersion>(`${BASE_URL}/entity-types/${entityTypeId}/attributes/${encodeURIComponent(name)}`, {
         method: 'PUT',
         body: JSON.stringify(data),
@@ -125,37 +125,26 @@ export const api = {
         method: 'DELETE',
       }),
   },
-  enums: {
-    list: () => fetchJSON<ListResponse<Enum>>(`${BASE_URL}/enums`),
-    get: (id: string) => fetchJSON<Enum>(`${BASE_URL}/enums/${id}`),
-    create: (data: { name: string; description?: string; values?: string[] }) =>
-      fetchJSON<Enum>(`${BASE_URL}/enums`, {
+  typeDefinitions: {
+    list: (params?: { base_type?: string }) => {
+      const query = params?.base_type ? `?base_type=${encodeURIComponent(params.base_type)}` : ''
+      return fetchJSON<ListResponse<TypeDefinition>>(`${BASE_URL}/type-definitions${query}`)
+    },
+    get: (id: string) => fetchJSON<TypeDefinition>(`${BASE_URL}/type-definitions/${id}`),
+    create: (data: { name: string; description?: string; base_type: string; constraints?: Record<string, unknown> }) =>
+      fetchJSON<TypeDefinition>(`${BASE_URL}/type-definitions`, {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    update: (id: string, data: { name: string; description?: string }) =>
-      fetchJSON(`${BASE_URL}/enums/${id}`, {
+    update: (id: string, data: { description?: string; constraints?: Record<string, unknown> }) =>
+      fetchJSON<TypeDefinitionVersion>(`${BASE_URL}/type-definitions/${id}`, {
         method: 'PUT',
         body: JSON.stringify(data),
       }),
     delete: (id: string) =>
-      fetchJSON(`${BASE_URL}/enums/${id}`, { method: 'DELETE' }),
-    listValues: (enumId: string) =>
-      fetchJSON<ListResponse<EnumValue>>(`${BASE_URL}/enums/${enumId}/values`),
-    addValue: (enumId: string, value: string) =>
-      fetchJSON(`${BASE_URL}/enums/${enumId}/values`, {
-        method: 'POST',
-        body: JSON.stringify({ value }),
-      }),
-    removeValue: (enumId: string, valueId: string) =>
-      fetchJSON(`${BASE_URL}/enums/${enumId}/values/${valueId}`, {
-        method: 'DELETE',
-      }),
-    reorderValues: (enumId: string, orderedIds: string[]) =>
-      fetchJSON(`${BASE_URL}/enums/${enumId}/values/reorder`, {
-        method: 'PUT',
-        body: JSON.stringify({ ordered_ids: orderedIds }),
-      }),
+      fetchJSON(`${BASE_URL}/type-definitions/${id}`, { method: 'DELETE' }),
+    listVersions: (id: string) =>
+      fetchJSON<ListResponse<TypeDefinitionVersion>>(`${BASE_URL}/type-definitions/${id}/versions`),
   },
   versions: {
     list: (entityTypeId: string) =>

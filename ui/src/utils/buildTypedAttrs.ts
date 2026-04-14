@@ -2,7 +2,8 @@ import type { SnapshotAttribute } from '../types'
 
 /**
  * Converts raw string attribute values to their proper types based on schema.
- * Number-type attributes are parsed with parseFloat; empty strings are skipped.
+ * Number/integer-type attributes are parsed with parseFloat/parseInt;
+ * boolean-type attributes are converted to boolean; empty strings are skipped.
  */
 export function buildTypedAttrs(
   rawAttrs: Record<string, string>,
@@ -12,8 +13,13 @@ export function buildTypedAttrs(
   for (const [k, v] of Object.entries(rawAttrs)) {
     if (v === '') continue
     const schemaAttr = schemaAttrs.find(a => a.name === k)
-    if (schemaAttr?.type === 'number') {
+    const baseType = schemaAttr?.base_type
+    if (baseType === 'number') {
       result[k] = parseFloat(v)
+    } else if (baseType === 'integer') {
+      result[k] = parseInt(v, 10)
+    } else if (baseType === 'boolean') {
+      result[k] = v === 'true'
     } else {
       result[k] = v
     }

@@ -2,6 +2,7 @@ package operational_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -25,7 +26,8 @@ type instanceTestSetup struct {
 	attrRepo    *mocks.MockAttributeRepo
 	etvRepo     *mocks.MockEntityTypeVersionRepo
 	etRepo      *mocks.MockEntityTypeRepo
-	enumValRepo *mocks.MockEnumValueRepo
+	tdvRepo     *mocks.MockTypeDefinitionVersionRepo
+	tdRepo      *mocks.MockTypeDefinitionRepo
 	assocRepo   *mocks.MockAssociationRepo
 	linkRepo    *mocks.MockAssociationLinkRepo
 }
@@ -40,14 +42,15 @@ func setupInstanceService() *instanceTestSetup {
 		attrRepo:    new(mocks.MockAttributeRepo),
 		etvRepo:     new(mocks.MockEntityTypeVersionRepo),
 		etRepo:      new(mocks.MockEntityTypeRepo),
-		enumValRepo: new(mocks.MockEnumValueRepo),
+		tdvRepo:     new(mocks.MockTypeDefinitionVersionRepo),
+		tdRepo:      new(mocks.MockTypeDefinitionRepo),
 		assocRepo:   new(mocks.MockAssociationRepo),
 		linkRepo:    new(mocks.MockAssociationLinkRepo),
 	}
 	s.svc = operational.NewInstanceService(
 		s.instRepo, s.iavRepo, s.catalogRepo, s.cvRepo,
-		s.pinRepo, s.attrRepo, s.etvRepo, s.etRepo, s.enumValRepo,
-		s.assocRepo, s.linkRepo,
+		s.pinRepo, s.attrRepo, s.etvRepo, s.etRepo, s.tdvRepo,
+		s.tdRepo, s.assocRepo, s.linkRepo,
 	)
 	return s
 }
@@ -70,10 +73,17 @@ func (s *instanceTestSetup) mockPinResolution(ctx context.Context) {
 // mockAttributes sets up attributes for the pinned entity type version.
 func (s *instanceTestSetup) mockAttributes(ctx context.Context) {
 	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
-		{ID: "a1", Name: "hostname", Type: models.AttributeTypeString, EntityTypeVersionID: "etv1"},
-		{ID: "a2", Name: "port", Type: models.AttributeTypeNumber, EntityTypeVersionID: "etv1"},
-		{ID: "a3", Name: "status", Type: models.AttributeTypeEnum, EnumID: "enum1", EntityTypeVersionID: "etv1"},
+		{ID: "a1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", EntityTypeVersionID: "etv1"},
+		{ID: "a2", Name: "port", TypeDefinitionVersionID: "tdv-number", EntityTypeVersionID: "etv1"},
+		{ID: "a3", Name: "status", TypeDefinitionVersionID: "tdv-enum1", EntityTypeVersionID: "etv1"},
 	}, nil)
+	// Set up type definition resolution
+	s.tdvRepo.On("GetByID", ctx, "tdv-string").Return(&models.TypeDefinitionVersion{ID: "tdv-string", TypeDefinitionID: "td-string"}, nil)
+	s.tdvRepo.On("GetByID", ctx, "tdv-number").Return(&models.TypeDefinitionVersion{ID: "tdv-number", TypeDefinitionID: "td-number"}, nil)
+	s.tdvRepo.On("GetByID", ctx, "tdv-enum1").Return(&models.TypeDefinitionVersion{ID: "tdv-enum1", TypeDefinitionID: "td-enum1", Constraints: map[string]any{"values": []any{"active", "inactive"}}}, nil)
+	s.tdRepo.On("GetByID", ctx, "td-string").Return(&models.TypeDefinition{ID: "td-string", BaseType: models.BaseTypeString}, nil)
+	s.tdRepo.On("GetByID", ctx, "td-number").Return(&models.TypeDefinition{ID: "td-number", BaseType: models.BaseTypeNumber}, nil)
+	s.tdRepo.On("GetByID", ctx, "td-enum1").Return(&models.TypeDefinition{ID: "td-enum1", BaseType: models.BaseTypeEnum}, nil)
 }
 
 // T-11.11: Create instance in catalog with pinned entity type
@@ -182,13 +192,9 @@ func TestT11_16_ValidEnumValue(t *testing.T) {
 	s.mockPinResolution(ctx)
 	s.mockAttributes(ctx)
 
-	s.enumValRepo.On("ListByEnum", ctx, "enum1").Return([]*models.EnumValue{
-		{ID: "ev1", Value: "active"},
-		{ID: "ev2", Value: "inactive"},
-	}, nil)
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
-		return len(vals) == 1 && vals[0].ValueEnum == "active"
+		return len(vals) == 1 && vals[0].ValueString == "active"
 	})).Return(nil)
 	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
@@ -199,23 +205,25 @@ func TestT11_16_ValidEnumValue(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// T-11.17: Create instance with invalid enum value
-func TestT11_17_InvalidEnumValue(t *testing.T) {
+// T-11.17: Create instance with enum value (validation deferred to catalog validation)
+func TestT11_17_EnumValueStoredAsString(t *testing.T) {
 	s := setupInstanceService()
 	ctx := context.Background()
 	s.mockPinResolution(ctx)
 	s.mockAttributes(ctx)
 
-	s.enumValRepo.On("ListByEnum", ctx, "enum1").Return([]*models.EnumValue{
-		{ID: "ev1", Value: "active"},
-	}, nil)
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		return len(vals) == 1 && vals[0].ValueString == "bogus"
+	})).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
+	// Enum value validation is now deferred to catalog validation, so create succeeds
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
 		"status": "bogus",
 	})
-	assert.Error(t, err)
-	assert.True(t, domainerrors.IsValidation(err))
+	require.NoError(t, err)
 }
 
 // T-11.18: Create instance with non-parseable number
@@ -259,8 +267,10 @@ func TestT11_20_MissingRequiredAttrs(t *testing.T) {
 
 	// Override attributes with a required one
 	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
-		{ID: "a1", Name: "hostname", Type: models.AttributeTypeString, Required: true},
+		{ID: "a1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Required: true},
 	}, nil)
+	s.tdvRepo.On("GetByID", ctx, "tdv-string").Return(&models.TypeDefinitionVersion{ID: "tdv-string", TypeDefinitionID: "td-string"}, nil)
+	s.tdRepo.On("GetByID", ctx, "td-string").Return(&models.TypeDefinition{ID: "td-string", BaseType: models.BaseTypeString}, nil)
 
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
 	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
@@ -654,16 +664,19 @@ func TestCov_ValidateAttrs_AttrRepoError(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// Error propagation: enumValRepo.ListByEnum error
-func TestCov_ValidateAttrs_EnumRepoError(t *testing.T) {
+// Error propagation: tdvRepo.GetByID error during type resolution
+func TestCov_ValidateAttrs_TDVRepoError(t *testing.T) {
 	s := setupInstanceService()
 	ctx := context.Background()
 	s.mockPinResolution(ctx)
-	s.mockAttributes(ctx)
-	s.enumValRepo.On("ListByEnum", ctx, "enum1").Return(nil, domainerrors.NewValidation("db error"))
+	// Set up attributes but with a bad TDV reference
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
+		{ID: "a1", Name: "hostname", TypeDefinitionVersionID: "tdv-bad", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.tdvRepo.On("GetByID", ctx, "tdv-bad").Return(nil, domainerrors.NewValidation("db error"))
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
 
-	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{"status": "active"})
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{"hostname": "h"})
 	assert.Error(t, err)
 }
 
@@ -882,7 +895,7 @@ func TestCov_ResolveAttrs_EnumValue(t *testing.T) {
 
 	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1}, nil)
 	s.iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{
-		{AttributeID: "a3", ValueEnum: "active", InstanceVersion: 1},
+		{AttributeID: "a3", ValueString: "active", InstanceVersion: 1},
 	}, nil)
 
 	detail, err := s.svc.GetInstance(ctx, "my-catalog", "model", "i1")
@@ -943,7 +956,7 @@ func TestCov_ListInstances_WithValues(t *testing.T) {
 	s.iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{
 		{AttributeID: "a1", ValueString: "host-a", InstanceVersion: 1},
 		{AttributeID: "a2", ValueNumber: &num, InstanceVersion: 1},
-		{AttributeID: "a3", ValueEnum: "active", InstanceVersion: 1},
+		{AttributeID: "a3", ValueString: "active", InstanceVersion: 1},
 	}, nil)
 
 	details, total, err := s.svc.ListInstances(ctx, "my-catalog", "model", models.ListParams{Limit: 20})
@@ -1248,8 +1261,10 @@ func TestT12_13_ContainedInstance_WithAttributes(t *testing.T) {
 		{ID: "assoc1", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment, Name: "tools"},
 	}, nil)
 	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{
-		{ID: "a1", Name: "description", Type: models.AttributeTypeString, EntityTypeVersionID: "etv2"},
+		{ID: "a1", Name: "description", TypeDefinitionVersionID: "tdv-string", EntityTypeVersionID: "etv2"},
 	}, nil)
+	s.tdvRepo.On("GetByID", ctx, "tdv-string").Return(&models.TypeDefinitionVersion{ID: "tdv-string", TypeDefinitionID: "td-string"}, nil)
+	s.tdRepo.On("GetByID", ctx, "td-string").Return(&models.TypeDefinition{ID: "td-string", BaseType: models.BaseTypeString}, nil)
 	s.instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueString == "a useful tool"
@@ -1935,8 +1950,10 @@ func TestCov_CreateContained_SetValuesError(t *testing.T) {
 		{ID: "a1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment},
 	}, nil)
 	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{
-		{ID: "a1", Name: "desc", Type: models.AttributeTypeString},
+		{ID: "a1", Name: "desc", TypeDefinitionVersionID: "tdv-string"},
 	}, nil)
+	s.tdvRepo.On("GetByID", ctx, "tdv-string").Return(&models.TypeDefinitionVersion{ID: "tdv-string", TypeDefinitionID: "td-string"}, nil)
+	s.tdRepo.On("GetByID", ctx, "td-string").Return(&models.TypeDefinition{ID: "td-string", BaseType: models.BaseTypeString}, nil)
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
 	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(domainerrors.NewValidation("db error"))
 	_, err := s.svc.CreateContainedInstance(ctx, "cat", "server", "p1", "tool", "child", "", map[string]any{"desc": "val"})
@@ -2810,8 +2827,10 @@ func TestListInstances_FilterResolvesNameToID(t *testing.T) {
 	s.mockPinResolution(ctx)
 
 	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
-		{ID: "attr-abc", Name: "hostname", Type: models.AttributeTypeString},
+		{ID: "attr-abc", Name: "hostname", TypeDefinitionVersionID: "tdv-string"},
 	}, nil)
+	s.tdvRepo.On("GetByID", ctx, "tdv-string").Return(&models.TypeDefinitionVersion{ID: "tdv-string", TypeDefinitionID: "td-string"}, nil)
+	s.tdRepo.On("GetByID", ctx, "td-string").Return(&models.TypeDefinition{ID: "td-string", BaseType: models.BaseTypeString}, nil)
 	// Expect the filter to use the attribute ID, not the name
 	s.instRepo.On("List", ctx, "et1", "cat1", mock.MatchedBy(func(p models.ListParams) bool {
 		return p.Filters["attr-abc"] == "hello"
@@ -2830,8 +2849,10 @@ func TestListInstances_FilterUnknownAttrReturnsError(t *testing.T) {
 	s.mockPinResolution(ctx)
 
 	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
-		{ID: "attr-abc", Name: "hostname", Type: models.AttributeTypeString},
+		{ID: "attr-abc", Name: "hostname", TypeDefinitionVersionID: "tdv-string"},
 	}, nil)
+	s.tdvRepo.On("GetByID", ctx, "tdv-string").Return(&models.TypeDefinitionVersion{ID: "tdv-string", TypeDefinitionID: "td-string"}, nil)
+	s.tdRepo.On("GetByID", ctx, "td-string").Return(&models.TypeDefinition{ID: "td-string", BaseType: models.BaseTypeString}, nil)
 
 	_, _, err := s.svc.ListInstances(ctx, "my-catalog", "model", models.ListParams{
 		Limit:   20,
@@ -2847,8 +2868,10 @@ func TestListInstances_FilterMinMaxResolvesNameToID(t *testing.T) {
 	s.mockPinResolution(ctx)
 
 	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
-		{ID: "attr-num", Name: "score", Type: models.AttributeTypeNumber},
+		{ID: "attr-num", Name: "score", TypeDefinitionVersionID: "tdv-number"},
 	}, nil)
+	s.tdvRepo.On("GetByID", ctx, "tdv-number").Return(&models.TypeDefinitionVersion{ID: "tdv-number", TypeDefinitionID: "td-number"}, nil)
+	s.tdRepo.On("GetByID", ctx, "td-number").Return(&models.TypeDefinition{ID: "td-number", BaseType: models.BaseTypeNumber}, nil)
 	s.instRepo.On("List", ctx, "et1", "cat1", mock.MatchedBy(func(p models.ListParams) bool {
 		return p.Filters["attr-num.min"] == "5" && p.Filters["attr-num.max"] == "10"
 	})).Return([]*models.EntityInstance{}, 0, nil)
@@ -3157,6 +3180,288 @@ func TestGetContainmentTree_ListError(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// === Coverage: validateAndBuildAttributeValues — all base type branches ===
+
+// helper to set up a single-attribute scenario with a specific base type
+func setupSingleAttrBaseType(s *instanceTestSetup, ctx context.Context, attrName string, baseType models.BaseType) {
+	s.mockPinResolution(ctx)
+	tdvID := "tdv-" + string(baseType)
+	tdID := "td-" + string(baseType)
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
+		{ID: "a1", Name: attrName, TypeDefinitionVersionID: tdvID, EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.tdvRepo.On("GetByID", ctx, tdvID).Return(&models.TypeDefinitionVersion{ID: tdvID, TypeDefinitionID: tdID}, nil)
+	s.tdRepo.On("GetByID", ctx, tdID).Return(&models.TypeDefinition{ID: tdID, BaseType: baseType}, nil)
+}
+
+func TestCov_ValidateAttrs_BooleanBaseType(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	setupSingleAttrBaseType(s, ctx, "enabled", models.BaseTypeBoolean)
+
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		return len(vals) == 1 && vals[0].ValueString == "true"
+	})).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
+		"enabled": true,
+	})
+	require.NoError(t, err)
+}
+
+func TestCov_ValidateAttrs_IntegerFloat64(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	setupSingleAttrBaseType(s, ctx, "count", models.BaseTypeInteger)
+
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		return len(vals) == 1 && vals[0].ValueNumber != nil && *vals[0].ValueNumber == 7
+	})).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
+		"count": float64(7),
+	})
+	require.NoError(t, err)
+}
+
+func TestCov_ValidateAttrs_IntegerInt(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	setupSingleAttrBaseType(s, ctx, "count", models.BaseTypeInteger)
+
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		return len(vals) == 1 && vals[0].ValueNumber != nil && *vals[0].ValueNumber == 99
+	})).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
+		"count": int(99),
+	})
+	require.NoError(t, err)
+}
+
+func TestCov_ValidateAttrs_IntegerStringValid(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	setupSingleAttrBaseType(s, ctx, "count", models.BaseTypeInteger)
+
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		return len(vals) == 1 && vals[0].ValueNumber != nil && *vals[0].ValueNumber == 55
+	})).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
+		"count": "55",
+	})
+	require.NoError(t, err)
+}
+
+func TestCov_ValidateAttrs_IntegerStringInvalid(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	setupSingleAttrBaseType(s, ctx, "count", models.BaseTypeInteger)
+
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
+		"count": "not-a-number",
+	})
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "expected integer")
+}
+
+func TestCov_ValidateAttrs_IntegerInvalidType(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	setupSingleAttrBaseType(s, ctx, "count", models.BaseTypeInteger)
+
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
+		"count": true, // bool is not valid for integer
+	})
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "expected integer")
+}
+
+func TestCov_ValidateAttrs_NumberStringValid(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	setupSingleAttrBaseType(s, ctx, "rate", models.BaseTypeNumber)
+
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		return len(vals) == 1 && vals[0].ValueNumber != nil && *vals[0].ValueNumber == 3.14
+	})).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
+		"rate": "3.14",
+	})
+	require.NoError(t, err)
+}
+
+func TestCov_ValidateAttrs_ListString(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	setupSingleAttrBaseType(s, ctx, "tags", models.BaseTypeList)
+
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		return len(vals) == 1 && vals[0].ValueJSON == `["a","b"]`
+	})).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
+		"tags": `["a","b"]`,
+	})
+	require.NoError(t, err)
+}
+
+func TestCov_ValidateAttrs_ListSliceMarshal(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	setupSingleAttrBaseType(s, ctx, "tags", models.BaseTypeList)
+
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		return len(vals) == 1 && vals[0].ValueJSON == `["x","y"]`
+	})).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
+		"tags": []string{"x", "y"}, // slice → marshal path
+	})
+	require.NoError(t, err)
+}
+
+func TestCov_ValidateAttrs_JSONMapMarshal(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	setupSingleAttrBaseType(s, ctx, "meta", models.BaseTypeJSON)
+
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		return len(vals) == 1 && vals[0].ValueJSON == `{"k":"v"}`
+	})).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
+		"meta": map[string]any{"k": "v"}, // map → marshal path
+	})
+	require.NoError(t, err)
+}
+
+func TestCov_ValidateAttrs_URLBaseType(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	setupSingleAttrBaseType(s, ctx, "homepage", models.BaseTypeURL)
+
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		return len(vals) == 1 && vals[0].ValueString == "https://example.com"
+	})).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
+		"homepage": "https://example.com",
+	})
+	require.NoError(t, err)
+}
+
+func TestCov_ValidateAttrs_DateBaseType(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	setupSingleAttrBaseType(s, ctx, "birthdate", models.BaseTypeDate)
+
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		return len(vals) == 1 && vals[0].ValueString == "2026-04-12"
+	})).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
+		"birthdate": "2026-04-12",
+	})
+	require.NoError(t, err)
+}
+
+func TestCov_ValidateAttrs_DefaultBaseType(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	// Set up with an unknown base type by mocking a custom type
+	s.mockPinResolution(ctx)
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
+		{ID: "a1", Name: "custom", TypeDefinitionVersionID: "tdv-weird", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.tdvRepo.On("GetByID", ctx, "tdv-weird").Return(&models.TypeDefinitionVersion{ID: "tdv-weird", TypeDefinitionID: "td-weird"}, nil)
+	s.tdRepo.On("GetByID", ctx, "td-weird").Return(&models.TypeDefinition{ID: "td-weird", BaseType: "xyzzy"}, nil)
+
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		return len(vals) == 1 && vals[0].ValueString == "fallback-value"
+	})).Return(nil)
+	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
+		"custom": "fallback-value",
+	})
+	require.NoError(t, err)
+}
+
+func TestCov_ValidateAttrs_JSONMarshalError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	setupSingleAttrBaseType(s, ctx, "meta", models.BaseTypeJSON)
+
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+
+	// Channels cannot be marshaled to JSON
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
+		"meta": make(chan int), // triggers json.Marshal error
+	})
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "failed to marshal JSON value")
+}
+
+func TestCov_ResolveAttrValues_BaseTypesError(t *testing.T) {
+	// resolveAttributeValues → resolveBaseTypes returns error (line 172)
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
+		{ID: "a1", Name: "broken", TypeDefinitionVersionID: "tdv-missing", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.tdvRepo.On("GetByID", ctx, "tdv-missing").Return(nil, domainerrors.NewValidation("tdv not found"))
+
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{
+		ID: "i1", CatalogID: "cat1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+
+	_, err := s.svc.GetInstance(ctx, "my-catalog", "model", "i1")
+	assert.Error(t, err)
+}
+
 // resolveParentChain: GetByID error during walk (line 940) and ET name fallback (line 949)
 func TestGetInstance_ParentChainETNameFallback(t *testing.T) {
 	s := setupInstanceService()
@@ -3179,4 +3484,51 @@ func TestGetInstance_ParentChainETNameFallback(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, detail.ParentChain, 1)
 	assert.Equal(t, "et-unknown", detail.ParentChain[0].EntityTypeName) // fallback to ID
+}
+
+// Cover resolveBaseTypes error in ListInstances
+func TestListInstances_ResolveBaseTypesError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "Server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1"}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
+		{ID: "a1", Name: "x", TypeDefinitionVersionID: "tdv-missing"},
+	}, nil)
+	s.tdvRepo.On("GetByID", ctx, "tdv-missing").Return(nil, errors.New("tdv not found"))
+
+	_, _, err := s.svc.ListInstances(ctx, "cat", "Server", models.ListParams{Limit: 10})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "tdv not found")
+}
+
+// Cover resolveBaseTypes error in ListContainedInstances
+func TestListContainedInstances_ResolveBaseTypesError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "Parent").Return(&models.EntityType{ID: "et1"}, nil)
+	s.etRepo.On("GetByName", ctx, "Child").Return(&models.EntityType{ID: "et2"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+		{ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1"}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2"}, nil)
+	s.instRepo.On("GetByID", ctx, "parent1").Return(&models.EntityInstance{ID: "parent1", CatalogID: "c1"}, nil)
+	s.instRepo.On("ListByParent", ctx, "parent1", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{
+		{ID: "a1", Name: "x", TypeDefinitionVersionID: "tdv-missing"},
+	}, nil)
+	s.tdvRepo.On("GetByID", ctx, "tdv-missing").Return(nil, errors.New("tdv not found"))
+
+	_, _, err := s.svc.ListContainedInstances(ctx, "cat", "Parent", "parent1", "Child", models.ListParams{Limit: 10})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "tdv not found")
 }

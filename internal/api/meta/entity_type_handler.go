@@ -236,17 +236,23 @@ func (h *EntityTypeHandler) VersionSnapshot(c echo.Context) error {
 
 	// Prepend system attributes (Name — required, Description — optional)
 	systemAttrs := []dto.SnapshotAttributeResponse{
-		{Name: models.SystemAttrName, Type: models.SystemAttrType, Ordinal: models.SystemAttrNameOrdinal, Required: true, System: true},
-		{Name: models.SystemAttrDescription, Type: models.SystemAttrType, Ordinal: models.SystemAttrDescOrdinal, Required: false, System: true},
+		{Name: models.SystemAttrName, BaseType: "string", Ordinal: models.SystemAttrNameOrdinal, Required: true, System: true},
+		{Name: models.SystemAttrDescription, BaseType: "string", Ordinal: models.SystemAttrDescOrdinal, Required: false, System: true},
 	}
 	attrs := make([]dto.SnapshotAttributeResponse, 0, len(systemAttrs)+len(snapshot.Attributes))
 	attrs = append(attrs, systemAttrs...)
 	for _, a := range snapshot.Attributes {
-		attrs = append(attrs, dto.SnapshotAttributeResponse{
+		sa := dto.SnapshotAttributeResponse{
 			ID: a.ID, Name: a.Name, Description: a.Description,
-			Type: string(a.Type), EnumID: a.EnumID, EnumName: snapshot.EnumNames[a.EnumID],
+			TypeDefinitionVersionID: a.TypeDefinitionVersionID,
 			Ordinal: a.Ordinal, Required: a.Required,
-		})
+		}
+		if ti, ok := snapshot.TypeInfo[a.TypeDefinitionVersionID]; ok {
+			sa.TypeName = ti.TypeName
+			sa.BaseType = ti.BaseType
+			sa.Constraints = ti.Constraints
+		}
+		attrs = append(attrs, sa)
 	}
 
 	assocs := make([]dto.SnapshotAssociationResponse, len(snapshot.Associations))

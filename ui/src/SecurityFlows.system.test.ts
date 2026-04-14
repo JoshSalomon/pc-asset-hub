@@ -19,6 +19,7 @@ import {
   testName,
   cleanupE2EData,
   cleanupDnsCatalogs,
+  getTypeVersionId,
   UI_URL,
 } from './test-helpers/system'
 
@@ -50,9 +51,10 @@ beforeAll(async () => {
   etvId = et.body.version.id
 
   // Add one attribute
+  const stringVersionId = await getTypeVersionId('string')
   await apiCall('POST', `/api/meta/v1/entity-types/${etId}/attributes`, {
     name: 'test_attr',
-    type: 'string',
+    type_definition_version_id: stringVersionId,
     required: true,
   }, 'SuperAdmin')
 
@@ -94,6 +96,9 @@ beforeAll(async () => {
 
   // Publish the catalog
   await apiCall('POST', `/api/data/v1/catalogs/${catalogName}/publish`, undefined, 'SuperAdmin')
+
+  // Promote the regular CV to testing (for testing stage guard tests)
+  await apiCall('POST', `/api/meta/v1/catalog-versions/${cvId}/promote`, undefined, 'SuperAdmin')
 
   // Create and promote a production CV for production stage tests
   const prodCv = await apiCall('POST', '/api/meta/v1/catalog-versions', {

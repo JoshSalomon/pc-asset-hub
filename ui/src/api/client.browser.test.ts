@@ -222,24 +222,24 @@ test('attributes.list calls correct URL', async () => {
 test('attributes.add sends POST with body', async () => {
   mockFetch.mockReturnValue(jsonResponse({ id: 'v2', version: 2 }))
 
-  await api.attributes.add('et-1', { name: 'host', type: 'string', description: 'desc' })
+  await api.attributes.add('et-1', { name: 'host', type_definition_version_id: 'tdv-string', description: 'desc' })
   expect(mockFetch).toHaveBeenCalledWith(
     expect.stringContaining('/entity-types/et-1/attributes'),
     expect.objectContaining({
       method: 'POST',
-      body: JSON.stringify({ name: 'host', type: 'string', description: 'desc' }),
+      body: JSON.stringify({ name: 'host', type_definition_version_id: 'tdv-string', description: 'desc' }),
     }),
   )
 })
 
-test('attributes.add with enum_id', async () => {
+test('attributes.add with type_definition_version_id', async () => {
   mockFetch.mockReturnValue(jsonResponse({ id: 'v2', version: 2 }))
 
-  await api.attributes.add('et-1', { name: 'status', type: 'enum', enum_id: 'e1' })
+  await api.attributes.add('et-1', { name: 'status', type_definition_version_id: 'tdv-enum1' })
   expect(mockFetch).toHaveBeenCalledWith(
     expect.stringContaining('/entity-types/et-1/attributes'),
     expect.objectContaining({
-      body: JSON.stringify({ name: 'status', type: 'enum', enum_id: 'e1' }),
+      body: JSON.stringify({ name: 'status', type_definition_version_id: 'tdv-enum1' }),
     }),
   )
 })
@@ -314,108 +314,72 @@ test('associations.delete sends DELETE', async () => {
   )
 })
 
-// === Enums ===
+// === Type Definitions ===
 
-test('enums.list calls correct URL', async () => {
+test('typeDefinitions.list calls correct URL', async () => {
   mockFetch.mockReturnValue(jsonResponse({ items: [], total: 0 }))
 
-  await api.enums.list()
+  await api.typeDefinitions.list()
   expect(mockFetch).toHaveBeenCalledWith(
-    expect.stringContaining('/enums'),
+    expect.stringContaining('/type-definitions'),
     expect.anything(),
   )
 })
 
-test('enums.get calls correct URL', async () => {
-  mockFetch.mockReturnValue(jsonResponse({ id: 'e1', name: 'Status' }))
+test('typeDefinitions.get calls correct URL', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'td1', name: 'Status', base_type: 'enum', system: false, latest_version: 1 }))
 
-  const result = await api.enums.get('e1')
+  const result = await api.typeDefinitions.get('td1')
   expect(mockFetch).toHaveBeenCalledWith(
-    expect.stringContaining('/enums/e1'),
+    expect.stringContaining('/type-definitions/td1'),
     expect.anything(),
   )
   expect(result.name).toBe('Status')
 })
 
-test('enums.create sends POST with name and values', async () => {
-  mockFetch.mockReturnValue(jsonResponse({ id: 'e1', name: 'Status' }))
+test('typeDefinitions.create sends POST with name, base_type, and constraints', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'td1', name: 'Status', base_type: 'enum' }))
 
-  await api.enums.create({ name: 'Status', values: ['active', 'inactive'] })
+  await api.typeDefinitions.create({ name: 'Status', base_type: 'enum', constraints: { values: ['active', 'inactive'] } })
   expect(mockFetch).toHaveBeenCalledWith(
-    expect.stringContaining('/enums'),
+    expect.stringContaining('/type-definitions'),
     expect.objectContaining({
       method: 'POST',
-      body: JSON.stringify({ name: 'Status', values: ['active', 'inactive'] }),
+      body: JSON.stringify({ name: 'Status', base_type: 'enum', constraints: { values: ['active', 'inactive'] } }),
     }),
   )
 })
 
-test('enums.update sends PUT with name', async () => {
-  mockFetch.mockReturnValue(jsonResponse({ status: 'updated' }))
+test('typeDefinitions.update sends PUT with constraints', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'tdv1', version_number: 2 }))
 
-  await api.enums.update('e1', { name: 'New Status' })
+  await api.typeDefinitions.update('td1', { constraints: { values: ['active', 'inactive', 'pending'] } })
   expect(mockFetch).toHaveBeenCalledWith(
-    expect.stringContaining('/enums/e1'),
+    expect.stringContaining('/type-definitions/td1'),
     expect.objectContaining({
       method: 'PUT',
-      body: JSON.stringify({ name: 'New Status' }),
+      body: JSON.stringify({ constraints: { values: ['active', 'inactive', 'pending'] } }),
     }),
   )
 })
 
-test('enums.delete sends DELETE', async () => {
+test('typeDefinitions.delete sends DELETE', async () => {
   mockFetch.mockReturnValue(noContentResponse())
 
-  await api.enums.delete('e1')
+  await api.typeDefinitions.delete('td1')
   expect(mockFetch).toHaveBeenCalledWith(
-    expect.stringContaining('/enums/e1'),
+    expect.stringContaining('/type-definitions/td1'),
     expect.objectContaining({ method: 'DELETE' }),
   )
 })
 
-test('enums.listValues calls correct URL', async () => {
+test('typeDefinitions.listVersions calls correct URL', async () => {
   mockFetch.mockReturnValue(jsonResponse({ items: [], total: 0 }))
 
-  await api.enums.listValues('e1')
+  await api.typeDefinitions.listVersions('td1')
   expect(mockFetch).toHaveBeenCalledWith(
-    expect.stringContaining('/enums/e1/values'),
+    expect.stringContaining('/type-definitions/td1/versions'),
     expect.anything(),
-  )
-})
-
-test('enums.addValue sends POST with value', async () => {
-  mockFetch.mockReturnValue(jsonResponse({ status: 'added' }))
-
-  await api.enums.addValue('e1', 'pending')
-  expect(mockFetch).toHaveBeenCalledWith(
-    expect.stringContaining('/enums/e1/values'),
-    expect.objectContaining({
-      method: 'POST',
-      body: JSON.stringify({ value: 'pending' }),
-    }),
-  )
-})
-
-test('enums.removeValue sends DELETE', async () => {
-  mockFetch.mockReturnValue(noContentResponse())
-
-  await api.enums.removeValue('e1', 'v1')
-  expect(mockFetch).toHaveBeenCalledWith(
-    expect.stringContaining('/enums/e1/values/v1'),
-    expect.objectContaining({ method: 'DELETE' }),
-  )
-})
-
-test('enums.reorderValues sends PUT with ordered_ids', async () => {
-  mockFetch.mockReturnValue(jsonResponse({ status: 'reordered' }))
-
-  await api.enums.reorderValues('e1', ['v2', 'v1'])
-  expect(mockFetch).toHaveBeenCalledWith(
-    expect.stringContaining('/enums/e1/values/reorder'),
-    expect.objectContaining({
-      method: 'PUT',
-      body: JSON.stringify({ ordered_ids: ['v2', 'v1'] }),
-    }),
   )
 })
 

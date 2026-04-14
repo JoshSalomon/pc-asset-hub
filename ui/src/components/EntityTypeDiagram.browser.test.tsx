@@ -6,7 +6,7 @@ const baseEntityTypes: DiagramEntityType[] = [
   {
     entityType: { id: 'et1', name: 'Server', created_at: '', updated_at: '' },
     version: 1,
-    attributes: [{ id: 'a1', name: 'hostname', description: '', type: 'string', ordinal: 1, required: false }],
+    attributes: [{ id: 'a1', name: 'hostname', description: '', base_type: 'string', ordinal: 1, required: false }],
     associations: [
       {
         id: 'assoc1', name: 'tools', type: 'containment', direction: 'outgoing',
@@ -55,8 +55,8 @@ describe('buildModel node width', () => {
         entityType: { id: 'et1', name: 'Agent', created_at: '', updated_at: '' },
         version: 1,
         attributes: [
-          { id: 'a1', name: 'execution-modes', description: '', type: 'enum', enum_name: 'guardrail-invocation', ordinal: 1, required: true },
-          { id: 'a2', name: 'name', description: '', type: 'string', ordinal: 2, required: false },
+          { id: 'a1', name: 'execution-modes', description: '', base_type: 'enum', type_name: 'guardrail-invocation', ordinal: 1, required: true },
+          { id: 'a2', name: 'name', description: '', base_type: 'string', ordinal: 2, required: false },
         ],
         associations: [],
       },
@@ -74,7 +74,7 @@ describe('buildModel node width', () => {
         entityType: { id: 'et1', name: 'Server', created_at: '', updated_at: '' },
         version: 1,
         attributes: [
-          { id: 'a1', name: 'name', description: '', type: 'string', ordinal: 1, required: false },
+          { id: 'a1', name: 'name', description: '', base_type: 'string', ordinal: 1, required: false },
         ],
         associations: [],
       },
@@ -91,7 +91,7 @@ describe('buildModel node width', () => {
         entityType: { id: 'et1', name: 'Config', created_at: '', updated_at: '' },
         version: 1,
         attributes: [
-          { id: 'a1', name: 'very-long-configuration-parameter-name', description: '', type: 'enum', enum_name: 'extended-enumeration-type', ordinal: 1, required: true },
+          { id: 'a1', name: 'very-long-configuration-parameter-name', description: '', base_type: 'enum', type_name: 'extended-enumeration-type', ordinal: 1, required: true },
         ],
         associations: [],
       },

@@ -19,6 +19,7 @@ import {
   testName,
   cleanupE2EData,
   cleanupDnsCatalogs,
+  getTypeVersionId,
   UI_URL,
 } from './test-helpers/system'
 
@@ -66,9 +67,10 @@ beforeAll(async () => {
   etParentVersionId = parentRes.body.version.id
 
   // Add attributes to parent
+  const stringVersionId = await getTypeVersionId('string')
   await apiCall('POST', `/api/meta/v1/entity-types/${etParentId}/attributes`, {
     name: 'hostname',
-    type: 'string',
+    type_definition_version_id: stringVersionId,
     required: true,
     description: 'Hostname attribute',
   })
@@ -84,7 +86,7 @@ beforeAll(async () => {
   // Add attributes to child
   await apiCall('POST', `/api/meta/v1/entity-types/${etChildId}/attributes`, {
     name: 'port',
-    type: 'string',
+    type_definition_version_id: stringVersionId,
     required: false,
     description: 'Port attribute',
   })

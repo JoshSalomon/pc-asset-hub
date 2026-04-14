@@ -71,7 +71,34 @@ Each entity type defines additional **custom attributes** via the meta configura
 | ID          | System-assigned identifier |
 | Name        | Attribute name |
 | Description | Attribute description |
-| Type        | Value type: string, number, or enum (closed list of allowed values) |
+| Type        | Reference to a **type definition** (see section 2.6) |
+| Required    | Whether a value is mandatory for instances |
+
+### 2.6 Type Definitions
+
+A **type definition** is a reusable, versioned object that specifies a data type with optional constraints. Type definitions replace the previous inline type system (string/number/enum) with a richer, extensible model.
+
+Each type definition has a **base type** and version-specific **constraints**:
+
+| Base Type | Description | Constraints |
+|-----------|-------------|-------------|
+| string | Text value | `max_length`, `multiline` (boolean — textarea vs input in UI), `pattern` (regex) |
+| integer | Whole number | `min`, `max` |
+| number | Floating-point number | `min`, `max` |
+| boolean | True/false | (none) |
+| date | ISO 8601 date/datetime | (none) |
+| url | Validated URL | (none) |
+| enum | Value from a closed list | `values` (ordered string array) |
+| list | Ordered collection of values | `element_base_type` (a base type), `max_length` |
+| json | Structured JSON data | `schema` (optional JSON Schema — nice-to-have) |
+
+**System type definitions** exist for each base type (string, integer, number, boolean, date, url) with no constraints. These are immutable and always available. Users create **custom type definitions** to add constraints — for example, a "guardrailID" type definition with base type `string`, `max_length: 12`, and `pattern: [0-9A-F]*`.
+
+Type definitions are **versioned** (see section 3.5). Modifying a type definition's constraints creates a new version. Catalog versions pin specific type definition versions, ensuring that type constraints are frozen within a deployment context.
+
+Attributes reference a specific **type definition version**. The attribute's behavior (validation, UI rendering, storage) is determined by the referenced type definition's base type and constraints.
+
+Enums are a kind of type definition with base type `enum` and an ordered list of values as their constraint. There is no separate enum management — enums are managed through the type definition system.
 
 ## 3. Versioning Model
 
@@ -83,14 +110,24 @@ Every mutation to an entity type definition (in the meta repository) automatical
 
 Mutations to entity instances automatically increment the instance version. This provides an audit trail and reduces the risk of breaking backward compatibility.
 
-### 3.3 Catalog Versioning
+### 3.3 Type Definition Versioning
 
-A **catalog version** is a snapshot that pins specific entity definition versions together — a bill of materials. For example:
+Every mutation to a type definition's constraints creates a new version. Previous versions are retained. For example, changing an enum's values or a string type's max_length creates a new type definition version without affecting existing references.
 
-- Catalog V1: Entity A (V1), Entity B (V1), Entity C (V1)
-- Catalog V2: Entity A (V1), Entity B (V1), Entity C (V2), Entity D (V1)
+Type definition versions are pinned in catalog versions (see 3.4). This ensures that type constraints are frozen within a deployment context — modifying a type definition does not retroactively affect catalogs using the previous version.
+
+System type definitions (string, integer, number, boolean, date, url) are immutable and have exactly one version (V1). They do not require explicit pinning in catalog versions.
+
+### 3.4 Catalog Versioning
+
+A **catalog version** is a snapshot that pins specific entity definition versions and type definition versions together — a bill of materials. For example:
+
+- Catalog V1: Entity A (V1), Entity B (V1) + Types: guardrailID (V1), statusEnum (V1)
+- Catalog V2: Entity A (V1), Entity B (V2) + Types: guardrailID (V2), statusEnum (V1)
 
 Deployments reference a fixed catalog version. Once deployed, changes to the underlying definitions do not affect existing deployments.
+
+When an entity type pin is added to a catalog version, any custom type definitions used by that entity type's attributes are automatically pinned at their latest version (if not already pinned).
 
 ### 3.4 Lifecycle
 
@@ -214,8 +251,26 @@ Users can create a new entity type based on an existing one. The source can be a
 #### Copy Attributes
 Users can add an attribute to an entity type by copying it from another entity type, without redefining it from scratch. This avoids redundant manual entry when multiple entity types share similar attributes.
 
-#### Enum Management
-Closed-list (enum) value sets are managed as first-class objects — defined once and reusable across multiple entity types as attribute types. This provides a centralized way to create, view, update, and reuse enums rather than defining them inline per attribute.
+#### Type Definition Management
+Type definitions are managed as first-class versioned objects — defined once and reusable across multiple entity types as attribute types. This provides a centralized way to create, view, update, and reuse types (including enums) with optional constraints. Type definitions replace the previous inline type system and separate enum management.
+
+**API endpoints:**
+```
+POST   /api/meta/v1/type-definitions                     — create (V1)
+GET    /api/meta/v1/type-definitions                     — list all
+GET    /api/meta/v1/type-definitions/:id                 — get by ID
+PUT    /api/meta/v1/type-definitions/:id                 — update (creates new version)
+DELETE /api/meta/v1/type-definitions/:id                 — delete (if not referenced)
+GET    /api/meta/v1/type-definitions/:id/versions        — list versions
+GET    /api/meta/v1/type-definitions/:id/versions/:v     — get specific version
+```
+
+**CV type pins:**
+```
+POST   /api/meta/v1/catalog-versions/:id/type-pins       — add type pin
+DELETE /api/meta/v1/catalog-versions/:id/type-pins/:pid   — remove type pin
+GET    /api/meta/v1/catalog-versions/:id/type-pins        — list type pins
+```
 
 ## 6. User Interface
 
@@ -260,12 +315,12 @@ The meta operations UI is the primary workspace for Admins to define and manage 
 **Attribute list within entity type**
 - The entity type detail view shows all attributes (system and custom) in an ordered list.
 - System attributes (Name, Description) appear first with a "System" badge and cannot be edited, removed, or reordered.
-- Each attribute displays: name, description, type (string/number/enum name), and whether it is required.
+- Each attribute displays: name, description, type definition name (with base type indicator), and whether it is required.
 - Custom attributes can be reordered (drag-and-drop or move up/down controls).
 
 **Add attribute**
-- Inline form or dialog to add a new attribute: name (required), description (optional), type (required — dropdown of string, number, or existing enums).
-- For enum types, the dropdown lists all centrally-defined enums by name. The Admin can also create a new enum inline (see 6.1.4).
+- Inline form or dialog to add a new attribute: name (required), description (optional), type definition (required — grouped selector showing system types first, then custom types grouped by base type).
+- The type selector supports inline creation of new type definitions ("Create new type..." action) without navigating away.
 - Validation: attribute name must be unique within the entity type. Names "name" and "description" are reserved for system attributes and rejected.
 
 **Edit attribute**
@@ -307,26 +362,37 @@ The meta operations UI is the primary workspace for Admins to define and manage 
 - Entity types are nodes; associations are edges with labels indicating type and direction.
 - Useful for understanding the overall schema at a glance, especially as the number of entity types grows.
 
-#### 6.1.4 Enum Management
+#### 6.1.4 Type Definition Management
 
-**Enum list view**
-- Displays all defined enums with their name, number of values, and a list of entity types/attributes that reference them.
-- Supports filtering by name.
-- Provides actions: create new, edit, delete.
+**Type definition list view (Types tab — replaces Enums tab)**
+- Displays all type definitions: name, base type, latest version number, description.
+- System types shown with a "System" badge — cannot be edited or deleted.
+- Custom types: create, edit (creates new version), delete.
+- Sorted by type name. Supports filtering by name and base type.
 
-**Create/edit enum**
-- Form to define or modify an enum: name (required), ordered list of allowed values.
-- Values can be added, removed, and reordered.
-- When editing, the UI shows which attributes currently reference this enum.
-- If removing a value that may be in use by existing entity instances, the UI warns the Admin.
+**Type definition detail view**
+- Shows name, description, base type, and current constraints.
+- Edit constraints → creates a new version (copy-on-write). Previous versions remain accessible.
+- Version history panel showing all versions with their constraints.
+- Shows which attributes and entity types reference this type definition.
 
-**Delete enum**
-- Blocked if any attribute in any entity type version references the enum.
+**Create type definition**
+- Name (required), description (optional), base type (required — dropdown).
+- Dynamic constraints form based on selected base type:
+  - string: max_length input, multiline toggle, pattern input (regex)
+  - integer/number: min and max inputs
+  - enum: ordered values list (add, remove, reorder)
+  - list: element base type dropdown, max_length input
+  - json: schema textarea (optional, nice-to-have)
+  - boolean/date/url: no constraint fields
+
+**Delete type definition**
+- Blocked if any attribute in any entity type version references the type definition.
 - The UI shows which attributes reference it and prevents deletion until all references are removed.
 
-**Inline enum creation**
-- When adding an attribute and selecting enum as the type, the Admin can create a new enum inline without navigating away from the entity type view.
-- The newly created enum is immediately available for selection.
+**Inline type creation**
+- When adding an attribute, the Admin can create a new type definition inline ("Create new type..." action) without navigating away from the entity type view.
+- The newly created type definition is immediately available for selection.
 
 #### 6.1.5 Catalog Version Management
 
@@ -655,18 +721,20 @@ Acceptance Criteria:
 
 ---
 
-**US-5: Manage enums centrally**
-As an Admin, I want to define enum value sets as reusable objects and assign them as attribute types across multiple entity types, so that closed lists are consistent and maintained in one place.
+**US-5: Manage type definitions centrally**
+As an Admin, I want to define reusable type definitions with base types and optional constraints, and assign them as attribute types across multiple entity types, so that data types are consistent, validated, and maintained in one place.
 
-**Why**: Without centralized enum management, the same set of values (e.g., supported languages, deployment targets) would be duplicated across entity types. Updates would require finding and changing every copy, risking inconsistency.
+**Why**: Without centralized type management, the same type constraints (e.g., a hex string ID format, a port number range, a set of allowed enum values) would be duplicated across entity types. Updates would require finding and changing every copy, risking inconsistency. Versioned type definitions also solve the enum mutation problem (TD-58) where changing enum values retroactively affected all catalog versions.
 
 Acceptance Criteria:
-- Admin can create a named enum with an optional description and an ordered list of allowed values.
-- Admin can update an enum's description and values (add, remove, reorder).
-- Enums can be assigned as the type of any custom attribute on any entity type.
-- Multiple attributes across different entity types can reference the same enum.
-- When an enum is updated, all attributes referencing it reflect the updated values.
-- An enum cannot be deleted if it is referenced by any attribute in any entity type version.
+- Admin can create a named type definition with a base type (string, integer, number, boolean, date, url, enum, list, json), an optional description, and optional constraints specific to the base type.
+- Admin can update a type definition's description and constraints. Updates create a new version (copy-on-write) — the previous version is retained.
+- Type definitions can be assigned as the type of any custom attribute on any entity type.
+- Multiple attributes across different entity types can reference the same type definition.
+- Updating a type definition does not retroactively affect existing catalog versions — they continue to reference the pinned version.
+- A type definition cannot be deleted if it is referenced by any attribute in any entity type version.
+- System type definitions (string, integer, number, boolean, date, url) are immutable and always available.
+- Enum type definitions store an ordered list of values as their constraint. Enum management is unified under type definitions — there is no separate enum system.
 
 ---
 
@@ -1488,6 +1556,38 @@ Acceptance Criteria:
 
 ---
 
+**US-53: Pin type definition versions in catalog versions**
+As an Admin, I want catalog versions to pin specific type definition versions alongside entity type versions, so that type constraints are frozen within a deployment context.
+
+**Why**: Without type pinning, modifying a type definition (e.g., changing enum values or a string's max_length) would retroactively affect all catalogs. Type definition versioning with CV pinning ensures that catalogs using a specific type version continue to validate and behave consistently, regardless of later changes to the type definition.
+
+Acceptance Criteria:
+- A catalog version's bill of materials includes type definition version pins alongside entity type version pins.
+- When an entity type pin is added to a CV, any custom type definitions used by that entity type's attributes are automatically pinned at their latest version (if not already pinned).
+- Type pins can be manually added and removed from a CV.
+- System type definitions (immutable V1) do not require explicit pinning.
+- Validation of instances in a catalog uses the type definition versions pinned in the catalog's CV.
+- The CV detail page shows type pins in the BOM alongside entity type pins.
+
+---
+
+**US-54: Type-aware instance forms and validation**
+As a user, I want instance creation and editing forms to render appropriate input controls based on the attribute's type definition, and I want validation to enforce type constraints.
+
+**Why**: With 9 base types and configurable constraints, the UI must dynamically render the right form control (text input, number input, toggle, date picker, select dropdown, repeatable list, etc.) and the validation service must check values against the type definition's constraints.
+
+Acceptance Criteria:
+- Instance create/edit forms render type-appropriate controls: TextInput for string, TextArea for multiline string, NumberInput for integer/number (with min/max), Switch for boolean, DatePicker for date, TextInput with URL validation for url, Select dropdown for enum, repeatable input group for list, TextArea for json.
+- String attributes with `max_length` show a character count indicator. String attributes with `multiline: true` render as TextArea instead of TextInput.
+- Integer/number attributes with `min`/`max` constraints enforce range limits in the form and in validation.
+- Enum attributes show a dropdown with values from the pinned type definition version.
+- List attributes allow adding/removing items, with each item validated against the element base type.
+- The catalog validation service validates all instance attribute values against their type definition constraints (max_length, pattern, min/max, enum values, list element types, etc.).
+- Instance create/edit forms provide **inline field-level validation warnings** for type constraints during data entry. When a value violates a constraint (e.g., exceeds max_length, doesn't match a regex pattern, out of range), the form shows a warning on the field. This is advisory only — the form can still be submitted (draft mode allows invalid data). The warning helps users fix issues early rather than discovering them during full catalog validation.
+- The operational data viewer displays values with type-aware formatting: clickable URLs, formatted dates, "Yes"/"No" for booleans, comma-separated lists, formatted JSON.
+
+---
+
 ## 10. Open Design Decisions
 
 The following items are acknowledged but not yet fully specified:
@@ -1757,34 +1857,20 @@ Allow customization of the landing page and display the running server version.
 - The landing page displays the server version in the footer or a subtle badge, so operators can confirm which version is deployed.
 - Build version is injected at compile time via `-ldflags` (Go) and `VITE_APP_VERSION` (UI).
 
-### FF-14: Comprehensive Type System
+### FF-14: Comprehensive Type System (IMPLEMENTING — see US-5, US-53, US-54)
 
-Extend the attribute type system beyond the current `string`, `number`, `enum` with richer constraints and new types. This replaces the implicit "any string / any number" semantics with a schema-level type definition that carries validation rules.
+Replaces the attribute type system (`string`, `number`, `enum`) with reusable, versioned **type definitions**. Type definitions are first-class objects with a base type and optional constraints (max_length, pattern, min/max, enum values, etc.). Type definition versions are pinned in catalog versions, solving TD-58 (destructive enum mutations). See design spec: `docs/superpowers/specs/2026-04-11-type-system-design.md`.
 
-**Constrained strings:**
-- `string(maxLength)` — e.g., `string(255)` limits the attribute value to 255 characters. Validated on instance create/update. Shown as max-length hint in the UI form field.
-- `multiline` boolean property — when true, the UI renders a `TextArea` instead of a `TextInput`. Applies to any string-based type (plain string, `string(maxLength)`, and `json`). System attributes like `description` are implicitly multiline. Schema authors set this per attribute when defining the entity type.
+**Base types implemented:** string, integer, number, boolean, date, url, enum, list, json.
 
-**Constrained numbers:**
-- `integer(min, max)` and `float(min, max)` — e.g., `integer(1, 65535)` for a port number, `float(0.0, 1.0)` for a probability. Replaces the current untyped `number` which accepts any numeric value.
-- Each type definition specifies exactly one legal range. The range is inclusive on both ends.
-- Integer vs float distinction enables UI validation (reject decimals for integer fields) and potential future DB column type optimization.
+**Remaining future enhancements:**
 
-**Fixed-size arrays:**
-- `array(elementType, size)` — e.g., `array(string, 3)` for exactly 3 string values. Element type can be any scalar type (string, number, integer, float, enum).
-- Stored as JSON array in the attribute value. Validated on create/update: exact size, each element matches the element type and its constraints.
-- UI renders as a multi-field input group with exactly `size` fields.
+**FF-14a: List elements referencing type definitions**
+Currently, list-type attributes define their element type as a base type only (string, integer, etc.). This enhancement allows list elements to reference a type definition — enabling lists of constrained types (e.g., a list of guardrailIDs, a list of enum values). Change: add optional `element_type_definition_version_id` to list constraints.
 
-**Variable-size arrays (nice to have):**
-- `array(elementType, minSize, maxSize)` — e.g., `array(string, 1, 10)` for 1-10 string values. If `maxSize` is omitted or `*`, the array is unbounded.
-- Lower priority — fixed-size arrays cover most modeling use cases (e.g., primary/secondary DNS, RGB color values). Variable-size adds complexity in validation, UI rendering (dynamic add/remove), and storage.
+**FF-14b: JSON Schema validation**
+JSON-type attributes can optionally specify a JSON Schema for validation. Currently a nice-to-have placeholder in the type definition constraints (`{"schema": {}}`). Change: implement JSON Schema validation in the catalog validation service using a Go JSON Schema library.
 
-**Structured data (consider):**
-- `json` — stored as a string but validated as legal JSON on create/update. Useful for attributes that carry opaque structured data (e.g., configuration blobs, metadata from external systems) where defining a full schema is impractical. The UI would render a code editor or textarea with JSON syntax highlighting and validation. Whether this is needed depends on whether Asset Hub should model structured sub-documents or remain a flat attribute system — if users frequently resort to pasting JSON into plain string fields, this type would formalize and validate that pattern.
-
-**Implementation notes:**
-- Type definitions are stored as structured metadata on the attribute (not just a string tag). The current `type` field (`string`, `number`, `enum`) becomes a type descriptor with optional constraints.
-- Enums remain as-is — they are already a constrained type (value must be in the enum's value set). The new types complement enums for non-enumerable constraints.
-- Catalog validation (`POST /catalogs/{name}/validate`) must check all type constraints, not just required/enum membership.
-- Copy-on-write versioning carries type constraints forward with attributes.
+**FF-14c: Compound type definitions (structs)**
+User-defined composite types where a type definition contains named fields, each referencing another type definition. For example, a "NetworkConfig" type with fields `ip` (url), `port` (integer with min/max), and `protocol` (enum). Stored as JSON objects. Enables structured sub-documents with full schema validation. Significantly more complex than scalar types — requires recursive validation, nested UI form rendering, and compound value storage.
 

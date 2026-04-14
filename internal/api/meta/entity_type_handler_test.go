@@ -627,7 +627,7 @@ func TestTE62_VersionSnapshot(t *testing.T) {
 		ID: "v2-id", EntityTypeID: "et1", Version: 2, Description: "V2", CreatedAt: now,
 	}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v2-id").Return([]*models.Attribute{
-		{ID: "a1", Name: "hostname", Type: "string", Ordinal: 1},
+		{ID: "a1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Ordinal: 1},
 	}, nil)
 	assocRepo.On("ListByVersion", mock.Anything, "v2-id").Return([]*models.Association{
 		{ID: "as1", EntityTypeVersionID: "v2-id", TargetEntityTypeID: "et2", Type: "containment", SourceRole: "server", TargetRole: "tool", CreatedAt: now},
@@ -902,7 +902,7 @@ func TestT18_07_SnapshotSystemAttrName(t *testing.T) {
 		ID: "v1", EntityTypeID: "et1", Version: 1, CreatedAt: now,
 	}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
-		{ID: "a1", Name: "hostname", Type: "string", Ordinal: 0},
+		{ID: "a1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Ordinal: 0},
 	}, nil)
 	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	assocRepo.On("ListByTargetEntityType", mock.Anything, "et1").Return([]*models.Association{}, nil)
@@ -914,7 +914,7 @@ func TestT18_07_SnapshotSystemAttrName(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Len(t, resp.Attributes, 3) // 2 system + 1 custom
 	assert.Equal(t, "name", resp.Attributes[0].Name)
-	assert.Equal(t, "string", resp.Attributes[0].Type)
+	assert.Equal(t, "string", resp.Attributes[0].BaseType)
 	assert.Equal(t, true, resp.Attributes[0].System)
 	assert.Equal(t, true, resp.Attributes[0].Required)
 	assert.Equal(t, -2, resp.Attributes[0].Ordinal)
@@ -963,8 +963,8 @@ func TestT18_09_SnapshotCustomOrdinals(t *testing.T) {
 		ID: "v1", EntityTypeID: "et1", Version: 1, CreatedAt: now,
 	}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
-		{ID: "a1", Name: "hostname", Type: "string", Ordinal: 0},
-		{ID: "a2", Name: "port", Type: "number", Ordinal: 1},
+		{ID: "a1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Ordinal: 0},
+		{ID: "a2", Name: "port", TypeDefinitionVersionID: "tdv-number", Ordinal: 1},
 	}, nil)
 	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
 	assocRepo.On("ListByTargetEntityType", mock.Anything, "et1").Return([]*models.Association{}, nil)
@@ -978,4 +978,56 @@ func TestT18_09_SnapshotCustomOrdinals(t *testing.T) {
 	assert.Equal(t, 0, resp.Attributes[2].Ordinal) // hostname
 	assert.Equal(t, 1, resp.Attributes[3].Ordinal) // port
 	assert.Equal(t, false, resp.Attributes[2].System)
+}
+
+// Cover TypeInfo resolution in snapshot handler
+func TestSnapshotResolvesTypeInfo(t *testing.T) {
+	etRepo := new(mocks.MockEntityTypeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	assocRepo := new(mocks.MockAssociationRepo)
+	tdRepo := new(mocks.MockTypeDefinitionRepo)
+	tdvRepo := new(mocks.MockTypeDefinitionVersionRepo)
+
+	e := echo.New()
+	svc := svcmeta.NewEntityTypeService(etRepo, etvRepo, attrRepo, assocRepo)
+	svcmeta.WithTypeDefinitionRepos(svc, tdRepo, tdvRepo)
+	var etvRepoForHandler repository.EntityTypeVersionRepository = etvRepo
+	handler := apimeta.NewEntityTypeHandler(svc, etvRepoForHandler)
+	g := e.Group("/api/meta/v1")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	requireAdmin := apimw.RequireRole(apimw.RoleAdmin)
+	apimeta.RegisterEntityTypeRoutes(g, handler, requireAdmin)
+
+	now := time.Now()
+	etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "Server", CreatedAt: now, UpdatedAt: now}, nil)
+	etvRepo.On("GetByEntityTypeAndVersion", mock.Anything, "et1", 1).Return(&models.EntityTypeVersion{
+		ID: "v1", EntityTypeID: "et1", Version: 1, CreatedAt: now,
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{
+		{ID: "a1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Ordinal: 0},
+	}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Association{}, nil)
+	assocRepo.On("ListByTargetEntityType", mock.Anything, "et1").Return([]*models.Association{}, nil)
+
+	// Set up type def resolution so TypeInfo is populated
+	tdvRepo.On("GetByID", mock.Anything, "tdv-string").Return(&models.TypeDefinitionVersion{
+		ID: "tdv-string", TypeDefinitionID: "td-string", Constraints: map[string]any{},
+	}, nil)
+	tdRepo.On("GetByID", mock.Anything, "td-string").Return(&models.TypeDefinition{
+		ID: "td-string", Name: "string", BaseType: models.BaseTypeString,
+	}, nil)
+
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/entity-types/et1/versions/1/snapshot", "", apimw.RoleRO)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.VersionSnapshotResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Len(t, resp.Attributes, 3) // 2 system + 1 custom
+	// The custom attribute should have resolved type info
+	customAttr := resp.Attributes[2]
+	assert.Equal(t, "hostname", customAttr.Name)
+	assert.Equal(t, "string", customAttr.TypeName)
+	assert.Equal(t, "string", customAttr.BaseType)
 }

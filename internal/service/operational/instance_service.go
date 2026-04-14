@@ -2,6 +2,7 @@ package operational
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -24,7 +25,8 @@ type InstanceService struct {
 	attrRepo    repository.AttributeRepository
 	etvRepo     repository.EntityTypeVersionRepository
 	etRepo      repository.EntityTypeRepository
-	enumValRepo repository.EnumValueRepository
+	tdvRepo     repository.TypeDefinitionVersionRepository
+	tdRepo      repository.TypeDefinitionRepository
 	assocRepo   repository.AssociationRepository
 	linkRepo    repository.AssociationLinkRepository
 }
@@ -38,7 +40,8 @@ func NewInstanceService(
 	attrRepo repository.AttributeRepository,
 	etvRepo repository.EntityTypeVersionRepository,
 	etRepo repository.EntityTypeRepository,
-	enumValRepo repository.EnumValueRepository,
+	tdvRepo repository.TypeDefinitionVersionRepository,
+	tdRepo repository.TypeDefinitionRepository,
 	assocRepo repository.AssociationRepository,
 	linkRepo repository.AssociationLinkRepository,
 ) *InstanceService {
@@ -51,7 +54,8 @@ func NewInstanceService(
 		attrRepo:    attrRepo,
 		etvRepo:     etvRepo,
 		etRepo:      etRepo,
-		enumValRepo: enumValRepo,
+		tdvRepo:     tdvRepo,
+		tdRepo:      tdRepo,
 		assocRepo:   assocRepo,
 		linkRepo:    linkRepo,
 	}
@@ -118,8 +122,8 @@ type AttributeValue struct {
 
 // mapAttributeValues maps raw InstanceAttributeValues to resolved AttributeValues using schema attributes.
 // This is the single source of truth for attribute value resolution — used by both single-instance
-// and list operations.
-func mapAttributeValues(attrs []*models.Attribute, values []*models.InstanceAttributeValue) []AttributeValue {
+// and list operations. baseTypeByAttr maps attribute ID to the resolved base type string.
+func mapAttributeValues(attrs []*models.Attribute, values []*models.InstanceAttributeValue, baseTypeByAttr map[string]string) []AttributeValue {
 	valueMap := make(map[string]*models.InstanceAttributeValue)
 	for _, v := range values {
 		valueMap[v.AttributeID] = v
@@ -127,19 +131,25 @@ func mapAttributeValues(attrs []*models.Attribute, values []*models.InstanceAttr
 
 	result := make([]AttributeValue, 0, len(attrs))
 	for _, attr := range attrs {
+		baseType, ok := baseTypeByAttr[attr.ID]
+		if !ok {
+			baseType = "string" // fallback if type resolution failed
+		}
 		av := AttributeValue{
 			Name:     attr.Name,
-			Type:     string(attr.Type),
+			Type:     baseType,
 			Required: attr.Required,
 		}
 		if val, ok := valueMap[attr.ID]; ok {
-			switch attr.Type {
-			case models.AttributeTypeString:
+			switch models.BaseType(baseType) {
+			case models.BaseTypeString, models.BaseTypeURL, models.BaseTypeDate, models.BaseTypeBoolean, models.BaseTypeEnum:
 				av.Value = val.ValueString
-			case models.AttributeTypeNumber:
+			case models.BaseTypeNumber, models.BaseTypeInteger:
 				av.Value = val.ValueNumber
-			case models.AttributeTypeEnum:
-				av.Value = val.ValueEnum
+			case models.BaseTypeList, models.BaseTypeJSON:
+				if val.ValueJSON != "" {
+					av.Value = val.ValueJSON
+				}
 			}
 		}
 		result = append(result, av)
@@ -147,8 +157,18 @@ func mapAttributeValues(attrs []*models.Attribute, values []*models.InstanceAttr
 	return result
 }
 
+// resolveBaseTypes delegates to the shared ResolveBaseTypes helper.
+func (s *InstanceService) resolveBaseTypes(ctx context.Context, attrs []*models.Attribute) (map[string]string, error) {
+	return ResolveBaseTypes(ctx, attrs, s.tdvRepo, s.tdRepo)
+}
+
 func (s *InstanceService) resolveAttributeValues(ctx context.Context, inst *models.EntityInstance, etv *models.EntityTypeVersion) ([]AttributeValue, error) {
 	attrs, err := s.attrRepo.ListByVersion(ctx, etv.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	baseTypeByAttr, err := s.resolveBaseTypes(ctx, attrs)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +178,7 @@ func (s *InstanceService) resolveAttributeValues(ctx context.Context, inst *mode
 		return nil, err
 	}
 
-	return mapAttributeValues(attrs, values), nil
+	return mapAttributeValues(attrs, values, baseTypeByAttr), nil
 }
 
 // validateAndBuildAttributeValues validates and builds attribute values from input.
@@ -174,6 +194,12 @@ func (s *InstanceService) validateAndBuildAttributeValues(ctx context.Context, e
 	attrByName := make(map[string]*models.Attribute)
 	for _, a := range attrs {
 		attrByName[a.Name] = a
+	}
+
+	// Resolve base types for all attributes
+	baseTypeByAttr, err := s.resolveBaseTypes(ctx, attrs)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	touchedAttrIDs := make(map[string]bool)
@@ -199,10 +225,29 @@ func (s *InstanceService) validateAndBuildAttributeValues(ctx context.Context, e
 			AttributeID:     attr.ID,
 		}
 
-		switch attr.Type {
-		case models.AttributeTypeString:
+		baseType := models.BaseType(baseTypeByAttr[attr.ID])
+		switch baseType {
+		case models.BaseTypeString, models.BaseTypeURL, models.BaseTypeDate, models.BaseTypeEnum:
 			iav.ValueString = fmt.Sprintf("%v", rawVal)
-		case models.AttributeTypeNumber:
+		case models.BaseTypeBoolean:
+			iav.ValueString = fmt.Sprintf("%v", rawVal)
+		case models.BaseTypeInteger:
+			switch v := rawVal.(type) {
+			case float64:
+				iav.ValueNumber = &v
+			case int:
+				f := float64(v)
+				iav.ValueNumber = &f
+			case string:
+				f, err := strconv.ParseFloat(v, 64)
+				if err != nil {
+					return nil, nil, domainerrors.NewValidation(fmt.Sprintf("attribute %s: expected integer, got %q", name, v))
+				}
+				iav.ValueNumber = &f
+			default:
+				return nil, nil, domainerrors.NewValidation(fmt.Sprintf("attribute %s: expected integer", name))
+			}
+		case models.BaseTypeNumber:
 			switch v := rawVal.(type) {
 			case float64:
 				iav.ValueNumber = &v
@@ -218,24 +263,19 @@ func (s *InstanceService) validateAndBuildAttributeValues(ctx context.Context, e
 			default:
 				return nil, nil, domainerrors.NewValidation(fmt.Sprintf("attribute %s: expected number", name))
 			}
-		case models.AttributeTypeEnum:
-			strVal := fmt.Sprintf("%v", rawVal)
-			// Validate enum value is in allowed list
-			enumValues, err := s.enumValRepo.ListByEnum(ctx, attr.EnumID)
-			if err != nil {
-				return nil, nil, err
-			}
-			valid := false
-			for _, ev := range enumValues {
-				if ev.Value == strVal {
-					valid = true
-					break
+		case models.BaseTypeList, models.BaseTypeJSON:
+			switch v := rawVal.(type) {
+			case string:
+				iav.ValueJSON = v
+			default:
+				b, err := json.Marshal(v)
+				if err != nil {
+					return nil, nil, domainerrors.NewValidation(fmt.Sprintf("attribute %s: failed to marshal JSON value", name))
 				}
+				iav.ValueJSON = string(b)
 			}
-			if !valid {
-				return nil, nil, domainerrors.NewValidation(fmt.Sprintf("attribute %s: %q is not a valid enum value", name, strVal))
-			}
-			iav.ValueEnum = strVal
+		default:
+			iav.ValueString = fmt.Sprintf("%v", rawVal)
 		}
 
 		values = append(values, iav)
@@ -337,6 +377,12 @@ func (s *InstanceService) ListInstances(ctx context.Context, catalogName, entity
 		return nil, 0, err
 	}
 
+	// Resolve base types once for all instances
+	baseTypeByAttr, err := s.resolveBaseTypes(ctx, attrs)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	// Translate filter attribute names to IDs
 	if len(params.Filters) > 0 {
 		attrByName := make(map[string]*models.Attribute)
@@ -375,7 +421,7 @@ func (s *InstanceService) ListInstances(ctx context.Context, catalogName, entity
 		if err != nil {
 			return nil, 0, err
 		}
-		details[i] = &InstanceDetail{Instance: inst, Attributes: mapAttributeValues(attrs, values)}
+		details[i] = &InstanceDetail{Instance: inst, Attributes: mapAttributeValues(attrs, values, baseTypeByAttr)}
 	}
 
 	return details, total, nil
@@ -426,7 +472,7 @@ func (s *InstanceService) UpdateInstance(ctx context.Context, catalogName, entit
 				AttributeID:     prev.AttributeID,
 				ValueString:     prev.ValueString,
 				ValueNumber:     prev.ValueNumber,
-				ValueEnum:       prev.ValueEnum,
+				ValueJSON:       prev.ValueJSON,
 			})
 		}
 	}
@@ -605,13 +651,18 @@ func (s *InstanceService) ListContainedInstances(ctx context.Context, catalogNam
 		return nil, 0, err
 	}
 
+	baseTypeByAttr, err := s.resolveBaseTypes(ctx, attrs)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	details := make([]*InstanceDetail, len(filtered))
 	for i, inst := range filtered {
 		values, err := s.iavRepo.GetCurrentValues(ctx, inst.ID)
 		if err != nil {
 			return nil, 0, err
 		}
-		details[i] = &InstanceDetail{Instance: inst, Attributes: mapAttributeValues(attrs, values)}
+		details[i] = &InstanceDetail{Instance: inst, Attributes: mapAttributeValues(attrs, values, baseTypeByAttr)}
 	}
 
 	return details, len(filtered), nil

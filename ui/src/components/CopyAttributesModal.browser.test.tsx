@@ -2,7 +2,7 @@ import { render } from 'vitest-browser-react'
 import { expect, test, vi, beforeEach } from 'vitest'
 import { page } from 'vitest/browser'
 import CopyAttributesModal from './CopyAttributesModal'
-import type { EntityType, Attribute, Enum } from '../types'
+import type { EntityType, Attribute } from '../types'
 
 const mockEntityTypes: EntityType[] = [
   { id: 'et-1', name: 'MLModel', created_at: '', updated_at: '' },
@@ -10,15 +10,15 @@ const mockEntityTypes: EntityType[] = [
 ]
 
 const mockSourceAttributes: Attribute[] = [
-  { id: 'sa1', name: 'color', description: 'Color', type: 'string', ordinal: 0, required: false },
-  { id: 'sa2', name: 'hostname', description: 'Host', type: 'string', ordinal: 1, required: false },
+  { id: 'sa1', name: 'color', description: 'Color', base_type: 'enum', ordinal: 0, required: false },
+  { id: 'sa2', name: 'hostname', description: 'Host', base_type: 'string', ordinal: 1, required: false },
+  { id: 'sa3', name: 'count', description: 'Count', base_type: 'integer', ordinal: 2, required: false },
+  { id: 'sa4', name: 'active', description: 'Active', base_type: 'boolean', ordinal: 3, required: false },
 ]
 
 const existingAttributes: Attribute[] = [
-  { id: 'a1', name: 'hostname', description: 'The host', type: 'string', ordinal: 0, required: false },
+  { id: 'a1', name: 'hostname', description: 'The host', base_type: 'string', ordinal: 0, required: false },
 ]
-
-const mockEnums: Enum[] = []
 
 function renderModal(overrides: Partial<React.ComponentProps<typeof CopyAttributesModal>> = {}) {
   const props = {
@@ -30,7 +30,6 @@ function renderModal(overrides: Partial<React.ComponentProps<typeof CopyAttribut
     currentEntityTypeId: 'et-1',
     sourceAttributes: [] as Attribute[],
     existingAttributes: existingAttributes,
-    enums: mockEnums,
     error: null,
     ...overrides,
   }
@@ -66,8 +65,8 @@ test('T-20.63: CopyAttributesModal shows conflict status', async () => {
   renderModal({ sourceAttributes: mockSourceAttributes })
   // hostname exists in existingAttributes, so should show Conflict
   await expect.element(page.getByText('Conflict')).toBeVisible()
-  // color doesn't exist, so should show Available
-  await expect.element(page.getByText('Available')).toBeVisible()
+  // color, count, active don't exist, so should show Available (3 instances)
+  await expect.element(page.getByText('Available').first()).toBeVisible()
 })
 
 // T-20.64: Cancel calls onClose

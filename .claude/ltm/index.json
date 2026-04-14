@@ -412,6 +412,31 @@
       "phase": 0,
       "difficulty": 0.5,
       "created_at": "2026-04-06T08:19:07.493759+00:00"
+    },
+    "mem_30252535": {
+      "topic": "STRICT RULE: Josh NEVER approves skipping testable lines — zero tolerance for coverage laziness",
+      "tags": [
+        "coverage",
+        "testing",
+        "user-preference",
+        "strict-rule",
+        "non-negotiable"
+      ],
+      "phase": 0,
+      "difficulty": 1.0,
+      "created_at": "2026-04-12T21:12:38.635865+00:00"
+    },
+    "mem_861d0922": {
+      "topic": "Type system architecture (FF-14)",
+      "tags": [
+        "type-system",
+        "type-definition",
+        "architecture",
+        "FF-14"
+      ],
+      "phase": 0,
+      "difficulty": 0.5,
+      "created_at": "2026-04-14T06:45:01.707555+00:00"
     }
   }
 }

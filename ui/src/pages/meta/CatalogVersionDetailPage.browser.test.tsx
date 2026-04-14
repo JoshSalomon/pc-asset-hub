@@ -51,9 +51,9 @@ const mockSnapshot = {
   entity_type: { id: 'et-1', name: 'Model', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
   version: { id: 'etv-1', entity_type_id: 'et-1', version: 3, description: 'V3', created_at: '2026-01-01T00:00:00Z' },
   attributes: [
-    { id: 'a1', name: 'hostname', description: 'The hostname', type: 'string', ordinal: 1, required: false },
-    { id: 'a2', name: 'port', description: 'Port number', type: 'number', ordinal: 2, required: true },
-    { id: 'a3', name: 'status', description: 'Status flag', type: 'enum', enum_id: 'e1', enum_name: 'boolean', ordinal: 3, required: false },
+    { id: 'a1', name: 'hostname', description: 'The hostname', base_type: 'string', type_name: 'string', ordinal: 1, required: false },
+    { id: 'a2', name: 'port', description: 'Port number', base_type: 'number', type_name: 'number', ordinal: 2, required: true },
+    { id: 'a3', name: 'status', description: 'Status flag', base_type: 'enum', type_name: 'boolean', ordinal: 3, required: false },
   ],
   associations: [
     { id: 'as1', name: 'tools', type: 'containment', target_entity_type_id: 'et-2', target_entity_type_name: 'Tool', source_role: 'model', target_role: 'tool', source_cardinality: '1', target_cardinality: '0..n', direction: 'outgoing' },
@@ -229,8 +229,8 @@ test('T-E.65: BOM modal shows attributes table', async () => {
   await expect.element(page.getByRole('dialog').getByRole('gridcell', { name: 'port *', exact: true })).toBeVisible()
   await expect.element(page.getByRole('dialog').getByRole('gridcell', { name: 'string', exact: true })).toBeVisible()
   await expect.element(page.getByRole('dialog').getByRole('gridcell', { name: 'number', exact: true })).toBeVisible()
-  // Enum attribute should show "boolean (enum)" not just "enum"
-  await expect.element(page.getByRole('dialog').getByRole('gridcell', { name: 'boolean (enum)', exact: true })).toBeVisible()
+  // Enum attribute should show type_name "boolean"
+  await expect.element(page.getByRole('dialog').getByRole('gridcell', { name: 'boolean', exact: true })).toBeVisible()
 })
 
 // T-E.66: BOM modal shows associations table

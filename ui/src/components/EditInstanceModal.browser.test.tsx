@@ -5,9 +5,9 @@ import EditInstanceModal from './EditInstanceModal'
 import type { SnapshotAttribute, EntityInstance } from '../types'
 
 const schemaAttrs: SnapshotAttribute[] = [
-  { id: 'sys-name', name: 'name', type: 'string', description: '', ordinal: -2, required: true, system: true },
-  { id: 'sys-desc', name: 'description', type: 'string', description: '', ordinal: -1, required: false, system: true },
-  { id: 'a1', name: 'hostname', type: 'string', description: '', ordinal: 1, required: false },
+  { id: 'sys-name', name: 'name', base_type: 'string', description: '', ordinal: -2, required: true, system: true },
+  { id: 'sys-desc', name: 'description', base_type: 'string', description: '', ordinal: -1, required: false, system: true },
+  { id: 'a1', name: 'hostname', base_type: 'string', description: '', ordinal: 1, required: false },
 ]
 
 const mockInstance: EntityInstance = {

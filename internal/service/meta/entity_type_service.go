@@ -31,7 +31,8 @@ type EntityTypeService struct {
 	assocRepo repository.AssociationRepository
 	pinRepo   repository.CatalogVersionPinRepository
 	cvRepo    repository.CatalogVersionRepository
-	enumRepo  repository.EnumRepository
+	tdRepo    repository.TypeDefinitionRepository
+	tdvRepo   repository.TypeDefinitionVersionRepository
 }
 
 func NewEntityTypeService(
@@ -48,9 +49,10 @@ func NewEntityTypeService(
 	}
 }
 
-// WithEnumRepo adds an enum repository for resolving enum names in snapshots.
-func WithEnumRepo(svc *EntityTypeService, enumRepo repository.EnumRepository) *EntityTypeService {
-	svc.enumRepo = enumRepo
+// WithTypeDefinitionRepos adds type definition repositories for resolving type info in snapshots.
+func WithTypeDefinitionRepos(svc *EntityTypeService, tdRepo repository.TypeDefinitionRepository, tdvRepo repository.TypeDefinitionVersionRepository) *EntityTypeService {
+	svc.tdRepo = tdRepo
+	svc.tdvRepo = tdvRepo
 	return svc
 }
 
@@ -398,15 +400,22 @@ func (s *EntityTypeService) GetContainmentTree(ctx context.Context) ([]*Containm
 	return roots, nil
 }
 
+// ResolvedTypeInfo holds the resolved type definition info for an attribute.
+type ResolvedTypeInfo struct {
+	TypeName    string
+	BaseType    string
+	Constraints map[string]any
+}
+
 // VersionSnapshot holds the attributes and associations for a specific entity type version,
-// with resolved names for enum types and association targets.
+// with resolved type info and association targets.
 type VersionSnapshot struct {
 	EntityType            *models.EntityType
 	Version               *models.EntityTypeVersion
 	Attributes            []*models.Attribute
 	Associations          []*DirectedAssociation
-	EnumNames             map[string]string // enum_id → enum name
-	TargetEntityTypeNames map[string]string // entity_type_id → entity type name
+	TypeInfo              map[string]*ResolvedTypeInfo // type_definition_version_id → resolved info
+	TargetEntityTypeNames map[string]string            // entity_type_id → entity type name
 }
 
 // GetVersionSnapshot returns the attributes and associations for a specific entity type version.
@@ -467,14 +476,20 @@ func (s *EntityTypeService) GetVersionSnapshot(ctx context.Context, entityTypeID
 		})
 	}
 
-	// Resolve enum names for enum-type attributes
-	enumNames := make(map[string]string)
-	if s.enumRepo != nil {
+	// Resolve type definition info for attributes
+	typeInfo := make(map[string]*ResolvedTypeInfo)
+	if s.tdvRepo != nil {
 		for _, attr := range attrs {
-			if attr.Type == "enum" && attr.EnumID != "" {
-				if _, exists := enumNames[attr.EnumID]; !exists {
-					if e, err := s.enumRepo.GetByID(ctx, attr.EnumID); err == nil {
-						enumNames[attr.EnumID] = e.Name
+			if _, exists := typeInfo[attr.TypeDefinitionVersionID]; !exists {
+				tdv, err := s.tdvRepo.GetByID(ctx, attr.TypeDefinitionVersionID)
+				if err == nil && s.tdRepo != nil {
+					td, err := s.tdRepo.GetByID(ctx, tdv.TypeDefinitionID)
+					if err == nil {
+						typeInfo[attr.TypeDefinitionVersionID] = &ResolvedTypeInfo{
+							TypeName:    td.Name,
+							BaseType:    string(td.BaseType),
+							Constraints: tdv.Constraints,
+						}
 					}
 				}
 			}
@@ -504,7 +519,7 @@ func (s *EntityTypeService) GetVersionSnapshot(ctx context.Context, entityTypeID
 		Version:               etv,
 		Attributes:            attrs,
 		Associations:          directedAssocs,
-		EnumNames:             enumNames,
+		TypeInfo:              typeInfo,
 		TargetEntityTypeNames: targetNames,
 	}, nil
 }
