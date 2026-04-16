@@ -214,7 +214,7 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 			compiled, errMsg := CompilePatternConstraint(ti.Constraints)
 			if errMsg != "" {
 				validationErrors = append(validationErrors, ValidationError{
-					EntityType: etName, InstanceName: "", Field: attr.Name,
+					EntityType: etName, InstanceName: "(schema)", Field: attr.Name,
 					Violation: fmt.Sprintf("attribute %q has invalid pattern constraint: %s", attr.Name, errMsg),
 				})
 			} else if compiled != nil {

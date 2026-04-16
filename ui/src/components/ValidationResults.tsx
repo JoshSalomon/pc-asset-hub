@@ -24,8 +24,8 @@ export default function ValidationResults({ errors, ran, error }: { errors: Vali
           <div key={entityType} style={{ marginTop: '0.5rem' }}>
             <strong>{entityType}</strong>
             <ul style={{ margin: '0.25rem 0', paddingLeft: '1.5rem' }}>
-              {errs.map((e, i) => (
-                <li key={i}>{e.instance_name}: {e.field} — {e.violation}</li>
+              {errs.map((e) => (
+                <li key={`${e.entity_type}:${e.instance_name}:${e.field}:${e.violation}`}>{e.instance_name}: {e.field} — {e.violation}</li>
               ))}
             </ul>
           </div>

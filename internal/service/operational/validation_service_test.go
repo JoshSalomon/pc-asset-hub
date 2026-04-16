@@ -1577,7 +1577,7 @@ func TestT31_BadPatternReportsOnce(t *testing.T) {
 	// Only 1 error for the bad pattern, not 2 (one per instance)
 	require.Len(t, result.Errors, 1)
 	assert.Contains(t, result.Errors[0].Violation, "invalid pattern constraint")
-	assert.Empty(t, result.Errors[0].InstanceName) // attribute-level, not instance-level
+	assert.Equal(t, "(schema)", result.Errors[0].InstanceName) // attribute-level, not instance-level
 }
 
 // T-31.50 integration: Integer not whole number through Validate()

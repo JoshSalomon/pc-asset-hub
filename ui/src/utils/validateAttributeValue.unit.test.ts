@@ -113,6 +113,13 @@ test('T-31.134c: date valid', () => {
   expect(validateAttributeValue('date', '2026-04-15')).toBeNull()
 })
 
+// Date with trailing junk → warning
+test('date with trailing junk rejected', () => {
+  const result = validateAttributeValue('date', '2026-04-15abc')
+  expect(result).not.toBeNull()
+  expect(result).toContain('date')
+})
+
 // Date with impossible day (Feb 31) → warning
 test('T-31.134d: date impossible day rejected', () => {
   const result = validateAttributeValue('date', '2024-02-31')
