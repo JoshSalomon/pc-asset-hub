@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"gorm.io/gorm"
 
@@ -36,7 +35,7 @@ func (r *EntityInstanceGormRepo) Create(ctx context.Context, inst *models.Entity
 
 func (r *EntityInstanceGormRepo) GetByID(ctx context.Context, id string) (*models.EntityInstance, error) {
 	var record gormmodels.EntityInstance
-	result := getDB(ctx, r.db).Where("deleted_at IS NULL").First(&record, "id = ?", id)
+	result := getDB(ctx, r.db).First(&record, "id = ?", id)
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
 			return nil, domainerrors.NewNotFound("EntityInstance", id)
@@ -49,7 +48,7 @@ func (r *EntityInstanceGormRepo) GetByID(ctx context.Context, id string) (*model
 func (r *EntityInstanceGormRepo) GetByNameAndParent(ctx context.Context, entityTypeID, catalogID, parentInstanceID, name string) (*models.EntityInstance, error) {
 	var record gormmodels.EntityInstance
 	result := getDB(ctx, r.db).
-		Where("entity_type_id = ? AND catalog_id = ? AND parent_instance_id = ? AND name = ? AND deleted_at IS NULL",
+		Where("entity_type_id = ? AND catalog_id = ? AND parent_instance_id = ? AND name = ?",
 			entityTypeID, catalogID, parentInstanceID, name).
 		First(&record)
 	if result.Error != nil {
@@ -100,7 +99,7 @@ func applyAttrFilters(query *gorm.DB, filters map[string]string) (*gorm.DB, erro
 
 func (r *EntityInstanceGormRepo) List(ctx context.Context, entityTypeID, catalogID string, params models.ListParams) ([]*models.EntityInstance, int, error) {
 	base := getDB(ctx, r.db).Table("entity_instances").
-		Where("entity_instances.entity_type_id = ? AND entity_instances.catalog_id = ? AND entity_instances.deleted_at IS NULL", entityTypeID, catalogID)
+		Where("entity_instances.entity_type_id = ? AND entity_instances.catalog_id = ?", entityTypeID, catalogID)
 
 	// Apply attribute filters
 	if len(params.Filters) > 0 {
@@ -158,7 +157,7 @@ func (r *EntityInstanceGormRepo) List(ctx context.Context, entityTypeID, catalog
 func (r *EntityInstanceGormRepo) ListByCatalog(ctx context.Context, catalogID string) ([]*models.EntityInstance, error) {
 	var records []gormmodels.EntityInstance
 	if err := getDB(ctx, r.db).
-		Where("catalog_id = ? AND deleted_at IS NULL", catalogID).
+		Where("catalog_id = ?", catalogID).
 		Order("name").
 		Find(&records).Error; err != nil {
 		return nil, err
@@ -173,7 +172,7 @@ func (r *EntityInstanceGormRepo) ListByCatalog(ctx context.Context, catalogID st
 func (r *EntityInstanceGormRepo) ListByParent(ctx context.Context, parentInstanceID string, params models.ListParams) ([]*models.EntityInstance, int, error) {
 	var records []gormmodels.EntityInstance
 	query := getDB(ctx, r.db).Model(&gormmodels.EntityInstance{}).
-		Where("parent_instance_id = ? AND deleted_at IS NULL", parentInstanceID)
+		Where("parent_instance_id = ?", parentInstanceID)
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -209,18 +208,12 @@ func (r *EntityInstanceGormRepo) Update(ctx context.Context, inst *models.Entity
 }
 
 func (r *EntityInstanceGormRepo) DeleteByCatalogID(ctx context.Context, catalogID string) error {
-	now := time.Now()
-	result := getDB(ctx, r.db).Model(&gormmodels.EntityInstance{}).
-		Where("catalog_id = ? AND deleted_at IS NULL", catalogID).
-		Update("deleted_at", now)
+	result := getDB(ctx, r.db).Where("catalog_id = ?", catalogID).Delete(&gormmodels.EntityInstance{})
 	return result.Error
 }
 
-func (r *EntityInstanceGormRepo) SoftDelete(ctx context.Context, id string) error {
-	now := time.Now()
-	result := getDB(ctx, r.db).Model(&gormmodels.EntityInstance{}).
-		Where("id = ? AND deleted_at IS NULL", id).
-		Update("deleted_at", now)
+func (r *EntityInstanceGormRepo) Delete(ctx context.Context, id string) error {
+	result := getDB(ctx, r.db).Where("id = ?", id).Delete(&gormmodels.EntityInstance{})
 	if result.Error != nil {
 		return result.Error
 	}

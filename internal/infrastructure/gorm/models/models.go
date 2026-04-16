@@ -386,7 +386,6 @@ type EntityInstance struct {
 	Version          int    `gorm:"not null;default:1"`
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
-	DeletedAt        *time.Time `gorm:"index"`
 }
 
 func (e *EntityInstance) ToModel() *domain.EntityInstance {
@@ -400,7 +399,6 @@ func (e *EntityInstance) ToModel() *domain.EntityInstance {
 		Version:          e.Version,
 		CreatedAt:        e.CreatedAt,
 		UpdatedAt:        e.UpdatedAt,
-		DeletedAt:        e.DeletedAt,
 	}
 }
 
@@ -415,7 +413,6 @@ func EntityInstanceFromModel(m *domain.EntityInstance) *EntityInstance {
 		Version:          m.Version,
 		CreatedAt:        m.CreatedAt,
 		UpdatedAt:        m.UpdatedAt,
-		DeletedAt:        m.DeletedAt,
 	}
 }
 

@@ -95,7 +95,7 @@ func TestT11_11_CreateInstance(t *testing.T) {
 
 	s.instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
 	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{
 		{ID: "v1", InstanceID: "inst1", InstanceVersion: 1, AttributeID: "a1", ValueString: "myhost"},
 	}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
@@ -155,7 +155,7 @@ func TestT11_14_StringAttribute(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueString == "myhost" && vals[0].AttributeID == "a1"
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
@@ -176,7 +176,7 @@ func TestT11_15_NumberAttribute(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueNumber != nil && *vals[0].ValueNumber == 8080
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
@@ -196,7 +196,7 @@ func TestT11_16_ValidEnumValue(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueString == "active"
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
@@ -216,7 +216,7 @@ func TestT11_17_EnumValueStoredAsString(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueString == "bogus"
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	// Enum value validation is now deferred to catalog validation, so create succeeds
@@ -250,7 +250,7 @@ func TestT11_19_MissingOptionalAttrs(t *testing.T) {
 	s.mockAttributes(ctx)
 
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	// No attribute values provided — should succeed (draft mode)
@@ -273,7 +273,7 @@ func TestT11_20_MissingRequiredAttrs(t *testing.T) {
 	s.tdRepo.On("GetByID", ctx, "td-string").Return(&models.TypeDefinition{ID: "td-string", BaseType: models.BaseTypeString}, nil)
 
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	// Missing required attr — should still succeed in draft mode
@@ -327,7 +327,7 @@ func TestT11_23_UpdateAttributes(t *testing.T) {
 		{AttributeID: "a1", ValueString: "oldhost"},
 	}, nil)
 	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	detail, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "inst1", 1, nil, nil, map[string]any{
@@ -364,7 +364,7 @@ func TestT11_25_UpdateNameDesc(t *testing.T) {
 	}, nil)
 	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
 	s.iavRepo.On("GetValuesForVersion", ctx, "inst1", 1).Return([]*models.InstanceAttributeValue{}, nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	newName := "new-name"
@@ -419,7 +419,7 @@ func TestT11_28_GetWithAttributes(t *testing.T) {
 	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
 		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Name: "my-inst", Version: 1,
 	}, nil)
-	s.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{
+	s.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{ID: "v1", InstanceID: "inst1", InstanceVersion: 1, AttributeID: "a1", ValueString: "myhost"},
 		{ID: "v2", InstanceID: "inst1", InstanceVersion: 1, AttributeID: "a2", ValueNumber: ptrFloat(8080)},
 	}, nil)
@@ -446,7 +446,7 @@ func TestT11_29_ListWithAttributes(t *testing.T) {
 	s.instRepo.On("List", ctx, "et1", "cat1", mock.AnythingOfType("models.ListParams")).Return([]*models.EntityInstance{
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Name: "inst-a", Version: 1},
 	}, 1, nil)
-	s.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 
 	details, total, err := s.svc.ListInstances(ctx, "my-catalog", "model", models.ListParams{Limit: 20})
 	require.NoError(t, err)
@@ -485,15 +485,15 @@ func TestT11_31_CascadeDelete(t *testing.T) {
 	}, 1, nil)
 	s.instRepo.On("ListByParent", ctx, "child1", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
 	s.linkRepo.On("DeleteByInstance", ctx, "child1").Return(nil)
-	s.instRepo.On("SoftDelete", ctx, "child1").Return(nil)
+	s.instRepo.On("Delete", ctx, "child1").Return(nil)
 	s.linkRepo.On("DeleteByInstance", ctx, "parent1").Return(nil)
-	s.instRepo.On("SoftDelete", ctx, "parent1").Return(nil)
+	s.instRepo.On("Delete", ctx, "parent1").Return(nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	err := s.svc.DeleteInstance(ctx, "my-catalog", "model", "parent1")
 	require.NoError(t, err)
-	s.instRepo.AssertCalled(t, "SoftDelete", ctx, "child1")
-	s.instRepo.AssertCalled(t, "SoftDelete", ctx, "parent1")
+	s.instRepo.AssertCalled(t, "Delete", ctx, "child1")
+	s.instRepo.AssertCalled(t, "Delete", ctx, "parent1")
 }
 
 // T-11.32: Create instance resets catalog validation status to draft
@@ -515,7 +515,7 @@ func TestT11_32_CreateResetsDraft(t *testing.T) {
 	}, nil)
 	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat2", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "valid-cat", "model", "inst", "", nil)
@@ -535,7 +535,7 @@ func TestT11_33_UpdateResetsDraft(t *testing.T) {
 	}, nil)
 	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
 	s.iavRepo.On("GetValuesForVersion", ctx, "inst1", 1).Return([]*models.InstanceAttributeValue{}, nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "inst1", 1, nil, nil, nil)
@@ -554,7 +554,7 @@ func TestT11_34_DeleteResetsDraft(t *testing.T) {
 	}, nil)
 	s.instRepo.On("ListByParent", ctx, "inst1", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
 	s.linkRepo.On("DeleteByInstance", ctx, "inst1").Return(nil)
-	s.instRepo.On("SoftDelete", ctx, "inst1").Return(nil)
+	s.instRepo.On("Delete", ctx, "inst1").Return(nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	err := s.svc.DeleteInstance(ctx, "my-catalog", "model", "inst1")
@@ -635,7 +635,7 @@ func TestCov_ResolveAttrValues_AttrRepoError(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// Error propagation: resolveAttributeValues - iavRepo.GetCurrentValues error
+// Error propagation: resolveAttributeValues - iavRepo.GetValuesForVersion error
 func TestCov_ResolveAttrValues_GetCurrentError(t *testing.T) {
 	s := setupInstanceService()
 	ctx := context.Background()
@@ -643,7 +643,7 @@ func TestCov_ResolveAttrValues_GetCurrentError(t *testing.T) {
 	s.mockAttributes(ctx)
 
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return(nil, domainerrors.NewValidation("db error"))
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return(nil, domainerrors.NewValidation("db error"))
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", nil)
@@ -762,7 +762,7 @@ func TestCov_ListInstances_AttrError(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// Error propagation: ListInstances - iavRepo.GetCurrentValues error in loop
+// Error propagation: ListInstances - iavRepo.GetValuesForVersion error in loop
 func TestCov_ListInstances_ValueError(t *testing.T) {
 	s := setupInstanceService()
 	ctx := context.Background()
@@ -771,7 +771,7 @@ func TestCov_ListInstances_ValueError(t *testing.T) {
 	s.instRepo.On("List", ctx, "et1", "cat1", mock.Anything).Return([]*models.EntityInstance{
 		{ID: "i1"},
 	}, 1, nil)
-	s.iavRepo.On("GetCurrentValues", ctx, "i1").Return(nil, domainerrors.NewValidation("db error"))
+	s.iavRepo.On("GetValuesForVersion", ctx, "i1", mock.Anything).Return(nil, domainerrors.NewValidation("db error"))
 
 	_, _, err := s.svc.ListInstances(ctx, "my-catalog", "model", models.ListParams{Limit: 20})
 	assert.Error(t, err)
@@ -831,7 +831,7 @@ func TestCov_UpdateInstance_SetValuesError(t *testing.T) {
 
 // Error propagation: UpdateInstance - resolveAttributeValues error after update
 // This test covers the case where resolveAttributeValues fails AFTER the update succeeds.
-// We achieve this by making GetCurrentValues (called by resolveAttributeValues) return an error.
+// We achieve this by making GetValuesForVersion (called by resolveAttributeValues) return an error.
 func TestCov_UpdateInstance_ResolveAttrsError(t *testing.T) {
 	s := setupInstanceService()
 	ctx := context.Background()
@@ -842,8 +842,8 @@ func TestCov_UpdateInstance_ResolveAttrsError(t *testing.T) {
 	s.iavRepo.On("GetValuesForVersion", ctx, "i1", 1).Return([]*models.InstanceAttributeValue{}, nil)
 	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
-	// resolveAttributeValues calls GetCurrentValues — make it fail
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return(nil, domainerrors.NewValidation("db error"))
+	// resolveAttributeValues calls GetValuesForVersion — make it fail
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return(nil, domainerrors.NewValidation("db error"))
 
 	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "i1", 1, nil, nil, map[string]any{"hostname": "h"})
 	assert.Error(t, err)
@@ -894,7 +894,7 @@ func TestCov_ResolveAttrs_EnumValue(t *testing.T) {
 	s.mockAttributes(ctx)
 
 	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1}, nil)
-	s.iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{
+	s.iavRepo.On("GetValuesForVersion", ctx, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{AttributeID: "a3", ValueString: "active", InstanceVersion: 1},
 	}, nil)
 
@@ -918,7 +918,7 @@ func TestCov_ValidateAttrs_IntNumber(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueNumber != nil && *vals[0].ValueNumber == 42
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
@@ -953,7 +953,7 @@ func TestCov_ListInstances_WithValues(t *testing.T) {
 		{ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Name: "inst-a", Version: 1},
 	}, 1, nil)
 	num := float64(8080)
-	s.iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{
+	s.iavRepo.On("GetValuesForVersion", ctx, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{AttributeID: "a1", ValueString: "host-a", InstanceVersion: 1},
 		{AttributeID: "a2", ValueNumber: &num, InstanceVersion: 1},
 		{AttributeID: "a3", ValueString: "active", InstanceVersion: 1},
@@ -1007,7 +1007,7 @@ func TestT12_05_CreateContainedInstance(t *testing.T) {
 	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
 	// Instance creation
 	s.instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	detail, err := s.svc.CreateContainedInstance(ctx, "my-catalog", "server", "parent1", "tool", "my-tool", "a tool", nil)
@@ -1119,7 +1119,7 @@ func TestT12_09_ContainedInstance_SameNameDiffParents(t *testing.T) {
 	}, nil)
 	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
 	s.instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	// Create under parent1
@@ -1196,7 +1196,7 @@ func TestT12_11_ListContainedInstances(t *testing.T) {
 		{ID: "child2", EntityTypeID: "et3", CatalogID: "cat1", ParentInstanceID: "parent1", Name: "other"},
 	}, 2, nil)
 	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
-	s.iavRepo.On("GetCurrentValues", ctx, "child1").Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "child1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 
 	details, _, err := s.svc.ListContainedInstances(ctx, "my-catalog", "server", "parent1", "tool", models.ListParams{Limit: 20})
 	require.NoError(t, err)
@@ -1229,7 +1229,7 @@ func TestT12_12_ContainedInstance_ResetsDraft(t *testing.T) {
 	}, nil)
 	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
 	s.instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat2", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateContainedInstance(ctx, "valid-cat", "server", "parent1", "tool", "my-tool", "", nil)
@@ -1269,7 +1269,7 @@ func TestT12_13_ContainedInstance_WithAttributes(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueString == "a useful tool"
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{
 		{AttributeID: "a1", ValueString: "a useful tool", InstanceVersion: 1},
 	}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
@@ -1666,7 +1666,7 @@ func TestCov_UpdateInstance_CarryForward(t *testing.T) {
 		// Should have 2 values: new hostname + carried-forward port
 		return len(vals) == 2
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "i1", 1, nil, nil, map[string]any{
@@ -2014,7 +2014,7 @@ func TestCov_ListContained_AttrRepoError(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// Coverage: ListContainedInstances — iavRepo.GetCurrentValues error
+// Coverage: ListContainedInstances — iavRepo.GetValuesForVersion error
 func TestCov_ListContained_GetValuesError(t *testing.T) {
 	s := setupInstanceService()
 	ctx := context.Background()
@@ -2031,7 +2031,7 @@ func TestCov_ListContained_GetValuesError(t *testing.T) {
 		{ID: "c1", EntityTypeID: "et2"},
 	}, 1, nil)
 	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
-	s.iavRepo.On("GetCurrentValues", ctx, "c1").Return(nil, domainerrors.NewValidation("db error"))
+	s.iavRepo.On("GetValuesForVersion", ctx, "c1", mock.Anything).Return(nil, domainerrors.NewValidation("db error"))
 	_, _, err := s.svc.ListContainedInstances(ctx, "cat", "server", "p1", "tool", models.ListParams{Limit: 20})
 	assert.Error(t, err)
 }
@@ -2185,7 +2185,7 @@ func TestBug_EmptyEnumValueSkipped(t *testing.T) {
 		}
 		return true
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	// Pass empty string for enum attribute — should succeed (skip it)
@@ -2442,7 +2442,7 @@ func TestCov_ValidateAttrs_StringAsNumber(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueNumber != nil && *vals[0].ValueNumber == 42.5
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
@@ -2518,7 +2518,7 @@ func TestQR_H2_ListContainedCorrectTotal(t *testing.T) {
 		{ID: "c3", EntityTypeID: "et2", Name: "tool-b"},
 	}, 3, nil)
 	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 
 	details, total, err := s.svc.ListContainedInstances(ctx, "my-catalog", "server", "parent1", "tool", models.ListParams{Limit: 20})
 	require.NoError(t, err)
@@ -2535,7 +2535,7 @@ func TestQR_H3_CascadeDeleteCleansLinks(t *testing.T) {
 	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{ID: "inst1", CatalogID: "cat1"}, nil)
 	s.instRepo.On("ListByParent", ctx, "inst1", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
 	s.linkRepo.On("DeleteByInstance", ctx, "inst1").Return(nil)
-	s.instRepo.On("SoftDelete", ctx, "inst1").Return(nil)
+	s.instRepo.On("Delete", ctx, "inst1").Return(nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	err := s.svc.DeleteInstance(ctx, "my-catalog", "model", "inst1")
@@ -2753,7 +2753,7 @@ func TestGetInstance_WithParentChain(t *testing.T) {
 
 	s.instRepo.On("GetByID", ctx, "child1").Return(childInst, nil)
 	s.instRepo.On("GetByID", ctx, "parent1").Return(parentInst, nil)
-	s.iavRepo.On("GetCurrentValues", ctx, "child1").Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "child1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
 	s.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "model"}, nil)
 
@@ -2777,7 +2777,7 @@ func TestGetInstance_RootInstance_EmptyChain(t *testing.T) {
 	}
 
 	s.instRepo.On("GetByID", ctx, "root1").Return(rootInst, nil)
-	s.iavRepo.On("GetCurrentValues", ctx, "root1").Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "root1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
 
 	detail, err := s.svc.GetInstance(ctx, "my-catalog", "model", "root1")
@@ -2807,7 +2807,7 @@ func TestGetInstance_MultiLevelChain(t *testing.T) {
 	s.instRepo.On("GetByID", ctx, "gc1").Return(grandchild, nil)
 	s.instRepo.On("GetByID", ctx, "c1").Return(child, nil)
 	s.instRepo.On("GetByID", ctx, "r1").Return(root, nil)
-	s.iavRepo.On("GetCurrentValues", ctx, "gc1").Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "gc1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
 	s.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "model"}, nil)
 
@@ -2981,7 +2981,8 @@ func TestUpdateInstance_ClearAttributeValue(t *testing.T) {
 		}
 		return true
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	// resolveAttributeValues now uses GetValuesForVersion with inst.Version (2)
+	s.iavRepo.On("GetValuesForVersion", ctx, "inst1", 2).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	// Send empty string to clear hostname
@@ -2996,6 +2997,43 @@ func TestUpdateInstance_ClearAttributeValue(t *testing.T) {
 			assert.Nil(t, av.Value, "hostname should have been cleared, not carried forward")
 		}
 	}
+}
+
+// Regression: clearing ALL custom attrs left no IAVs at the new version.
+// GetCurrentValues used MAX(instance_version) which fell back to the old version,
+// returning stale data. Fix: use GetValuesForVersion(inst.ID, inst.Version).
+func TestUpdateInstance_ClearAllAttrs_UsesInstanceVersion(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+	s.mockAttributes(ctx)
+
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Name: "server-1", Version: 1,
+	}, nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+	// Previous version had hostname = "web-01"
+	s.iavRepo.On("GetValuesForVersion", ctx, "inst1", 1).Return([]*models.InstanceAttributeValue{
+		{ID: "v1", InstanceID: "inst1", InstanceVersion: 1, AttributeID: "a1", ValueString: "web-01"},
+	}, nil)
+	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(nil)
+	// After clearing all attrs, version 2 has NO IAVs — this is the key mock
+	s.iavRepo.On("GetValuesForVersion", ctx, "inst1", 2).Return([]*models.InstanceAttributeValue{}, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	detail, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "inst1", 1, nil, nil, map[string]any{
+		"hostname": "",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, detail.Instance.Version)
+	// hostname should be nil (cleared), NOT "web-01" (stale carry-forward)
+	for _, av := range detail.Attributes {
+		if av.Name == "hostname" {
+			assert.Nil(t, av.Value, "hostname should be nil after clearing, not stale value from previous version")
+		}
+	}
+	// Verify GetValuesForVersion was called with version 2 (not GetCurrentValues)
+	s.iavRepo.AssertCalled(t, "GetValuesForVersion", ctx, "inst1", 2)
 }
 
 // TD-20: Empty name validation
@@ -3107,7 +3145,7 @@ func TestGetInstance_ParentChainError(t *testing.T) {
 		ID: "i1", CatalogID: "cat1", EntityTypeID: "et1", Version: 1,
 		ParentInstanceID: "parent1",
 	}, nil)
-	s.iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	// Parent lookup fails
 	s.instRepo.On("GetByID", ctx, "parent1").Return(nil, fmt.Errorf("parent not found"))
 
@@ -3203,7 +3241,7 @@ func TestCov_ValidateAttrs_BooleanBaseType(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueString == "true"
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
@@ -3221,7 +3259,7 @@ func TestCov_ValidateAttrs_IntegerFloat64(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueNumber != nil && *vals[0].ValueNumber == 7
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
@@ -3239,7 +3277,7 @@ func TestCov_ValidateAttrs_IntegerInt(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueNumber != nil && *vals[0].ValueNumber == 99
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
@@ -3257,7 +3295,7 @@ func TestCov_ValidateAttrs_IntegerStringValid(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueNumber != nil && *vals[0].ValueNumber == 55
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
@@ -3305,7 +3343,7 @@ func TestCov_ValidateAttrs_NumberStringValid(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueNumber != nil && *vals[0].ValueNumber == 3.14
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
@@ -3323,7 +3361,7 @@ func TestCov_ValidateAttrs_ListString(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueJSON == `["a","b"]`
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
@@ -3341,7 +3379,7 @@ func TestCov_ValidateAttrs_ListSliceMarshal(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueJSON == `["x","y"]`
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
@@ -3359,7 +3397,7 @@ func TestCov_ValidateAttrs_JSONMapMarshal(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueJSON == `{"k":"v"}`
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
@@ -3377,7 +3415,7 @@ func TestCov_ValidateAttrs_URLBaseType(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueString == "https://example.com"
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
@@ -3395,7 +3433,7 @@ func TestCov_ValidateAttrs_DateBaseType(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueString == "2026-04-12"
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
@@ -3419,7 +3457,7 @@ func TestCov_ValidateAttrs_DefaultBaseType(t *testing.T) {
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueString == "fallback-value"
 	})).Return(nil)
-	s.iavRepo.On("GetCurrentValues", ctx, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", "inst", "", map[string]any{
@@ -3473,7 +3511,7 @@ func TestGetInstance_ParentChainETNameFallback(t *testing.T) {
 		ID: "i1", CatalogID: "cat1", EntityTypeID: "et1", Version: 1,
 		ParentInstanceID: "parent1",
 	}, nil)
-	s.iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.instRepo.On("GetByID", ctx, "parent1").Return(&models.EntityInstance{
 		ID: "parent1", CatalogID: "cat1", EntityTypeID: "et-unknown", Version: 1,
 	}, nil)

@@ -207,11 +207,30 @@ func TestT2_08_SoftDeleteInstance(t *testing.T) {
 	}
 	require.NoError(t, tc.instRepo.Create(ctx, inst))
 
-	require.NoError(t, tc.instRepo.SoftDelete(ctx, inst.ID))
+	require.NoError(t, tc.instRepo.Delete(ctx, inst.ID))
 
 	// Should not be found via normal query
 	_, err := tc.instRepo.GetByID(ctx, inst.ID)
 	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestDeleteThenRecreateWithSameName(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	inst := &models.EntityInstance{
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
+		Name: "reusable-name", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	require.NoError(t, tc.instRepo.Create(ctx, inst))
+	require.NoError(t, tc.instRepo.Delete(ctx, inst.ID))
+
+	// Creating a new instance with the same name should succeed
+	inst2 := &models.EntityInstance{
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
+		Name: "reusable-name", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	err := tc.instRepo.Create(ctx, inst2)
+	assert.NoError(t, err, "should be able to reuse name after delete")
 }
 
 func TestT2_09_ListInstancesWithPagination(t *testing.T) {
@@ -276,7 +295,7 @@ func TestT2_11_SetStringValue(t *testing.T) {
 	}}
 	require.NoError(t, tc.iavRepo.SetValues(ctx, values))
 
-	found, err := tc.iavRepo.GetCurrentValues(ctx, instID)
+	found, err := tc.iavRepo.GetValuesForVersion(ctx, instID, 1)
 	require.NoError(t, err)
 	assert.Len(t, found, 1)
 	assert.Equal(t, "https://api.example.com", found[0].ValueString)
@@ -298,7 +317,7 @@ func TestT2_12_SetNumberValue(t *testing.T) {
 	}}
 	require.NoError(t, tc.iavRepo.SetValues(ctx, values))
 
-	found, err := tc.iavRepo.GetCurrentValues(ctx, instID)
+	found, err := tc.iavRepo.GetValuesForVersion(ctx, instID, 1)
 	require.NoError(t, err)
 	assert.Len(t, found, 1)
 	assert.NotNil(t, found[0].ValueNumber)
@@ -320,7 +339,7 @@ func TestT2_13_SetEnumValue(t *testing.T) {
 	}}
 	require.NoError(t, tc.iavRepo.SetValues(ctx, values))
 
-	found, err := tc.iavRepo.GetCurrentValues(ctx, instID)
+	found, err := tc.iavRepo.GetValuesForVersion(ctx, instID, 1)
 	require.NoError(t, err)
 	assert.Len(t, found, 1)
 	assert.Equal(t, "active", found[0].ValueString)
@@ -359,14 +378,14 @@ func TestT2_14_VersionedValues(t *testing.T) {
 	assert.Equal(t, "v2-value", v2[0].ValueString)
 }
 
-func TestT2_15_GetCurrentValues(t *testing.T) {
+func TestT2_15_GetValuesForVersion_ReturnsCorrectVersion(t *testing.T) {
 	tc, ctx := setupTestContext(t)
 
 	instID := id()
 	attrID := id()
 	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
 		ID: instID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
-		Name: "model-1", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		Name: "model-1", Version: 2, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}))
 
 	require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{{
@@ -376,10 +395,17 @@ func TestT2_15_GetCurrentValues(t *testing.T) {
 		ID: id(), InstanceID: instID, InstanceVersion: 2, AttributeID: attrID, ValueString: "current",
 	}}))
 
-	current, err := tc.iavRepo.GetCurrentValues(ctx, instID)
+	// Version 2 returns "current"
+	v2, err := tc.iavRepo.GetValuesForVersion(ctx, instID, 2)
 	require.NoError(t, err)
-	assert.Len(t, current, 1)
-	assert.Equal(t, "current", current[0].ValueString)
+	assert.Len(t, v2, 1)
+	assert.Equal(t, "current", v2[0].ValueString)
+
+	// Version 1 returns "old"
+	v1, err := tc.iavRepo.GetValuesForVersion(ctx, instID, 1)
+	require.NoError(t, err)
+	assert.Len(t, v1, 1)
+	assert.Equal(t, "old", v1[0].ValueString)
 }
 
 func TestT2_16_GetValuesForSpecificVersion(t *testing.T) {
@@ -604,7 +630,7 @@ func TestT13_03_ListByCatalog_ExcludesDeleted(t *testing.T) {
 		ID: instID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
 		Name: "deleted-inst", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}))
-	require.NoError(t, tc.instRepo.SoftDelete(ctx, instID))
+	require.NoError(t, tc.instRepo.Delete(ctx, instID))
 
 	results, err := tc.instRepo.ListByCatalog(ctx, tc.cvID)
 	require.NoError(t, err)
@@ -1064,7 +1090,7 @@ func TestTD16_DeleteByInstanceID(t *testing.T) {
 	}))
 
 	// Verify values exist
-	vals, err := tc.iavRepo.GetCurrentValues(ctx, inst.ID)
+	vals, err := tc.iavRepo.GetValuesForVersion(ctx, inst.ID, 1)
 	require.NoError(t, err)
 	assert.Len(t, vals, 1)
 
@@ -1072,7 +1098,7 @@ func TestTD16_DeleteByInstanceID(t *testing.T) {
 	require.NoError(t, tc.iavRepo.DeleteByInstanceID(ctx, inst.ID))
 
 	// Verify values are gone
-	vals, err = tc.iavRepo.GetCurrentValues(ctx, inst.ID)
+	vals, err = tc.iavRepo.GetValuesForVersion(ctx, inst.ID, 1)
 	require.NoError(t, err)
 	assert.Empty(t, vals)
 }

@@ -15,12 +15,11 @@ type EntityInstanceRepository interface {
 	DeleteByCatalogID(ctx context.Context, catalogID string) error
 	ListByParent(ctx context.Context, parentInstanceID string, params models.ListParams) ([]*models.EntityInstance, int, error)
 	Update(ctx context.Context, inst *models.EntityInstance) error
-	SoftDelete(ctx context.Context, id string) error
+	Delete(ctx context.Context, id string) error
 }
 
 type InstanceAttributeValueRepository interface {
 	SetValues(ctx context.Context, values []*models.InstanceAttributeValue) error
-	GetCurrentValues(ctx context.Context, instanceID string) ([]*models.InstanceAttributeValue, error)
 	GetValuesForVersion(ctx context.Context, instanceID string, version int) ([]*models.InstanceAttributeValue, error)
 	DeleteByInstanceID(ctx context.Context, instanceID string) error
 }

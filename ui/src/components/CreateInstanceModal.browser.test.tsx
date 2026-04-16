@@ -112,3 +112,20 @@ test('T-20.26: CreateInstanceModal starts with empty form', async () => {
   const descInput = page.getByRole('textbox', { name: 'Description' })
   await expect.element(descInput).toHaveValue('')
 })
+
+// T-31.170: Mandatory boolean attrs initialize to "false" (checkbox unchecked but value set)
+test('T-31.170: mandatory boolean initializes to false on create', async () => {
+  const attrsWithBool: SnapshotAttribute[] = [
+    { id: 'sys-name', name: 'name', base_type: 'string', description: '', ordinal: -2, required: true, system: true },
+    { id: 'sys-desc', name: 'description', base_type: 'string', description: '', ordinal: -1, required: false, system: true },
+    { id: 'b1', name: 'enabled', base_type: 'boolean', description: '', ordinal: 1, required: true },
+  ]
+  const { props } = renderModal({ schemaAttrs: attrsWithBool, enumValues: {} })
+  // Fill name to enable submit
+  await page.getByRole('textbox', { name: 'Name' }).fill('test-inst')
+  // Don't touch the checkbox — submit with default value
+  await page.getByRole('button', { name: 'Create' }).click()
+  const call = (props.onSubmit as ReturnType<typeof vi.fn>).mock.calls[0]
+  // The attrs should contain enabled="false" (initialized by useEffect)
+  expect(call[2]).toEqual({ enabled: 'false' })
+})

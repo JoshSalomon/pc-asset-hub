@@ -480,7 +480,7 @@ func (s *CatalogService) CopyCatalog(ctx context.Context, sourceName, targetName
 		}
 		if s.iavRepo != nil {
 			for _, srcInst := range sourceInstances {
-				values, err := s.iavRepo.GetCurrentValues(txCtx, srcInst.ID)
+				values, err := s.iavRepo.GetValuesForVersion(txCtx, srcInst.ID, srcInst.Version)
 				if err != nil {
 					return err
 				}

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	domainerrors "github.com/project-catalyst/pc-asset-hub/internal/domain/errors"
@@ -61,6 +62,7 @@ func (m *validationMocks) setupSingleEntityType(ctx context.Context) {
 		ID: "etv1", EntityTypeID: "et1", Version: 1,
 	}, nil)
 	m.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "Server"}, nil)
+	m.etRepo.On("GetByID", ctx, "et2").Return(&models.EntityType{ID: "et2", Name: "Model"}, nil)
 	m.setupCommonTypeDefs(ctx)
 }
 
@@ -92,7 +94,7 @@ func TestT15_01_RequiredAttrMissing(t *testing.T) {
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
 		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Required: true},
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
 
@@ -118,7 +120,7 @@ func TestT15_02_RequiredAttrPresent(t *testing.T) {
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
 		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Required: true},
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueString: "web-01"},
 	}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
@@ -142,7 +144,7 @@ func TestT15_03_OptionalAttrMissing(t *testing.T) {
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
 		{ID: "attr1", Name: "description", TypeDefinitionVersionID: "tdv-string", Required: false},
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusValid).Return(nil)
 
@@ -166,11 +168,11 @@ func TestT15_04_MultipleErrors(t *testing.T) {
 		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Required: true},
 		{ID: "attr2", Name: "ip", TypeDefinitionVersionID: "tdv-string", Required: true},
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueString: "web-01"},
 		// missing attr2 (ip)
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst2").Return([]*models.InstanceAttributeValue{
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst2", mock.Anything).Return([]*models.InstanceAttributeValue{
 		// missing both
 	}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
@@ -195,7 +197,7 @@ func TestT15_05_StringAttrValid(t *testing.T) {
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
 		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Required: true},
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueString: "anything goes"},
 	}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
@@ -220,7 +222,7 @@ func TestT15_06_NumberAttrValid(t *testing.T) {
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
 		{ID: "attr1", Name: "cpu_count", TypeDefinitionVersionID: "tdv-number", Required: true},
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueNumber: &num},
 	}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
@@ -244,7 +246,7 @@ func TestT15_08_EnumAttrValid(t *testing.T) {
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
 		{ID: "attr1", Name: "status", TypeDefinitionVersionID: "tdv-enum1", Required: true},
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueString: "active"},
 	}, nil)
 	// Type resolution mocks for enum attribute
@@ -271,7 +273,7 @@ func TestT15_09_EnumAttrInvalid(t *testing.T) {
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
 		{ID: "attr1", Name: "status", TypeDefinitionVersionID: "tdv-enum1", Required: true},
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueString: "bogus"},
 	}, nil)
 	// Type resolution mocks for enum attribute
@@ -298,7 +300,7 @@ func TestT15_10_MandatoryAssocSatisfied(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "runs-on", Type: models.AssociationTypeDirectional,
 			TargetEntityTypeID: "et2", TargetCardinality: "1"},
@@ -324,7 +326,7 @@ func TestT15_11_MandatoryAssocMissing(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "runs-on", Type: models.AssociationTypeDirectional,
 			TargetEntityTypeID: "et2", TargetCardinality: "1"},
@@ -350,7 +352,7 @@ func TestT15_12_MandatoryAssoc1NWithLink(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "has-tools", Type: models.AssociationTypeDirectional,
 			TargetEntityTypeID: "et2", TargetCardinality: "1..n"},
@@ -376,7 +378,7 @@ func TestT15_13_MandatoryAssoc1NMissing(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "has-tools", Type: models.AssociationTypeDirectional,
 			TargetEntityTypeID: "et2", TargetCardinality: "1..n"},
@@ -401,7 +403,7 @@ func TestT15_14_OptionalAssocNoLink(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "relates-to", Type: models.AssociationTypeDirectional,
 			TargetEntityTypeID: "et2", TargetCardinality: "0..n"},
@@ -425,7 +427,7 @@ func TestT15_15_OptionalAssoc01NoLink(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "optional-ref", Type: models.AssociationTypeDirectional,
 			TargetEntityTypeID: "et2", TargetCardinality: "0..1"},
@@ -470,7 +472,7 @@ func TestT15_16_ContainmentExcludedFromAssocCheck(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "contains-tool", Type: models.AssociationTypeContainment,
 			TargetEntityTypeID: "et2", TargetCardinality: "1..n"},
@@ -496,8 +498,8 @@ func TestT15_17_ContainmentValid(t *testing.T) {
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst2").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst2", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "contains-tool", Type: models.AssociationTypeContainment, TargetEntityTypeID: "et2"},
 	}, nil)
@@ -520,7 +522,7 @@ func TestT15_18_OrphanedContainedInstance(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1", ParentInstanceID: "deleted-parent"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
 
@@ -543,8 +545,8 @@ func TestT15_19_InvalidContainmentRelationship(t *testing.T) {
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst2").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst2", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	// No containment association from et1 to et2
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Association{}, nil)
@@ -567,7 +569,7 @@ func TestT15_20_TopLevelInstancePasses(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusValid).Return(nil)
 
@@ -589,7 +591,7 @@ func TestT15_21_AllPassValid(t *testing.T) {
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
 		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Required: true},
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueString: "web-01"},
 	}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
@@ -613,7 +615,7 @@ func TestT15_22_AnyFailInvalid(t *testing.T) {
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
 		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-string", Required: true},
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
 
@@ -664,7 +666,7 @@ func TestT15_25_ErrorStructure(t *testing.T) {
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
 		{ID: "attr1", Name: "my-field", TypeDefinitionVersionID: "tdv-string", Required: true},
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
 
@@ -694,7 +696,7 @@ func TestT15_07_NumberAttrRequiredMissing(t *testing.T) {
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
 		{ID: "attr1", Name: "cpu_count", TypeDefinitionVersionID: "tdv-number", Required: true},
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueNumber: nil},
 	}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
@@ -749,7 +751,7 @@ func TestValidation_BidirectionalMandatoryAssoc(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "peers-with", Type: models.AssociationTypeBidirectional,
 			TargetEntityTypeID: "et2", TargetCardinality: "1"},
@@ -818,7 +820,7 @@ func TestValidation_ETNameFallback(t *testing.T) {
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{{ID: "a1", Name: "h", TypeDefinitionVersionID: "tdv-string", Required: true}}, nil)
 	m.tdvRepo.On("GetByID", ctx, "tdv-string").Return(&models.TypeDefinitionVersion{ID: "tdv-string", TypeDefinitionID: "td-string"}, nil)
 	m.tdRepo.On("GetByID", ctx, "td-string").Return(&models.TypeDefinition{ID: "td-string", BaseType: models.BaseTypeString}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
 	result, err := svc.Validate(ctx, "c")
 	require.NoError(t, err)
@@ -848,14 +850,14 @@ func TestValidation_EnumValuesListError(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestValidation_GetCurrentValuesError(t *testing.T) {
+func TestValidation_GetValuesForVersionError(t *testing.T) {
 	svc, m := setupValidationService()
 	ctx := context.Background()
 	m.setupSingleEntityType(ctx)
 	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{{ID: "i1", EntityTypeID: "et1"}}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "i1").Return(nil, domainerrors.NewValidation("db"))
+	m.iavRepo.On("GetValuesForVersion", ctx, "i1", mock.Anything).Return(nil, domainerrors.NewValidation("db"))
 	_, err := svc.Validate(ctx, "my-catalog")
 	assert.Error(t, err)
 }
@@ -866,7 +868,7 @@ func TestValidation_GetForwardRefsError(t *testing.T) {
 	m.setupSingleEntityType(ctx)
 	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{{ID: "i1", EntityTypeID: "et1"}}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "a1", Name: "r", Type: models.AssociationTypeDirectional, TargetEntityTypeID: "et2", TargetCardinality: "1"},
 	}, nil)
@@ -889,7 +891,7 @@ func TestValidation_ContainmentParentNotPinned(t *testing.T) {
 		{ID: "i2", EntityTypeID: "et2", Name: "tool-1", ParentInstanceID: "i1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "i2").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "i2", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
 	result, err := svc.Validate(ctx, "c")
 	require.NoError(t, err)
@@ -908,7 +910,7 @@ func TestValidation_FinalUpdateStatusError(t *testing.T) {
 	m.setupSingleEntityType(ctx)
 	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{{ID: "i1", EntityTypeID: "et1", Name: "server-1"}}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusValid).Return(domainerrors.NewValidation("db"))
 	_, err := svc.Validate(ctx, "my-catalog")
@@ -1054,7 +1056,7 @@ func TestValidation_MaxCardinalityExceeded(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "primary-db", Type: models.AssociationTypeDirectional,
 			TargetEntityTypeID: "et2", TargetCardinality: "0..1"},
@@ -1082,7 +1084,7 @@ func TestValidation_ExactCardinalityExceeded(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "runs-on", Type: models.AssociationTypeDirectional,
 			TargetEntityTypeID: "et2", TargetCardinality: "1"},
@@ -1114,8 +1116,8 @@ func TestValidation_SourceCardinalityBidirectional(t *testing.T) {
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst2").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst2", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "uses-tool", Type: models.AssociationTypeBidirectional,
 			TargetEntityTypeID: "et2", TargetCardinality: "0..n", SourceCardinality: "1"},
@@ -1153,8 +1155,8 @@ func TestValidation_SourceCardinalitySatisfied(t *testing.T) {
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst2").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst2", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "uses-tool", Type: models.AssociationTypeDirectional,
 			TargetEntityTypeID: "et2", TargetCardinality: "0..n", SourceCardinality: "1"},
@@ -1210,9 +1212,9 @@ func TestValidation_SourceCardinalityMaxExceeded(t *testing.T) {
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst2").Return([]*models.InstanceAttributeValue{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst3").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst2", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst3", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	// Assoc: Server -> Tool with source_cardinality "0..1" (each Tool can be linked to by at most 1 Server)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "uses-tool", Type: models.AssociationTypeDirectional,
@@ -1253,8 +1255,8 @@ func TestValidation_ReverseRefsError(t *testing.T) {
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst2").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst2", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "uses-tool", Type: models.AssociationTypeDirectional,
 			TargetEntityTypeID: "et2", TargetCardinality: "0..n", SourceCardinality: "1"},
@@ -1288,7 +1290,7 @@ func TestValidation_ContainedTypeWithoutParent(t *testing.T) {
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	// Server (et1/etv1) has containment association to Tool (et2)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "contains-tool", Type: models.AssociationTypeContainment, TargetEntityTypeID: "et2"},
@@ -1318,7 +1320,7 @@ func TestT18_22_ValidateEmptyName(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: ""},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
 
@@ -1340,7 +1342,7 @@ func TestT18_23_ValidateWhitespaceName(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "   "},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
 
@@ -1361,7 +1363,7 @@ func TestT18_24_ValidateNonEmptyName(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusValid).Return(nil)
 
@@ -1381,7 +1383,7 @@ func TestValidation_EmptyNameUsesIDFallback(t *testing.T) {
 		{ID: "inst-abc", EntityTypeID: "et1", CatalogID: "c1", Name: ""},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst-abc").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst-abc", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
 
@@ -1402,7 +1404,7 @@ func TestT18_25_ValidateEmptyNameEntityType(t *testing.T) {
 		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: ""},
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
 
@@ -1424,8 +1426,8 @@ func TestValidation_ContainedTypeWithParentPasses(t *testing.T) {
 	}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
 	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "inst2").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst2", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "contains-tool", Type: models.AssociationTypeContainment, TargetEntityTypeID: "et2"},
 	}, nil)
@@ -1471,7 +1473,7 @@ func TestT31_CorruptedConstraintsFlaggedByValidation(t *testing.T) {
 	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
 		{ID: "i1", EntityTypeID: "et1", Name: "srv-1", Version: 1},
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.linkRepo.On("GetForwardRefs", ctx, "i1").Return([]*models.AssociationLink{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
 
@@ -1480,4 +1482,201 @@ func TestT31_CorruptedConstraintsFlaggedByValidation(t *testing.T) {
 	assert.Equal(t, models.ValidationStatusInvalid, result.Status)
 	require.NotEmpty(t, result.Errors)
 	assert.Contains(t, result.Errors[0].Violation, "corrupted")
+}
+
+// === TD-90: Constraint validation through Validate() ===
+
+// T-31.47 integration: String exceeding max_length produces validation error through Validate()
+func TestT31_47_StringMaxLengthViolation(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-maxlen", Required: false},
+	}, nil)
+	m.tdvRepo.On("GetByID", ctx, "tdv-maxlen").Return(&models.TypeDefinitionVersion{
+		ID: "tdv-maxlen", TypeDefinitionID: "td-string",
+		Constraints: map[string]any{"max_length": float64(5)},
+	}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{
+		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueString: "toolong"},
+	}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusInvalid, result.Status)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, "hostname", result.Errors[0].Field)
+	assert.Contains(t, result.Errors[0].Violation, "exceeds maximum length")
+}
+
+// T-31.48 integration: String not matching pattern produces validation error
+func TestT31_48_StringPatternViolation(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-pattern", Required: false},
+	}, nil)
+	m.tdvRepo.On("GetByID", ctx, "tdv-pattern").Return(&models.TypeDefinitionVersion{
+		ID: "tdv-pattern", TypeDefinitionID: "td-string",
+		Constraints: map[string]any{"pattern": "^[a-z]+$"},
+	}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{
+		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueString: "ABC123"},
+	}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusInvalid, result.Status)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Violation, "does not match pattern")
+}
+
+// Bad regex pattern produces ONE error per attribute (not per instance)
+func TestT31_BadPatternReportsOnce(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
+		{ID: "inst2", EntityTypeID: "et1", CatalogID: "c1", Name: "server-2"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-badpat", Required: false},
+	}, nil)
+	m.tdvRepo.On("GetByID", ctx, "tdv-badpat").Return(&models.TypeDefinitionVersion{
+		ID: "tdv-badpat", TypeDefinitionID: "td-string",
+		Constraints: map[string]any{"pattern": "[invalid"},
+	}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{
+		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueString: "abc"},
+	}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst2", mock.Anything).Return([]*models.InstanceAttributeValue{
+		{ID: "v2", InstanceID: "inst2", AttributeID: "attr1", ValueString: "def"},
+	}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusInvalid, result.Status)
+	// Only 1 error for the bad pattern, not 2 (one per instance)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Violation, "invalid pattern constraint")
+	assert.Equal(t, "(schema)", result.Errors[0].InstanceName) // attribute-level, not instance-level
+}
+
+// T-31.50 integration: Integer not whole number through Validate()
+func TestT31_50_IntegerNotWholeNumber(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	num := 3.14
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "port", TypeDefinitionVersionID: "tdv-int", Required: false},
+	}, nil)
+	m.tdvRepo.On("GetByID", ctx, "tdv-int").Return(&models.TypeDefinitionVersion{
+		ID: "tdv-int", TypeDefinitionID: "td-int",
+	}, nil)
+	m.tdRepo.On("GetByID", ctx, "td-int").Return(&models.TypeDefinition{
+		ID: "td-int", Name: "Integer", BaseType: models.BaseTypeInteger,
+	}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{
+		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueNumber: &num},
+	}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusInvalid, result.Status)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Violation, "whole number")
+}
+
+// T-31.56 integration: Boolean invalid value through Validate()
+func TestT31_56_BooleanInvalidValue(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "enabled", TypeDefinitionVersionID: "tdv-bool", Required: false},
+	}, nil)
+	m.tdvRepo.On("GetByID", ctx, "tdv-bool").Return(&models.TypeDefinitionVersion{
+		ID: "tdv-bool", TypeDefinitionID: "td-bool",
+	}, nil)
+	m.tdRepo.On("GetByID", ctx, "td-bool").Return(&models.TypeDefinition{
+		ID: "td-bool", Name: "Boolean", BaseType: models.BaseTypeBoolean,
+	}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{
+		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueString: "yes"},
+	}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusInvalid, result.Status)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Violation, "must be \"true\" or \"false\"")
+}
+
+// Constraint validation skipped for corrupted constraints
+func TestT31_ConstraintsSkippedForCorrupted(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
+		{ID: "attr1", Name: "hostname", TypeDefinitionVersionID: "tdv-corrupt-str", Required: false},
+	}, nil)
+	m.tdvRepo.On("GetByID", ctx, "tdv-corrupt-str").Return(&models.TypeDefinitionVersion{
+		ID: "tdv-corrupt-str", TypeDefinitionID: "td-string",
+		Constraints: map[string]any{"_raw": "bad", "max_length": float64(1)},
+	}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{
+		{ID: "v1", InstanceID: "inst1", AttributeID: "attr1", ValueString: "toolong"},
+	}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	// Should have corrupted error but NOT a max_length error
+	found := false
+	for _, e := range result.Errors {
+		if e.Field == "hostname" {
+			assert.Contains(t, e.Violation, "corrupted")
+			found = true
+		}
+	}
+	assert.True(t, found, "should have corrupted constraint error")
+	for _, e := range result.Errors {
+		assert.NotContains(t, e.Violation, "exceeds maximum length")
+	}
 }

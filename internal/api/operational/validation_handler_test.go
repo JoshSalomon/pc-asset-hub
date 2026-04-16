@@ -85,7 +85,7 @@ func TestT15_33_ValidateValidCatalog(t *testing.T) {
 	}, nil)
 	etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "Server"}, nil)
 	attrRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Attribute{}, nil)
-	iavRepo.On("GetCurrentValues", mock.Anything, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	iavRepo.On("GetValuesForVersion", mock.Anything, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	assocRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Association{}, nil)
 	catRepo.On("UpdateValidationStatus", mock.Anything, "c1", models.ValidationStatusValid).Return(nil)
 
@@ -126,7 +126,7 @@ func TestT15_34_ValidateInvalidCatalog(t *testing.T) {
 	tdRepo.On("GetByID", mock.Anything, "td-string").Return(&models.TypeDefinition{
 		ID: "td-string", Name: "String", BaseType: models.BaseTypeString,
 	}, nil)
-	iavRepo.On("GetCurrentValues", mock.Anything, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	iavRepo.On("GetValuesForVersion", mock.Anything, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	assocRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Association{}, nil)
 	catRepo.On("UpdateValidationStatus", mock.Anything, "c1", models.ValidationStatusInvalid).Return(nil)
 
@@ -199,7 +199,7 @@ func TestT15_38_ValidateErrorFields(t *testing.T) {
 	tdRepo.On("GetByID", mock.Anything, "td-string").Return(&models.TypeDefinition{
 		ID: "td-string", Name: "String", BaseType: models.BaseTypeString,
 	}, nil)
-	iavRepo.On("GetCurrentValues", mock.Anything, "inst1").Return([]*models.InstanceAttributeValue{}, nil)
+	iavRepo.On("GetValuesForVersion", mock.Anything, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	assocRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Association{}, nil)
 	catRepo.On("UpdateValidationStatus", mock.Anything, "c1", models.ValidationStatusInvalid).Return(nil)
 

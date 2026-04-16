@@ -92,7 +92,7 @@ Each type definition has a **base type** and version-specific **constraints**:
 | list | Ordered collection of values | `element_base_type` (a base type), `max_length` |
 | json | Structured JSON data | `schema` (optional JSON Schema — nice-to-have) |
 
-**System type definitions** exist for each base type (string, integer, number, boolean, date, url) with no constraints. These are immutable and always available. Users create **custom type definitions** to add constraints — for example, a "guardrailID" type definition with base type `string`, `max_length: 12`, and `pattern: [0-9A-F]*`.
+**System type definitions** exist for each base type that requires no constraints (string, integer, number, boolean, date, url, json) — these are immutable and always available. Base types that require constraints (enum needs `values`, list needs `element_base_type`) have no system type — users must create custom type definitions for these. Users also create custom type definitions to add constraints to the other base types — for example, a "guardrailID" type definition with base type `string`, `max_length: 12`, and `pattern: [0-9A-F]*`.
 
 Type definitions are **versioned** (see section 3.5). Modifying a type definition's constraints creates a new version. Catalog versions pin specific type definition versions, ensuring that type constraints are frozen within a deployment context.
 
@@ -147,7 +147,8 @@ Entity instances in a catalog are created in **draft mode** — missing required
 
 **Validation** checks all entity instances in a catalog against the pinned CV's schema:
 - All required attributes have values
-- Attribute values match their type (string, number, valid enum value)
+- Attribute values conform to their type definition constraints: string max_length and pattern, integer/number min/max and format, boolean format ("true"/"false"), date format (ISO 8601), URL format (valid scheme + host), enum value in allowed list, list max_length and element type, JSON syntax validity
+- Invalid pattern constraints (malformed regex) on type definitions are reported as attribute-level errors, independent of instance values
 - All mandatory associations are satisfied (cardinality constraints met)
 - Containment hierarchy is consistent (no orphaned contained entities)
 
@@ -865,7 +866,7 @@ As an RW user, I want to validate all entity instances in a catalog against the 
 
 Acceptance Criteria:
 - RW (and above) users can trigger validation. RO users cannot.
-- Validation checks: required attributes have values, attribute values match their type, mandatory associations are satisfied (cardinality `1` or `1..n`), containment hierarchy is consistent, and the Name system attribute is non-empty for all instances.
+- Validation checks: required attributes have values, attribute values conform to their type definition constraints (string max_length/pattern, integer/number min/max, boolean/date/url format, enum value in list, list max_length/element type, JSON syntax), mandatory associations are satisfied (cardinality `1` or `1..n`), containment hierarchy is consistent, and the Name system attribute is non-empty for all instances.
 - Validation returns a list of errors (entity name, field, violation) — not just pass/fail.
 - Validation status is updated to `valid` (no errors) or `invalid` (errors found).
 - Any subsequent data change resets the status to `draft`.
@@ -1577,13 +1578,13 @@ As a user, I want instance creation and editing forms to render appropriate inpu
 **Why**: With 9 base types and configurable constraints, the UI must dynamically render the right form control (text input, number input, toggle, date picker, select dropdown, repeatable list, etc.) and the validation service must check values against the type definition's constraints.
 
 Acceptance Criteria:
-- Instance create/edit forms render type-appropriate controls: TextInput for string, TextArea for multiline string, NumberInput for integer/number (with min/max), Switch for boolean, DatePicker for date, TextInput with URL validation for url, Select dropdown for enum, repeatable input group for list, TextArea for json.
-- String attributes with `max_length` show a character count indicator. String attributes with `multiline: true` render as TextArea instead of TextInput.
-- Integer/number attributes with `min`/`max` constraints enforce range limits in the form and in validation.
+- Instance create/edit forms render type-appropriate controls: TextInput for string, TextArea for multiline string, TextInput type="number" with step=1 for integer, TextInput type="number" for number, Checkbox for boolean, TextInput with date placeholder for date, TextInput with URL placeholder for url, select dropdown for enum, TextArea for list (JSON array), TextArea for json.
+- String attributes with `multiline: true` render as TextArea instead of TextInput.
 - Enum attributes show a dropdown with values from the pinned type definition version.
-- List attributes allow adding/removing items, with each item validated against the element base type.
-- The catalog validation service validates all instance attribute values against their type definition constraints (max_length, pattern, min/max, enum values, list element types, etc.).
+- The catalog validation service validates all instance attribute values against their type definition constraints: string max_length and pattern (regex), integer/number min/max, integer whole-number format, boolean format ("true"/"false"), date format (ISO 8601), URL format (valid scheme + host), enum value in allowed list, list max_length and element base type, JSON syntax validity.
+- Invalid pattern constraints (malformed regex) on type definitions are reported as attribute-level errors — once per attribute, not per instance, and detected even when all instances have empty values for that attribute.
 - Instance create/edit forms provide **inline field-level validation warnings** for type constraints during data entry. When a value violates a constraint (e.g., exceeds max_length, doesn't match a regex pattern, out of range), the form shows a warning on the field. This is advisory only — the form can still be submitted (draft mode allows invalid data). The warning helps users fix issues early rather than discovering them during full catalog validation.
+- Mandatory boolean attributes initialize to `false` in create forms, so the user does not need to click twice (true then false) to explicitly set a false value.
 - The operational data viewer displays values with type-aware formatting: clickable URLs, formatted dates, "Yes"/"No" for booleans, comma-separated lists, formatted JSON.
 
 ---
@@ -1857,7 +1858,7 @@ Allow customization of the landing page and display the running server version.
 - The landing page displays the server version in the footer or a subtle badge, so operators can confirm which version is deployed.
 - Build version is injected at compile time via `-ldflags` (Go) and `VITE_APP_VERSION` (UI).
 
-### FF-14: Comprehensive Type System (IMPLEMENTING — see US-5, US-53, US-54)
+### FF-14: Comprehensive Type System (IMPLEMENTED — see US-5, US-53, US-54)
 
 Replaces the attribute type system (`string`, `number`, `enum`) with reusable, versioned **type definitions**. Type definitions are first-class objects with a base type and optional constraints (max_length, pattern, min/max, enum values, etc.). Type definition versions are pinned in catalog versions, solving TD-58 (destructive enum mutations). See design spec: `docs/superpowers/specs/2026-04-11-type-system-design.md`.
 
@@ -1873,4 +1874,45 @@ JSON-type attributes can optionally specify a JSON Schema for validation. Curren
 
 **FF-14c: Compound type definitions (structs)**
 User-defined composite types where a type definition contains named fields, each referencing another type definition. For example, a "NetworkConfig" type with fields `ip` (url), `port` (integer with min/max), and `protocol` (enum). Stored as JSON objects. Enables structured sub-documents with full schema validation. Significantly more complex than scalar types — requires recursive validation, nested UI form rendering, and compound value storage.
+
+### FF-15: Catalog Export Plugins
+
+Extensible export system that allows users to attach **exporter plugins** to catalogs. Each exporter controls what data is exported and in what format, enabling consumers to receive catalog data in the format they need without modifying their systems to call the Asset Hub APIs directly.
+
+**Motivation:** In a Kubernetes/OpenShift environment, the natural integration pattern is resource-based — applications watch CRs, read ConfigMaps, or consume files in known formats. Requiring every consumer to integrate with the Asset Hub Operational API creates coupling and adoption friction. Export plugins bridge this gap: the catalog owner configures an exporter that produces output in the consumer's expected format (YAML manifests, JSON files, ConfigMaps, environment variable sets, etc.). This fits the declarative, resource-oriented philosophy of K8s/OCP.
+
+**Concept:**
+
+- An **exporter** is a named, versioned plugin registered with the Asset Hub. It defines:
+  - **Input**: which entity types and attributes it reads from a catalog
+  - **Output format**: the format it produces (YAML, JSON, ConfigMap, Secret, custom CRD, file bundle, etc.)
+  - **Trigger**: when the export runs — on publish, on validation success, on demand, or on a schedule
+
+- A catalog can have zero or more **export configurations**, each referencing a registered exporter with catalog-specific parameters (e.g., target namespace, output path, label selectors).
+
+- When triggered, the exporter reads the catalog's instance data via the internal service layer (not the HTTP API) and produces the output artifact.
+
+**Example use cases:**
+
+| Exporter | Input | Output |
+|----------|-------|--------|
+| `configmap-exporter` | All instances of type "Config" | One ConfigMap per instance, keys = attribute names, values = attribute values |
+| `yaml-manifest-exporter` | All entity types | YAML file bundle matching a custom schema (e.g., for GitOps repos) |
+| `env-file-exporter` | Selected attributes from a single entity type | `.env` file with `KEY=VALUE` lines |
+| `custom-crd-exporter` | Entity type definition + instances | K8s CRD definition + CR instances (the deferred "entity type CRDs" concept from Section 4.2) |
+| `prometheus-labels-exporter` | Model metadata attributes | Prometheus relabeling config for model monitoring |
+
+**Architecture considerations:**
+
+- **Plugin mechanism**: Exporters could be implemented as: (a) built-in Go plugins compiled into the API server, (b) external executables invoked via exec (similar to kubectl plugins), (c) container images run as K8s Jobs, or (d) webhook endpoints called with the catalog data as payload. The choice depends on security, isolation, and deployment requirements.
+- **Registration**: Exporters are registered via CRDs (`CatalogExporter` CR) or via the Meta API. The operator discovers registered exporters and makes them available for catalog configuration.
+- **Output delivery**: Export output can be written to K8s resources (ConfigMaps, Secrets, CRs), stored as files (PVC, S3), or pushed to external systems (Git repos, artifact registries).
+- **Versioning**: Export output should be versioned alongside the catalog — when a catalog is published, all configured exporters run and produce output tagged with the catalog's validation version.
+- **RBAC**: Export configuration requires Catalog Admin. The exporter itself runs with a ServiceAccount that has permissions to create the output resources.
+
+**Relationship to existing features:**
+- FF-12 (Catalog Export/Import) covers a built-in generic export format for system portability. FF-15 is complementary — it's about producing consumer-specific output formats via a plugin system, not a generic interchange format.
+- Section 4.2 mentions entity type CRDs as future scope. A `custom-crd-exporter` would be one way to implement that feature without building it into the core.
+
+**Decision:** Deferred. Design the plugin interface and registration mechanism when the first concrete export use case is identified.
 

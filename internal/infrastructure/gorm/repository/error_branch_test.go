@@ -248,13 +248,13 @@ func TestEntityInstance_ErrorBranches(t *testing.T) {
 	err = instRepo.Update(ctx, &models.EntityInstance{ID: "x", EntityTypeID: "et1", CatalogID: "cv1", Name: "n", CreatedAt: time.Now(), UpdatedAt: time.Now()})
 	assert.Error(t, err)
 
-	err = instRepo.SoftDelete(ctx, "x")
+	err = instRepo.Delete(ctx, "x")
 	assert.Error(t, err)
 
 	err = iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{{ID: "x", InstanceID: "i1", InstanceVersion: 1, AttributeID: "a1"}})
 	assert.Error(t, err)
 
-	_, err = iavRepo.GetCurrentValues(ctx, "x")
+	_, err = iavRepo.GetValuesForVersion(ctx, "x", 1)
 	assert.Error(t, err)
 
 	_, err = iavRepo.GetValuesForVersion(ctx, "x", 1)

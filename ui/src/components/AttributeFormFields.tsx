@@ -1,5 +1,6 @@
-import { FormGroup, TextInput, TextArea, Checkbox } from '@patternfly/react-core'
+import { FormGroup, TextInput, TextArea, Checkbox, HelperText, HelperTextItem } from '@patternfly/react-core'
 import type { SnapshotAttribute } from '../types'
+import { validateAttributeValue } from '../utils/validateAttributeValue'
 
 interface Props {
   schemaAttrs: SnapshotAttribute[]
@@ -45,6 +46,12 @@ export default function AttributeFormFields({
         const cachedValues = enumId ? enumValues[enumId] : undefined
         const enumOpts = constraintValues.length > 0 ? constraintValues : (cachedValues || [])
 
+        // Inline validation warning (advisory, not blocking)
+        const warning = (baseType !== 'enum' && baseType !== 'boolean' && values[attr.name])
+          ? validateAttributeValue(baseType, values[attr.name], attr.constraints as Record<string, unknown> | undefined)
+          : null
+        const validated = warning ? 'warning' as const : 'default' as const
+
         return (
           <FormGroup key={attr.name} label={`${attr.name}${attr.required ? ' *' : ''}`} fieldId={`${idPrefix}-attr-${attr.name}`}>
             {baseType === 'enum' && enumOpts.length > 0 ? (
@@ -72,6 +79,7 @@ export default function AttributeFormFields({
                 value={values[attr.name] || ''}
                 onChange={(_e, v) => onChange(attr.name, v)}
                 step={1}
+                validated={validated}
               />
             ) : baseType === 'number' ? (
               <TextInput
@@ -79,6 +87,7 @@ export default function AttributeFormFields({
                 type="number"
                 value={values[attr.name] || ''}
                 onChange={(_e, v) => onChange(attr.name, v)}
+                validated={validated}
               />
             ) : baseType === 'date' ? (
               <TextInput
@@ -87,6 +96,7 @@ export default function AttributeFormFields({
                 value={values[attr.name] || ''}
                 onChange={(_e, v) => onChange(attr.name, v)}
                 placeholder="YYYY-MM-DD"
+                validated={validated}
               />
             ) : baseType === 'url' ? (
               <TextInput
@@ -95,6 +105,7 @@ export default function AttributeFormFields({
                 value={values[attr.name] || ''}
                 onChange={(_e, v) => onChange(attr.name, v)}
                 placeholder="https://..."
+                validated={validated}
               />
             ) : baseType === 'json' ? (
               <TextArea
@@ -103,14 +114,16 @@ export default function AttributeFormFields({
                 onChange={(_e, v) => onChange(attr.name, v)}
                 placeholder='{"key": "value"}'
                 rows={3}
+                validated={validated}
               />
             ) : baseType === 'list' ? (
               <TextArea
                 id={`${idPrefix}-attr-${attr.name}`}
                 value={values[attr.name] || ''}
                 onChange={(_e, v) => onChange(attr.name, v)}
-                placeholder="Comma-separated values"
+                placeholder='["value1", "value2"]'
                 rows={2}
+                validated={validated}
               />
             ) : attr.constraints?.multiline ? (
               <TextArea
@@ -119,6 +132,7 @@ export default function AttributeFormFields({
                 value={values[attr.name] || ''}
                 onChange={(_e, v) => onChange(attr.name, v)}
                 rows={4}
+                validated={validated}
               />
             ) : (
               <TextInput
@@ -126,7 +140,13 @@ export default function AttributeFormFields({
                 type="text"
                 value={values[attr.name] || ''}
                 onChange={(_e, v) => onChange(attr.name, v)}
+                validated={validated}
               />
+            )}
+            {warning && (
+              <HelperText>
+                <HelperTextItem variant="warning">{warning}</HelperTextItem>
+              </HelperText>
             )}
           </FormGroup>
         )

@@ -53,7 +53,7 @@ func (m *MockEntityInstanceRepo) ListByParent(ctx context.Context, parentInstanc
 func (m *MockEntityInstanceRepo) Update(ctx context.Context, inst *models.EntityInstance) error {
 	return m.Called(ctx, inst).Error(0)
 }
-func (m *MockEntityInstanceRepo) SoftDelete(ctx context.Context, id string) error {
+func (m *MockEntityInstanceRepo) Delete(ctx context.Context, id string) error {
 	return m.Called(ctx, id).Error(0)
 }
 func (m *MockEntityInstanceRepo) DeleteByCatalogID(ctx context.Context, catalogID string) error {
@@ -122,13 +122,6 @@ type MockInstanceAttributeValueRepo struct{ mock.Mock }
 
 func (m *MockInstanceAttributeValueRepo) SetValues(ctx context.Context, values []*models.InstanceAttributeValue) error {
 	return m.Called(ctx, values).Error(0)
-}
-func (m *MockInstanceAttributeValueRepo) GetCurrentValues(ctx context.Context, instanceID string) ([]*models.InstanceAttributeValue, error) {
-	args := m.Called(ctx, instanceID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*models.InstanceAttributeValue), args.Error(1)
 }
 func (m *MockInstanceAttributeValueRepo) GetValuesForVersion(ctx context.Context, instanceID string, version int) ([]*models.InstanceAttributeValue, error) {
 	args := m.Called(ctx, instanceID, version)

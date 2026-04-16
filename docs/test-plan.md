@@ -211,6 +211,7 @@ Each feature area is tested at the appropriate layers:
 | Inline field-level validation warnings | | | | X | |
 | Type-aware value display (data viewer) | | | | X | |
 | Type constraint validation (all base types) | X | X | X | | |
+| Validation error list scrollable (long lists) | | | | X | |
 | Catalog validation — required attrs + type check | X | X | X | X | |
 | Catalog validation — mandatory associations | X | X | X | | |
 | Catalog validation — containment consistency | X | X | X | | |
@@ -250,7 +251,8 @@ The type system touches every layer. Test strategy by layer:
 - Constraint validation per base type: valid/invalid constraints, edge cases (negative max_length, min > max, invalid regex, empty enum values)
 - Attribute service: create with type_definition_version_id, copy-on-write carries type ref
 - CV type pin service: add/remove pins, auto-pin on entity type pin add, system types don't need pins
-- Instance value validation per base type: string (max_length, pattern), integer (whole number, range), number (range), boolean, date (ISO 8601), url, enum (value set), list (element type, max_length), json (valid JSON)
+- Instance value constraint validation (pure function `ValidateValueConstraints`): string (max_length, pattern), integer (whole number, min/max), number (min/max), boolean format, date format (ISO 8601 + RFC3339), url format (scheme + host), enum (value set — existing), list (max_length, element_base_type), json (valid syntax)
+- Pattern constraint compilation (`CompilePatternConstraint`): valid regex, invalid regex returns error message, no pattern returns nil
 - System type seeding on startup
 
 **Integration tests (Go + DB):**
@@ -259,22 +261,30 @@ The type system touches every layer. Test strategy by layer:
 - CV with type pins + entity type pins — full BOM round-trip
 - Instance attribute values with new storage columns (value_json for list/json types)
 - Constraints stored as JSONB/text and deserialized correctly
+- Catalog validation with type constraint violations (end-to-end against real SQLite)
 
 **API tests (Go + HTTP):**
 - All type definition endpoints: POST, GET, PUT, DELETE, versions list/get
 - CV type pin endpoints: POST, GET, DELETE
 - Attribute creation with type_definition_version_id
 - Instance creation with values for all 9 base types
-- Validation endpoint checks type constraints
+- Validation endpoint checks type constraints (constraint violations returned in error list)
 - RBAC: Admin+ for type definition mutations, RO can read
 
 **UI tests (Browser):**
 - Types tab: list (sorted by name, system badge), create, edit (version bump), delete, version history
 - Type creation form: dynamic constraints per base type
 - Add Attribute modal: type definition selector (system types + custom, inline creation)
-- Instance create/edit forms: correct controls per base type (TextInput, TextArea, NumberInput, Switch, DatePicker, Select, repeatable list, TextArea for JSON)
-- Inline field-level validation warnings: string exceeds max_length, string doesn't match pattern, integer/number out of range, invalid URL format, invalid date format, invalid JSON syntax. Warnings are advisory (form still submittable).
-- Data viewer: type-aware value display (clickable URLs, formatted dates, booleans, lists, JSON)
+- Instance create/edit forms: correct controls per base type (TextInput, TextArea, TextInput type="number", Checkbox, TextInput with date placeholder, TextInput with URL placeholder, select dropdown, TextArea for list/json)
+- Inline field-level validation warnings: string exceeds max_length, string doesn't match pattern, integer/number out of range, invalid URL format, invalid date format, invalid JSON syntax. Warnings are advisory (form still submittable). Mandatory boolean attributes initialize to `false` in create forms.
+- Data viewer: type-aware value display (clickable URLs, formatted dates, "Yes"/"No" booleans, comma-separated lists, formatted JSON)
+- Validation error list: scrollable with max-height for long error lists
+
+**Live browser tests (Playwright):**
+- Catalog validation with type constraint violations — create constrained type, create violating instance, validate, verify errors
+- Validation uses pinned type version constraints (not latest)
+- Inline validation warning: string exceeding max_length, pattern mismatch
+- Data viewer: URL as clickable link, boolean as "Yes"/"No"
 
 ---
 

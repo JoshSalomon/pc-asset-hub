@@ -31,14 +31,20 @@ export default function CreateInstanceModal({
   const [desc, setDesc] = useState('')
   const [attrs, setAttrs] = useState<Record<string, string>>({})
 
-  // Reset form when modal opens
+  // Reset form when modal opens; initialize mandatory booleans to "false"
   useEffect(() => {
     if (isOpen) {
       setName('')
       setDesc('')
-      setAttrs({})
+      const initial: Record<string, string> = {}
+      for (const attr of schemaAttrs) {
+        if (!attr.system && attr.base_type === 'boolean' && attr.required) {
+          initial[attr.name] = 'false'
+        }
+      }
+      setAttrs(initial)
     }
-  }, [isOpen])
+  }, [isOpen, schemaAttrs])
 
   return (
     <Modal variant={ModalVariant.medium} isOpen={isOpen} onClose={onClose}>
