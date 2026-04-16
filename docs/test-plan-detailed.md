@@ -3301,30 +3301,52 @@ Replaces inline type system (string/number/enum) and separate enum management wi
 | T-31.45 | Store and retrieve list value (JSON array) | Integration | value_json = JSON array string |
 | T-31.46 | Store and retrieve json value (JSON object) | Integration | value_json = JSON object string |
 
-### Catalog Validation — Type Constraints
+### Catalog Validation — Type Constraints (Pure Function: `ValidateValueConstraints`)
 
 | ID | Test Case | Layer | Expected |
 |----|-----------|-------|----------|
-| T-31.47 | Validate string exceeding max_length → invalid | Unit | Validation error on field |
-| T-31.48 | Validate string not matching pattern → invalid | Unit | Validation error on field |
-| T-31.49 | Validate string within max_length and matching pattern → valid | Unit | No error |
-| T-31.50 | Validate integer not whole number → invalid | Unit | Validation error |
-| T-31.51 | Validate integer below min → invalid | Unit | Validation error |
-| T-31.52 | Validate integer above max → invalid | Unit | Validation error |
-| T-31.53 | Validate integer within range → valid | Unit | No error |
-| T-31.54 | Validate number below min → invalid | Unit | Validation error |
-| T-31.55 | Validate number above max → invalid | Unit | Validation error |
-| T-31.56 | Validate boolean not "true"/"false" → invalid | Unit | Validation error |
-| T-31.57 | Validate date not ISO 8601 → invalid | Unit | Validation error |
-| T-31.58 | Validate url not valid URL → invalid | Unit | Validation error |
-| T-31.59 | Validate enum value not in values list → invalid | Unit | Validation error |
-| T-31.60 | Validate enum value in values list → valid | Unit | No error |
-| T-31.61 | Validate list exceeding max_length → invalid | Unit | Validation error |
-| T-31.62 | Validate list element wrong type → invalid | Unit | Validation error |
-| T-31.63 | Validate list with valid elements → valid | Unit | No error |
-| T-31.64 | Validate json not valid JSON → invalid | Unit | Validation error |
-| T-31.65 | Validate json valid JSON → valid | Unit | No error |
+| T-31.47 | String exceeding max_length → violation | Unit | "exceeds maximum length of N" |
+| T-31.48 | String not matching pattern → violation | Unit | "does not match required pattern" |
+| T-31.49 | String within max_length and matching pattern → no violation | Unit | Empty violations slice |
+| T-31.50 | Integer not whole number → violation | Unit | "must be a whole number" |
+| T-31.51 | Integer below min → violation | Unit | "must be at least N" |
+| T-31.52 | Integer above max → violation | Unit | "must be at most N" |
+| T-31.53 | Integer within range → no violation | Unit | Empty violations slice |
+| T-31.54 | Number below min → violation | Unit | "must be at least N" |
+| T-31.55 | Number above max → violation | Unit | "must be at most N" |
+| T-31.56 | Boolean not "true"/"false" → violation | Unit | "must be 'true' or 'false'" |
+| T-31.57 | Date not ISO 8601 → violation | Unit | "must be a valid ISO 8601 date" |
+| T-31.57b | Date in RFC3339 format → no violation | Unit | Empty violations slice |
+| T-31.58 | URL not valid (missing scheme or host) → violation | Unit | "must be a valid URL" |
+| T-31.58b | URL with valid scheme and host → no violation | Unit | Empty violations slice |
+| T-31.59 | Validate enum value not in values list → invalid | Unit | Validation error (existing enum check) |
+| T-31.60 | Validate enum value in values list → valid | Unit | No error (existing enum check) |
+| T-31.61 | List exceeding max_length → violation | Unit | "exceeds maximum of N items" |
+| T-31.62 | List element wrong type → violation | Unit | "element N: expected type X" |
+| T-31.63 | List with valid elements → no violation | Unit | Empty violations slice |
+| T-31.64 | JSON not valid syntax → violation | Unit | "must be valid JSON" |
+| T-31.65 | JSON valid syntax → no violation | Unit | Empty violations slice |
 | T-31.66 | Validate uses type definition version pinned in CV (not latest) | Unit | Validation against pinned version constraints |
+
+### Catalog Validation — Pattern Compilation (`CompilePatternConstraint`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.166 | Valid regex pattern compiles successfully | Unit | Returns compiled *regexp.Regexp, no error |
+| T-31.167 | Invalid regex pattern returns error message | Unit | Returns nil regex, error string |
+| T-31.168 | No pattern in constraints returns nil, nil | Unit | Both nil (no constraint) |
+| T-31.169 | Empty constraints map returns nil, nil | Unit | Both nil |
+
+### Catalog Validation — Integration (constraint violations through `Validate()`)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.170 | Invalid pattern on attribute reports ONE error (not per-instance) | Unit | Single error with InstanceName="" |
+| T-31.171 | Invalid pattern detected even with all empty instance values | Unit | Error reported for attribute-level issue |
+| T-31.172 | Multiple constraint violations on same instance all reported | Unit | Multiple errors in result |
+| T-31.173 | Optional attr with constraint-violating value → still reported | Unit | Error on non-required attr |
+| T-31.174 | Empty value on optional attr with constraints → no error | Unit | Skipped (empty = not filled in) |
+| T-31.175 | Number within range → no violation | Unit | No error |
 
 ### API — Type Definition Endpoints
 
@@ -3415,38 +3437,80 @@ Replaces inline type system (string/number/enum) and separate enum management wi
 |----|-----------|-------|----------|
 | T-31.116 | String attribute renders TextInput | Browser | TextInput rendered |
 | T-31.117 | String (multiline) attribute renders TextArea | Browser | TextArea rendered |
-| T-31.118 | Integer attribute renders NumberInput with step=1 | Browser | NumberInput with integer step |
-| T-31.119 | Number attribute renders NumberInput | Browser | NumberInput rendered |
-| T-31.120 | Boolean attribute renders Switch/Toggle | Browser | Switch control rendered |
-| T-31.121 | Date attribute renders DatePicker | Browser | DatePicker rendered |
-| T-31.122 | URL attribute renders TextInput | Browser | TextInput rendered |
-| T-31.123 | Enum attribute renders Select dropdown with values | Browser | Dropdown with enum values from pinned type version |
-| T-31.124 | List attribute renders repeatable input group | Browser | Add/remove item controls rendered |
+| T-31.118 | Integer attribute renders TextInput type="number" with step=1 | Browser | Number input with integer step |
+| T-31.119 | Number attribute renders TextInput type="number" | Browser | Number input rendered |
+| T-31.120 | Boolean attribute renders Checkbox | Browser | Checkbox control rendered |
+| T-31.121 | Date attribute renders TextInput with YYYY-MM-DD placeholder | Browser | TextInput with date placeholder |
+| T-31.122 | URL attribute renders TextInput with https:// placeholder | Browser | TextInput with URL placeholder |
+| T-31.123 | Enum attribute renders select dropdown with values | Browser | Dropdown with enum values from pinned type version |
+| T-31.124 | List attribute renders TextArea | Browser | TextArea for JSON array input |
 | T-31.125 | JSON attribute renders TextArea | Browser | TextArea rendered |
 
-### UI — Inline Field-Level Validation Warnings
+### UI — Inline Validation Utility (`validateAttributeValue`)
 
 | ID | Test Case | Layer | Expected |
 |----|-----------|-------|----------|
-| T-31.126 | String exceeding max_length shows warning | Browser | Warning on field, form still submittable |
-| T-31.127 | String not matching pattern shows warning | Browser | Warning on field, form still submittable |
-| T-31.128 | Integer out of range shows warning | Browser | Warning on field, form still submittable |
-| T-31.129 | Number out of range shows warning | Browser | Warning on field, form still submittable |
-| T-31.130 | Invalid URL format shows warning | Browser | Warning on field, form still submittable |
-| T-31.131 | Invalid date format shows warning | Browser | Warning on field, form still submittable |
-| T-31.132 | Invalid JSON syntax shows warning | Browser | Warning on field, form still submittable |
+| T-31.176 | String exceeding max_length returns warning message | Unit | "Exceeds maximum length of N" |
+| T-31.177 | String not matching pattern returns warning | Unit | "Does not match required pattern" |
+| T-31.178 | String within constraints returns null | Unit | null |
+| T-31.179 | Integer not whole number returns warning | Unit | "Must be a whole number" |
+| T-31.180 | Integer below min returns warning | Unit | "Must be at least N" |
+| T-31.181 | Integer above max returns warning | Unit | "Must be at most N" |
+| T-31.182 | Number out of range returns warning | Unit | Warning message |
+| T-31.183 | Invalid URL returns warning | Unit | "Must be a valid URL" |
+| T-31.184 | Invalid date returns warning | Unit | "Must be a valid date" |
+| T-31.185 | Invalid JSON returns warning | Unit | "Must be valid JSON" |
+| T-31.186 | Empty string returns null (draft mode) | Unit | null |
+| T-31.187 | Missing constraints returns null | Unit | null |
+| T-31.188 | Invalid regex pattern in constraints returns warning about bad pattern | Unit | Warning about pattern itself |
+
+### UI — Inline Field-Level Validation Warnings (Browser)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.126 | String exceeding max_length shows warning in form | Browser | HelperText warning visible, form still submittable |
+| T-31.127 | String not matching pattern shows warning in form | Browser | HelperText warning visible, form still submittable |
+| T-31.128 | Integer out of range shows warning in form | Browser | HelperText warning visible, form still submittable |
+| T-31.129 | Number out of range shows warning in form | Browser | HelperText warning visible, form still submittable |
+| T-31.130 | Invalid URL format shows warning in form | Browser | HelperText warning visible, form still submittable |
+| T-31.131 | Invalid date format shows warning in form | Browser | HelperText warning visible, form still submittable |
+| T-31.132 | Invalid JSON syntax shows warning in form | Browser | HelperText warning visible, form still submittable |
 | T-31.133 | Form with warnings can still be submitted (draft mode) | Browser | Submit succeeds, instance created |
-| T-31.134 | Valid values show no warning | Browser | No warning displayed |
+| T-31.134 | Valid values show no warning | Browser | No HelperText warning displayed |
+| T-31.189 | Warning disappears when value corrected | Browser | Warning removed after valid input |
+| T-31.190 | Mandatory boolean initializes to false in create form | Browser | Checkbox unchecked, value="false" (not empty) |
 
-### UI — Data Viewer (Type-Aware Display)
+### UI — Value Formatting Utility (`formatAttributeValue`)
 
 | ID | Test Case | Layer | Expected |
 |----|-----------|-------|----------|
-| T-31.135 | URL value displayed as clickable link | Browser | Rendered as anchor tag |
-| T-31.136 | Date value displayed formatted | Browser | Human-readable date format |
-| T-31.137 | Boolean value displayed as "Yes"/"No" | Browser | Text rendering, not raw true/false |
-| T-31.138 | List value displayed as comma-separated or bullet list | Browser | Formatted list display |
-| T-31.139 | JSON value displayed as formatted/collapsible | Browser | Formatted JSON display |
+| T-31.191 | URL value returns anchor element | Browser | `<a>` tag with href, target="_blank" |
+| T-31.192 | Boolean "true" returns "Yes" | Browser | Text "Yes" |
+| T-31.193 | Boolean "false" returns "No" | Browser | Text "No" |
+| T-31.194 | Date value returns formatted date | Browser | Locale-formatted date string |
+| T-31.195 | JSON value returns pre-formatted block | Browser | `<pre>` with indented JSON |
+| T-31.196 | List value returns comma-separated string | Browser | Items joined by ", " |
+| T-31.197 | Null value returns em-dash | Browser | "—" character |
+| T-31.198 | String/integer/number/enum returns plain text | Browser | String(value) |
+| T-31.199 | Invalid JSON for json type returns raw string (graceful) | Browser | Raw value displayed, no crash |
+| T-31.200 | Invalid JSON for list type returns raw string (graceful) | Browser | Raw value displayed, no crash |
+
+### UI — Data Viewer (Type-Aware Display in Context)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.135 | URL value displayed as clickable link in InstanceDetailPanel | Browser | Rendered as anchor tag |
+| T-31.136 | Date value displayed formatted in InstanceDetailPanel | Browser | Human-readable date format |
+| T-31.137 | Boolean value displayed as "Yes"/"No" in InstanceDetailPanel | Browser | Text rendering, not raw true/false |
+| T-31.138 | List value displayed as comma-separated in InstanceDetailPanel | Browser | Formatted list display |
+| T-31.139 | JSON value displayed as formatted block in InstanceDetailPanel | Browser | Formatted JSON display |
+
+### UI — Validation Error List (Scrollable)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-31.201 | Error list with many errors is scrollable | Browser | Container has max-height and overflow scroll |
+| T-31.202 | Error list with few errors renders without scrollbar | Browser | Content fits, no scrollbar needed |
 
 ### Live Browser Tests (Playwright)
 
@@ -3460,7 +3524,7 @@ Replaces inline type system (string/number/enum) and separate enum management wi
 | T-31.145 | Add Attribute with type definition selector (system type) | Live | Attribute created, type shown in table |
 | T-31.146 | Add Attribute with type definition selector (custom type) | Live | Attribute created with custom type ref |
 | T-31.147 | CV BOM shows type pins alongside entity type pins | Live | Type pins section visible in BOM |
-| T-31.148 | Create instance with boolean attribute → Switch control rendered | Live | Toggle works, value saved |
+| T-31.148 | Create instance with boolean attribute → Checkbox rendered | Live | Checkbox works, value saved |
 | T-31.149 | Create instance with enum attribute → Select dropdown with values | Live | Dropdown shows pinned version values |
 | T-31.150 | Create instance with multiline string → TextArea rendered | Live | TextArea visible, value saved |
 | T-31.151 | Create instance with integer attribute → NumberInput with constraints | Live | Min/max enforced in form |
@@ -3474,10 +3538,10 @@ Replaces inline type system (string/number/enum) and separate enum management wi
 | T-31.159 | Multiline string preserves formatting on create and retrieve | Live | Newlines stored and displayed correctly |
 | T-31.160 | Date attribute renders date input with YYYY-MM-DD placeholder | Live | Date input rendered |
 | T-31.161 | URL attribute — create instance with URL, verify stored and retrieved | Live | URL value round-trips correctly |
-| T-31.162 | Integer out of range — validate catalog (TD-90: constraint check pending) | Live | Currently passes; will fail when TD-90 implemented |
+| T-31.162 | Integer out of range — validate catalog → constraint violation reported | Live | Validation fails with "must be at least/most" error |
 | T-31.163 | Type definition versioning — old CV uses old version constraints | Live | Validation against pinned version, not latest |
-| T-31.164 | Data viewer: URL value displayed in detail panel | Live | URL text visible (TD-91: clickable link pending) |
-| T-31.165 | Data viewer: boolean value displayed in detail panel | Live | Value visible as Yes or true |
+| T-31.164 | Data viewer: URL value displayed as clickable link in detail panel | Live | URL rendered as anchor tag |
+| T-31.165 | Data viewer: boolean value displayed as "Yes"/"No" in detail panel | Live | Formatted as Yes/No, not true/false |
 
 ---
 
@@ -3517,7 +3581,7 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All test cases (T-1.01 through T-31.165; T-13.78–13.85 retired; T-31.79 subsumed by T-31.96–102; 29 enum-specific tests retired — see T-31 retired test cases list) pass
+- All test cases (T-1.01 through T-31.202; T-13.78–13.85 retired; T-31.79 subsumed by T-31.96–102; 29 enum-specific tests retired — see T-31 retired test cases list) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

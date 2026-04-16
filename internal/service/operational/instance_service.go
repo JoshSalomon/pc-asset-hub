@@ -173,7 +173,10 @@ func (s *InstanceService) resolveAttributeValues(ctx context.Context, inst *mode
 		return nil, err
 	}
 
-	values, err := s.iavRepo.GetCurrentValues(ctx, inst.ID)
+	// Use inst.Version (authoritative) instead of GetCurrentValues (MAX query).
+	// When all custom attrs are cleared, no IAVs exist at the new version —
+	// MAX would fall back to the previous version, returning stale data.
+	values, err := s.iavRepo.GetValuesForVersion(ctx, inst.ID, inst.Version)
 	if err != nil {
 		return nil, err
 	}
@@ -417,7 +420,7 @@ func (s *InstanceService) ListInstances(ctx context.Context, catalogName, entity
 
 	details := make([]*InstanceDetail, len(instances))
 	for i, inst := range instances {
-		values, err := s.iavRepo.GetCurrentValues(ctx, inst.ID)
+		values, err := s.iavRepo.GetValuesForVersion(ctx, inst.ID, inst.Version)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -658,7 +661,7 @@ func (s *InstanceService) ListContainedInstances(ctx context.Context, catalogNam
 
 	details := make([]*InstanceDetail, len(filtered))
 	for i, inst := range filtered {
-		values, err := s.iavRepo.GetCurrentValues(ctx, inst.ID)
+		values, err := s.iavRepo.GetValuesForVersion(ctx, inst.ID, inst.Version)
 		if err != nil {
 			return nil, 0, err
 		}

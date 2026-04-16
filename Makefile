@@ -2,7 +2,7 @@
        docker-build-api docker-build-ui docker-build-operator docker-build-all \
        docker-compose-up docker-compose-down test-postgres \
        kind-create kind-delete kind-load kind-deploy-all kind-undeploy-all \
-       e2e-test deploy test-backend test-browser test-system test-e2e test-live \
+       e2e-test deploy test-backend test-unit test-browser test-system test-e2e test-live \
        test-all coverage-backend coverage-browser
 
 # Resolve project root from Makefile location (works from any directory via make -C or absolute path)
@@ -17,6 +17,9 @@ deploy:
 
 test-backend:
 	cd "$(PROJECT_ROOT)" && go test ./internal/... -count=1
+
+test-unit:
+	cd "$(PROJECT_ROOT)ui" && npx vitest run --config vitest.unit.config.ts
 
 test-browser:
 	cd "$(PROJECT_ROOT)ui" && npx vitest run --config vitest.browser.config.ts
@@ -35,8 +38,9 @@ test-live:
 	"$(PROJECT_ROOT)scripts/test-system-attributes.sh"
 	"$(PROJECT_ROOT)scripts/test-descriptions.sh"
 	"$(PROJECT_ROOT)scripts/test-phase1-fixes.sh"
+	"$(PROJECT_ROOT)scripts/test-type-constraints.sh"
 
-test-all: test-backend test-browser test-system test-live
+test-all: test-backend test-unit test-browser test-system test-live
 
 coverage-backend:
 	cd "$(PROJECT_ROOT)" && go test ./internal/... -count=1 -coverprofile=coverage.out

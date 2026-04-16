@@ -437,6 +437,20 @@
       "phase": 0,
       "difficulty": 0.5,
       "created_at": "2026-04-14T06:45:01.707555+00:00"
+    },
+    "mem_f640ed9a": {
+      "topic": "Type system constraint validation architecture (TD-90/91/92)",
+      "tags": [
+        "type-system",
+        "validation",
+        "architecture",
+        "td-90",
+        "td-91",
+        "td-92"
+      ],
+      "phase": 0,
+      "difficulty": 0.6,
+      "created_at": "2026-04-15T11:20:04.968359+00:00"
     }
   }
 }

@@ -1,6 +1,6 @@
 e# AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-04-14
+Last updated: 2026-04-15
 
 ---
 
@@ -8,12 +8,12 @@ Last updated: 2026-04-14
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1575 | 100% | 97.6% (4054/4152) | — |
-| UI — Unit tests (jsdom) | 75 | 100% | — | — |
-| UI — Browser tests (Playwright) | 931 | 100% | 94.7% (2537/2680) | 97.2% (2291/2357) |
+| Backend (Go) | 1582 | 100% | 97.7% (4166/4264) | — |
+| UI — Unit tests (node) | 35 | 100% | — | — |
+| UI — Browser tests (Playwright) | 980 | 100% | 94.8% (2639/2783) | 97.3% (2383/2449) |
 | UI — System tests (Playwright + live server) | 121 | 100% | — | — |
 | Live system (bash scripts) | 303 | 100% | — | — |
-| **Total** | **3005** | **100%** | — | — |
+| **Total** | **3021** | **100%** | — | — |
 
 ---
 
@@ -35,7 +35,7 @@ Last updated: 2026-04-14
 | `internal/operator/controllers` | 94.3% (198/210) | `SetupWithManager` (envtest — deferred to Phase B), `SetOwnerReference` error branches |
 | `internal/operator/crdgen` | 94.3% (33/35) | `json.Marshal` error guards on well-formed inputs |
 | `internal/service/meta` | 99.6% (959/963) | BulkCopy error paths, requiresDeepCopy edge cases |
-| `internal/service/operational` | 99.8% (987/989) | Cycle guard in resolveParentChain, partial DB failure paths |
+| `internal/service/operational` | 99.8% (1099/1101) | Cycle guard in resolveParentChain, partial DB failure paths |
 | `internal/service/validation` | 95.6% (43/45) | |
 
 ### Excluded from Coverage
@@ -155,55 +155,59 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 
 ## UI Test Coverage
 
-### Unit Tests (jsdom)
+### Unit Tests (node)
 
 | Test File | Tests | Status |
 |-----------|-------|--------|
-| `App.test.tsx` | 9 | Pass |
-| `EntityTypeListPage.test.tsx` | 12 | Pass |
-| **Total** | **21** | **100% pass** |
+| `validateAttributeValue.unit.test.ts` | 35 | Pass |
+| **Total** | **35** | **100% pass** |
 
 ### Browser Tests (Playwright)
 
 | Test File | Tests | Status |
 |-----------|-------|--------|
-| `App.browser.test.tsx` | 51 | Pass |
-| `client.browser.test.ts` | 61 | Pass |
-| `EntityTypeDetailPage.browser.test.tsx` | 136 | Pass |
-| `EntityTypeListPage.browser.test.tsx` | 12 | Pass |
-| `TypeDefinitionListPage.browser.test.tsx` | 60 | Pass |
-| `TypeDefinitionDetailPage.browser.test.tsx` | 47 | Pass |
-| `CatalogVersionDetailPage.browser.test.tsx` | 57 | Pass |
-| `CatalogListPage.browser.test.tsx` | 20 | Pass |
-| `CatalogDetailPage.browser.test.tsx` | 137 | Pass |
-| `useCatalogData.browser.test.tsx` | 8 | Pass |
-| `useInstances.browser.test.tsx` | 11 | Pass |
-| `useInstanceDetail.browser.test.tsx` | 7 | Pass |
-| `CreateInstanceModal.browser.test.tsx` | 7 | Pass |
-| `EditInstanceModal.browser.test.tsx` | 4 | Pass |
-| `AddChildModal.browser.test.tsx` | 7 | Pass |
-| `LinkModal.browser.test.tsx` | 5 | Pass |
-| `SetParentModal.browser.test.tsx` | 5 | Pass |
-| `useEntityTypeData.browser.test.tsx` | 8 | Pass |
-| `useAttributeManagement.browser.test.tsx` | 11 | Pass |
-| `useAssociationManagement.browser.test.tsx` | 7 | Pass |
-| `AddAttributeModal.browser.test.tsx` | 9 | Pass |
-| `EditAttributeModal.browser.test.tsx` | 6 | Pass |
+| `App.browser.test.tsx` | 53 | Pass |
+| `client.browser.test.ts` | 63 | Pass |
 | `AddAssociationModal.browser.test.tsx` | 7 | Pass |
+| `AddAttributeModal.browser.test.tsx` | 10 | Pass |
+| `AddChildModal.browser.test.tsx` | 10 | Pass |
+| `AttributeFormFields.browser.test.tsx` | 44 | Pass |
 | `CopyAttributesModal.browser.test.tsx` | 7 | Pass |
-| `RenameEntityTypeModal.browser.test.tsx` | 4 | Pass |
-| `useContainmentTree.browser.test.tsx` | 11 | Pass |
-| `InstanceDetailPanel.browser.test.tsx` | 14 | Pass |
-| `OperationalCatalogDetailPage.browser.test.tsx` | 36 | Pass |
-| `OperationalCatalogListPage.browser.test.tsx` | 13 | Pass |
-| `OperationalApp.browser.test.tsx` | 3 | Pass |
-| `useValidation.browser.test.tsx` | 6 | Pass |
-| `useCatalogDiagram.browser.test.tsx` | 5 | Pass |
 | `CopyCatalogModal.browser.test.tsx` | 5 | Pass |
-| `AttributeFormFields.browser.test.tsx` | 15 | Pass |
-| `EntityTypeDiagram.browser.test.tsx` | 3 | Pass |
+| `CreateInstanceModal.browser.test.tsx` | 11 | Pass |
+| `DiagramTabContent.browser.test.tsx` | 7 | Pass |
+| `EditAttributeModal.browser.test.tsx` | 6 | Pass |
+| `EditInstanceModal.browser.test.tsx` | 6 | Pass |
+| `EntityTypeDiagram.browser.test.tsx` | 8 | Pass |
+| `InstanceDetailPanel.browser.test.tsx` | 17 | Pass |
+| `LinkModal.browser.test.tsx` | 8 | Pass |
+| `RenameEntityTypeModal.browser.test.tsx` | 9 | Pass |
+| `ReplaceCatalogModal.browser.test.tsx` | 5 | Pass |
+| `SetParentModal.browser.test.tsx` | 8 | Pass |
+| `ValidationResults.browser.test.tsx` | 4 | Pass |
+| `useAssociationManagement.browser.test.tsx` | 6 | Pass |
+| `useAttributeManagement.browser.test.tsx` | 8 | Pass |
+| `useCatalogData.browser.test.tsx` | 8 | Pass |
+| `useCatalogDiagram.browser.test.tsx` | 8 | Pass |
+| `useContainmentTree.browser.test.tsx` | 11 | Pass |
+| `useEntityTypeData.browser.test.tsx` | 8 | Pass |
+| `useInlineEdit.browser.test.tsx` | 11 | Pass |
+| `useInstanceDetail.browser.test.tsx` | 10 | Pass |
+| `useInstances.browser.test.tsx` | 11 | Pass |
+| `usePinManagement.browser.test.tsx` | 21 | Pass |
+| `useValidation.browser.test.tsx` | 6 | Pass |
 | `LandingPage.browser.test.tsx` | 12 | Pass |
-| **Total** | **930** | **100% pass** |
+| `CatalogDetailPage.browser.test.tsx` | 163 | Pass |
+| `CatalogListPage.browser.test.tsx` | 20 | Pass |
+| `CatalogVersionDetailPage.browser.test.tsx` | 70 | Pass |
+| `EntityTypeDetailPage.browser.test.tsx` | 145 | Pass |
+| `EntityTypeListPage.browser.test.tsx` | 12 | Pass |
+| `TypeDefinitionDetailPage.browser.test.tsx` | 47 | Pass |
+| `TypeDefinitionListPage.browser.test.tsx` | 60 | Pass |
+| `OperationalCatalogDetailPage.browser.test.tsx` | 37 | Pass |
+| `buildTypedAttrs.browser.test.ts` | 3 | Pass |
+| `formatAttributeValue.browser.test.tsx` | 15 | Pass |
+| **Total** | **980** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
@@ -229,12 +233,12 @@ Coverage is measured using `@vitest/coverage-v8`. The two test suites run indepe
 | `App.tsx` | 275/309 | 89.0% | 250/269 | 92.9% |
 | `api/client.ts` | 90/97 | 92.8% | 84/91 | 92.3% |
 | `components/AddAssociationModal.tsx` | 87/87 | 100.0% | 79/79 | 100.0% |
-| `components/AddAttributeModal.tsx` | 41/42 | 97.6% | 35/35 | 100.0% |
+| `components/AddAttributeModal.tsx` | 42/42 | 100.0% | 35/35 | 100.0% |
 | `components/AddChildModal.tsx` | 89/90 | 98.9% | 75/75 | 100.0% |
-| `components/AttributeFormFields.tsx` | 29/29 | 100.0% | 27/27 | 100.0% |
+| `components/AttributeFormFields.tsx` | 31/31 | 100.0% | 29/29 | 100.0% |
 | `components/CopyAttributesModal.tsx` | 49/49 | 100.0% | 39/39 | 100.0% |
 | `components/CopyCatalogModal.tsx` | 12/12 | 100.0% | 12/12 | 100.0% |
-| `components/CreateInstanceModal.tsx` | 14/14 | 100.0% | 13/13 | 100.0% |
+| `components/CreateInstanceModal.tsx` | 18/18 | 100.0% | 17/17 | 100.0% |
 | `components/DiagramTabContent.tsx` | 4/4 | 100.0% | 3/3 | 100.0% |
 | `components/EditAssociationModal.tsx` | 85/92 | 92.4% | 76/82 | 92.7% |
 | `components/EditAttributeModal.tsx` | 38/38 | 100.0% | 31/31 | 100.0% |
@@ -264,13 +268,15 @@ Coverage is measured using `@vitest/coverage-v8`. The two test suites run indepe
 | `pages/meta/CatalogVersionDetailPage.tsx` | 144/165 | 87.3% | 130/142 | 91.5% |
 | `pages/meta/EntityTypeDetailPage.tsx` | 155/161 | 96.3% | 134/134 | 100.0% |
 | `pages/meta/EntityTypeListPage.tsx` | 11/12 | 91.7% | 11/12 | 91.7% |
-| `pages/meta/TypeDefinitionDetailPage.tsx` | 86/90 | 95.6% | 76/76 | 100.0% |
+| `pages/meta/TypeDefinitionDetailPage.tsx` | 86/90 | 95.5% | 76/76 | 100.0% |
 | `pages/meta/TypeDefinitionListPage.tsx` | 129/132 | 97.7% | 121/122 | 99.2% |
 | `pages/operational/OperationalCatalogDetailPage.tsx` | 60/61 | 98.4% | 52/52 | 100.0% |
 | `utils/buildTypedAttrs.ts` | 15/15 | 100.0% | 13/13 | 100.0% |
 | `utils/dnsLabel.ts` | 3/3 | 100.0% | 2/2 | 100.0% |
+| `utils/formatAttributeValue.tsx` | 22/22 | 100.0% | 21/21 | 100.0% |
 | `utils/statusColor.ts` | 5/6 | 83.3% | 5/6 | 83.3% |
-| **All files (44)** | **2537/2680** | **94.7%** | **2291/2357** | **97.2%** |
+| `utils/validateAttributeValue.ts` | 73/75 | 97.3% | 65/65 | 100.0% |
+| **All files (46)** | **2639/2783** | **94.8%** | **2383/2449** | **97.3%** |
 
 **Unit tests** (supplemental — covers components that work in jsdom without browser):
 
@@ -854,6 +860,67 @@ Per-file coverage deltas:
 | `EntityTypeDetailPage.tsx` | 96.3% (155/161) 6 uncov | 96.3% (155/161) 6 uncov | unchanged (new code replaces old code with same stmt count) |
 
 Browser test count: 929 -> 930 (+1 test for system attribute type display).
+
+### New Code Coverage (Session 022 — Type System Completion: constraints, validation, formatting)
+
+**Backend:** New `constraint_validator.go` with `ValidateValueConstraints` and `CompilePatternConstraint` — validates attribute values against type constraints (min/max, pattern, max_length, element types for lists). All 13 functions at 100% coverage.
+
+**UI:** New `formatAttributeValue.tsx` (display formatting for typed attributes) and `validateAttributeValue.ts` (advisory frontend constraint validation). Modified `AttributeFormFields.tsx`, `CreateInstanceModal.tsx`, `InstanceDetailPanel.tsx`, `ValidationResults.tsx`.
+
+| File | Coverage |
+|------|----------|
+| `constraint_validator.go` (NEW) | 100% (all 13 functions) |
+| `formatAttributeValue.tsx` (NEW) | 100% (22/22) |
+| `validateAttributeValue.ts` (NEW) | 97.3% browser (73/75), 98.7% unit (74/75) |
+| `AttributeFormFields.tsx` | 100% (31/31) |
+| `CreateInstanceModal.tsx` | 100% (18/18) |
+| `InstanceDetailPanel.tsx` | 100% (8/8) |
+| `ValidationResults.tsx` | 100% (12/12) |
+| `AddAttributeModal.tsx` | 100% (42/42) — was 97.6% (41/42), 1 pre-existing guard now covered |
+
+**Uncovered lines in `validateAttributeValue.ts` (browser tests):**
+
+| Line | Code | Status |
+|------|------|--------|
+| L78 | `if (!u.protocol \|\| !u.host) return 'Invalid URL: ...'` | **Covered by unit test** (`file:///tmp` triggers `!u.host` branch) |
+| L92 | `if (isNaN(d.getTime())) return 'Invalid date format ...'` | Pre-existing unreachable: `new Date(year, month, day)` never returns `NaN` for values that already passed the regex (human approved) |
+| L117 | `return 'Invalid list: must be a JSON array'` (catch) | Pre-existing: duplicate of L126 catch; both catch JSON parse failures but only one branch can execute per call |
+
+**Arithmetic check:**
+
+- Previous: 2680 total, 2537 covered, 143 uncovered
+- Current: 2783 total, 2639 covered, 144 uncovered
+- Delta: +103 total, +102 covered, **+1 net uncovered**
+
+**Net +1 reconciliation:**
+
+| Source | Change | Impact |
+|--------|--------|--------|
+| `validateAttributeValue.ts` (NEW) | 75 total, 73 covered | +2 uncovered |
+| `AddAttributeModal.tsx` | 41/42 -> 42/42 | -1 uncovered (pre-existing guard now covered) |
+| **Net** | | **+1 uncovered** |
+
+The 2 uncovered statements in `validateAttributeValue.ts` are: (1) L78 `!u.host` branch (covered by unit test, not reachable in browser test isolation), and (2) L92 `isNaN` guard (unreachable given prior regex validation). `AddAttributeModal.tsx` improved from 41/42 to 42/42 as the previously uncovered Select-state guard is now exercised by new constraint-related test paths.
+
+Per-file coverage deltas:
+
+| File | Before | After | Delta |
+|------|--------|-------|-------|
+| `validateAttributeValue.ts` | NEW | 97.3% (73/75) 2 uncov | NEW file, 2 uncovered |
+| `formatAttributeValue.tsx` | NEW | 100% (22/22) 0 uncov | NEW file, all covered |
+| `AddAttributeModal.tsx` | 97.6% (41/42) 1 uncov | 100% (42/42) 0 uncov | **+1 covered, -1 uncov** |
+| `AttributeFormFields.tsx` | 100% (29/29) 0 uncov | 100% (31/31) 0 uncov | +2 covered, +2 total |
+| `CreateInstanceModal.tsx` | 100% (14/14) 0 uncov | 100% (18/18) 0 uncov | +4 covered, +4 total |
+| `InstanceDetailPanel.tsx` | 100% (8/8) 0 uncov | 100% (8/8) 0 uncov | unchanged |
+| `ValidationResults.tsx` | 100% (12/12) 0 uncov | 100% (12/12) 0 uncov | unchanged |
+
+Backend per-package delta:
+
+| Package | Before | After | Delta |
+|---------|--------|-------|-------|
+| `service/operational` | 99.8% (987/989) 2 uncov | 99.8% (1099/1101) 2 uncov | +112 covered, +112 total |
+
+Backend test count: 1575 -> 1582 (+7). Browser test count: 930 -> 980 (+50). Unit test count: 0 -> 35 (new config).
 
 ### Coverage Gaps to Address
 

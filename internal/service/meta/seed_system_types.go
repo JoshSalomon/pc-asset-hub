@@ -20,6 +20,7 @@ var systemTypes = []struct {
 	{"boolean", models.BaseTypeBoolean},
 	{"date", models.BaseTypeDate},
 	{"url", models.BaseTypeURL},
+	{"json", models.BaseTypeJSON},
 }
 
 // SeedSystemTypes ensures all system type definitions exist.

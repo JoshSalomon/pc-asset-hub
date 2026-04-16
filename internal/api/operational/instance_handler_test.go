@@ -110,7 +110,7 @@ func TestT11_35_CreateInstance(t *testing.T) {
 
 	m.instRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
 	m.iavRepo.On("SetValues", mock.Anything, mock.Anything).Return(nil)
-	m.iavRepo.On("GetCurrentValues", mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{
 		{ID: "v1", AttributeID: "a1", ValueString: "myhost", InstanceVersion: 1},
 	}, nil)
 	m.catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
@@ -186,7 +186,7 @@ func TestT11_40_CreateAsRW(t *testing.T) {
 	m.mockPinResolution()
 
 	m.instRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
-	m.iavRepo.On("GetCurrentValues", mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	rec := doInstanceRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/model",
@@ -203,7 +203,7 @@ func TestT11_41_ListInstances(t *testing.T) {
 	m.instRepo.On("List", mock.Anything, "et1", "cat1", mock.AnythingOfType("models.ListParams")).Return([]*models.EntityInstance{
 		{ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Name: "inst-a", Version: 1},
 	}, 1, nil)
-	m.iavRepo.On("GetCurrentValues", mock.Anything, "i1").Return([]*models.InstanceAttributeValue{
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{AttributeID: "a1", ValueString: "host-a"},
 	}, nil)
 
@@ -223,7 +223,7 @@ func TestT11_42_GetInstance(t *testing.T) {
 	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
 		ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Name: "inst-a", Version: 1,
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", mock.Anything, "i1").Return([]*models.InstanceAttributeValue{
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{AttributeID: "a1", ValueString: "host-a"},
 	}, nil)
 
@@ -260,7 +260,7 @@ func TestT11_44_UpdateInstance(t *testing.T) {
 	m.instRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
 	m.iavRepo.On("GetValuesForVersion", mock.Anything, "i1", 1).Return([]*models.InstanceAttributeValue{}, nil)
 	m.iavRepo.On("SetValues", mock.Anything, mock.Anything).Return(nil)
-	m.iavRepo.On("GetCurrentValues", mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	rec := doInstanceRequest(e, http.MethodPut, "/api/data/v1/catalogs/my-catalog/model/i1",
@@ -479,7 +479,7 @@ func TestT12_37_CreateContainedInstance(t *testing.T) {
 		{ID: "assoc1", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment, Name: "tools"},
 	}, nil)
 	m.instRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
-	m.iavRepo.On("GetCurrentValues", mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	rec := doInstanceRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/server/p1/tool",
@@ -526,7 +526,7 @@ func TestT12_41_ListContainedInstances(t *testing.T) {
 	m.instRepo.On("ListByParent", mock.Anything, "p1", mock.Anything).Return([]*models.EntityInstance{
 		{ID: "c1", EntityTypeID: "et2", CatalogID: "cat1", ParentInstanceID: "p1", Name: "tool-a"},
 	}, 1, nil)
-	m.iavRepo.On("GetCurrentValues", mock.Anything, "c1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, "c1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 
 	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/server/p1/tool", "", apimw.RoleRO)
 
@@ -868,7 +868,7 @@ func TestGetInstance_RootNoParentChain(t *testing.T) {
 		ID: "root1", EntityTypeID: "et1", CatalogID: "cat1",
 		Name: "root-instance", Version: 1,
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", mock.Anything, "root1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, "root1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 
 	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model/root1", "", apimw.RoleRO)
 	assert.Equal(t, http.StatusOK, rec.Code)
@@ -937,7 +937,7 @@ func TestGetInstance_IncludesParentChain(t *testing.T) {
 	}
 	m.instRepo.On("GetByID", mock.Anything, "child1").Return(childInst, nil)
 	m.instRepo.On("GetByID", mock.Anything, "parent1").Return(parentInst, nil)
-	m.iavRepo.On("GetCurrentValues", mock.Anything, "child1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, "child1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "model"}, nil)
 
 	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model/child1", "", apimw.RoleRO)
@@ -972,7 +972,7 @@ func TestT18_01_SystemAttr_Name(t *testing.T) {
 	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
 		ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Name: "my-inst", Description: "desc", Version: 1,
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", mock.Anything, "i1").Return([]*models.InstanceAttributeValue{
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{AttributeID: "a1", ValueString: "host-a"},
 	}, nil)
 
@@ -999,7 +999,7 @@ func TestT18_02_SystemAttr_Description(t *testing.T) {
 	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
 		ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Name: "my-inst", Description: "my-desc", Version: 1,
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", mock.Anything, "i1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 
 	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model/i1", "", apimw.RoleRO)
 
@@ -1024,7 +1024,7 @@ func TestT18_04_CustomAttrsAfterSystem(t *testing.T) {
 	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
 		ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Name: "inst", Version: 1,
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", mock.Anything, "i1").Return([]*models.InstanceAttributeValue{
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{AttributeID: "a1", ValueString: "host-val"},
 	}, nil)
 
@@ -1059,7 +1059,7 @@ func TestT18_05_ZeroCustomAttrsHasSystemAttrs(t *testing.T) {
 	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
 		ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Name: "inst", Version: 1,
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", mock.Anything, "i1").Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 
 	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model/i1", "", apimw.RoleRO)
 
@@ -1097,7 +1097,7 @@ func TestSystemAttrs_CustomAttrRequiredFlag(t *testing.T) {
 	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
 		ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Name: "inst", Version: 1,
 	}, nil)
-	m.iavRepo.On("GetCurrentValues", mock.Anything, "i1").Return([]*models.InstanceAttributeValue{
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{AttributeID: "a1", ValueString: "host-val"},
 	}, nil)
 
@@ -1121,7 +1121,7 @@ func TestT18_06_SystemAttrsInListResponse(t *testing.T) {
 	m.instRepo.On("List", mock.Anything, "et1", "cat1", mock.AnythingOfType("models.ListParams")).Return([]*models.EntityInstance{
 		{ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Name: "inst-a", Version: 1},
 	}, 1, nil)
-	m.iavRepo.On("GetCurrentValues", mock.Anything, "i1").Return([]*models.InstanceAttributeValue{
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{AttributeID: "a1", ValueString: "host-a"},
 	}, nil)
 

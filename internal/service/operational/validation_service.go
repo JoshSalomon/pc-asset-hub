@@ -3,6 +3,7 @@ package operational
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -94,17 +95,22 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 	}
 
 	etToETV := make(map[string]string)
+	etvToET := make(map[string]string) // reverse: ETV ID → entity type ID
 	for _, pin := range pins {
 		etv, err := s.etvRepo.GetByID(ctx, pin.EntityTypeVersionID)
 		if err != nil {
 			return nil, err
 		}
 		etToETV[etv.EntityTypeID] = etv.ID
+		etvToET[etv.ID] = etv.EntityTypeID
 	}
 
 	// Cache entity type names
 	etNames := make(map[string]string)
 	resolveETName := func(etID string) string {
+		if etID == "" {
+			return "unknown"
+		}
 		if name, ok := etNames[etID]; ok {
 			return name
 		}
@@ -198,6 +204,24 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 			}
 		}
 
+		// Pre-compile pattern constraints and report bad patterns
+		compiledPatterns := make(map[string]*regexp.Regexp) // attrID → compiled regex
+		for _, attr := range attrs {
+			ti := attrTypes[attr.ID]
+			if ti == nil || ti.BaseType != models.BaseTypeString || models.IsCorruptedConstraints(ti.Constraints) {
+				continue
+			}
+			compiled, errMsg := CompilePatternConstraint(ti.Constraints)
+			if errMsg != "" {
+				validationErrors = append(validationErrors, ValidationError{
+					EntityType: etName, InstanceName: "", Field: attr.Name,
+					Violation: fmt.Sprintf("attribute %q has invalid pattern constraint: %s", attr.Name, errMsg),
+				})
+			} else if compiled != nil {
+				compiledPatterns[attr.ID] = compiled
+			}
+		}
+
 		// Build enum allowed values cache from resolved constraints
 		enumAllowed := make(map[string]map[string]bool)
 		for _, attr := range attrs {
@@ -231,7 +255,7 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 
 		// Check each instance
 		for _, inst := range etInstances {
-			values, err := s.iavRepo.GetCurrentValues(ctx, inst.ID)
+			values, err := s.iavRepo.GetValuesForVersion(ctx, inst.ID, inst.Version)
 			if err != nil {
 				return nil, err
 			}
@@ -273,6 +297,18 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 							})
 						}
 					}
+
+					// Constraint validation (skip for corrupted constraints or enum — enum handled above)
+					if ti != nil && !models.IsCorruptedConstraints(ti.Constraints) && baseType != models.BaseTypeEnum {
+						for _, v := range ValidateValueConstraints(baseType, ti.Constraints, val, compiledPatterns[attr.ID]) {
+							validationErrors = append(validationErrors, ValidationError{
+								EntityType:   etName,
+								InstanceName: inst.Name,
+								Field:        attr.Name,
+								Violation:    v,
+							})
+						}
+					}
 				}
 			}
 
@@ -295,7 +331,7 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 							EntityType:   etName,
 							InstanceName: inst.Name,
 							Field:        assoc.Name,
-							Violation:    fmt.Sprintf("mandatory association %q requires at least %d link(s) (cardinality %s), has %d", assoc.Name, tMin, assoc.TargetCardinality, count),
+							Violation:    fmt.Sprintf("mandatory association %q to %s requires at least %d link(s) (cardinality %s), has %d", assoc.Name, resolveETName(assoc.TargetEntityTypeID), tMin, assoc.TargetCardinality, count),
 						})
 					}
 					if !tUnbounded && count > tMax {
@@ -303,7 +339,7 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 							EntityType:   etName,
 							InstanceName: inst.Name,
 							Field:        assoc.Name,
-							Violation:    fmt.Sprintf("association %q exceeds maximum of %d link(s) (cardinality %s), has %d", assoc.Name, tMax, assoc.TargetCardinality, count),
+							Violation:    fmt.Sprintf("association %q to %s exceeds maximum of %d link(s) (cardinality %s), has %d", assoc.Name, resolveETName(assoc.TargetEntityTypeID), tMax, assoc.TargetCardinality, count),
 						})
 					}
 				}
@@ -349,7 +385,7 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 					EntityType:   targetETName,
 					InstanceName: inst.Name,
 					Field:        assoc.Name,
-					Violation:    fmt.Sprintf("source cardinality %q requires at least %d link(s) from %s, has %d", assoc.SourceCardinality, sMin, resolveETName(assoc.TargetEntityTypeID), count),
+					Violation:    fmt.Sprintf("association %q from %s requires at least %d link(s) (source cardinality %s), has %d", assoc.Name, resolveETName(etvToET[assoc.EntityTypeVersionID]), sMin, assoc.SourceCardinality, count),
 				})
 			}
 			if !sUnbounded && count > sMax {
@@ -357,7 +393,7 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 					EntityType:   targetETName,
 					InstanceName: inst.Name,
 					Field:        assoc.Name,
-					Violation:    fmt.Sprintf("source cardinality %q exceeds maximum of %d link(s), has %d", assoc.SourceCardinality, sMax, count),
+					Violation:    fmt.Sprintf("association %q from %s exceeds maximum of %d link(s) (source cardinality %s), has %d", assoc.Name, resolveETName(etvToET[assoc.EntityTypeVersionID]), sMax, assoc.SourceCardinality, count),
 				})
 			}
 		}

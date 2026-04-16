@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import AttributeFormFields from './AttributeFormFields'
 import type { SnapshotAttribute } from '../types'
+import { validateAttributeValue } from '../utils/validateAttributeValue'
 
 const schemaAttrs: SnapshotAttribute[] = [
   { id: 'sys-name', name: 'name', base_type: 'string', description: '', ordinal: -2, required: true, system: true },
@@ -303,4 +304,340 @@ test('T-20.20: list attr renders textarea with placeholder', async () => {
   await expect.element(textarea).toHaveAttribute('placeholder', 'Comma-separated values')
   await textarea.fill('a, b, c')
   expect(onChange).toHaveBeenCalledWith('tags', 'a, b, c')
+})
+
+// === TD-92: Inline validation warnings ===
+
+// T-31.166: String exceeding max_length shows warning
+test('T-31.166: string exceeding max_length shows warning', async () => {
+  const attrsWithConstraints: SnapshotAttribute[] = [
+    { id: 'a1', name: 'hostname', base_type: 'string', description: '', ordinal: 1, required: false, constraints: { max_length: 5 } },
+  ]
+  render(
+    <AttributeFormFields
+      schemaAttrs={attrsWithConstraints}
+      values={{ hostname: 'toolong' }}
+      onChange={vi.fn()}
+      enumValues={{}}
+      idPrefix="test"
+    />,
+  )
+  await expect.element(page.getByText(/maximum length/)).toBeVisible()
+})
+
+// T-31.167: String within max_length shows no warning
+test('T-31.167: string within max_length shows no warning', async () => {
+  const attrsWithConstraints: SnapshotAttribute[] = [
+    { id: 'a1', name: 'hostname', base_type: 'string', description: '', ordinal: 1, required: false, constraints: { max_length: 20 } },
+  ]
+  render(
+    <AttributeFormFields
+      schemaAttrs={attrsWithConstraints}
+      values={{ hostname: 'ok' }}
+      onChange={vi.fn()}
+      enumValues={{}}
+      idPrefix="test"
+    />,
+  )
+  await expect.element(page.getByText(/maximum length/)).not.toBeInTheDocument()
+})
+
+// T-31.168: URL invalid shows warning
+test('T-31.168: url invalid shows warning', async () => {
+  const urlAttrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'website', base_type: 'url', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields
+      schemaAttrs={urlAttrs}
+      values={{ website: 'not a url' }}
+      onChange={vi.fn()}
+      enumValues={{}}
+      idPrefix="test"
+    />,
+  )
+  await expect.element(page.getByText(/Invalid URL/)).toBeVisible()
+})
+
+// T-31.169: Warning disappears when value corrected (empty → no warning)
+test('T-31.169: empty value shows no warning', async () => {
+  const attrsWithConstraints: SnapshotAttribute[] = [
+    { id: 'a1', name: 'hostname', base_type: 'string', description: '', ordinal: 1, required: false, constraints: { max_length: 5 } },
+  ]
+  render(
+    <AttributeFormFields
+      schemaAttrs={attrsWithConstraints}
+      values={{ hostname: '' }}
+      onChange={vi.fn()}
+      enumValues={{}}
+      idPrefix="test"
+    />,
+  )
+  await expect.element(page.getByText(/maximum length/)).not.toBeInTheDocument()
+})
+
+// T-31.170: Integer non-numeric shows warning
+test('T-31.170: integer non-numeric shows warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'count', base_type: 'integer', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ count: 'abc' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/valid number/)).toBeVisible()
+})
+
+// T-31.171: Integer not whole number shows warning
+test('T-31.171: integer not whole shows warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'count', base_type: 'integer', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ count: '3.14' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/whole number/)).toBeVisible()
+})
+
+// T-31.172: Integer below min shows warning
+test('T-31.172: integer below min shows warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'count', base_type: 'integer', description: '', ordinal: 1, required: false, constraints: { min: 10 } },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ count: '5' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/minimum/i)).toBeVisible()
+})
+
+// T-31.173: Integer above max shows warning
+test('T-31.173: integer above max shows warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'count', base_type: 'integer', description: '', ordinal: 1, required: false, constraints: { max: 100 } },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ count: '200' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/maximum/i)).toBeVisible()
+})
+
+// T-31.174: Integer within range shows no warning
+test('T-31.174: integer within range no warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'count', base_type: 'integer', description: '', ordinal: 1, required: false, constraints: { min: 1, max: 100 } },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ count: '50' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/minimum|maximum|number/i)).not.toBeInTheDocument()
+})
+
+// T-31.175: Number non-numeric shows warning
+test('T-31.175: number non-numeric shows warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'weight', base_type: 'number', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ weight: 'abc' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/valid number/)).toBeVisible()
+})
+
+// T-31.176: Number below min shows warning
+test('T-31.176: number below min shows warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'weight', base_type: 'number', description: '', ordinal: 1, required: false, constraints: { min: 0 } },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ weight: '-5.5' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/minimum/i)).toBeVisible()
+})
+
+// T-31.177: Number above max shows warning
+test('T-31.177: number above max shows warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'weight', base_type: 'number', description: '', ordinal: 1, required: false, constraints: { max: 99.9 } },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ weight: '100' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/maximum/i)).toBeVisible()
+})
+
+// T-31.178: Number within range shows no warning
+test('T-31.178: number within range no warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'weight', base_type: 'number', description: '', ordinal: 1, required: false, constraints: { min: 0, max: 100 } },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ weight: '50.5' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/minimum|maximum|number/i)).not.toBeInTheDocument()
+})
+
+// T-31.179: Date invalid format shows warning
+test('T-31.179: date invalid shows warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'start', base_type: 'date', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ start: 'not-a-date' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/date/i)).toBeVisible()
+})
+
+// T-31.180: Date valid shows no warning
+test('T-31.180: date valid no warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'start', base_type: 'date', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ start: '2026-04-15' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/invalid|date format/i)).not.toBeInTheDocument()
+})
+
+// T-31.181: Date impossible day shows warning
+test('T-31.181: date impossible day shows warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'start', base_type: 'date', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ start: '2024-02-31' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/date/i)).toBeVisible()
+})
+
+// T-31.182: JSON invalid shows warning
+test('T-31.182: json invalid shows warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'config', base_type: 'json', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ config: '{bad}' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/JSON/i)).toBeVisible()
+})
+
+// T-31.183: JSON valid shows no warning
+test('T-31.183: json valid no warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'config', base_type: 'json', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ config: '{"key":"value"}' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/JSON/i)).not.toBeInTheDocument()
+})
+
+// T-31.184: List invalid JSON shows warning
+test('T-31.184: list invalid json shows warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'tags', base_type: 'list', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ tags: 'not json' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/list/i)).toBeVisible()
+})
+
+// T-31.185: List exceeds max_length shows warning
+test('T-31.185: list exceeds max_length shows warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'tags', base_type: 'list', description: '', ordinal: 1, required: false, constraints: { max_length: 2 } },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ tags: '["a","b","c"]' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/maximum/i)).toBeVisible()
+})
+
+// T-31.186: List not an array shows warning
+test('T-31.186: list non-array json shows warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'tags', base_type: 'list', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ tags: '{"not":"array"}' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/list/i)).toBeVisible()
+})
+
+// T-31.187: String failing pattern shows warning
+test('T-31.187: string failing pattern shows warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'code', base_type: 'string', description: '', ordinal: 1, required: false, constraints: { pattern: '^[a-z]+$' } },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ code: 'ABC' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/pattern/i)).toBeVisible()
+})
+
+// T-31.188: String matching pattern shows no warning
+test('T-31.188: string matching pattern no warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'code', base_type: 'string', description: '', ordinal: 1, required: false, constraints: { pattern: '^[a-z]+$' } },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ code: 'abc' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/pattern/i)).not.toBeInTheDocument()
+})
+
+// T-31.189: Invalid regex pattern shows warning
+test('T-31.189: invalid regex pattern shows warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'code', base_type: 'string', description: '', ordinal: 1, required: false, constraints: { pattern: '[invalid' } },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ code: 'abc' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/pattern/i)).toBeVisible()
+})
+
+// T-31.190: URL with missing host shows warning (e.g. "http://")
+test('T-31.190: url missing host shows warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'website', base_type: 'url', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ website: 'http://' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/URL/)).toBeVisible()
+})
+
+// T-31.191: Valid URL shows no warning
+test('T-31.191: valid url no warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'website', base_type: 'url', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ website: 'https://example.com' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/URL/)).not.toBeInTheDocument()
+})
+
+// === Direct validateAttributeValue tests (covers defensive guards not reachable through component) ===
+
+// T-31.193: Empty value returns null (covers line 6 — empty guard)
+test('T-31.193: validateAttributeValue empty returns null', () => {
+  expect(validateAttributeValue('string', '', { max_length: 5 })).toBeNull()
+})
+
+// T-31.194: Boolean returns null (covers line 24 — default case)
+test('T-31.194: validateAttributeValue boolean returns null', () => {
+  expect(validateAttributeValue('boolean', 'true')).toBeNull()
+  expect(validateAttributeValue('enum', 'anything')).toBeNull()
+})
+
+// T-31.192: List within max_length shows no warning (covers validateList success return)
+test('T-31.192: list within max_length no warning', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'tags', base_type: 'list', description: '', ordinal: 1, required: false, constraints: { max_length: 5 } },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ tags: '["a","b"]' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  await expect.element(page.getByText(/maximum|list/i)).not.toBeInTheDocument()
 })

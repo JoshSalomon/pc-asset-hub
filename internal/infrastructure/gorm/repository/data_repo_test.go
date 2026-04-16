@@ -214,6 +214,25 @@ func TestT2_08_SoftDeleteInstance(t *testing.T) {
 	assert.True(t, domainerrors.IsNotFound(err))
 }
 
+func TestDeleteThenRecreateWithSameName(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	inst := &models.EntityInstance{
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
+		Name: "reusable-name", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	require.NoError(t, tc.instRepo.Create(ctx, inst))
+	require.NoError(t, tc.instRepo.SoftDelete(ctx, inst.ID))
+
+	// Creating a new instance with the same name should succeed
+	inst2 := &models.EntityInstance{
+		ID: id(), EntityTypeID: tc.etID, CatalogID: tc.cvID,
+		Name: "reusable-name", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	err := tc.instRepo.Create(ctx, inst2)
+	assert.NoError(t, err, "should be able to reuse name after delete")
+}
+
 func TestT2_09_ListInstancesWithPagination(t *testing.T) {
 	tc, ctx := setupTestContext(t)
 

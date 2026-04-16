@@ -7,6 +7,7 @@ import {
 } from '@patternfly/react-core'
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
 import type { EntityInstance, ReferenceDetail } from '../types'
+import { formatAttributeValue } from '../utils/formatAttributeValue'
 
 interface InstanceDetailPanelProps {
   instance: EntityInstance
@@ -58,7 +59,7 @@ export default function InstanceDetailPanel({
                 <Tr key={attr.name}>
                   <Td>{attr.name}</Td>
                   <Td>{attr.type}</Td>
-                  <Td>{attr.value != null ? String(attr.value) : '\u2014'}</Td>
+                  <Td>{formatAttributeValue(attr.type, attr.value)}</Td>
                 </Tr>
               ))}
             </Tbody>

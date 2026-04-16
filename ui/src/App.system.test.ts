@@ -439,7 +439,7 @@ test('add and remove attribute on entity type', async () => {
   // Select the 'string' system type from the type selector
   await pg.getByRole('dialog').getByText('Select type...').click()
   await pg.waitForTimeout(500)
-  await pg.getByText('string (string)').click()
+  await pg.locator('.pf-v6-c-menu__item-text').getByText('string (string)', { exact: true }).click()
   await pg.waitForTimeout(300)
   await pg.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
 

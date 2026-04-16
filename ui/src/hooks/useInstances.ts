@@ -76,7 +76,7 @@ export function useInstances(catalogName: string | undefined, entityTypeName: st
     if (!catalogName || !entityTypeName || !editTarget) return
     setEditError(null)
     try {
-      const attrs = buildTypedAttrs(rawAttrs, schemaAttrs)
+      const attrs = buildTypedAttrs(rawAttrs, schemaAttrs, true)
       await api.instances.update(catalogName, entityTypeName, editTarget.id, {
         version,
         name: name !== editTarget.name ? name : undefined,

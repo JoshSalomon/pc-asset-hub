@@ -52,4 +52,30 @@ describe('buildTypedAttrs', () => {
     const result = buildTypedAttrs({ count: '42' }, [makeAttr('count', 'integer')])
     expect(result).toEqual({ count: 42 })
   })
+
+  // TD-98: on edit, empty string sends null to clear the value
+  test('T-20.08: edit mode sends null for cleared string field', () => {
+    const result = buildTypedAttrs({ hostname: '' }, [makeAttr('hostname', 'string')], true)
+    expect(result).toEqual({ hostname: null })
+  })
+
+  test('T-20.09: edit mode sends null for cleared number field', () => {
+    const result = buildTypedAttrs({ port: '' }, [makeAttr('port', 'number')], true)
+    expect(result).toEqual({ port: null })
+  })
+
+  test('T-20.10: edit mode sends null for cleared integer field', () => {
+    const result = buildTypedAttrs({ count: '' }, [makeAttr('count', 'integer')], true)
+    expect(result).toEqual({ count: null })
+  })
+
+  test('T-20.11: edit mode keeps non-empty values unchanged', () => {
+    const result = buildTypedAttrs({ hostname: 'server-1' }, [makeAttr('hostname', 'string')], true)
+    expect(result).toEqual({ hostname: 'server-1' })
+  })
+
+  test('T-20.12: create mode still skips empty values', () => {
+    const result = buildTypedAttrs({ hostname: '' }, [makeAttr('hostname', 'string')], false)
+    expect(result).toEqual({})
+  })
 })
