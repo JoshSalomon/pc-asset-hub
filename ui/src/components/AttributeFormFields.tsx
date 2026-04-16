@@ -121,7 +121,7 @@ export default function AttributeFormFields({
                 id={`${idPrefix}-attr-${attr.name}`}
                 value={values[attr.name] || ''}
                 onChange={(_e, v) => onChange(attr.name, v)}
-                placeholder="Comma-separated values"
+                placeholder='["value1", "value2"]'
                 rows={2}
                 validated={validated}
               />

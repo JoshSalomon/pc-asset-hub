@@ -123,19 +123,7 @@ func TestLifecycleStages(t *testing.T) {
 	}
 }
 
-func TestEntityInstanceWithNilDeletedAt(t *testing.T) {
-	inst := EntityInstance{
-		ID:               "inst-id",
-		EntityTypeID:     "et-id",
-		CatalogID: "cv-id",
-		Name:             "test-instance",
-		Version:          1,
-		DeletedAt:        nil,
-	}
-	if inst.DeletedAt != nil {
-		t.Fatal("DeletedAt should be nil for active instance")
-	}
-}
+
 
 func TestInstanceAttributeValueWithNumber(t *testing.T) {
 	val := 42.5

@@ -993,8 +993,8 @@ func TestT17_07_CopyCatalog_ClonesInstances(t *testing.T) {
 	childAttrs := []*models.InstanceAttributeValue{
 		{ID: "av2", InstanceID: "child-1", InstanceVersion: 5, AttributeID: "attr2", ValueString: "world"},
 	}
-	iavRepo.On("GetCurrentValues", ctx, "parent-1").Return(parentAttrs, nil)
-	iavRepo.On("GetCurrentValues", ctx, "child-1").Return(childAttrs, nil)
+	iavRepo.On("GetValuesForVersion", ctx, "parent-1", mock.Anything).Return(parentAttrs, nil)
+	iavRepo.On("GetValuesForVersion", ctx, "child-1", mock.Anything).Return(childAttrs, nil)
 
 	// Association links — parent references child
 	links := []*models.AssociationLink{
@@ -1185,7 +1185,7 @@ func TestT17_18_CopyCatalog_InstanceCreateError(t *testing.T) {
 	assert.Contains(t, err.Error(), "db error")
 }
 
-// CopyCatalog — GetCurrentValues error
+// CopyCatalog — GetValuesForVersion error
 func TestCopyCatalog_AttrError(t *testing.T) {
 	svc, catRepo, _, instRepo, iavRepo, _ := setupCatalogServiceWithCopy()
 	ctx := context.Background()
@@ -1198,7 +1198,7 @@ func TestCopyCatalog_AttrError(t *testing.T) {
 	}, nil)
 	catRepo.On("Create", ctx, mock.AnythingOfType("*models.Catalog")).Return(nil)
 	instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
-	iavRepo.On("GetCurrentValues", ctx, "i1").Return(nil, fmt.Errorf("attr error"))
+	iavRepo.On("GetValuesForVersion", ctx, "i1", mock.Anything).Return(nil, fmt.Errorf("attr error"))
 
 	_, err := svc.CopyCatalog(ctx, "source", "target", "")
 	assert.Error(t, err)
@@ -1218,7 +1218,7 @@ func TestCopyCatalog_SetValuesError(t *testing.T) {
 	}, nil)
 	catRepo.On("Create", ctx, mock.AnythingOfType("*models.Catalog")).Return(nil)
 	instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
-	iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{
+	iavRepo.On("GetValuesForVersion", ctx, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{
 		{ID: "av1", InstanceID: "i1", AttributeID: "a1", ValueString: "v"},
 	}, nil)
 	iavRepo.On("SetValues", ctx, mock.Anything).Return(fmt.Errorf("set error"))
@@ -1241,7 +1241,7 @@ func TestCopyCatalog_LinkError(t *testing.T) {
 	}, nil)
 	catRepo.On("Create", ctx, mock.AnythingOfType("*models.Catalog")).Return(nil)
 	instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
-	iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{}, nil)
+	iavRepo.On("GetValuesForVersion", ctx, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	linkRepo.On("GetForwardRefs", ctx, "i1").Return(nil, fmt.Errorf("link error"))
 
 	_, err := svc.CopyCatalog(ctx, "source", "target", "")
@@ -1262,7 +1262,7 @@ func TestCopyCatalog_LinkCreateError(t *testing.T) {
 	}, nil)
 	catRepo.On("Create", ctx, mock.AnythingOfType("*models.Catalog")).Return(nil)
 	instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
-	iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{}, nil)
+	iavRepo.On("GetValuesForVersion", ctx, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	linkRepo.On("GetForwardRefs", ctx, "i1").Return([]*models.AssociationLink{
 		{ID: "l1", AssociationID: "a1", SourceInstanceID: "i1", TargetInstanceID: "i1"},
 	}, nil)
@@ -1285,7 +1285,7 @@ func TestCopyCatalog_LinkOutsideCatalogSkipped(t *testing.T) {
 	}, nil)
 	catRepo.On("Create", ctx, mock.AnythingOfType("*models.Catalog")).Return(nil)
 	instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
-	iavRepo.On("GetCurrentValues", ctx, "i1").Return([]*models.InstanceAttributeValue{}, nil)
+	iavRepo.On("GetValuesForVersion", ctx, "i1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	// Link points to instance outside catalog — should be skipped
 	linkRepo.On("GetForwardRefs", ctx, "i1").Return([]*models.AssociationLink{
 		{ID: "l1", AssociationID: "a1", SourceInstanceID: "i1", TargetInstanceID: "external-inst"},

@@ -485,15 +485,15 @@ func TestT11_31_CascadeDelete(t *testing.T) {
 	}, 1, nil)
 	s.instRepo.On("ListByParent", ctx, "child1", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
 	s.linkRepo.On("DeleteByInstance", ctx, "child1").Return(nil)
-	s.instRepo.On("SoftDelete", ctx, "child1").Return(nil)
+	s.instRepo.On("Delete", ctx, "child1").Return(nil)
 	s.linkRepo.On("DeleteByInstance", ctx, "parent1").Return(nil)
-	s.instRepo.On("SoftDelete", ctx, "parent1").Return(nil)
+	s.instRepo.On("Delete", ctx, "parent1").Return(nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	err := s.svc.DeleteInstance(ctx, "my-catalog", "model", "parent1")
 	require.NoError(t, err)
-	s.instRepo.AssertCalled(t, "SoftDelete", ctx, "child1")
-	s.instRepo.AssertCalled(t, "SoftDelete", ctx, "parent1")
+	s.instRepo.AssertCalled(t, "Delete", ctx, "child1")
+	s.instRepo.AssertCalled(t, "Delete", ctx, "parent1")
 }
 
 // T-11.32: Create instance resets catalog validation status to draft
@@ -554,7 +554,7 @@ func TestT11_34_DeleteResetsDraft(t *testing.T) {
 	}, nil)
 	s.instRepo.On("ListByParent", ctx, "inst1", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
 	s.linkRepo.On("DeleteByInstance", ctx, "inst1").Return(nil)
-	s.instRepo.On("SoftDelete", ctx, "inst1").Return(nil)
+	s.instRepo.On("Delete", ctx, "inst1").Return(nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	err := s.svc.DeleteInstance(ctx, "my-catalog", "model", "inst1")
@@ -2535,7 +2535,7 @@ func TestQR_H3_CascadeDeleteCleansLinks(t *testing.T) {
 	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{ID: "inst1", CatalogID: "cat1"}, nil)
 	s.instRepo.On("ListByParent", ctx, "inst1", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
 	s.linkRepo.On("DeleteByInstance", ctx, "inst1").Return(nil)
-	s.instRepo.On("SoftDelete", ctx, "inst1").Return(nil)
+	s.instRepo.On("Delete", ctx, "inst1").Return(nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	err := s.svc.DeleteInstance(ctx, "my-catalog", "model", "inst1")

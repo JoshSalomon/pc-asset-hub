@@ -212,7 +212,7 @@ func (r *EntityInstanceGormRepo) DeleteByCatalogID(ctx context.Context, catalogI
 	return result.Error
 }
 
-func (r *EntityInstanceGormRepo) SoftDelete(ctx context.Context, id string) error {
+func (r *EntityInstanceGormRepo) Delete(ctx context.Context, id string) error {
 	result := getDB(ctx, r.db).Where("id = ?", id).Delete(&gormmodels.EntityInstance{})
 	if result.Error != nil {
 		return result.Error

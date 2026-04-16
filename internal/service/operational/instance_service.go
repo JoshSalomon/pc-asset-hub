@@ -1038,5 +1038,5 @@ func (s *InstanceService) cascadeDelete(ctx context.Context, id string) error {
 	if err := s.linkRepo.DeleteByInstance(ctx, id); err != nil {
 		return err
 	}
-	return s.instRepo.SoftDelete(ctx, id)
+	return s.instRepo.Delete(ctx, id)
 }

@@ -84,14 +84,14 @@ func TestT11_01_SetValues(t *testing.T) {
 	}
 	require.NoError(t, iavRepo.SetValues(ctx, values))
 
-	got, err := iavRepo.GetCurrentValues(ctx, instID)
+	got, err := iavRepo.GetValuesForVersion(ctx, instID, 1)
 	require.NoError(t, err)
 	assert.Len(t, got, 1)
 	assert.Equal(t, "myhost", got[0].ValueString)
 }
 
-// T-11.02: GetCurrentValues returns latest version
-func TestT11_02_GetCurrentValues(t *testing.T) {
+// T-11.02: GetValuesForVersion returns the requested version
+func TestT11_02_GetValuesForVersion(t *testing.T) {
 	data, instRepo, iavRepo := setupInstanceTestData(t)
 	ctx := context.Background()
 
@@ -110,10 +110,17 @@ func TestT11_02_GetCurrentValues(t *testing.T) {
 		{ID: instTestID(), InstanceID: instID, InstanceVersion: 2, AttributeID: data.attrStringID, ValueString: "new"},
 	}))
 
-	got, err := iavRepo.GetCurrentValues(ctx, instID)
+	// Requesting version 2 returns "new"
+	got, err := iavRepo.GetValuesForVersion(ctx, instID, 2)
 	require.NoError(t, err)
 	assert.Len(t, got, 1)
 	assert.Equal(t, "new", got[0].ValueString)
+
+	// Requesting version 1 returns "old"
+	gotV1, err := iavRepo.GetValuesForVersion(ctx, instID, 1)
+	require.NoError(t, err)
+	assert.Len(t, gotV1, 1)
+	assert.Equal(t, "old", gotV1[0].ValueString)
 }
 
 // T-11.03: GetValuesForVersion returns specific version
@@ -184,12 +191,12 @@ func TestT11_05_EndToEndInstanceWithValues(t *testing.T) {
 		{ID: instTestID(), InstanceID: instID, InstanceVersion: 1, AttributeID: data.attrNumID, ValueNumber: &num},
 	}))
 
-	// Verify via GetByID + GetCurrentValues
+	// Verify via GetByID + GetValuesForVersion
 	inst, err := instRepo.GetByID(ctx, instID)
 	require.NoError(t, err)
 	assert.Equal(t, data.catID, inst.CatalogID)
 
-	vals, err := iavRepo.GetCurrentValues(ctx, instID)
+	vals, err := iavRepo.GetValuesForVersion(ctx, instID, 1)
 	require.NoError(t, err)
 	assert.Len(t, vals, 2)
 }
@@ -384,13 +391,13 @@ func TestCov_ListByParent_Pagination(t *testing.T) {
 	assert.Len(t, items, 2)
 }
 
-// SoftDelete nonexistent instance
-func TestCov_SoftDelete_NotFound(t *testing.T) {
+// Delete nonexistent instance
+func TestCov_Delete_NotFound(t *testing.T) {
 	data, instRepo, _ := setupInstanceTestData(t)
 	_ = data
 	ctx := context.Background()
 
-	err := instRepo.SoftDelete(ctx, "nonexistent-id")
+	err := instRepo.Delete(ctx, "nonexistent-id")
 	assert.Error(t, err)
 }
 

@@ -179,7 +179,6 @@ type EntityInstance struct {
 	Version          int
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
-	DeletedAt        *time.Time
 }
 
 type InstanceAttributeValue struct {

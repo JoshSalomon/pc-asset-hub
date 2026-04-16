@@ -120,14 +120,11 @@ func TestLifecycleTransitionConversion(t *testing.T) {
 
 func TestEntityInstanceConversion(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
-	del := now.Add(time.Hour)
-	m := &domain.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "cv1", ParentInstanceID: "p1", Name: "inst", Description: "desc", Version: 2, CreatedAt: now, UpdatedAt: now, DeletedAt: &del}
+	m := &domain.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "cv1", ParentInstanceID: "p1", Name: "inst", Description: "desc", Version: 2, CreatedAt: now, UpdatedAt: now}
 	g := EntityInstanceFromModel(m)
 	assert.Equal(t, "inst", g.Name)
-	assert.NotNil(t, g.DeletedAt)
 	back := g.ToModel()
 	assert.Equal(t, 2, back.Version)
-	assert.NotNil(t, back.DeletedAt)
 }
 
 func TestInstanceAttributeValueConversion(t *testing.T) {

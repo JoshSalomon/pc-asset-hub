@@ -272,7 +272,7 @@ func TestT17_20_CopyCatalog_Integration(t *testing.T) {
 		}
 	}
 	require.NotNil(t, newParent)
-	attrs, err := env.iavRepo.GetCurrentValues(ctx, newParent.ID)
+	attrs, err := env.iavRepo.GetValuesForVersion(ctx, newParent.ID, 1)
 	require.NoError(t, err)
 	assert.Len(t, attrs, 2)
 
@@ -312,7 +312,7 @@ func TestT17_25_CopyCatalog_SourceUnchanged_Integration(t *testing.T) {
 	assert.Len(t, srcInstances, 2)
 
 	// Source attributes unchanged
-	srcAttrs, err := env.iavRepo.GetCurrentValues(ctx, srcParentID)
+	srcAttrs, err := env.iavRepo.GetValuesForVersion(ctx, srcParentID, 1)
 	require.NoError(t, err)
 	assert.Len(t, srcAttrs, 2)
 

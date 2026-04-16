@@ -36,22 +36,6 @@ func (r *InstanceAttributeValueGormRepo) SetValues(ctx context.Context, values [
 	return nil
 }
 
-func (r *InstanceAttributeValueGormRepo) GetCurrentValues(ctx context.Context, instanceID string) ([]*models.InstanceAttributeValue, error) {
-	// Get the max version for this instance, then get values for that version
-	var maxVersion int
-	err := getDB(ctx, r.db).Model(&gormmodels.InstanceAttributeValue{}).
-		Where("instance_id = ?", instanceID).
-		Select("COALESCE(MAX(instance_version), 0)").
-		Scan(&maxVersion).Error
-	if err != nil {
-		return nil, err
-	}
-	if maxVersion == 0 {
-		return nil, nil
-	}
-	return r.GetValuesForVersion(ctx, instanceID, maxVersion)
-}
-
 func (r *InstanceAttributeValueGormRepo) GetValuesForVersion(ctx context.Context, instanceID string, version int) ([]*models.InstanceAttributeValue, error) {
 	var records []gormmodels.InstanceAttributeValue
 	result := getDB(ctx, r.db).
