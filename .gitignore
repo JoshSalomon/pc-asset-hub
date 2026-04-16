@@ -47,3 +47,6 @@ screenshots/
 
 # Temp artifacts (in the project)
 tmp/
+
+# Git worktrees
+.worktrees/
