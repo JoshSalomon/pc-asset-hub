@@ -22,6 +22,7 @@ type TypeDefinitionVersionRepository interface {
 	GetLatestByTypeDefinition(ctx context.Context, typeDefID string) (*models.TypeDefinitionVersion, error)
 	GetLatestByTypeDefinitions(ctx context.Context, typeDefIDs []string) (map[string]*models.TypeDefinitionVersion, error)
 	ListByTypeDefinition(ctx context.Context, typeDefID string) ([]*models.TypeDefinitionVersion, error)
+	GetByVersion(ctx context.Context, typeDefID string, versionNumber int) (*models.TypeDefinitionVersion, error)
 }
 
 type CatalogVersionTypePinRepository interface {

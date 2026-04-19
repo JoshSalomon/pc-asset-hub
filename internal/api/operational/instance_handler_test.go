@@ -297,7 +297,7 @@ func TestT11_46_DeleteInstance(t *testing.T) {
 	}, nil)
 	m.instRepo.On("ListByParent", mock.Anything, "i1", mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
 	m.linkRepo.On("DeleteByInstance", mock.Anything, "i1").Return(nil)
-	m.instRepo.On("SoftDelete", mock.Anything, "i1").Return(nil)
+	m.instRepo.On("Delete", mock.Anything, "i1").Return(nil)
 	m.catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	rec := doInstanceRequest(e, http.MethodDelete, "/api/data/v1/catalogs/my-catalog/model/i1", "", apimw.RoleRW)

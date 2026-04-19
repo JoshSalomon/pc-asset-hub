@@ -145,3 +145,30 @@ describe('buildModel edge data', () => {
   })
 })
 
+// TD-83: Node dimensions must match rendered dimensions
+describe('TD-83: node dimension consistency', () => {
+  // The renderer uses headerHeight=26 and attributes at y = headerHeight + 14 + i*14
+  // Model dimensions must match: height = 26 (header) + n*14 (attrs) + padding
+  const RENDER_HEADER_HEIGHT = 26
+  const ATTR_LINE_HEIGHT = 14
+
+  test('T-28.20: single-attr node height matches renderer', () => {
+    const model = buildModel(baseEntityTypes)
+    const server = model.nodes!.find(n => n.id === 'et1')!
+    // Server has 1 attribute: expected height = headerHeight + 1*14 + bottom padding
+    const expectedMinHeight = RENDER_HEADER_HEIGHT + 1 * ATTR_LINE_HEIGHT
+    expect(server.height).toBeGreaterThanOrEqual(expectedMinHeight)
+    // Should not be significantly larger (old code had 14px excess)
+    expect(server.height).toBeLessThanOrEqual(expectedMinHeight + 12)
+  })
+
+  test('T-28.21: zero-attr node height matches renderer', () => {
+    const model = buildModel(baseEntityTypes)
+    const tool = model.nodes!.find(n => n.id === 'et2')!
+    // Tool has 0 attributes
+    const expectedMinHeight = RENDER_HEADER_HEIGHT
+    expect(tool.height).toBeGreaterThanOrEqual(expectedMinHeight)
+    expect(tool.height).toBeLessThanOrEqual(expectedMinHeight + 20) // minimum box size
+  })
+})
+

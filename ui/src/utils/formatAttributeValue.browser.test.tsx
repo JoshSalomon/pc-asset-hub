@@ -112,3 +112,20 @@ test('list non-array json renders raw', async () => {
   render(<Wrapper type="list" value='{"key":"value"}' />)
   await expect.element(page.getByText('{"key":"value"}')).toBeVisible()
 })
+
+// TD-117 / T-28.01: Corrupted boolean shows raw value with warning
+test('boolean corrupted value shows raw value with warning', async () => {
+  render(<Wrapper type="boolean" value="yes" />)
+  const output = page.getByTestId('output')
+  // Should show the raw value, not "No"
+  await expect.element(output).toHaveTextContent('yes')
+  // Should have a warning icon (⚠)
+  await expect.element(output).toHaveTextContent('⚠')
+})
+
+test('boolean numeric 1 shows raw value with warning', async () => {
+  render(<Wrapper type="boolean" value="1" />)
+  const output = page.getByTestId('output')
+  await expect.element(output).toHaveTextContent('1')
+  await expect.element(output).toHaveTextContent('⚠')
+})

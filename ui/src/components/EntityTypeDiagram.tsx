@@ -234,14 +234,15 @@ export function buildModel(
   onEdgeClick?: EntityTypeDiagramProps['onEdgeClick'],
 ): Model {
   const attrLineHeight = 14
-  const headerPadding = 40
+  const headerHeight = 26  // must match EntityTypeNode's headerHeight
+  const bottomPadding = 8
 
   const minNodeWidth = 200
   const charWidth = 7
   const nodePadding = 24
 
   const nodes: NodeModel[] = entityTypes.map((et) => {
-    const attrHeight = Math.max(et.attributes.length * attrLineHeight + 8, 20)
+    const attrHeight = Math.max(et.attributes.length * attrLineHeight + bottomPadding, bottomPadding)
 
     // Compute width dynamically from the longest attribute label
     let longestLabel = 0
@@ -258,7 +259,7 @@ export function buildModel(
       type: 'entity-type',
       label: et.entityType.name,
       width: dynamicWidth,
-      height: headerPadding + attrHeight,
+      height: headerHeight + attrHeight,
       shape: NodeShape.rect,
       data: {
         version: et.version,

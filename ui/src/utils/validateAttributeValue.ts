@@ -1,3 +1,5 @@
+const regexCache = new Map<string, RegExp>()
+
 export function validateAttributeValue(
   baseType: string,
   value: string,
@@ -34,10 +36,12 @@ function validateString(value: string, constraints?: Record<string, unknown>): s
   const pattern = constraints.pattern
   if (typeof pattern === 'string') {
     try {
-      // Auto-anchor: wrap in ^(?:...)$ so the pattern must match the entire string.
-      // Users write patterns like [0-9A-F]+ expecting full-string match;
-      // without anchoring, RegExp.test does partial matching.
-      const re = new RegExp(`^(?:${pattern})$`)
+      const key = `^(?:${pattern})$`
+      let re = regexCache.get(key)
+      if (!re) {
+        re = new RegExp(key)
+        regexCache.set(key, re)
+      }
       if (!re.test(value)) {
         return `Does not match pattern ${pattern}`
       }
@@ -77,7 +81,6 @@ function validateMinMax(num: number, constraints?: Record<string, unknown>): str
 function validateUrl(value: string): string | null {
   try {
     const u = new URL(value)
-    // Defensive: new URL() always sets protocol, but check host to reject e.g. "http://"
     if (!u.protocol || !u.host) return 'Invalid URL: must include scheme and host'
     return null
   } catch {
@@ -93,7 +96,6 @@ function validateDate(value: string): string | null {
   const day = Number(match[3])
   const d = new Date(year, month, day)
   if (isNaN(d.getTime())) return 'Invalid date format (expected YYYY-MM-DD)'
-  // Round-trip check: if the date rolled (e.g., Feb 31 → Mar 3), it was invalid
   if (d.getFullYear() !== year || d.getMonth() !== month || d.getDate() !== day) {
     return 'Invalid date (day does not exist in that month)'
   }
@@ -109,22 +111,42 @@ function validateJson(value: string): string | null {
   }
 }
 
-// Note: element_base_type validation is intentionally omitted here. The backend
-// (constraint_validator.go) is authoritative and validates each element's type.
-// This frontend validator is advisory only — it checks structure and max_length
-// but not per-element types. See TD-107 for adding element type checks.
+function isValidElement(elemType: string, item: unknown): boolean {
+  switch (elemType) {
+    case 'string':
+      return typeof item === 'string'
+    case 'number':
+      return typeof item === 'number'
+    case 'integer':
+      return typeof item === 'number' && Number.isInteger(item)
+    case 'boolean':
+      return typeof item === 'boolean'
+    default:
+      return true
+  }
+}
+
 function validateList(value: string, constraints?: Record<string, unknown>): string | null {
+  let arr: unknown
   try {
-    const arr = JSON.parse(value)
-    if (!Array.isArray(arr)) return 'Invalid list: must be a JSON array'
-    if (constraints) {
-      const maxLength = constraints.max_length
-      if (typeof maxLength === 'number' && arr.length > maxLength) {
-        return `List exceeds maximum of ${maxLength} items`
+    arr = JSON.parse(value)
+  } catch {
+    return 'Enter values as a JSON array, e.g. [1, 2, 3]'
+  }
+  if (!Array.isArray(arr)) return 'Enter values as a JSON array, e.g. [1, 2, 3]'
+  if (constraints) {
+    const maxLength = constraints.max_length
+    if (typeof maxLength === 'number' && arr.length > maxLength) {
+      return `List exceeds maximum of ${maxLength} items`
+    }
+    const elemType = constraints.element_base_type
+    if (typeof elemType === 'string') {
+      for (let i = 0; i < arr.length; i++) {
+        if (!isValidElement(elemType, arr[i])) {
+          return `Element at index ${i} must be a ${elemType}`
+        }
       }
     }
-    return null
-  } catch {
-    return 'Invalid list: must be a JSON array'
   }
+  return null
 }

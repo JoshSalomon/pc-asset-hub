@@ -229,6 +229,13 @@ func (m *MockTypeDefinitionVersionRepo) ListByTypeDefinition(ctx context.Context
 	}
 	return args.Get(0).([]*models.TypeDefinitionVersion), args.Error(1)
 }
+func (m *MockTypeDefinitionVersionRepo) GetByVersion(ctx context.Context, typeDefID string, versionNumber int) (*models.TypeDefinitionVersion, error) {
+	args := m.Called(ctx, typeDefID, versionNumber)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.TypeDefinitionVersion), args.Error(1)
+}
 
 // MockCatalogVersionTypePinRepo mocks CatalogVersionTypePinRepository.
 type MockCatalogVersionTypePinRepo struct{ mock.Mock }

@@ -1,4 +1,4 @@
-import { FormGroup, TextInput, TextArea, Checkbox, HelperText, HelperTextItem } from '@patternfly/react-core'
+import { FormGroup, TextInput, TextArea, Checkbox, HelperText, HelperTextItem, DatePicker } from '@patternfly/react-core'
 import type { SnapshotAttribute } from '../types'
 import { validateAttributeValue } from '../utils/validateAttributeValue'
 
@@ -82,21 +82,23 @@ export default function AttributeFormFields({
                 validated={validated}
               />
             ) : baseType === 'number' ? (
-              <TextInput
-                id={`${idPrefix}-attr-${attr.name}`}
-                type="number"
-                value={values[attr.name] || ''}
-                onChange={(_e, v) => onChange(attr.name, v)}
-                validated={validated}
-              />
-            ) : baseType === 'date' ? (
-              <TextInput
+              <input
                 id={`${idPrefix}-attr-${attr.name}`}
                 type="text"
+                inputMode="decimal"
+                value={values[attr.name] || ''}
+                onChange={(e) => onChange(attr.name, e.target.value)}
+                className="pf-v6-c-form-control"
+                aria-label={`${attr.name}${attr.required ? ' *' : ''}`}
+              />
+            ) : baseType === 'date' ? (
+              <DatePicker
                 value={values[attr.name] || ''}
                 onChange={(_e, v) => onChange(attr.name, v)}
+                dateFormat={(date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`}
+                dateParse={(val: string) => { const [y, m, d] = val.split('-').map(Number); return new Date(y, m - 1, d) }}
                 placeholder="YYYY-MM-DD"
-                validated={validated}
+                aria-label={attr.name}
               />
             ) : baseType === 'url' ? (
               <TextInput

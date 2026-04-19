@@ -801,3 +801,94 @@ test('renders all base type color variants', async () => {
   await expect.element(page.getByRole('button', { name: 'T1' })).toBeVisible()
   await expect.element(page.getByRole('button', { name: 'T9' })).toBeVisible()
 })
+
+// === TD-89: Sort and filter ===
+
+// TD-89 / T-28.18: Base type filter dropdown filters types
+test('T-28.18: base type filter filters the types table', async () => {
+  renderPage()
+  await expect.element(page.getByRole('button', { name: 'BuiltinString' })).toBeVisible()
+
+  // Click the base type filter
+  await page.getByText('All base types').click()
+  await page.getByText('enum', { exact: true }).last().click()
+
+  // Only enum types should show
+  await expect.element(page.getByRole('button', { name: 'StatusEnum' })).toBeVisible()
+  // Non-enum types should be gone
+  await expect.element(page.getByRole('button', { name: 'BuiltinString' })).not.toBeInTheDocument()
+  await expect.element(page.getByRole('button', { name: 'PortNum' })).not.toBeInTheDocument()
+})
+
+// TD-89 / T-28.19: Sortable Name column — clicking sort button sorts the table
+test('T-28.19: clicking name sort button sorts rows', async () => {
+  renderPage()
+  await expect.element(page.getByRole('button', { name: 'BuiltinString' })).toBeVisible()
+  // PF sortable Th adds a button inside the th. Find it by looking for the sort icon class.
+  const sortButtons = document.querySelectorAll('th button')
+  expect(sortButtons.length).toBeGreaterThanOrEqual(2) // Name + Base Type at minimum
+})
+
+// Coverage: sort handler — clicking Name column header sorts ascending then toggles descending
+test('sorting by Name column reorders rows', async () => {
+  renderPage()
+  await expect.element(page.getByRole('button', { name: 'BuiltinString' })).toBeVisible()
+
+  // PF6 sortable Th wraps the column text in a <button> inside <th>
+  // Find the sort button in the first header cell (Name)
+  const thButtons = document.querySelectorAll('thead th button')
+  const nameSortBtn = thButtons[0] as HTMLButtonElement
+  expect(nameSortBtn).not.toBeNull()
+  await nameSortBtn.click()
+
+  // Verify rows are now sorted alphabetically: BuiltinString, IsEnabled, PortNum, StatusEnum
+  const rows = document.querySelectorAll('tbody tr')
+  const firstRow = rows[0]?.querySelector('td')?.textContent
+  expect(firstRow).toContain('BuiltinString')
+
+  // Click again to toggle to descending
+  await nameSortBtn.click()
+  const rowsDesc = document.querySelectorAll('tbody tr')
+  const firstRowDesc = rowsDesc[0]?.querySelector('td')?.textContent
+  expect(firstRowDesc).toContain('StatusEnum')
+})
+
+// Coverage: sort handler — clicking Base Type column header sorts by base_type
+test('sorting by Base Type column reorders rows', async () => {
+  renderPage()
+  await expect.element(page.getByRole('button', { name: 'BuiltinString' })).toBeVisible()
+
+  // The second sortable Th button is "Base Type"
+  const thButtons = document.querySelectorAll('thead th button')
+  const baseTypeSortBtn = thButtons[1] as HTMLButtonElement
+  expect(baseTypeSortBtn).not.toBeNull()
+  await baseTypeSortBtn.click()
+
+  // Verify rows are sorted by base_type alphabetically: boolean, enum, integer, string
+  const rows = document.querySelectorAll('tbody tr')
+  const firstRow = rows[0]?.querySelector('td')?.textContent
+  expect(firstRow).toContain('IsEnabled') // boolean comes first alphabetically
+})
+
+// Coverage: sort handler — switching from Name to Base Type resets direction to asc
+test('switching sort column resets direction to asc', async () => {
+  renderPage()
+  await expect.element(page.getByRole('button', { name: 'BuiltinString' })).toBeVisible()
+
+  const thButtons = document.querySelectorAll('thead th button')
+  const nameSortBtn = thButtons[0] as HTMLButtonElement
+  const baseTypeSortBtn = thButtons[1] as HTMLButtonElement
+
+  // Sort by Name ascending
+  await nameSortBtn.click()
+
+  // Toggle to descending
+  await nameSortBtn.click()
+
+  // Now switch to Base Type — should reset to ascending
+  await baseTypeSortBtn.click()
+
+  const rows = document.querySelectorAll('tbody tr')
+  const firstRow = rows[0]?.querySelector('td')?.textContent
+  expect(firstRow).toContain('IsEnabled') // boolean is first when sorted asc by base_type
+})

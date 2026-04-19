@@ -50,7 +50,8 @@ func TestSeedSystemTypes_CreatesNew(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Should have called Create for each system type
-	assert.Equal(t, len(systemTypes), len(tdRepo.Calls)-len(systemTypes)) // GetByName + Create calls
+	tdRepo.AssertNumberOfCalls(t, "GetByName", len(systemTypes))
+	tdRepo.AssertNumberOfCalls(t, "Create", len(systemTypes))
 }
 
 func TestSeedSystemTypes_GetByNameNonNotFoundError(t *testing.T) {

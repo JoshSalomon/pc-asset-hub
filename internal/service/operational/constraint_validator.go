@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -176,8 +177,11 @@ func validateJSON(val *models.InstanceAttributeValue) []string {
 }
 
 func validateList(constraints map[string]any, val *models.InstanceAttributeValue) []string {
+	// Use json.Decoder with UseNumber to preserve float vs integer distinction
+	dec := json.NewDecoder(strings.NewReader(val.ValueJSON))
+	dec.UseNumber()
 	var items []any
-	if err := json.Unmarshal([]byte(val.ValueJSON), &items); err != nil {
+	if err := dec.Decode(&items); err != nil {
 		return []string{fmt.Sprintf("invalid list: %v", err)}
 	}
 
@@ -206,9 +210,21 @@ func isValidElementType(elemType string, item any) bool {
 		_, ok := item.(string)
 		return ok
 	case models.BaseTypeNumber:
+		if _, ok := item.(json.Number); ok {
+			return true
+		}
 		_, ok := item.(float64)
 		return ok
 	case models.BaseTypeInteger:
+		if n, ok := item.(json.Number); ok {
+			// Reject float literals like "0.0" — must not contain a decimal point
+			s := n.String()
+			if strings.Contains(s, ".") || strings.Contains(s, "e") || strings.Contains(s, "E") {
+				return false
+			}
+			_, err := strconv.ParseInt(s, 10, 64)
+			return err == nil
+		}
 		f, ok := item.(float64)
 		return ok && f == math.Trunc(f)
 	case models.BaseTypeBoolean:

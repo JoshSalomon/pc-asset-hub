@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Modal,
   ModalVariant,
@@ -10,13 +10,11 @@ import {
   TextInput,
   Button,
   Alert,
-  Select,
-  SelectOption,
-  SelectGroup,
-  MenuToggle,
-  type MenuToggleElement,
+  HelperText,
+  HelperTextItem,
 } from '@patternfly/react-core'
 import type { TypeDefinition } from '../types'
+import TypeDefinitionSelector from './TypeDefinitionSelector'
 
 export interface AddAttributeValues {
   name: string
@@ -37,24 +35,21 @@ export default function AddAttributeModal({ isOpen, onClose, onSubmit, typeDefin
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [selectedTdId, setSelectedTdId] = useState('')
-  const [tdOpen, setTdOpen] = useState(false)
   const [required, setRequired] = useState(false)
 
-  // Reset form when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      setName('')
-      setDescription('')
-      setSelectedTdId('')
-      setRequired(false)
-    }
-  }, [isOpen])
-
-  const handleClose = () => {
+  const resetForm = useCallback(() => {
     setName('')
     setDescription('')
     setSelectedTdId('')
     setRequired(false)
+  }, [])
+
+  useEffect(() => {
+    if (isOpen) resetForm()
+  }, [isOpen, resetForm])
+
+  const handleClose = () => {
+    resetForm()
     onClose()
   }
 
@@ -64,11 +59,7 @@ export default function AddAttributeModal({ isOpen, onClose, onSubmit, typeDefin
     await onSubmit({ name, description, typeDefinitionVersionId: td.latest_version_id, required })
   }
 
-  const systemTypes = typeDefinitions.filter(td => td.system)
-  const customTypes = typeDefinitions.filter(td => !td.system)
-
   const selectedTd = typeDefinitions.find(t => t.id === selectedTdId)
-  const toggleLabel = selectedTd ? `${selectedTd.name} (${selectedTd.base_type})` : 'Select type...'
 
   return (
     <Modal variant={ModalVariant.small} isOpen={isOpen} onClose={handleClose}>
@@ -83,36 +74,16 @@ export default function AddAttributeModal({ isOpen, onClose, onSubmit, typeDefin
             <TextInput id="attr-desc" value={description} onChange={(_e, v) => setDescription(v)} />
           </FormGroup>
           <FormGroup label="Type" isRequired fieldId="attr-type">
-            <Select
-              isOpen={tdOpen}
-              selected={selectedTdId}
-              onSelect={(_e, value) => { setSelectedTdId(value as string); setTdOpen(false) }}
-              onOpenChange={setTdOpen}
-              toggle={(ref: React.Ref<MenuToggleElement>) => (
-                <MenuToggle ref={ref} onClick={() => setTdOpen(!tdOpen)} isExpanded={tdOpen}>
-                  {toggleLabel}
-                </MenuToggle>
-              )}
-            >
-              {systemTypes.length > 0 && (
-                <SelectGroup label="System Types">
-                  {systemTypes.map(td => (
-                    <SelectOption key={td.id} value={td.id}>
-                      {td.name} ({td.base_type})
-                    </SelectOption>
-                  ))}
-                </SelectGroup>
-              )}
-              {customTypes.length > 0 && (
-                <SelectGroup label="Custom Types">
-                  {customTypes.map(td => (
-                    <SelectOption key={td.id} value={td.id}>
-                      {td.name} ({td.base_type})
-                    </SelectOption>
-                  ))}
-                </SelectGroup>
-              )}
-            </Select>
+            <TypeDefinitionSelector
+              typeDefinitions={typeDefinitions}
+              selectedTdId={selectedTdId}
+              onSelect={setSelectedTdId}
+            />
+            {selectedTd && selectedTd.base_type === 'string' && (
+              <HelperText>
+                <HelperTextItem>For multiline text, set the "multiline" constraint in the type definition.</HelperTextItem>
+              </HelperText>
+            )}
           </FormGroup>
           <FormGroup fieldId="attr-required">
             <label>
