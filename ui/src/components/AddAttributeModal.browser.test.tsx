@@ -67,7 +67,7 @@ test('T-20.35: AddAttributeModal calls onSubmit', async () => {
   await page.getByRole('textbox', { name: 'Name' }).fill('hostname')
   // Select a type — open the type selector and pick string
   await page.getByText('Select type...').click()
-  await page.getByText('string (string)').click()
+  await page.getByText('string').click()
   // Click Add
   await page.getByRole('button', { name: 'Add' }).click()
   expect(props.onSubmit).toHaveBeenCalledWith(expect.objectContaining({
@@ -106,7 +106,7 @@ test('T-20.37: AddAttributeModal required checkbox', async () => {
   await page.getByRole('textbox', { name: 'Name' }).fill('test')
   // Select a type
   await page.getByText('Select type...').click()
-  await page.getByText('string (string)').click()
+  await page.getByText('string').click()
   // Click the Required checkbox
   await page.getByRole('checkbox').click()
   await page.getByRole('button', { name: 'Add' }).click()
@@ -160,4 +160,74 @@ test('T-20.38: AddAttributeModal reopen resets name field', async () => {
 
   // Name should be reset
   await expect.element(page.getByRole('textbox', { name: 'Name' })).toHaveValue('')
+})
+
+// TD-109 / T-28.07: System types show just name, not redundant "name (name)"
+test('T-28.07: system types show just name, not redundant base_type', async () => {
+  renderModal()
+  await page.getByText('Select type...').click()
+  // Inspect the rendered menu item text
+  const menuItems = document.querySelectorAll('[class*="menu__item"] [class*="menu__item-text"]')
+  const texts = Array.from(menuItems).map(el => el.textContent)
+  // System types should show just name
+  expect(texts).toContain('string')
+  expect(texts).toContain('number')
+  // Custom types should show "name (base_type)"
+  expect(texts).toContain('Colors (enum)')
+  expect(texts).toContain('Sizes (enum)')
+})
+
+// TD-95 / T-28.17: Helper text shown when string type selected
+test('T-28.17: helper text shown for string-based type', async () => {
+  renderModal()
+  await page.getByText('Select type...').click()
+  await page.getByText('string', { exact: true }).click()
+  await expect.element(page.getByText(/multiline/i)).toBeVisible()
+})
+
+// TD-97 / T-28.05: Type selector has maxHeight for scrollability
+test('T-28.05: type selector dropdown has max height', async () => {
+  renderModal()
+  await page.getByText('Select type...').click()
+  const scrollContainer = document.querySelector('[data-testid="type-select-scroll"]')
+  expect(scrollContainer).not.toBeNull()
+  const style = window.getComputedStyle(scrollContainer!)
+  expect(style.maxHeight).toBe('200px')
+  expect(style.overflow).toBe('auto')
+})
+
+// TD-97 / T-28.06: Type selector supports typeahead filtering
+test('T-28.06: type selector has filter input', async () => {
+  renderModal()
+  await page.getByText('Select type...').click()
+  await expect.element(page.getByPlaceholder('Filter types...')).toBeVisible()
+})
+
+// Coverage: TypeDefinitionSelector onChange — typing in filter input filters options
+test('type selector filter input filters displayed types', async () => {
+  renderModal()
+  await page.getByText('Select type...').click()
+  const filterInput = page.getByPlaceholder('Filter types...')
+  await filterInput.fill('Col')
+  // "Colors" should be visible, "Sizes" should be hidden
+  await expect.element(page.getByText('Colors (enum)')).toBeVisible()
+  // "Sizes" should not appear since "Col" doesn't match "Sizes"
+  const menuItems = document.querySelectorAll('[class*="menu__item"] [class*="menu__item-text"]')
+  const texts = Array.from(menuItems).map(el => el.textContent)
+  expect(texts).not.toContain('Sizes (enum)')
+})
+
+// Coverage: TypeDefinitionSelector onOpenChange — clicking outside closes dropdown
+test('type selector clicking outside closes dropdown via onOpenChange', async () => {
+  renderModal()
+  // Open the type selector
+  await page.getByText('Select type...').click()
+  await expect.element(page.getByPlaceholder('Filter types...')).toBeVisible()
+  // Type a filter value
+  const filterInput = page.getByPlaceholder('Filter types...')
+  await filterInput.fill('Col')
+  // Click on the modal title to trigger PF6's outside-click handler → onOpenChange(false)
+  await page.getByText('Add Attribute').click()
+  // The filter input should disappear (dropdown closed)
+  await expect.element(page.getByPlaceholder('Filter types...')).not.toBeInTheDocument()
 })

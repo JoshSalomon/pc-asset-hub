@@ -26,6 +26,7 @@ function TestComponent({ catalogName, onComplete }: { catalogName?: string; onCo
 
 beforeEach(() => {
   vi.clearAllMocks()
+  sessionStorage.clear()
 })
 
 // Cover: validate with undefined catalogName does nothing (early return)
@@ -81,4 +82,84 @@ test('useValidation: API error sets error state', async () => {
   await expect.element(page.getByTestId('validating')).toHaveTextContent('false')
   await expect.element(page.getByTestId('status')).toHaveTextContent('idle')
   await expect.element(page.getByTestId('error')).toHaveTextContent('network error')
+})
+
+// TD-105 / T-28.14: Validation results saved to sessionStorage after validate
+test('T-28.14: validation results saved to sessionStorage', async () => {
+  const errors = [{ entity_type: 'X', instance_name: 'y', field: 'f', violation: 'missing required' }]
+  ;(api.catalogs.validate as Mock).mockResolvedValue({ status: 'invalid', errors })
+  render(<TestComponent catalogName="my-catalog" />)
+  await page.getByRole('button', { name: 'Validate' }).click()
+  await expect.element(page.getByTestId('status')).toHaveTextContent('invalid')
+
+  // sessionStorage should have the results
+  const stored = sessionStorage.getItem('validation:my-catalog')
+  expect(stored).not.toBeNull()
+  const parsed = JSON.parse(stored!)
+  expect(parsed.errors).toHaveLength(1)
+  expect(parsed.ran).toBe(true)
+})
+
+// TD-105 / T-28.16: Validation results rehydrated from sessionStorage on mount
+test('T-28.16: validation results rehydrated from sessionStorage on mount', async () => {
+  // Pre-populate sessionStorage
+  sessionStorage.setItem('validation:hydrate-test', JSON.stringify({
+    errors: [{ entity_type: 'Srv', instance_name: 's1', field: 'name', violation: 'required' }],
+    ran: true,
+  }))
+  render(<TestComponent catalogName="hydrate-test" />)
+  await expect.element(page.getByTestId('status')).toHaveTextContent('invalid')
+  await expect.element(page.getByTestId('error-count')).toHaveTextContent('1')
+})
+
+// Coverage: corrupt sessionStorage data is ignored (loadFromSession catch block)
+test('corrupt sessionStorage data is ignored on mount', async () => {
+  // Put invalid JSON in sessionStorage
+  sessionStorage.setItem('validation:corrupt-test', 'not valid json{{{')
+  render(<TestComponent catalogName="corrupt-test" />)
+  // Should start in idle state (corrupt data ignored)
+  await expect.element(page.getByTestId('status')).toHaveTextContent('idle')
+  await expect.element(page.getByTestId('error-count')).toHaveTextContent('0')
+})
+
+// Coverage: sessionStorage with wrong shape is ignored
+test('sessionStorage with wrong shape is ignored on mount', async () => {
+  // Valid JSON but wrong shape (missing 'ran' boolean)
+  sessionStorage.setItem('validation:bad-shape', JSON.stringify({ errors: 'not-an-array', ran: 'not-bool' }))
+  render(<TestComponent catalogName="bad-shape" />)
+  await expect.element(page.getByTestId('status')).toHaveTextContent('idle')
+})
+
+// Copilot review: failed validation clears stale sessionStorage
+test('failed validation clears stale sessionStorage', async () => {
+  sessionStorage.setItem('validation:fail-test', JSON.stringify({
+    errors: [{ entity_type: 'Old', instance_name: 'o', field: 'f', violation: 'stale' }],
+    ran: true,
+  }))
+  ;(api.catalogs.validate as Mock).mockRejectedValue(new Error('server down'))
+  render(<TestComponent catalogName="fail-test" />)
+  await expect.element(page.getByTestId('status')).toHaveTextContent('invalid')
+  await page.getByRole('button', { name: 'Validate' }).click()
+  await expect.element(page.getByTestId('error')).toHaveTextContent('server down')
+  expect(sessionStorage.getItem('validation:fail-test')).toBeNull()
+})
+
+// TD-105 / T-28.15: Re-validate clears old results and stores new
+test('T-28.15: re-validate updates sessionStorage', async () => {
+  ;(api.catalogs.validate as Mock).mockResolvedValue({ status: 'invalid', errors: [{ entity_type: 'A', instance_name: 'b', field: 'c', violation: 'd' }] })
+  render(<TestComponent catalogName="my-catalog" />)
+  await page.getByRole('button', { name: 'Validate' }).click()
+  await expect.element(page.getByTestId('error-count')).toHaveTextContent('1')
+
+  // Re-validate with 0 errors
+  ;(api.catalogs.validate as Mock).mockResolvedValue({ status: 'valid', errors: [] })
+  await page.getByRole('button', { name: 'Validate' }).click()
+  await expect.element(page.getByTestId('status')).toHaveTextContent('valid')
+  await expect.element(page.getByTestId('error-count')).toHaveTextContent('0')
+
+  // SessionStorage should have the updated (empty) results
+  const stored = sessionStorage.getItem('validation:my-catalog')
+  expect(stored).not.toBeNull()
+  const parsed = JSON.parse(stored!)
+  expect(parsed.errors).toEqual([])
 })

@@ -736,6 +736,7 @@ Acceptance Criteria:
 - A type definition cannot be deleted if it is referenced by any attribute in any entity type version.
 - System type definitions (string, integer, number, boolean, date, url) are immutable and always available.
 - Enum type definitions store an ordered list of values as their constraint. Enum management is unified under type definitions — there is no separate enum system.
+- The type definitions list page supports sorting by column (name, base type) and filtering by base type dropdown.
 
 ---
 
@@ -871,6 +872,7 @@ Acceptance Criteria:
 - Validation status is updated to `valid` (no errors) or `invalid` (errors found).
 - Any subsequent data change resets the status to `draft`.
 - Publishing a catalog is a separate action (see US-42) — validation is a prerequisite, not a trigger.
+- Validation error details persist across page navigation within the same browser session, so users can fix issues and return to see remaining errors without re-running validation.
 
 ---
 
@@ -1125,6 +1127,7 @@ Acceptance Criteria:
 - System attributes (Name, Description) cannot be edited, removed, or reordered. The UI disables these controls for system attributes.
 - Custom attributes can be reordered (drag-and-drop or move up/down controls).
 - When selecting enum as the type, the Admin can create a new enum inline without leaving the page (links to US-33).
+- The type definition selector in attribute modals provides: scrollable dropdown with max height, typeahead search, visually distinct group headers ("System Types" / "Custom Types" styled as non-selectable section labels), and system types displayed without redundant base type suffix (e.g., "string" instead of "string (string)").
 
 ---
 
@@ -1578,14 +1581,16 @@ As a user, I want instance creation and editing forms to render appropriate inpu
 **Why**: With 9 base types and configurable constraints, the UI must dynamically render the right form control (text input, number input, toggle, date picker, select dropdown, repeatable list, etc.) and the validation service must check values against the type definition's constraints.
 
 Acceptance Criteria:
-- Instance create/edit forms render type-appropriate controls: TextInput for string, TextArea for multiline string, TextInput type="number" with step=1 for integer, TextInput type="number" for number, Checkbox for boolean, TextInput with date placeholder for date, TextInput with URL placeholder for url, select dropdown for enum, TextArea for list (JSON array), TextArea for json.
+- Instance create/edit forms render type-appropriate controls: TextInput for string, TextArea for multiline string, TextInput type="number" with step=1 for integer, text input with `inputMode="decimal"` for number (float, without integer-style spinner arrows), Checkbox for boolean, DatePicker for date (calendar popup alongside text input), TextInput with URL placeholder for url, select dropdown for enum, TextArea for list (JSON array), TextArea for json.
 - String attributes with `multiline: true` render as TextArea instead of TextInput.
 - Enum attributes show a dropdown with values from the pinned type definition version.
 - The catalog validation service validates all instance attribute values against their type definition constraints: string max_length and pattern (regex), integer/number min/max, integer whole-number format, boolean format ("true"/"false"), date format (ISO 8601), URL format (valid scheme + host), enum value in allowed list, list max_length and element base type, JSON syntax validity.
 - Invalid pattern constraints (malformed regex) on type definitions are reported as attribute-level errors — once per attribute, not per instance, and detected even when all instances have empty values for that attribute.
 - Instance create/edit forms provide **inline field-level validation warnings** for type constraints during data entry. When a value violates a constraint (e.g., exceeds max_length, doesn't match a regex pattern, out of range), the form shows a warning on the field. This is advisory only — the form can still be submitted (draft mode allows invalid data). The warning helps users fix issues early rather than discovering them during full catalog validation.
 - Mandatory boolean attributes initialize to `false` in create forms, so the user does not need to click twice (true then false) to explicitly set a false value.
-- The operational data viewer displays values with type-aware formatting: clickable URLs, formatted dates, "Yes"/"No" for booleans, comma-separated lists, formatted JSON.
+- The operational data viewer displays values with type-aware formatting: clickable URLs, formatted dates, "Yes" for `true` / "No" for `false` / raw value with warning indicator for corrupted boolean data, comma-separated lists, formatted JSON.
+- Inline field-level validation warnings include element type checking for list attributes, matching the backend's `element_base_type` validation.
+- List validation error messages provide user-friendly guidance (e.g., "Enter values as a JSON array, e.g. [1, 2, 3]") instead of only technical JSON terminology.
 
 ---
 

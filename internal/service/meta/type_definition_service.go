@@ -216,16 +216,7 @@ func (s *TypeDefinitionService) ListVersions(ctx context.Context, typeDefID stri
 
 // GetVersion returns a specific version of a type definition.
 func (s *TypeDefinitionService) GetVersion(ctx context.Context, typeDefID string, versionNumber int) (*models.TypeDefinitionVersion, error) {
-	versions, err := s.tdvRepo.ListByTypeDefinition(ctx, typeDefID)
-	if err != nil {
-		return nil, err
-	}
-	for _, v := range versions {
-		if v.VersionNumber == versionNumber {
-			return v, nil
-		}
-	}
-	return nil, domainerrors.NewNotFound("TypeDefinitionVersion", fmt.Sprintf("v%d", versionNumber))
+	return s.tdvRepo.GetByVersion(ctx, typeDefID, versionNumber)
 }
 
 // ValidateConstraints validates constraints against their base type rules.

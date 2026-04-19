@@ -275,6 +275,12 @@ export default function TypeDefinitionListPage({ role }: Props) {
   const [deleteTarget, setDeleteTarget] = useState<TypeDefinition | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
+  // Sort & filter
+  const [sortField, setSortField] = useState<'name' | 'base_type' | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [filterBaseType, setFilterBaseType] = useState<string>('')
+  const [filterOpen, setFilterOpen] = useState(false)
+
   const loadTypeDefs = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -346,6 +352,22 @@ export default function TypeDefinitionListPage({ role }: Props) {
             </ToolbarItem>
           )}
           <ToolbarItem>
+            <Select
+              isOpen={filterOpen}
+              selected={filterBaseType}
+              onSelect={(_e, value) => { setFilterBaseType(value === '' ? '' : String(value)); setFilterOpen(false) }}
+              onOpenChange={setFilterOpen}
+              toggle={(ref: React.Ref<MenuToggleElement>) => (
+                <MenuToggle ref={ref} onClick={() => setFilterOpen(!filterOpen)} isExpanded={filterOpen}>
+                  {filterBaseType || 'All base types'}
+                </MenuToggle>
+              )}
+            >
+              <SelectOption value="">All base types</SelectOption>
+              {BASE_TYPES.map(bt => <SelectOption key={bt} value={bt}>{bt}</SelectOption>)}
+            </Select>
+          </ToolbarItem>
+          <ToolbarItem>
             <Button variant="plain" onClick={loadTypeDefs}>Refresh</Button>
           </ToolbarItem>
         </ToolbarContent>
@@ -357,12 +379,29 @@ export default function TypeDefinitionListPage({ role }: Props) {
         <EmptyState>
           <EmptyStateBody>No type definitions yet. Create one to get started.</EmptyStateBody>
         </EmptyState>
-      ) : (
+      ) : (() => {
+        let displayed = filterBaseType ? typeDefs.filter(td => td.base_type === filterBaseType) : typeDefs
+        if (sortField) {
+          displayed = [...displayed].sort((a, b) => {
+            const va = a[sortField].toLowerCase()
+            const vb = b[sortField].toLowerCase()
+            return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va)
+          })
+        }
+        const handleSort = (field: 'name' | 'base_type') => {
+          if (sortField === field) {
+            setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+          } else {
+            setSortField(field)
+            setSortDir('asc')
+          }
+        }
+        return (
         <Table aria-label="Type definitions">
           <Thead>
             <Tr>
-              <Th>Name</Th>
-              <Th>Base Type</Th>
+              <Th sort={{ sortBy: { index: sortField === 'name' ? 0 : -1, direction: sortDir }, onSort: () => handleSort('name'), columnIndex: 0 }}>Name</Th>
+              <Th sort={{ sortBy: { index: sortField === 'base_type' ? 1 : -1, direction: sortDir }, onSort: () => handleSort('base_type'), columnIndex: 1 }}>Base Type</Th>
               <Th>Latest Version</Th>
               <Th>Description</Th>
               <Th>Created</Th>
@@ -370,7 +409,7 @@ export default function TypeDefinitionListPage({ role }: Props) {
             </Tr>
           </Thead>
           <Tbody>
-            {typeDefs.map((td) => (
+            {displayed.map((td) => (
               <Tr key={td.id}>
                 <Td>
                   <Button variant="link" isInline onClick={() => navigate(`/schema/types/${td.id}`)}>
@@ -393,7 +432,8 @@ export default function TypeDefinitionListPage({ role }: Props) {
             ))}
           </Tbody>
         </Table>
-      )}
+        )
+      })()}
 
       {/* Create Type Definition Modal */}
       <Modal variant={ModalVariant.medium} isOpen={createOpen} onClose={() => { setCreateOpen(false); setCreateError(null) }}>

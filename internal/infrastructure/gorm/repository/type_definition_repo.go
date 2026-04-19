@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	"gorm.io/gorm"
 
@@ -230,6 +231,18 @@ func (r *TypeDefinitionVersionGormRepo) ListByTypeDefinition(ctx context.Context
 		versions[i] = records[i].ToModel()
 	}
 	return versions, nil
+}
+
+func (r *TypeDefinitionVersionGormRepo) GetByVersion(ctx context.Context, typeDefID string, versionNumber int) (*models.TypeDefinitionVersion, error) {
+	var record gormmodels.TypeDefinitionVersion
+	result := r.db.WithContext(ctx).Where("type_definition_id = ? AND version_number = ?", typeDefID, versionNumber).First(&record)
+	if result.Error != nil {
+		if result.Error == gorm.ErrRecordNotFound {
+			return nil, domainerrors.NewNotFound("TypeDefinitionVersion", fmt.Sprintf("v%d", versionNumber))
+		}
+		return nil, result.Error
+	}
+	return record.ToModel(), nil
 }
 
 // CatalogVersionTypePinGormRepo

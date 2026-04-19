@@ -174,6 +174,9 @@ func TestTypeDefinition_ErrorBranches(t *testing.T) {
 
 	_, err = tdvRepo.GetByIDs(ctx, []string{"x"})
 	assert.Error(t, err)
+
+	_, err = tdvRepo.GetByVersion(ctx, "x", 1)
+	assert.Error(t, err)
 }
 
 func TestCatalogVersion_ErrorBranches(t *testing.T) {

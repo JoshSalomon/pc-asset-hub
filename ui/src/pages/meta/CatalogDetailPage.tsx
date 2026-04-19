@@ -34,6 +34,7 @@ import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
 import { api, setAuthRole } from '../../api/client'
 import type { Catalog, CatalogVersion, EntityInstance, Role } from '../../types'
 import { useValidation } from '../../hooks/useValidation'
+import { formatAttributeValue } from '../../utils/formatAttributeValue'
 import ValidationResults from '../../components/ValidationResults'
 import { useCatalogData } from '../../hooks/useCatalogData'
 import { useInstances } from '../../hooks/useInstances'
@@ -174,7 +175,9 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
     try {
       await api.links.delete(name, activeTab, detail.selectedInstance.id, linkId)
       await detail.selectInstance(detail.selectedInstance?.id ?? null)
-    } catch { /* ignore */ }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to unlink')
+    }
   }
 
   const getAttrValue = (instance: EntityInstance, attrName: string): string => {
@@ -422,7 +425,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
                           <Td>{instance.name}</Td>
                           <Td>{instance.description}</Td>
                           {schemaAttrs.filter(attr => !attr.system).map(attr => (
-                            <Td key={attr.name}>{getAttrValue(instance, attr.name)}</Td>
+                            <Td key={attr.name}>{formatAttributeValue(attr.base_type || 'string', getAttrValue(instance, attr.name) || null)}</Td>
                           ))}
                           <Td>{instance.version}</Td>
                           <Td>

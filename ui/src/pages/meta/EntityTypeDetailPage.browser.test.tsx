@@ -1721,8 +1721,8 @@ test('edit attribute change type to custom type', async () => {
   await page.getByRole('button', { name: 'Edit' }).first().click()
   const dialog = page.getByRole('dialog')
 
-  // Change type by opening type selector (shows "string (string)" since hostname is pre-typed) and picking Status (enum)
-  await dialog.getByText('string (string)').click()
+  // Change type by opening type selector (shows "string" since hostname is a system type) and picking Status (enum)
+  await dialog.getByText('string', { exact: true }).click()
   await page.getByText('Status (enum)').click()
 
   await dialog.getByRole('button', { name: 'Save' }).click()

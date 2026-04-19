@@ -1,6 +1,6 @@
 e# AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-04-15
+Last updated: 2026-04-19
 
 ---
 
@@ -8,12 +8,12 @@ Last updated: 2026-04-15
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1582 | 100% | 97.7% (4166/4264) | — |
-| UI — Unit tests (node) | 35 | 100% | — | — |
-| UI — Browser tests (Playwright) | 980 | 100% | 94.8% (2639/2783) | 97.3% (2383/2449) |
+| Backend (Go) | 1585 | 100% | 97.8% (4178/4270) | — |
+| UI — Unit tests (node) | 41 | 100% | — | — |
+| UI — Browser tests (Playwright) | 1014 | 100% | 95.0% (2718/2861) | 97.4% (2448/2514) |
 | UI — System tests (Playwright + live server) | 121 | 100% | — | — |
 | Live system (bash scripts) | 303 | 100% | — | — |
-| **Total** | **3021** | **100%** | — | — |
+| **Total** | **3064** | **100%** | — | — |
 
 ---
 
@@ -28,14 +28,14 @@ Last updated: 2026-04-15
 | `internal/domain/errors` | 100.0% (32/32) | |
 | `internal/domain/models` | 100.0% (8/8) | |
 | `internal/infrastructure/config` | 100.0% (21/21) | |
-| `internal/infrastructure/gorm/models` | 89.3% (50/56) | InitDB migration paths (6 lines — one-time legacy schema cleanup, human approved) |
-| `internal/infrastructure/gorm/repository` | 92.5% (708/765) | GORM error branches on Delete/Update, partial DB failure paths |
+| `internal/infrastructure/gorm/models` | 100.0% (43/43) | Migration code removed (TD-21 in Session 011) |
+| `internal/infrastructure/gorm/repository` | 92.5% (706/763) | GORM error branches on Delete/Update, partial DB failure paths |
 | `internal/infrastructure/k8s` | 92.6% (50/54) | K8s client error paths |
 | `internal/operator/api/v1alpha1` | 97.7% (85/87) | `DeepCopyObject` nil-receiver guard |
 | `internal/operator/controllers` | 94.3% (198/210) | `SetupWithManager` (envtest — deferred to Phase B), `SetOwnerReference` error branches |
 | `internal/operator/crdgen` | 94.3% (33/35) | `json.Marshal` error guards on well-formed inputs |
-| `internal/service/meta` | 99.6% (959/963) | BulkCopy error paths, requiresDeepCopy edge cases |
-| `internal/service/operational` | 99.8% (1099/1101) | Cycle guard in resolveParentChain, partial DB failure paths |
+| `internal/service/meta` | 99.6% (953/957) | BulkCopy error paths, requiresDeepCopy edge cases |
+| `internal/service/operational` | 99.8% (1126/1128) | Cycle guard in resolveParentChain, partial DB failure paths |
 | `internal/service/validation` | 95.6% (43/45) | |
 
 ### Excluded from Coverage
@@ -159,8 +159,8 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 
 | Test File | Tests | Status |
 |-----------|-------|--------|
-| `validateAttributeValue.unit.test.ts` | 35 | Pass |
-| **Total** | **35** | **100% pass** |
+| `validateAttributeValue.unit.test.ts` | 41 | Pass |
+| **Total** | **41** | **100% pass** |
 
 ### Browser Tests (Playwright)
 
@@ -169,16 +169,16 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | `App.browser.test.tsx` | 53 | Pass |
 | `client.browser.test.ts` | 63 | Pass |
 | `AddAssociationModal.browser.test.tsx` | 7 | Pass |
-| `AddAttributeModal.browser.test.tsx` | 10 | Pass |
+| `AddAttributeModal.browser.test.tsx` | 16 | Pass |
 | `AddChildModal.browser.test.tsx` | 10 | Pass |
-| `AttributeFormFields.browser.test.tsx` | 44 | Pass |
+| `AttributeFormFields.browser.test.tsx` | 51 | Pass |
 | `CopyAttributesModal.browser.test.tsx` | 7 | Pass |
 | `CopyCatalogModal.browser.test.tsx` | 5 | Pass |
 | `CreateInstanceModal.browser.test.tsx` | 11 | Pass |
 | `DiagramTabContent.browser.test.tsx` | 7 | Pass |
 | `EditAttributeModal.browser.test.tsx` | 6 | Pass |
 | `EditInstanceModal.browser.test.tsx` | 6 | Pass |
-| `EntityTypeDiagram.browser.test.tsx` | 8 | Pass |
+| `EntityTypeDiagram.browser.test.tsx` | 10 | Pass |
 | `InstanceDetailPanel.browser.test.tsx` | 17 | Pass |
 | `LinkModal.browser.test.tsx` | 8 | Pass |
 | `RenameEntityTypeModal.browser.test.tsx` | 9 | Pass |
@@ -195,19 +195,20 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | `useInstanceDetail.browser.test.tsx` | 10 | Pass |
 | `useInstances.browser.test.tsx` | 11 | Pass |
 | `usePinManagement.browser.test.tsx` | 21 | Pass |
-| `useValidation.browser.test.tsx` | 6 | Pass |
+| `useValidation.browser.test.tsx` | 12 | Pass |
 | `LandingPage.browser.test.tsx` | 12 | Pass |
-| `CatalogDetailPage.browser.test.tsx` | 163 | Pass |
+| `CatalogDetailPage.browser.test.tsx` | 164 | Pass |
 | `CatalogListPage.browser.test.tsx` | 20 | Pass |
 | `CatalogVersionDetailPage.browser.test.tsx` | 70 | Pass |
 | `EntityTypeDetailPage.browser.test.tsx` | 145 | Pass |
 | `EntityTypeListPage.browser.test.tsx` | 12 | Pass |
 | `TypeDefinitionDetailPage.browser.test.tsx` | 47 | Pass |
-| `TypeDefinitionListPage.browser.test.tsx` | 60 | Pass |
+| `TypeDefinitionListPage.browser.test.tsx` | 65 | Pass |
 | `OperationalCatalogDetailPage.browser.test.tsx` | 37 | Pass |
-| `buildTypedAttrs.browser.test.ts` | 3 | Pass |
-| `formatAttributeValue.browser.test.tsx` | 15 | Pass |
-| **Total** | **980** | **100% pass** |
+| `buildTypedAttrs.browser.test.ts` | 4 | Pass |
+| `formatAttributeValue.browser.test.tsx` | 18 | Pass |
+| `validateAttributeValue.browser.test.ts` | 3 | Pass |
+| **Total** | **1014** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
@@ -233,22 +234,23 @@ Coverage is measured using `@vitest/coverage-v8`. The two test suites run indepe
 | `App.tsx` | 275/309 | 89.0% | 250/269 | 92.9% |
 | `api/client.ts` | 90/97 | 92.8% | 84/91 | 92.3% |
 | `components/AddAssociationModal.tsx` | 87/87 | 100.0% | 79/79 | 100.0% |
-| `components/AddAttributeModal.tsx` | 42/42 | 100.0% | 35/35 | 100.0% |
+| `components/AddAttributeModal.tsx` | 29/29 | 100.0% | 25/25 | 100.0% |
 | `components/AddChildModal.tsx` | 89/90 | 98.9% | 75/75 | 100.0% |
-| `components/AttributeFormFields.tsx` | 31/31 | 100.0% | 29/29 | 100.0% |
+| `components/AttributeFormFields.tsx` | 34/34 | 100.0% | 31/31 | 100.0% |
 | `components/CopyAttributesModal.tsx` | 49/49 | 100.0% | 39/39 | 100.0% |
 | `components/CopyCatalogModal.tsx` | 12/12 | 100.0% | 12/12 | 100.0% |
 | `components/CreateInstanceModal.tsx` | 18/18 | 100.0% | 17/17 | 100.0% |
 | `components/DiagramTabContent.tsx` | 4/4 | 100.0% | 3/3 | 100.0% |
 | `components/EditAssociationModal.tsx` | 85/92 | 92.4% | 76/82 | 92.7% |
-| `components/EditAttributeModal.tsx` | 38/38 | 100.0% | 31/31 | 100.0% |
+| `components/EditAttributeModal.tsx` | 22/22 | 100.0% | 20/20 | 100.0% |
 | `components/EditInstanceModal.tsx` | 19/19 | 100.0% | 17/17 | 100.0% |
-| `components/EntityTypeDiagram.tsx` | 94/102 | 92.2% | 89/97 | 91.8% |
+| `components/EntityTypeDiagram.tsx` | 95/103 | 92.2% | 90/98 | 91.8% |
 | `components/InstanceDetailPanel.tsx` | 8/8 | 100.0% | 8/8 | 100.0% |
 | `components/LinkModal.tsx` | 43/44 | 97.7% | 36/36 | 100.0% |
 | `components/RenameEntityTypeModal.tsx` | 12/12 | 100.0% | 12/12 | 100.0% |
 | `components/ReplaceCatalogModal.tsx` | 17/17 | 100.0% | 15/15 | 100.0% |
 | `components/SetParentModal.tsx` | 27/27 | 100.0% | 23/23 | 100.0% |
+| `components/TypeDefinitionSelector.tsx` | 24/24 | 100.0% | 15/15 | 100.0% |
 | `components/ValidationResults.tsx` | 12/12 | 100.0% | 10/10 | 100.0% |
 | `context/AuthContext.tsx` | 8/9 | 88.9% | 7/7 | 100.0% |
 | `hooks/useAssociationManagement.ts` | 49/52 | 94.2% | 48/48 | 100.0% |
@@ -261,22 +263,23 @@ Coverage is measured using `@vitest/coverage-v8`. The two test suites run indepe
 | `hooks/useInstanceDetail.ts` | 56/57 | 98.2% | 55/56 | 98.2% |
 | `hooks/useInstances.ts` | 66/69 | 95.7% | 65/65 | 100.0% |
 | `hooks/usePinManagement.ts` | 72/72 | 100.0% | 66/66 | 100.0% |
-| `hooks/useValidation.ts` | 21/21 | 100.0% | 19/19 | 100.0% |
+| `hooks/useValidation.ts` | 44/44 | 100.0% | 38/38 | 100.0% |
 | `pages/LandingPage.tsx` | 21/21 | 100.0% | 20/20 | 100.0% |
-| `pages/meta/CatalogDetailPage.tsx` | 208/220 | 94.5% | 179/180 | 99.4% |
+| `pages/meta/CatalogDetailPage.tsx` | 209/221 | 94.6% | 180/181 | 99.4% |
 | `pages/meta/CatalogListPage.tsx` | 74/90 | 82.2% | 67/75 | 89.3% |
 | `pages/meta/CatalogVersionDetailPage.tsx` | 144/165 | 87.3% | 130/142 | 91.5% |
 | `pages/meta/EntityTypeDetailPage.tsx` | 155/161 | 96.3% | 134/134 | 100.0% |
 | `pages/meta/EntityTypeListPage.tsx` | 11/12 | 91.7% | 11/12 | 91.7% |
 | `pages/meta/TypeDefinitionDetailPage.tsx` | 86/90 | 95.5% | 76/76 | 100.0% |
-| `pages/meta/TypeDefinitionListPage.tsx` | 129/132 | 97.7% | 121/122 | 99.2% |
+| `pages/meta/TypeDefinitionListPage.tsx` | 154/157 | 98.1% | 142/143 | 99.3% |
 | `pages/operational/OperationalCatalogDetailPage.tsx` | 60/61 | 98.4% | 52/52 | 100.0% |
-| `utils/buildTypedAttrs.ts` | 15/15 | 100.0% | 13/13 | 100.0% |
+| `utils/buildTypedAttrs.ts` | 17/17 | 100.0% | 15/15 | 100.0% |
 | `utils/dnsLabel.ts` | 3/3 | 100.0% | 2/2 | 100.0% |
-| `utils/formatAttributeValue.tsx` | 22/22 | 100.0% | 21/21 | 100.0% |
+| `utils/formatAttributeValue.tsx` | 26/26 | 100.0% | 23/23 | 100.0% |
 | `utils/statusColor.ts` | 5/6 | 83.3% | 5/6 | 83.3% |
-| `utils/validateAttributeValue.ts` | 73/75 | 97.3% | 65/65 | 100.0% |
-| **All files (46)** | **2639/2783** | **94.8%** | **2383/2449** | **97.3%** |
+| `utils/typeLabel.ts` | 1/1 | 100.0% | 1/1 | 100.0% |
+| `utils/validateAttributeValue.ts` | 97/98 | 99.0% | 81/81 | 100.0% |
+| **All files (48)** | **2718/2861** | **95.0%** | **2448/2514** | **97.4%** |
 
 **Unit tests** (supplemental — covers components that work in jsdom without browser):
 
@@ -882,9 +885,8 @@ Browser test count: 929 -> 930 (+1 test for system attribute type display).
 
 | Line | Code | Status |
 |------|------|--------|
-| L78 | `if (!u.protocol \|\| !u.host) return 'Invalid URL: ...'` | **Covered by unit test** (`file:///tmp` triggers `!u.host` branch) |
-| L92 | `if (isNaN(d.getTime())) return 'Invalid date format ...'` | Pre-existing unreachable: `new Date(year, month, day)` never returns `NaN` for values that already passed the regex (human approved) |
-| L117 | `return 'Invalid list: must be a JSON array'` (catch) | Pre-existing: duplicate of L126 catch; both catch JSON parse failures but only one branch can execute per call |
+| L84 | `if (!u.protocol \|\| !u.host) return 'Invalid URL: ...'` | **Now covered** by `validateAttributeValue.browser.test.ts` (`file:///tmp` triggers `!u.host` branch) |
+| L98 | `if (isNaN(d.getTime())) return 'Invalid date format ...'` | Unreachable: `new Date(year, month, day)` never returns `NaN` for values that already passed the regex (human approved) |
 
 **Arithmetic check:**
 
@@ -921,6 +923,65 @@ Backend per-package delta:
 | `service/operational` | 99.8% (987/989) 2 uncov | 99.8% (1099/1101) 2 uncov | +112 covered, +112 total |
 
 Backend test count: 1575 -> 1582 (+7). Browser test count: 930 -> 980 (+50). Unit test count: 0 -> 35 (new config).
+
+### New Code Coverage (Session 023 — Phase 1 Bug Fix & UX Polish Sprint)
+
+**Backend:** Bug fixes and UX polish across 16 TD items. New `GetByVersion` repo method, constraint validator float/integer precision fix, type definition service refactoring.
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `gorm/repository/type_definition_repo.go` | `GetByVersion` (NEW) | 100% (error branch covered via closedDB test) |
+| `service/operational/constraint_validator.go` | `isValidElementType` (enhanced) | 100% |
+| `service/meta/type_definition_service.go` | `GetVersion` (refactored) | 100% |
+
+**UI:** New `TypeDefinitionSelector` component, `typeLabel` utility, `useValidation` session storage, sort/filter on TypeDefinitionListPage.
+
+| File | Coverage |
+|------|----------|
+| `TypeDefinitionSelector.tsx` (NEW) | 100% (24/24) |
+| `typeLabel.ts` (NEW) | 100% (1/1) |
+| `TypeDefinitionListPage.tsx` | 98.1% (154/157) — 3 pre-existing guards |
+| `useValidation.ts` | 100% (44/44) |
+| `validateAttributeValue.ts` | 99.0% (97/98) — 1 unreachable guard (L98: `isNaN(d.getTime())` — `new Date()` never returns NaN for regex-validated numeric inputs) |
+| `formatAttributeValue.tsx` | 100% (26/26) |
+| `AddAttributeModal.tsx` | 100% (29/29) |
+| `EditAttributeModal.tsx` | 100% (22/22) |
+| `AttributeFormFields.tsx` | 100% (34/34) |
+| `EntityTypeDiagram.tsx` | 92.2% (95/103) — 8 pre-existing guards |
+| `CatalogDetailPage.tsx` | 94.6% (209/221) — 12 pre-existing guards |
+
+New lines: **1 uncovered** in UI (`validateAttributeValue.ts:98` — `isNaN(d.getTime())` unreachable because `new Date(y,m,d)` never returns NaN for regex-validated numeric inputs; defensive guard). Backend: all new lines covered (including `GetByVersion:243` via closedDB error branch test).
+
+Per-file coverage deltas (modified files only, vs main):
+
+| Package/File | Before (main baseline) | After | Delta |
+|-------------|--------|-------|-------|
+| `gorm/repository` | 92.5% (708/765) 57 uncov | 92.5% (706/763) 57 uncov | -2 covered, -2 total, 0 delta uncov |
+| `service/operational` | 99.8% (1099/1101) 2 uncov | 99.8% (1126/1128) 2 uncov | +27 covered, +27 total, 0 delta uncov |
+| `service/meta` | 99.6% (950/954) 4 uncov | 99.6% (953/957) 4 uncov | +3 covered, +3 total, 0 delta uncov |
+| `gorm/models` | 89.3% (50/56) 6 uncov | 100% (43/43) 0 uncov | **-6 uncov** (migration code removed) |
+| `domain/models` | 100% (8/8) 0 uncov | 100% (8/8) 0 uncov | unchanged |
+| `api/meta` | 99.8% (492/493) 1 uncov | 99.8% (495/496) 1 uncov | +3 covered, +3 total, 0 delta uncov |
+| `api/operational` | 98.4% (307/312) 5 uncov | 98.4% (307/312) 5 uncov | unchanged |
+| `TypeDefinitionSelector.tsx` | NEW | 100% (24/24) 0 uncov | NEW file, 100% |
+| `typeLabel.ts` | NEW | 100% (1/1) 0 uncov | NEW file, 100% |
+| `TypeDefinitionListPage.tsx` | 97.7% (129/132) 3 uncov | 98.1% (154/157) 3 uncov | +25 covered, +25 total, 0 delta uncov |
+| `useValidation.ts` | 100% (21/21) 0 uncov | 100% (44/44) 0 uncov | +23 covered, +23 total |
+| `validateAttributeValue.ts` | 97.3% (73/75) 2 uncov | 99.0% (97/98) 1 uncov | +24 covered, +23 total, **-1 uncov** |
+| `formatAttributeValue.tsx` | 100% (22/22) 0 uncov | 100% (26/26) 0 uncov | +4 covered, +4 total |
+| `AddAttributeModal.tsx` | 100% (39/39) 0 uncov | 100% (29/29) 0 uncov | -10 covered, -10 total (refactored smaller) |
+| `EditAttributeModal.tsx` | 100% (34/34) 0 uncov | 100% (22/22) 0 uncov | -12 covered, -12 total (refactored smaller) |
+| `AttributeFormFields.tsx` | 100% (28/28) 0 uncov | 100% (34/34) 0 uncov | +6 covered, +6 total |
+| `CreateInstanceModal.tsx` | 100% (14/14) 0 uncov | 100% (18/18) 0 uncov | +4 covered, +4 total |
+| `InstanceDetailPanel.tsx` | 100% (8/8) 0 uncov | 100% (8/8) 0 uncov | unchanged |
+| `ValidationResults.tsx` | 100% (12/12) 0 uncov | 100% (12/12) 0 uncov | unchanged |
+| `EntityTypeDiagram.tsx` | 92.2% (95/103) 8 uncov | 92.2% (95/103) 8 uncov | unchanged |
+| `CatalogDetailPage.tsx` | 94.6% (209/221) 12 uncov | 94.6% (209/221) 12 uncov | unchanged |
+| `EntityTypeDetailPage.tsx` | 96.3% (155/161) 6 uncov | 96.3% (155/161) 6 uncov | unchanged |
+| `buildTypedAttrs.ts` | 100% (15/15) 0 uncov | 100% (17/17) 0 uncov | +2 covered, +2 total |
+| `useInstances.ts` | 95.7% (66/69) 3 uncov | 95.7% (66/69) 3 uncov | unchanged |
+
+Backend test count: 1582 -> 1585 (+3). Browser test count: 980 -> 1014 (+34). Unit test count: 35 -> 41 (+6).
 
 ### Coverage Gaps to Address
 

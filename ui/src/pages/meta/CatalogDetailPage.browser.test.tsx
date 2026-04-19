@@ -478,6 +478,25 @@ test('unlink removes link and refreshes', async () => {
   expect(api.links.delete).toHaveBeenCalledWith('my-catalog', 'model', 'i1', 'link1')
 })
 
+// TD-84 / T-28.03: handleUnlink shows error on failure
+test('T-28.03: unlink error is shown, not swallowed', async () => {
+  const snapshotWithLink = {
+    ...mockSnapshot,
+    associations: [
+      ...mockSnapshot.associations,
+      { id: 'assoc2', name: 'uses', type: 'directional', direction: 'outgoing', target_entity_type_id: 'et2', target_entity_type_name: 'tool' },
+    ],
+  }
+  ;(api.versions.snapshot as Mock).mockResolvedValue(snapshotWithLink)
+  ;(api.links.delete as Mock).mockRejectedValue(new Error('Permission denied'))
+  renderDetail('Admin')
+  await waitForInstances()
+  await page.getByRole('button', { name: 'Details' }).first().click()
+  await expect.element(page.getByText('Forward References').first()).toBeVisible()
+  await page.getByRole('button', { name: 'Unlink' }).first().click()
+  await expect.element(page.getByText('Permission denied')).toBeVisible()
+})
+
 test('refresh button reloads instances', async () => {
   renderDetail('Admin')
   await waitForInstances()
@@ -626,7 +645,7 @@ test('TD-42: contained modal submits number attribute as parsed float', async ()
   await expect.element(page.getByRole('dialog')).toBeVisible()
 
   await page.getByRole('dialog').getByRole('textbox', { name: /Name/i }).fill('tool-1')
-  await page.getByRole('dialog').getByRole('spinbutton', { name: /weight/i }).fill('3.14')
+  await page.getByRole('dialog').getByRole('textbox', { name: /weight/i }).fill('3.14')
   await page.getByRole('dialog').getByRole('button', { name: 'Create', exact: true }).click()
   expect(api.instances.createContained).toHaveBeenCalledWith('my-catalog', 'model', 'i1', 'tool', {
     name: 'tool-1',
@@ -1645,8 +1664,8 @@ test('create instance with number attribute calls parseFloat', async () => {
   const nameInput = page.getByRole('dialog').getByRole('textbox').first()
   await nameInput.fill('number-test')
 
-  // Fill port (number attribute) — it renders as spinbutton
-  const portInput = page.getByRole('dialog').getByRole('spinbutton')
+  // Fill port (number attribute) — it renders as textbox with inputMode=decimal
+  const portInput = page.getByRole('dialog').getByRole('textbox', { name: /port/i })
   await portInput.fill('9090')
 
   await page.getByRole('dialog').getByRole('button', { name: 'Create' }).click()

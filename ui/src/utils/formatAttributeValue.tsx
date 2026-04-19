@@ -17,7 +17,10 @@ export function formatAttributeValue(type: string, value: string | number | null
     }
 
     case 'boolean':
-      return value === 'true' ? 'Yes' : 'No'
+      if (value === 'true') return 'Yes'
+      if (value === 'false') return 'No'
+      return <>{String(value)} <span aria-hidden="true" title="Unexpected boolean value">⚠</span><span style={{ position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clipPath: 'inset(50%)', whiteSpace: 'nowrap' }}>Warning: unexpected boolean value</span></>
+
 
     case 'date': {
       const d = new Date(String(value))

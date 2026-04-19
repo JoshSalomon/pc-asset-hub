@@ -3576,12 +3576,188 @@ The following code paths cannot be covered in Phase A (no container runtime) and
 
 ---
 
+## Milestone 18: Bug Fix & UX Polish Sprint (Phase 1)
+
+Fixes 17 TD items across 6 internal stages. Primarily UI changes (browser tests), with a few backend items (unit + integration). No new API endpoints. References: TD-117, TD-84, TD-103, TD-96, TD-97, TD-109, TD-106, TD-110, TD-107, TD-108, TD-116, TD-105, TD-89, TD-83, TD-95, TD-100, TD-101.
+
+### Stage 1: Quick Surgical Bug Fixes
+
+#### TD-117 — Boolean display for corrupted data
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.01 | formatAttributeValue('boolean', 'true') returns "Yes" | Browser | "Yes" |
+| T-28.02 | formatAttributeValue('boolean', 'false') returns "No" | Browser | "No" |
+| T-28.03 | formatAttributeValue('boolean', 'maybe') returns raw value with warning indicator | Browser | "maybe" with warning styling |
+| T-28.04 | formatAttributeValue('boolean', '') returns raw value with warning indicator | Browser | Empty string with warning |
+| T-28.05 | formatAttributeValue('boolean', '1') returns raw value with warning indicator | Browser | "1" with warning styling |
+
+#### TD-84 — handleUnlink error handling
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.06 | handleUnlink success — link removed, instance refreshed | Browser | Link disappears from list |
+| T-28.07 | handleUnlink API failure — error alert displayed | Browser | Error message shown to user |
+
+#### TD-103 — Seed test assertion robustness
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.08 | SeedSystemTypes_CreatesNew uses explicit AssertNumberOfCalls | Unit | Passes with clear call count assertions |
+
+### Stage 2: Attribute Modal Cluster
+
+#### TD-96 — Add Attribute modal Save button
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.09 | Add Attribute modal: fill name + select type + click Add → attribute created, modal closes | Browser | onSubmit called, modal closes |
+| T-28.10 | Add Attribute modal: type with empty latest_version_id → Add does nothing (no crash) | Browser | No onSubmit call, no error |
+| T-28.11 | Add Attribute modal: API error → error alert displayed in modal | Browser | Alert with error message |
+
+#### TD-97 — Type selector scrollable with search
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.12 | AddAttributeModal type selector has max-height (scrollable with many types) | Browser | Dropdown has constrained height |
+| T-28.13 | AddAttributeModal type selector supports typeahead filtering | Browser | Typing filters options |
+| T-28.14 | EditAttributeModal type selector has max-height and typeahead | Browser | Same behavior as AddAttributeModal |
+
+#### TD-109 — Group header styling and label cleanup
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.15 | System Types group header is visually distinct (bold/styled, not selectable) | Browser | Header not clickable as option |
+| T-28.16 | Custom Types group header is visually distinct | Browser | Header not clickable as option |
+| T-28.17 | System type "string" displays as "string" (no redundant base type) | Browser | Label is just "string" |
+| T-28.18 | Custom type "hex12" displays as "hex12 (string)" | Browser | Label includes base type |
+
+### Stage 3: Form Field Improvements
+
+#### TD-106 — Date attribute DatePicker
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.19 | Date attribute renders DatePicker component (not plain TextInput) | Browser | Calendar button visible |
+| T-28.20 | Date attribute accepts typed date value "2026-04-16" | Browser | Value stored, no warning |
+| T-28.21 | Date attribute invalid value "not-a-date" shows validation warning | Browser | Warning helper text shown |
+| T-28.22 | Date attribute DatePicker calendar selection populates value | Browser | Selected date appears in input |
+
+#### TD-110 — Number float decimal input
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.23 | Number (float) attribute renders without spinner arrows | Browser | No up/down arrows visible |
+| T-28.24 | Number (float) attribute accepts decimal value "3.14" | Browser | Value stored, no warning |
+| T-28.25 | Integer attribute still renders with step=1 spinner arrows | Browser | Arrows visible (no regression) |
+
+### Stage 4: Validation Layer
+
+#### TD-107 — List element type checking (frontend)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.26 | validateList with element_base_type="integer" and ["1","2","3"] returns null | Unit (TS) | No warning |
+| T-28.27 | validateList with element_base_type="integer" and ["abc"] returns element type error | Unit (TS) | Warning message about element type |
+| T-28.28 | validateList with element_base_type="number" and ["3.14"] returns null | Unit (TS) | No warning |
+| T-28.29 | validateList with element_base_type="boolean" and ["true","false"] returns null | Unit (TS) | No warning |
+| T-28.30 | validateList with element_base_type="boolean" and ["maybe"] returns element type error | Unit (TS) | Warning message |
+| T-28.31 | List attribute with wrong element types shows inline warning in form | Browser | Warning helper text on field |
+
+#### TD-108 — Regex pattern caching
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.32 | validateString with pattern compiles regex once, reuses on subsequent calls | Unit (TS) | Cache hit on second call |
+| T-28.33 | validateString with different patterns caches both independently | Unit (TS) | Two entries in cache |
+| T-28.34 | validateString with invalid pattern returns error (no cache pollution) | Unit (TS) | Error returned, invalid pattern not cached |
+
+#### TD-116 — List validation UX error messages
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.35 | List value "1, 2, 3" (not JSON) shows guidance message | Browser | "Enter values as a JSON array, e.g. [1, 2, 3]" |
+| T-28.36 | List value "not json" shows same guidance message | Browser | Guidance message, not "must be a JSON array" |
+| T-28.37 | List value "[1, 2, 3]" with element_base_type="integer" shows no warning | Browser | No warning |
+| T-28.38 | List value "[1, \"abc\", 3]" with element_base_type="integer" shows element error | Browser | Specific element mismatch warning |
+
+#### TD-105 — Validation error persistence across navigation
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.39 | Validate catalog → errors displayed → navigate to instance → return → errors still visible | Browser | Errors persist |
+| T-28.40 | Validate catalog → navigate away → return → error count unchanged | Browser | Same error list |
+| T-28.41 | Re-validate catalog → old errors cleared, new errors shown | Browser | Fresh results |
+| T-28.42 | Validation errors scoped per catalog — catalog A errors don't appear on catalog B | Browser | Independent state |
+
+### Stage 5: Types Tab & Diagram
+
+#### TD-89 — Types tab sort and filter
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.43 | Types tab Name column header is sortable — click toggles asc/desc | Browser | Rows reorder |
+| T-28.44 | Types tab Base Type column header is sortable | Browser | Rows reorder |
+| T-28.45 | Types tab base type filter dropdown filters by selected type | Browser | Only matching types shown |
+| T-28.46 | Types tab base type filter "All" shows all types | Browser | All types visible |
+
+#### TD-83 — Diagram node selection frame
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.47 | Diagram node click triggers selection | Browser | Node selected state |
+| T-28.48 | Diagram node selection frame aligns with dynamic node width | Browser | No visual clipping or misalignment |
+
+#### TD-95 — Multiline string discoverability
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.49 | Add Attribute modal shows hint when string-based type selected | Browser | Helper text about multiline |
+| T-28.50 | Add Attribute modal hides hint when non-string type selected | Browser | No helper text |
+
+### Stage 6: Backend Cleanup
+
+#### TD-100 — GetVersion N+1 query fix
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.51 | GetByVersion returns correct version for valid typeDefID + versionNumber | Unit | Matching TypeDefinitionVersion |
+| T-28.52 | GetByVersion returns NotFound for nonexistent version number | Unit | NotFoundError |
+| T-28.53 | GetByVersion returns NotFound for nonexistent typeDefID | Unit | NotFoundError |
+| T-28.54 | GetByVersion repo method queries directly (no ListByTypeDefinition call) | Integration | Single row returned from DB |
+| T-28.55 | GetVersion service method uses GetByVersion instead of ListByTypeDefinition + loop | Unit | GetByVersion called, ListByTypeDefinition not called |
+
+#### TD-101 — Remove legacy enum migration code
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.56 | InitDB creates correct schema from scratch (no legacy table references) | Unit | AutoMigrate succeeds |
+| T-28.57 | InitDB does not attempt to drop enums, enum_values, or legacy columns | Unit | No drop table/column calls |
+| T-28.58 | Containment cardinality fixup still runs | Unit | source_cardinality updated to "0..1" |
+
+### Regression
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-28.59 | All existing backend tests pass (no regressions from TD-100, TD-101, TD-103) | Unit/Integration/API | 100% pass |
+| T-28.60 | All existing browser tests pass (no regressions from UI changes) | Browser | 100% pass |
+
+---
+
+**Milestone 18 totals: 60 test cases** (T-28.01 through T-28.60)
+- Unit (Go): 8 tests (TD-103, TD-100, TD-101)
+- Unit (TypeScript): 9 tests (TD-107, TD-108)
+- Browser: 41 tests (TD-117, TD-84, TD-96, TD-97, TD-109, TD-106, TD-110, TD-116, TD-105, TD-89, TD-83, TD-95)
+- Regression: 2 tests
+
+---
+
 ## Phase Exit Criteria
 
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All test cases (T-1.01 through T-31.202; T-13.78–13.85 retired; T-31.79 subsumed by T-31.96–102; 29 enum-specific tests retired — see T-31 retired test cases list) pass
+- All test cases (T-1.01 through T-28.60, T-31.01–T-31.202; T-13.78–13.85 retired; T-31.79 subsumed by T-31.96–102; 29 enum-specific tests retired — see T-31 retired test cases list) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

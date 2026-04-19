@@ -485,9 +485,8 @@ func TestDeleteTypeDefinition_GetByIDError(t *testing.T) {
 func TestGetVersion_Success(t *testing.T) {
 	svc, _, tdvRepo, _ := newTypeDefSvc()
 
-	tdvRepo.On("ListByTypeDefinition", mock.Anything, "td-1").Return([]*models.TypeDefinitionVersion{
-		{ID: "tdv-1", TypeDefinitionID: "td-1", VersionNumber: 1, Constraints: map[string]any{}},
-		{ID: "tdv-2", TypeDefinitionID: "td-1", VersionNumber: 2, Constraints: map[string]any{"max_length": float64(16)}},
+	tdvRepo.On("GetByVersion", mock.Anything, "td-1", 2).Return(&models.TypeDefinitionVersion{
+		ID: "tdv-2", TypeDefinitionID: "td-1", VersionNumber: 2, Constraints: map[string]any{"max_length": float64(16)},
 	}, nil)
 
 	v, err := svc.GetVersion(context.Background(), "td-1", 2)
@@ -499,23 +498,21 @@ func TestGetVersion_Success(t *testing.T) {
 func TestGetVersion_NotFound(t *testing.T) {
 	svc, _, tdvRepo, _ := newTypeDefSvc()
 
-	tdvRepo.On("ListByTypeDefinition", mock.Anything, "td-1").Return([]*models.TypeDefinitionVersion{
-		{ID: "tdv-1", VersionNumber: 1},
-	}, nil)
+	tdvRepo.On("GetByVersion", mock.Anything, "td-1", 99).Return(nil, domainerrors.NewNotFound("TypeDefinitionVersion", "v99"))
 
 	_, err := svc.GetVersion(context.Background(), "td-1", 99)
 	assert.Error(t, err)
 	assert.True(t, domainerrors.IsNotFound(err))
 }
 
-func TestGetVersion_ListError(t *testing.T) {
+func TestGetVersion_RepoError(t *testing.T) {
 	svc, _, tdvRepo, _ := newTypeDefSvc()
 
-	tdvRepo.On("ListByTypeDefinition", mock.Anything, "td-1").Return(nil, errors.New("list error"))
+	tdvRepo.On("GetByVersion", mock.Anything, "td-1", 1).Return(nil, errors.New("db error"))
 
 	_, err := svc.GetVersion(context.Background(), "td-1", 1)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "list error")
+	assert.Contains(t, err.Error(), "db error")
 }
 
 // === ValidateConstraints - additional base types ===

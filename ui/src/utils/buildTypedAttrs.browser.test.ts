@@ -20,6 +20,11 @@ describe('buildTypedAttrs (browser)', () => {
     expect(result2).toEqual({ count: 3 })
   })
 
+  test('isEdit sends null for empty values', () => {
+    const result = buildTypedAttrs({ hostname: '' }, [makeAttr('hostname', 'string')], true)
+    expect(result).toEqual({ hostname: null })
+  })
+
   test('converts boolean base_type to true/false', () => {
     const schema = [makeAttr('active', 'boolean')]
     expect(buildTypedAttrs({ active: 'true' }, schema)).toEqual({ active: true })

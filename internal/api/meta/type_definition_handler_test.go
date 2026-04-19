@@ -308,9 +308,8 @@ func TestTypeDefHandler_GetVersion_Success(t *testing.T) {
 	tdvRepo := new(mocks.MockTypeDefinitionVersionRepo)
 	e := setupTypeDefServer(tdRepo, tdvRepo)
 
-	tdvRepo.On("ListByTypeDefinition", mock.Anything, "td-1").Return([]*models.TypeDefinitionVersion{
-		{ID: "tdv-1", TypeDefinitionID: "td-1", VersionNumber: 1, Constraints: map[string]any{}},
-		{ID: "tdv-2", TypeDefinitionID: "td-1", VersionNumber: 2, Constraints: map[string]any{"max_length": float64(16)}},
+	tdvRepo.On("GetByVersion", mock.Anything, "td-1", 2).Return(&models.TypeDefinitionVersion{
+		ID: "tdv-2", TypeDefinitionID: "td-1", VersionNumber: 2, Constraints: map[string]any{"max_length": float64(16)},
 	}, nil)
 
 	rec := doRequest(e, http.MethodGet, "/api/meta/v1/type-definitions/td-1/versions/2", "", apimw.RoleRO)
@@ -337,9 +336,7 @@ func TestTypeDefHandler_GetVersion_NotFound(t *testing.T) {
 	tdvRepo := new(mocks.MockTypeDefinitionVersionRepo)
 	e := setupTypeDefServer(tdRepo, tdvRepo)
 
-	tdvRepo.On("ListByTypeDefinition", mock.Anything, "td-1").Return([]*models.TypeDefinitionVersion{
-		{ID: "tdv-1", TypeDefinitionID: "td-1", VersionNumber: 1, Constraints: map[string]any{}},
-	}, nil)
+	tdvRepo.On("GetByVersion", mock.Anything, "td-1", 99).Return(nil, domainerrors.NewNotFound("TypeDefinitionVersion", "v99"))
 
 	rec := doRequest(e, http.MethodGet, "/api/meta/v1/type-definitions/td-1/versions/99", "", apimw.RoleRO)
 	assert.Equal(t, http.StatusNotFound, rec.Code)
@@ -350,7 +347,7 @@ func TestTypeDefHandler_GetVersion_ServiceError(t *testing.T) {
 	tdvRepo := new(mocks.MockTypeDefinitionVersionRepo)
 	e := setupTypeDefServer(tdRepo, tdvRepo)
 
-	tdvRepo.On("ListByTypeDefinition", mock.Anything, "td-1").Return(nil, errors.New("version error"))
+	tdvRepo.On("GetByVersion", mock.Anything, "td-1", 1).Return(nil, errors.New("version error"))
 
 	rec := doRequest(e, http.MethodGet, "/api/meta/v1/type-definitions/td-1/versions/1", "", apimw.RoleRO)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)

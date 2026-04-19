@@ -10,13 +10,9 @@ import {
   TextInput,
   Button,
   Alert,
-  Select,
-  SelectOption,
-  SelectGroup,
-  MenuToggle,
-  type MenuToggleElement,
 } from '@patternfly/react-core'
 import type { TypeDefinition } from '../types'
+import TypeDefinitionSelector from './TypeDefinitionSelector'
 
 export interface EditAttributeValues {
   name: string
@@ -44,7 +40,6 @@ export default function EditAttributeModal({
   const [name, setName] = useState(initialName)
   const [description, setDescription] = useState(initialDescription)
   const [selectedTdId, setSelectedTdId] = useState(initialTypeDefinitionId)
-  const [tdOpen, setTdOpen] = useState(false)
   const [required, setRequired] = useState(initialRequired)
 
   // Reset form when modal opens with new initial values.
@@ -59,24 +54,14 @@ export default function EditAttributeModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
 
-  const handleClose = () => {
-    onClose()
-  }
-
   const handleSubmit = async () => {
     const td = typeDefinitions.find(t => t.id === selectedTdId)
     if (!td || !td.latest_version_id) return
     await onSubmit({ name, description, typeDefinitionVersionId: td.latest_version_id, required })
   }
 
-  const systemTypes = typeDefinitions.filter(td => td.system)
-  const customTypes = typeDefinitions.filter(td => !td.system)
-
-  const selectedTd = typeDefinitions.find(t => t.id === selectedTdId)
-  const toggleLabel = selectedTd ? `${selectedTd.name} (${selectedTd.base_type})` : 'Select type...'
-
   return (
-    <Modal variant={ModalVariant.small} isOpen={isOpen} onClose={handleClose}>
+    <Modal variant={ModalVariant.small} isOpen={isOpen} onClose={onClose}>
       <ModalHeader title="Edit Attribute" />
       <ModalBody>
         {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: '1rem' }} />}
@@ -88,36 +73,11 @@ export default function EditAttributeModal({
             <TextInput id="edit-attr-desc" value={description} onChange={(_e, v) => setDescription(v)} />
           </FormGroup>
           <FormGroup label="Type" isRequired fieldId="edit-attr-type">
-            <Select
-              isOpen={tdOpen}
-              selected={selectedTdId}
-              onSelect={(_e, value) => { setSelectedTdId(value as string); setTdOpen(false) }}
-              onOpenChange={setTdOpen}
-              toggle={(ref: React.Ref<MenuToggleElement>) => (
-                <MenuToggle ref={ref} onClick={() => setTdOpen(!tdOpen)} isExpanded={tdOpen}>
-                  {toggleLabel}
-                </MenuToggle>
-              )}
-            >
-              {systemTypes.length > 0 && (
-                <SelectGroup label="System Types">
-                  {systemTypes.map(td => (
-                    <SelectOption key={td.id} value={td.id}>
-                      {td.name} ({td.base_type})
-                    </SelectOption>
-                  ))}
-                </SelectGroup>
-              )}
-              {customTypes.length > 0 && (
-                <SelectGroup label="Custom Types">
-                  {customTypes.map(td => (
-                    <SelectOption key={td.id} value={td.id}>
-                      {td.name} ({td.base_type})
-                    </SelectOption>
-                  ))}
-                </SelectGroup>
-              )}
-            </Select>
+            <TypeDefinitionSelector
+              typeDefinitions={typeDefinitions}
+              selectedTdId={selectedTdId}
+              onSelect={setSelectedTdId}
+            />
           </FormGroup>
           <FormGroup fieldId="edit-attr-required">
             <label>
@@ -129,7 +89,7 @@ export default function EditAttributeModal({
       </ModalBody>
       <ModalFooter>
         <Button variant="primary" onClick={handleSubmit} isDisabled={!name.trim()}>Save</Button>
-        <Button variant="link" onClick={handleClose}>Cancel</Button>
+        <Button variant="link" onClick={onClose}>Cancel</Button>
       </ModalFooter>
     </Modal>
   )

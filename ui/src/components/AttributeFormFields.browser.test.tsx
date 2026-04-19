@@ -87,7 +87,7 @@ test('T-20.10: renders custom text attr', async () => {
   await expect.element(input).toHaveValue('srv-1')
 })
 
-// T-20.11: Renders custom number attr with number input
+// T-20.11: Renders custom number attr with text input (no spinner)
 test('T-20.11: renders custom number attr', async () => {
   render(
     <AttributeFormFields
@@ -98,9 +98,9 @@ test('T-20.11: renders custom number attr', async () => {
       idPrefix="test"
     />,
   )
-  const input = page.getByRole('spinbutton', { name: 'port *' })
+  const input = page.getByRole('textbox', { name: 'port *' })
   await expect.element(input).toBeVisible()
-  await expect.element(input).toHaveValue(8080)
+  await expect.element(input).toHaveValue('8080')
 })
 
 // T-20.12: Renders enum attr with select dropdown
@@ -197,8 +197,8 @@ test('T-20.16: integer attr renders number input with step=1', async () => {
   expect(onChange).toHaveBeenCalledWith('count', '99')
 })
 
-// T-20.17: Date attr renders text input with YYYY-MM-DD placeholder
-test('T-20.17: date attr renders text input with placeholder', async () => {
+// T-20.17: Date attr renders DatePicker with YYYY-MM-DD placeholder
+test('T-20.17: date attr renders DatePicker with placeholder', async () => {
   const onChange = vi.fn()
   const dateAttrs: SnapshotAttribute[] = [
     { id: 'd1', name: 'start_date', base_type: 'date', description: '', ordinal: 1, required: false },
@@ -212,9 +212,8 @@ test('T-20.17: date attr renders text input with placeholder', async () => {
       idPrefix="test"
     />,
   )
-  const input = page.getByRole('textbox', { name: 'start_date' })
+  const input = page.getByPlaceholder('YYYY-MM-DD')
   await expect.element(input).toBeVisible()
-  await expect.element(input).toHaveAttribute('placeholder', 'YYYY-MM-DD')
   await input.fill('2026-01-15')
   expect(onChange).toHaveBeenCalledWith('start_date', '2026-01-15')
 })
@@ -301,7 +300,7 @@ test('T-20.20: list attr renders textarea with placeholder', async () => {
   )
   const textarea = page.getByRole('textbox', { name: 'tags' })
   await expect.element(textarea).toBeVisible()
-  await expect.element(textarea).toHaveAttribute('placeholder', 'Comma-separated values')
+  await expect.element(textarea).toHaveAttribute('placeholder', '["value1", "value2"]')
   await textarea.fill('a, b, c')
   expect(onChange).toHaveBeenCalledWith('tags', 'a, b, c')
 })
@@ -538,7 +537,7 @@ test('T-31.184: list invalid json shows warning', async () => {
   render(
     <AttributeFormFields schemaAttrs={attrs} values={{ tags: 'not json' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
   )
-  await expect.element(page.getByText(/list/i)).toBeVisible()
+  await expect.element(page.getByText(/JSON array/i)).toBeVisible()
 })
 
 // T-31.185: List exceeds max_length shows warning
@@ -560,7 +559,7 @@ test('T-31.186: list non-array json shows warning', async () => {
   render(
     <AttributeFormFields schemaAttrs={attrs} values={{ tags: '{"not":"array"}' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
   )
-  await expect.element(page.getByText(/list/i)).toBeVisible()
+  await expect.element(page.getByText(/JSON array/i)).toBeVisible()
 })
 
 // T-31.187: String failing pattern shows warning
@@ -631,6 +630,34 @@ test('T-31.194: validateAttributeValue boolean returns null', () => {
   expect(validateAttributeValue('enum', 'anything')).toBeNull()
 })
 
+// TD-110 / T-28.09: Number (float) field uses text input with inputMode=decimal, not type=number
+test('T-28.09: number field has no spinner arrows', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'a1', name: 'weight', base_type: 'number', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ weight: '3.14' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  const input = page.getByRole('textbox', { name: 'weight' })
+  await expect.element(input).toBeVisible()
+  const el = await input.element()
+  expect(el.getAttribute('inputmode')).toBe('decimal')
+  expect(el.getAttribute('type')).toBe('text')
+})
+
+// TD-106 / T-28.08: Date field uses DatePicker with calendar button
+test('T-28.08: date field renders DatePicker with calendar button', async () => {
+  const attrs: SnapshotAttribute[] = [
+    { id: 'd1', name: 'start_date', base_type: 'date', description: '', ordinal: 1, required: false },
+  ]
+  render(
+    <AttributeFormFields schemaAttrs={attrs} values={{ start_date: '2026-04-15' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
+  )
+  // DatePicker should render a calendar toggle button
+  const calBtn = page.getByRole('button', { name: /toggle/i }).or(page.getByLabelText(/toggle/i))
+  await expect.element(calBtn).toBeVisible()
+})
+
 // T-31.192: List within max_length shows no warning (covers validateList success return)
 test('T-31.192: list within max_length no warning', async () => {
   const attrs: SnapshotAttribute[] = [
@@ -640,4 +667,34 @@ test('T-31.192: list within max_length no warning', async () => {
     <AttributeFormFields schemaAttrs={attrs} values={{ tags: '["a","b"]' }} onChange={vi.fn()} enumValues={{}} idPrefix="test" />,
   )
   await expect.element(page.getByText(/maximum|list/i)).not.toBeInTheDocument()
+})
+
+// TD-116 / T-28.13: List error messages are user-friendly
+test('T-28.13: list invalid json shows user-friendly error', () => {
+  const msg = validateAttributeValue('list', 'not json')
+  expect(msg).toContain('e.g.')
+})
+
+// TD-107 / T-28.10: List validates element_base_type
+test('T-28.10: list with wrong element type shows warning', () => {
+  const msg = validateAttributeValue('list', '["hello", 42]', { element_base_type: 'string' })
+  expect(msg).not.toBeNull()
+  expect(msg).toContain('string')
+})
+
+test('T-28.11: list with correct element types passes', () => {
+  expect(validateAttributeValue('list', '[1, 2, 3]', { element_base_type: 'number' })).toBeNull()
+  expect(validateAttributeValue('list', '["a", "b"]', { element_base_type: 'string' })).toBeNull()
+  expect(validateAttributeValue('list', '[true, false]', { element_base_type: 'boolean' })).toBeNull()
+})
+
+test('T-28.12: list with integer element type validates whole numbers', () => {
+  expect(validateAttributeValue('list', '[1, 2]', { element_base_type: 'integer' })).toBeNull()
+  const msg = validateAttributeValue('list', '[1.5, 2]', { element_base_type: 'integer' })
+  expect(msg).not.toBeNull()
+})
+
+// Coverage: isValidElement default branch — unknown element_base_type passes all elements
+test('list with unknown element type passes all elements', () => {
+  expect(validateAttributeValue('list', '[1, "two", true]', { element_base_type: 'custom_type' })).toBeNull()
 })

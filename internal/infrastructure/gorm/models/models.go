@@ -500,35 +500,6 @@ func AllModels() []any {
 
 // InitDB initializes the database with auto-migration and data fixups.
 func InitDB(db *gorm.DB) error {
-	// Drop legacy tables that have been replaced by the type system
-	for _, table := range []string{"enum_values", "enums"} {
-		if db.Migrator().HasTable(table) {
-			if err := db.Migrator().DropTable(table); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Drop legacy columns from attributes table (replaced by type_definition_version_id)
-	if db.Migrator().HasTable("attributes") {
-		for _, col := range []string{"type", "enum_id"} {
-			if db.Migrator().HasColumn(&Attribute{}, col) {
-				if err := db.Migrator().DropColumn(&Attribute{}, col); err != nil {
-					return err
-				}
-			}
-		}
-	}
-
-	// Drop legacy column from instance_attribute_values table (replaced by value_json)
-	if db.Migrator().HasTable("instance_attribute_values") {
-		if db.Migrator().HasColumn(&InstanceAttributeValue{}, "value_enum") {
-			if err := db.Migrator().DropColumn(&InstanceAttributeValue{}, "value_enum"); err != nil {
-				return err
-			}
-		}
-	}
-
 	if err := db.AutoMigrate(AllModels()...); err != nil {
 		return err
 	}

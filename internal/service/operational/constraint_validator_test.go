@@ -458,6 +458,23 @@ func TestValidateValueConstraints(t *testing.T) {
 			val:         &models.InstanceAttributeValue{ValueJSON: `[true, false, true]`},
 			wantErrors:  0,
 		},
+		// TD-116: List with 0.0 float literal should fail integer validation
+		{
+			name:        "list integer rejects float literal 0.0",
+			baseType:    models.BaseTypeList,
+			constraints: map[string]any{"element_base_type": "integer"},
+			val:         &models.InstanceAttributeValue{ValueJSON: `[1, 2, 0.0, 4]`},
+			wantErrors:  1,
+			wantContain: "invalid element at index 2",
+		},
+		// List with whole numbers as integers is valid
+		{
+			name:        "list integer accepts whole numbers",
+			baseType:    models.BaseTypeList,
+			constraints: map[string]any{"element_base_type": "integer"},
+			val:         &models.InstanceAttributeValue{ValueJSON: `[1, 2, 0, 4]`},
+			wantErrors:  0,
+		},
 		// List element type = unknown → no validation (all pass)
 		{
 			name:        "list element type unknown passes all",
@@ -465,6 +482,15 @@ func TestValidateValueConstraints(t *testing.T) {
 			constraints: map[string]any{"element_base_type": "unknown_type"},
 			val:         &models.InstanceAttributeValue{ValueJSON: `[1, "two", true]`},
 			wantErrors:  0,
+		},
+		// Copilot review: list with trailing garbage after valid JSON array
+		{
+			name:        "list trailing garbage rejected",
+			baseType:    models.BaseTypeList,
+			constraints: map[string]any{},
+			val:         &models.InstanceAttributeValue{ValueJSON: `[1, 2] garbage`},
+			wantErrors:  1,
+			wantContain: "trailing content",
 		},
 		// Integer nil value number → no panic (edge case)
 		{
@@ -526,5 +552,24 @@ func TestValidateValueConstraints(t *testing.T) {
 			}
 		})
 	}
+}
+
+// === isValidElementType direct tests (float64 fallback paths) ===
+
+func TestIsValidElementType_Float64Fallback(t *testing.T) {
+	// When items come as float64 (e.g., from json.Unmarshal without UseNumber),
+	// the float64 fallback branches in isValidElementType should work correctly.
+
+	// BaseTypeNumber: float64 → valid
+	assert.True(t, isValidElementType("number", float64(3.14)))
+
+	// BaseTypeNumber: string → invalid
+	assert.False(t, isValidElementType("number", "not-a-number"))
+
+	// BaseTypeInteger: float64 whole number → valid
+	assert.True(t, isValidElementType("integer", float64(42)))
+
+	// BaseTypeInteger: float64 with fraction → invalid
+	assert.False(t, isValidElementType("integer", float64(3.5)))
 }
 

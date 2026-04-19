@@ -241,6 +241,55 @@ Each feature area is tested at the appropriate layers:
 | Catalog re-pinning — change CV (US-51) | X | X | X | X | |
 | CV pin add/remove (US-52) | X | X | X | X | |
 | Pin editing stage guards (TD-69) | X | | X | | X |
+| Bug fixes — boolean display, unlink error, add attribute modal (TD-117, TD-84, TD-96) | | | | X | |
+| Type selector UX — scrollable, searchable, styled headers (TD-97, TD-109) | | | | X | |
+| Form field improvements — DatePicker, number decimal input (TD-106, TD-110) | | | | X | |
+| Frontend validation — list element types, regex cache, error messages, persistence (TD-107, TD-108, TD-116, TD-105) | | | | X | |
+| Types tab sort/filter (TD-89) | | | | X | |
+| Diagram node selection fix (TD-83) | | | | X | |
+| Multiline string discoverability hint (TD-95) | | | | X | |
+| TypeDefinitionService.GetVersion optimization (TD-100) | X | X | | | |
+| Remove legacy enum migration code (TD-101) | X | | | | |
+| Seed test robustness (TD-103) | X | | | | |
+
+### Bug Fix & UX Polish Sprint Test Strategy (Phase 1)
+
+This phase fixes 17 TD items across 6 stages. Most changes are UI-only (browser tests), with a few backend items (unit + integration tests). No new API endpoints.
+
+**Stage 1: Quick surgical bug fixes**
+
+- **TD-117 (Boolean display):** Browser test — verify `formatAttributeValue` renders "Yes" for `"true"`, "No" for `"false"`, and raw value with warning styling for any other string (e.g., `"maybe"`, `""`).
+- **TD-84 (Unlink error handling):** Browser test — verify `handleUnlink` failure displays an error alert instead of silently swallowing. Mock API to reject, verify error state shown.
+- **TD-103 (Seed test):** Unit test refactor — replace `len(tdRepo.Calls)-len(systemTypes)` with explicit `AssertNumberOfCalls("Create", N)` and `AssertNumberOfCalls("GetByName", N)`.
+
+**Stage 2: Attribute modal cluster**
+
+- **TD-96 (Add Attribute Save button):** Live debugging + browser test — reproduce the failure, write a test that exposes it, fix, verify. Likely involves the `latest_version_id` population path or modal submit flow.
+- **TD-97 (Scrollable type selector):** Browser test — verify dropdown has max height, renders scrollbar when many types exist, typeahead search filters options.
+- **TD-109 (Group header styling):** Browser test — verify "System Types" and "Custom Types" headers are visually distinct (non-selectable). Verify system types display as just "string" not "string (string)". Verify custom types still show "name (base_type)".
+
+**Stage 3: Form field improvements**
+
+- **TD-106 (DatePicker):** Browser test — verify date attribute renders a DatePicker component (calendar button present). Verify typed date value is accepted. Verify invalid date shows validation warning.
+- **TD-110 (Number decimal input):** Browser test — verify number (float) attribute renders without spinner arrows. Verify decimal values like `3.14` are accepted. Verify integer attributes still have `step=1` spinner (no regression).
+
+**Stage 4: Validation layer**
+
+- **TD-107 (List element type checking):** Browser test — verify list with wrong element types (e.g., `["abc"]` for integer list) shows inline warning. Unit test (TypeScript) — verify `validateList` checks each element against `element_base_type`.
+- **TD-108 (Regex caching):** Unit test (TypeScript) — verify `RegExp` is compiled once per pattern, reused on subsequent calls. Test by calling validation twice with same pattern, verify cache hit.
+- **TD-116 (List error messages):** Browser test — verify error message says "Enter values as a JSON array, e.g. [1, 2, 3]" instead of "Invalid list: must be a JSON array". Verify element type mismatch shows specific guidance.
+- **TD-105 (Validation persistence):** Browser test — verify validation errors survive navigation: validate catalog → navigate away → return → errors still displayed. Verify errors are cleared when re-validating. Verify errors are scoped per catalog name.
+
+**Stage 5: Types tab & diagram**
+
+- **TD-89 (Types tab sort/filter):** Browser test — verify column headers are sortable (name, base type). Verify clicking header toggles sort direction. Verify base type filter dropdown filters the list.
+- **TD-83 (Diagram selection):** Browser test — verify selecting a node does not produce visual glitches. This may require visual inspection during live testing rather than automated assertions.
+- **TD-95 (Multiline hint):** Browser test — verify helper text appears when a string-based type is selected in Add Attribute modal, explaining multiline requires a custom type definition.
+
+**Stage 6: Backend cleanup**
+
+- **TD-100 (GetVersion N+1):** Unit test — verify new `GetByVersion(ctx, typeDefID, versionNumber)` repo method returns the correct version directly. Integration test — verify the repo method queries correctly against real SQLite.
+- **TD-101 (Migration removal):** Unit test — verify `InitDB` no longer references legacy tables/columns. Verify AutoMigrate still creates the correct schema from scratch.
 
 ### Type System Test Strategy (FF-14)
 
