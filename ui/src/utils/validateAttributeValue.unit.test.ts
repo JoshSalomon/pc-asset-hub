@@ -219,3 +219,16 @@ test('T-31.134t: number no constraints', () => {
 test('list with unknown element type passes all elements', () => {
   expect(validateAttributeValue('list', '[1, "two", true]', { element_base_type: 'custom_type' })).toBeNull()
 })
+
+// Copilot review: [0.0] should fail integer list validation (matches backend behavior)
+test('list integer rejects float literal 0.0', () => {
+  const result = validateAttributeValue('list', '[1, 2, 0.0, 4]', { element_base_type: 'integer' })
+  expect(result).toContain('index 2')
+  expect(result).toContain('integer')
+})
+
+test('list integer rejects scientific notation 1e2', () => {
+  const result = validateAttributeValue('list', '[1e2]', { element_base_type: 'integer' })
+  expect(result).toContain('index 0')
+  expect(result).toContain('integer')
+})

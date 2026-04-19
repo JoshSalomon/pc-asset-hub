@@ -45,6 +45,7 @@ export function useValidation(catalogName: string | undefined, onComplete?: () =
     setErrors([])
     setRan(false)
     setError(null)
+    try { sessionStorage.removeItem(`${STORAGE_PREFIX}${catalogName}`) } catch { /* ignore */ }
     try {
       const result = await api.catalogs.validate(catalogName)
       const newErrors = result.errors || []

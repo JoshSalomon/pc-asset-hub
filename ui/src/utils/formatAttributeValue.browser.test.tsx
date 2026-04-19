@@ -129,3 +129,15 @@ test('boolean numeric 1 shows raw value with warning', async () => {
   await expect.element(output).toHaveTextContent('1')
   await expect.element(output).toHaveTextContent('⚠')
 })
+
+// Copilot review: boolean warning accessible to screen readers
+test('boolean corrupted value has accessible warning text', async () => {
+  render(<Wrapper type="boolean" value="maybe" />)
+  const output = page.getByTestId('output')
+  await expect.element(output).toHaveTextContent('maybe')
+  const el = await output.element()
+  const emojiSpan = el.querySelector('[aria-hidden="true"]')
+  expect(emojiSpan).not.toBeNull()
+  expect(emojiSpan!.textContent).toBe('⚠')
+  expect(el.textContent).toContain('Warning: unexpected boolean value')
+})

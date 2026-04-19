@@ -130,6 +130,20 @@ test('sessionStorage with wrong shape is ignored on mount', async () => {
   await expect.element(page.getByTestId('status')).toHaveTextContent('idle')
 })
 
+// Copilot review: failed validation clears stale sessionStorage
+test('failed validation clears stale sessionStorage', async () => {
+  sessionStorage.setItem('validation:fail-test', JSON.stringify({
+    errors: [{ entity_type: 'Old', instance_name: 'o', field: 'f', violation: 'stale' }],
+    ran: true,
+  }))
+  ;(api.catalogs.validate as Mock).mockRejectedValue(new Error('server down'))
+  render(<TestComponent catalogName="fail-test" />)
+  await expect.element(page.getByTestId('status')).toHaveTextContent('invalid')
+  await page.getByRole('button', { name: 'Validate' }).click()
+  await expect.element(page.getByTestId('error')).toHaveTextContent('server down')
+  expect(sessionStorage.getItem('validation:fail-test')).toBeNull()
+})
+
 // TD-105 / T-28.15: Re-validate clears old results and stores new
 test('T-28.15: re-validate updates sessionStorage', async () => {
   ;(api.catalogs.validate as Mock).mockResolvedValue({ status: 'invalid', errors: [{ entity_type: 'A', instance_name: 'b', field: 'c', violation: 'd' }] })

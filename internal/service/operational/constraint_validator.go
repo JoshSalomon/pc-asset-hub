@@ -184,6 +184,9 @@ func validateList(constraints map[string]any, val *models.InstanceAttributeValue
 	if err := dec.Decode(&items); err != nil {
 		return []string{fmt.Sprintf("invalid list: %v", err)}
 	}
+	if dec.More() {
+		return []string{"invalid list: trailing content after JSON array"}
+	}
 
 	var errs []string
 

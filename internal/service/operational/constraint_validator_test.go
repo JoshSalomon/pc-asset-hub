@@ -483,6 +483,15 @@ func TestValidateValueConstraints(t *testing.T) {
 			val:         &models.InstanceAttributeValue{ValueJSON: `[1, "two", true]`},
 			wantErrors:  0,
 		},
+		// Copilot review: list with trailing garbage after valid JSON array
+		{
+			name:        "list trailing garbage rejected",
+			baseType:    models.BaseTypeList,
+			constraints: map[string]any{},
+			val:         &models.InstanceAttributeValue{ValueJSON: `[1, 2] garbage`},
+			wantErrors:  1,
+			wantContain: "trailing content",
+		},
 		// Integer nil value number → no panic (edge case)
 		{
 			name:        "integer nil value number",

@@ -141,7 +141,11 @@ function validateList(value: string, constraints?: Record<string, unknown>): str
     }
     const elemType = constraints.element_base_type
     if (typeof elemType === 'string') {
+      const rawTokens = elemType === 'integer' ? extractArrayTokens(value) : null
       for (let i = 0; i < arr.length; i++) {
+        if (elemType === 'integer' && rawTokens && rawTokens[i] && /[.eE]/.test(rawTokens[i])) {
+          return `Element at index ${i} must be a ${elemType}`
+        }
         if (!isValidElement(elemType, arr[i])) {
           return `Element at index ${i} must be a ${elemType}`
         }
@@ -149,4 +153,9 @@ function validateList(value: string, constraints?: Record<string, unknown>): str
     }
   }
   return null
+}
+
+function extractArrayTokens(json: string): string[] {
+  const inner = json.replace(/^\s*\[/, '').replace(/]\s*$/, '')
+  return inner.split(',').map(t => t.trim())
 }
