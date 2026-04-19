@@ -169,7 +169,7 @@ test('T-31.134k: list within max_length', () => {
 // List invalid json → warning
 test('T-31.134l: list invalid json', () => {
   const result = validateAttributeValue('list', 'not json')
-  expect(result).toContain('list')
+  expect(result).toContain('JSON array')
 })
 
 // Boolean → no warning (checkbox prevents invalid)
@@ -202,7 +202,7 @@ test('T-31.134q: number non-numeric string', () => {
 // List valid JSON but not array → warning
 test('T-31.134r: list non-array json', () => {
   const result = validateAttributeValue('list', '{"not":"array"}')
-  expect(result).toContain('list')
+  expect(result).toContain('JSON array')
 })
 
 // Integer within range no constraints → null (covers validateMinMax with no constraints)
@@ -213,4 +213,9 @@ test('T-31.134s: integer no constraints', () => {
 // Number no constraints → null (covers validateMinMax with no constraints)
 test('T-31.134t: number no constraints', () => {
   expect(validateAttributeValue('number', '3.14')).toBeNull()
+})
+
+// List with unknown element_base_type → all elements pass (default branch in isValidElement)
+test('list with unknown element type passes all elements', () => {
+  expect(validateAttributeValue('list', '[1, "two", true]', { element_base_type: 'custom_type' })).toBeNull()
 })

@@ -1501,3 +1501,42 @@ func TestTypeDefVersionCreate_DuplicateVersion(t *testing.T) {
 	assert.Error(t, err)
 	assert.True(t, domainerrors.IsConflict(err))
 }
+
+// === TypeDefinitionVersion GetByVersion ===
+
+func TestTDV_GetByVersion(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	tdRepo := repository.NewTypeDefinitionGormRepo(db)
+	tdvRepo := repository.NewTypeDefinitionVersionGormRepo(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	td := &models.TypeDefinition{ID: newID(), Name: "Status", BaseType: models.BaseTypeEnum, CreatedAt: now, UpdatedAt: now}
+	require.NoError(t, tdRepo.Create(ctx, td))
+
+	tdv1 := &models.TypeDefinitionVersion{ID: newID(), TypeDefinitionID: td.ID, VersionNumber: 1, Constraints: map[string]any{"values": []any{"a"}}, CreatedAt: now}
+	tdv2 := &models.TypeDefinitionVersion{ID: newID(), TypeDefinitionID: td.ID, VersionNumber: 2, Constraints: map[string]any{"values": []any{"a", "b"}}, CreatedAt: now}
+	require.NoError(t, tdvRepo.Create(ctx, tdv1))
+	require.NoError(t, tdvRepo.Create(ctx, tdv2))
+
+	// Success: find version 1
+	found, err := tdvRepo.GetByVersion(ctx, td.ID, 1)
+	require.NoError(t, err)
+	assert.Equal(t, tdv1.ID, found.ID)
+	assert.Equal(t, 1, found.VersionNumber)
+
+	// Success: find version 2
+	found, err = tdvRepo.GetByVersion(ctx, td.ID, 2)
+	require.NoError(t, err)
+	assert.Equal(t, tdv2.ID, found.ID)
+
+	// Not found: wrong version number
+	_, err = tdvRepo.GetByVersion(ctx, td.ID, 99)
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsNotFound(err))
+
+	// Not found: wrong type definition ID
+	_, err = tdvRepo.GetByVersion(ctx, "nonexistent", 1)
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
