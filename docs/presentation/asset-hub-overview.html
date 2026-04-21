@@ -438,22 +438,22 @@
     }
 
     /* === SLIDE 4 — Data Model === */
-    .s4-diagram {
-      position: relative;
-      min-height: 380px;
-      margin-top: var(--space-xl);
+    .s4-diagram { margin-top: var(--space-lg); }
+    .s4-row {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
     }
     .s4-entity {
-      position: absolute;
-      width: 300px;
+      flex: 1;
       border: 2px solid var(--border-diagram);
       border-radius: 8px;
       overflow: hidden;
       background: #fff;
+      min-width: 0;
     }
-    .s4-entity--server { top: 0; left: 0; border-color: var(--teal-50); }
-    .s4-entity--tool { top: 0; right: 0; border-color: var(--teal-50); }
-    .s4-entity--virtual { bottom: 0; left: 50%; transform: translateX(-50%); border-color: var(--purple-50); }
+    .s4-entity--server, .s4-entity--tool { border-color: var(--teal-50); }
+    .s4-entity--virtual { border-color: var(--purple-50); max-width: 320px; }
     .s4-entity-header {
       padding: 0.5rem var(--space-md);
       font-family: var(--font-display);
@@ -470,16 +470,97 @@
       line-height: 1.7;
       color: var(--text-dark-secondary);
     }
-    .s4-svg {
-      position: absolute;
-      top: 0;
-      left: 0;
+    .s4-connector {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0 var(--space-md);
+      min-width: 140px;
+    }
+    .s4-connector-line {
       width: 100%;
-      height: 100%;
-      pointer-events: none;
+      height: 2px;
+      background: var(--teal-50);
+      position: relative;
+    }
+    .s4-connector-line::before {
+      content: '';
+      position: absolute;
+      right: -1px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 10px;
+      height: 10px;
+      background: var(--teal-50);
+      clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+    }
+    .s4-connector-label {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--teal-70);
+      margin-bottom: 6px;
+      white-space: nowrap;
+    }
+    .s4-connector-type {
+      font-family: var(--font-text);
+      font-size: 0.7rem;
+      color: var(--text-dark-muted);
+      margin-top: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .s4-ref-section {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-sm);
+      margin-top: var(--space-md);
+      margin-left: auto;
+      margin-right: auto;
+      width: fit-content;
+    }
+    .s4-ref-connector {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 4px;
+      padding-top: 4px;
+    }
+    .s4-ref-line {
+      width: 2px;
+      height: 40px;
+      border-left: 2px dashed var(--purple-50);
+    }
+    .s4-ref-label {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--purple-50);
+      white-space: nowrap;
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      margin-top: 4px;
+    }
+    .s4-ref-info {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-xs);
+      padding-top: 8px;
+    }
+    .s4-ref-info-label {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--purple-50);
+      white-space: nowrap;
+    }
+    .s4-ref-info-type {
+      font-family: var(--font-text);
+      font-size: 0.7rem;
+      color: var(--text-dark-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
     }
     .s4-caption {
-      margin-top: var(--space-md);
+      margin-top: var(--space-lg);
       font-style: italic;
       color: var(--text-dark-muted);
       font-size: var(--fs-small);
@@ -811,9 +892,11 @@
       .deck-dots button { width: 8px; height: 8px; }
       .s3-panels { grid-template-columns: 1fr; }
       .s3-arrow { padding-top: 0; transform: rotate(90deg); }
-      .s4-diagram { display: flex; flex-direction: column; gap: var(--space-md); min-height: auto; }
-      .s4-entity { position: relative !important; width: 100% !important; left: auto !important; right: auto !important; top: auto !important; bottom: auto !important; transform: none !important; }
-      .s4-svg { display: none; }
+      .s4-row { flex-direction: column; gap: var(--space-md); }
+      .s4-connector { flex-direction: row; min-width: auto; padding: 0; gap: var(--space-sm); }
+      .s4-connector-line { width: 40px; height: 2px; }
+      .s4-ref-section { padding-left: 0; margin-top: var(--space-md); }
+      .s4-entity--virtual { max-width: 100%; }
       .s5-servers-row { grid-template-columns: 1fr; }
       .s5-vs-row { grid-template-columns: 1fr; }
       .s8-arch { flex-direction: column; }
@@ -898,34 +981,44 @@
         <div class="slide-eyebrow anim-fade-up" style="color:var(--teal-50);">Data Model</div>
         <h2 class="h2 anim-fade-up">Entities and relationships</h2>
         <div class="s4-diagram">
-          <div class="s4-entity s4-entity--server seq-step" data-seq-delay="400">
-            <div class="s4-entity-header">MCP Server</div>
-            <div class="s4-entity-body">
-              endpoint <span style="color:var(--text-dark-muted);">(url, required)</span><br>
-              containerized <span style="color:var(--text-dark-muted);">(boolean)</span><br>
-              image URL <span style="color:var(--text-dark-muted);">(url)</span><br>
-              exec command <span style="color:var(--text-dark-muted);">(string)</span>
+          <div class="s4-row">
+            <div class="s4-entity s4-entity--server seq-step" data-seq-delay="400">
+              <div class="s4-entity-header">MCP Server</div>
+              <div class="s4-entity-body">
+                endpoint <span style="color:var(--text-dark-muted);">(url, required)</span><br>
+                containerized <span style="color:var(--text-dark-muted);">(boolean)</span><br>
+                image URL <span style="color:var(--text-dark-muted);">(url)</span><br>
+                exec command <span style="color:var(--text-dark-muted);">(string)</span>
+              </div>
+            </div>
+            <div class="s4-connector seq-step" data-seq-delay="800">
+              <div class="s4-connector-label">1 &mdash; 1..n</div>
+              <div class="s4-connector-line"></div>
+              <div class="s4-connector-type">containment</div>
+            </div>
+            <div class="s4-entity s4-entity--tool seq-step" data-seq-delay="600">
+              <div class="s4-entity-header">MCP Tool</div>
+              <div class="s4-entity-body">
+                type <span style="color:var(--text-dark-muted);">(enum [read, write, readwrite])</span><br>
+                idempotent <span style="color:var(--text-dark-muted);">(boolean)</span>
+              </div>
             </div>
           </div>
-          <div class="s4-entity s4-entity--tool seq-step" data-seq-delay="600">
-            <div class="s4-entity-header">MCP Tool</div>
-            <div class="s4-entity-body">
-              type <span style="color:var(--text-dark-muted);">(enum [read, write, readwrite])</span><br>
-              idempotent <span style="color:var(--text-dark-muted);">(boolean)</span>
+          <div class="s4-ref-section">
+            <div class="s4-ref-connector seq-step" data-seq-delay="1000">
+              <div class="s4-ref-line"></div>
+            </div>
+            <div class="s4-ref-info seq-step" data-seq-delay="1000">
+              <div class="s4-ref-info-label">1..n &mdash; 0..n</div>
+              <div class="s4-ref-info-type">directional reference</div>
             </div>
           </div>
-          <div class="s4-entity s4-entity--virtual seq-step" data-seq-delay="800">
-            <div class="s4-entity-header">Virtual Server</div>
-            <div class="s4-entity-body"><em>name + description only</em></div>
+          <div style="padding-left:calc(50% + 70px);">
+            <div class="s4-entity s4-entity--virtual seq-step" data-seq-delay="1200">
+              <div class="s4-entity-header">Virtual Server</div>
+              <div class="s4-entity-body"><em>name + description only</em></div>
+            </div>
           </div>
-          <svg class="s4-svg seq-step" data-seq-delay="1200" viewBox="0 0 1000 380" preserveAspectRatio="xMidYMid meet" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <!-- Server to Tool: solid containment line -->
-            <line x1="310" y1="60" x2="680" y2="60" stroke="var(--teal-50)" stroke-width="2" />
-            <text x="495" y="48" text-anchor="middle" font-family="var(--font-mono)" font-size="13" fill="var(--teal-70)">1 &#9670;&#9472;&#9472;&#9472;&#9472; 1..n</text>
-            <!-- Virtual to Tool: dashed reference line -->
-            <line x1="560" y1="300" x2="750" y2="130" stroke="var(--purple-50)" stroke-width="2" stroke-dasharray="8 4" />
-            <text x="690" y="230" text-anchor="middle" font-family="var(--font-mono)" font-size="13" fill="var(--purple-50)">1..n &#9472;&#9472; 0..n</text>
-          </svg>
         </div>
         <p class="s4-caption seq-step" data-seq-delay="1600">One possible configuration. The system is schema-agnostic &mdash; define any entity types at runtime.</p>
       </div>
