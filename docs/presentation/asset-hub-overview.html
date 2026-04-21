@@ -128,8 +128,7 @@
     main.deck[data-slide-current="5"] .slide[data-slide="5"],
     main.deck[data-slide-current="6"] .slide[data-slide="6"],
     main.deck[data-slide-current="7"] .slide[data-slide="7"],
-    main.deck[data-slide-current="8"] .slide[data-slide="8"],
-    main.deck[data-slide-current="9"] .slide[data-slide="9"] {
+    main.deck[data-slide-current="8"] .slide[data-slide="8"] {
       opacity: 1;
       visibility: visible;
       pointer-events: auto;
@@ -222,9 +221,8 @@
     main.deck[data-slide-current="4"],
     main.deck[data-slide-current="5"],
     main.deck[data-slide-current="6"],
-    main.deck[data-slide-current="7"],
-    main.deck[data-slide-current="8"] { background: var(--bg-light); }
-    main.deck[data-slide-current="9"] { background: var(--bg-dark); }
+    main.deck[data-slide-current="7"] { background: var(--bg-light); }
+    main.deck[data-slide-current="8"] { background: var(--bg-dark); }
 
     /* === MOTION LIBRARY === */
     @keyframes fade-up { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
@@ -488,61 +486,107 @@
       text-align: center;
     }
 
-    /* === SLIDE 5 — MCP Tool Catalog === */
-    .s5-flow {
-      display: grid;
-      grid-template-columns: 1fr auto 1fr;
-      gap: var(--space-xl);
-      align-items: start;
+    /* === SLIDE 5 — Catalog in Action (merged) === */
+    .s5-catalog-container {
+      border: 2px solid var(--orange-40);
+      border-radius: 12px;
+      padding: 1.5rem;
+      background: #fff;
       margin-top: var(--space-xl);
     }
-    .s5-server-box {
-      border: 1px solid var(--border-diagram);
-      border-radius: 8px;
-      padding: var(--space-md);
-      background: #fff;
-      margin-bottom: var(--space-md);
-    }
-    .s5-server-box .h3 { font-size: var(--fs-small); margin-bottom: var(--space-xs); }
-    .s5-tool-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-    .s5-tool-chip {
-      font-family: var(--font-mono);
-      font-size: 0.75rem;
-      padding: 0.2rem 0.6rem;
-      border-radius: 4px;
-      background: var(--orange-10);
-      border: 1px solid var(--orange-20);
-      color: var(--orange-40);
-    }
-    .s5-arrow-col {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: var(--space-xs);
-      padding-top: 2rem;
-      color: var(--orange-40);
-      font-size: var(--fs-small);
-      font-weight: 700;
-    }
-    .s5-arrow-col .arrow { font-size: 2.5rem; }
-    .s5-catalog {
-      border: 3px solid var(--orange-40);
-      border-radius: 10px;
-      padding: var(--space-md);
-      box-shadow: 0 4px 24px rgba(245, 146, 27, 0.12);
-    }
-    .s5-catalog .s5-catalog-title {
+    .s5-catalog-label {
       font-family: var(--font-display);
       font-weight: 700;
       font-size: var(--fs-small);
       color: var(--orange-40);
-      margin-bottom: var(--space-sm);
       text-transform: uppercase;
       letter-spacing: 0.08em;
+      margin-bottom: var(--space-md);
     }
-    .s5-catalog .s5-server-box { border-color: var(--orange-20); }
-    .s5-catalog .s5-server-box .h3 { color: var(--orange-40); }
+    .s5-servers-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-lg);
+    }
+    .s5-server-box {
+      border: 1px solid var(--teal-40);
+      border-radius: 8px;
+      padding: var(--space-md);
+      background: var(--teal-10);
+    }
+    .s5-server-box .h3 {
+      font-size: var(--fs-small);
+      margin-bottom: var(--space-xs);
+      color: var(--teal-70);
+    }
+    .s5-tool-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .s5-tool-chip {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      border: 1px solid #ddd;
+      background: #fff;
+      transition: all 350ms var(--ease-pop);
+    }
+    .s5-contains-label {
+      text-align: center;
+      font-size: var(--fs-small);
+      color: var(--teal-70);
+      font-weight: 700;
+      margin-top: var(--space-sm);
+      font-family: var(--font-mono);
+    }
+    .s5-separator {
+      border-top: 2px dashed var(--purple-40);
+      margin-top: var(--space-lg);
+      padding-top: var(--space-sm);
+      position: relative;
+    }
+    .s5-separator-label {
+      position: absolute;
+      top: -0.7rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-light);
+      padding: 0 0.8rem;
+      font-size: var(--fs-small);
+      color: var(--purple-50);
+      font-weight: 700;
+      font-family: var(--font-mono);
+      white-space: nowrap;
+    }
+    .s5-vs-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-lg);
+      margin-top: var(--space-md);
+    }
+    .s5-vs-box {
+      border: 2px solid var(--purple-40);
+      border-radius: 8px;
+      padding: var(--space-md);
+      background: var(--purple-10);
+    }
+    .s5-vs-box .h3 {
+      font-size: var(--fs-small);
+      margin-bottom: var(--space-xs);
+      color: var(--purple-50);
+    }
+    .s5-vs-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .s5-tool-chip.highlight-teal {
+      background: var(--teal-10);
+      border-color: var(--teal-40);
+      color: var(--teal-70);
+      box-shadow: 0 0 12px rgba(55, 163, 163, 0.25);
+    }
+    .s5-tool-chip.highlight-purple {
+      background: var(--purple-10);
+      border-color: var(--purple-40);
+      color: var(--purple-50);
+      box-shadow: 0 0 12px rgba(94, 64, 190, 0.25);
+    }
     .s5-caption {
       margin-top: var(--space-lg);
       font-style: italic;
@@ -551,82 +595,7 @@
       text-align: center;
     }
 
-    /* === SLIDE 6 — Virtual MCP Servers === */
-    .s6-catalog-strip {
-      display: flex;
-      align-items: center;
-      gap: var(--space-sm);
-      padding: var(--space-md);
-      border: 1px solid var(--border-diagram);
-      border-radius: 8px;
-      background: var(--bg-light-alt);
-      margin-top: var(--space-xl);
-    }
-    .s6-catalog-strip .label { margin-right: var(--space-sm); color: var(--text-dark-muted); }
-    .s6-tool-chip {
-      font-family: var(--font-mono);
-      font-size: 0.78rem;
-      padding: 0.25rem 0.7rem;
-      border-radius: 4px;
-      background: var(--bg-light-alt);
-      border: 1px solid var(--border-diagram);
-      color: var(--text-dark-secondary);
-      transition: all 350ms var(--ease-pop);
-    }
-    .s6-tool-chip.highlight-teal {
-      border-color: var(--teal-50);
-      background: var(--teal-10);
-      color: var(--teal-70);
-      box-shadow: 0 0 12px rgba(55, 163, 163, 0.25);
-    }
-    .s6-tool-chip.highlight-purple {
-      border-color: var(--purple-50);
-      background: var(--purple-10);
-      color: var(--purple-50);
-      box-shadow: 0 0 12px rgba(94, 64, 190, 0.25);
-    }
-    .s6-down-arrows {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: var(--space-sm) 0;
-      color: var(--text-dark-muted);
-      font-size: var(--fs-small);
-    }
-    .s6-down-arrows .arrow { font-size: 1.5rem; }
-    .s6-vs-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: var(--space-xl);
-    }
-    .s6-vs-box {
-      border-radius: 8px;
-      padding: var(--space-md);
-      border: 2px solid var(--border-diagram);
-    }
-    .s6-vs-box--read { border-color: var(--teal-50); background: var(--teal-10); }
-    .s6-vs-box--write { border-color: var(--purple-50); background: var(--purple-10); }
-    .s6-vs-box .h3 { font-size: var(--fs-small); margin-bottom: var(--space-xs); }
-    .s6-vs-box--read .h3 { color: var(--teal-70); }
-    .s6-vs-box--write .h3 { color: var(--purple-50); }
-    .s6-vs-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-    .s6-vs-chip {
-      font-family: var(--font-mono);
-      font-size: 0.75rem;
-      padding: 0.2rem 0.6rem;
-      border-radius: 4px;
-    }
-    .s6-vs-box--read .s6-vs-chip { background: #fff; border: 1px solid var(--teal-40); color: var(--teal-70); }
-    .s6-vs-box--write .s6-vs-chip { background: #fff; border: 1px solid var(--purple-40); color: var(--purple-50); }
-    .s6-caption {
-      margin-top: var(--space-lg);
-      font-style: italic;
-      color: var(--text-dark-muted);
-      font-size: var(--fs-small);
-      text-align: center;
-    }
-
-    /* === SLIDE 7 — Catalog Lifecycle === */
+    /* === SLIDE 6 — Catalog Lifecycle === */
     .s7-promo-flow {
       display: flex;
       align-items: center;
@@ -688,7 +657,7 @@
       font-style: italic;
     }
 
-    /* === SLIDE 8 — Gateway Registration === */
+    /* === SLIDE 7 — Gateway Registration === */
     .s8-arch {
       display: flex;
       align-items: flex-start;
@@ -753,7 +722,7 @@
       text-align: center;
     }
 
-    /* === SLIDE 9 — Under the Hood === */
+    /* === SLIDE 8 — Under the Hood === */
     .s9 {
       display: flex;
       flex-direction: column;
@@ -845,9 +814,8 @@
       .s4-diagram { display: flex; flex-direction: column; gap: var(--space-md); min-height: auto; }
       .s4-entity { position: relative !important; width: 100% !important; left: auto !important; right: auto !important; top: auto !important; bottom: auto !important; transform: none !important; }
       .s4-svg { display: none; }
-      .s5-flow { grid-template-columns: 1fr; }
-      .s6-vs-row { grid-template-columns: 1fr; }
-      .s6-catalog-strip { flex-wrap: wrap; }
+      .s5-servers-row { grid-template-columns: 1fr; }
+      .s5-vs-row { grid-template-columns: 1fr; }
       .s8-arch { flex-direction: column; }
       .s9-grid { grid-template-columns: 1fr 1fr; }
     }
@@ -869,7 +837,7 @@
       <div class="slide-inner s2" data-stagger>
         <div class="slide-eyebrow anim-fade-up">The Problem</div>
         <h2 class="h2 anim-fade-up">MCP gives us servers and tools.<br>But the ecosystem has <span style="color:var(--rh-red);">gaps</span>.</h2>
-        <p class="lead anim-fade-up">The protocol defines how tools communicate. It does not define how to manage them at scale.</p>
+        <p class="lead anim-fade-up">MCP defines how tools communicate. But who tracks what&rsquo;s available, decides what&rsquo;s exposed, and governs changes? Nobody &mdash; yet.</p>
         <div class="gap-cards" data-stagger>
           <div class="gap-card anim-slide-right">
             <div class="gap-icon">&times;</div>
@@ -900,12 +868,12 @@
       <div class="slide-inner s3" data-stagger>
         <div class="slide-eyebrow anim-fade-up" style="color:var(--teal-50);">The Solution</div>
         <h2 class="h2 anim-fade-up">Two parts. One system.</h2>
-        <p class="lead anim-fade-up">Define your asset model once. Populate it with real data. Publish to the cluster.</p>
+        <p class="lead anim-fade-up">Define your asset model once &mdash; no code changes needed. Populate it with real data. Publish to the cluster.</p>
         <div class="s3-panels">
           <div class="s3-panel s3-panel--schema anim-slide-right">
             <div class="h3" style="color:var(--teal-70);">Schema Management</div>
             <ul>
-              <li>Entity types</li>
+              <li>Entity types (MCP Server, Tool, Virtual Server, &hellip;)</li>
               <li>Attributes &amp; constraints</li>
               <li>Associations &amp; cardinality</li>
               <li>Reusable type definitions</li>
@@ -916,7 +884,7 @@
             <div class="h3" style="color:var(--orange-40);">Catalog Management</div>
             <ul>
               <li>Create catalogs from schema</li>
-              <li>Add servers / tools / associations</li>
+              <li>Add entity instances and associations</li>
               <li>Validate completeness</li>
               <li>Publish to Kubernetes</li>
             </ul>
@@ -959,26 +927,27 @@
             <text x="690" y="230" text-anchor="middle" font-family="var(--font-mono)" font-size="13" fill="var(--purple-50)">1..n &#9472;&#9472; 0..n</text>
           </svg>
         </div>
-        <p class="s4-caption seq-step" data-seq-delay="1600">All defined dynamically &mdash; no code changes needed.</p>
+        <p class="s4-caption seq-step" data-seq-delay="1600">One possible configuration. The system is schema-agnostic &mdash; define any entity types at runtime.</p>
       </div>
     </section>
 
     <section class="slide slide-light" data-slide="5" aria-label="Slide 5">
       <div class="slide-inner s5">
         <div data-stagger>
-          <div class="slide-eyebrow anim-fade-up" style="color:var(--orange-40);">MCP Tool Catalog</div>
-          <h2 class="h2 anim-fade-up">Curate what&rsquo;s available</h2>
+          <div class="slide-eyebrow anim-fade-up" style="color:var(--orange-40);">Catalog in Action</div>
+          <h2 class="h2 anim-fade-up">From servers to virtual views</h2>
         </div>
-        <div class="s5-flow">
-          <div class="seq-step" data-seq-delay="400">
-            <div class="s5-server-box">
+        <div class="s5-catalog-container seq-step" data-seq-delay="200">
+          <div class="s5-catalog-label">Catalog</div>
+          <div class="s5-servers-row">
+            <div class="s5-server-box seq-step" data-seq-delay="400">
               <div class="h3">Jira Server</div>
               <div class="s5-tool-chips">
                 <span class="s5-tool-chip">get-story</span>
                 <span class="s5-tool-chip">add-watcher</span>
               </div>
             </div>
-            <div class="s5-server-box">
+            <div class="s5-server-box seq-step" data-seq-delay="600">
               <div class="h3">GitHub Server</div>
               <div class="s5-tool-chips">
                 <span class="s5-tool-chip">get-issue</span>
@@ -986,76 +955,37 @@
               </div>
             </div>
           </div>
-          <div class="s5-arrow-col seq-step" data-seq-delay="800">
-            <span>Create Catalog</span>
-            <span class="arrow">&rarr;</span>
-            <span>Select Servers</span>
-          </div>
-          <div class="s5-catalog seq-step" data-seq-delay="1200">
-            <div class="s5-catalog-title">Reporting Agent Catalog</div>
-            <div class="s5-server-box">
-              <div class="h3">Jira Server</div>
-              <div class="s5-tool-chips">
-                <span class="s5-tool-chip">get-story</span>
-                <span class="s5-tool-chip">add-watcher</span>
-              </div>
+          <div class="s5-contains-label seq-step" data-seq-delay="800">contains &rarr;</div>
+        </div>
+        <div class="s5-separator seq-step" data-seq-delay="1000">
+          <span class="s5-separator-label">references &uarr;</span>
+        </div>
+        <div class="s5-vs-row">
+          <div class="s5-vs-box seq-step" data-seq-delay="1200">
+            <div class="h3">Read-Only Reporting</div>
+            <div class="s5-vs-chips">
+              <span class="s5-tool-chip" data-tool="get-issue">get-issue</span>
+              <span class="s5-tool-chip" data-tool="get-story">get-story</span>
             </div>
-            <div class="s5-server-box">
-              <div class="h3">GitHub Server</div>
-              <div class="s5-tool-chips">
-                <span class="s5-tool-chip">get-issue</span>
-                <span class="s5-tool-chip">create-PR</span>
-              </div>
+          </div>
+          <div class="s5-vs-box seq-step" data-seq-delay="1400">
+            <div class="h3">DevOps Actions</div>
+            <div class="s5-vs-chips">
+              <span class="s5-tool-chip" data-tool="create-pr">create-PR</span>
+              <span class="s5-tool-chip" data-tool="add-watcher">add-watcher</span>
             </div>
           </div>
         </div>
-        <p class="s5-caption seq-step" data-seq-delay="1600">Your curated inventory of what&rsquo;s available in this deployment.</p>
+        <p class="s5-caption seq-step" data-seq-delay="2400">Servers contain their tools. Virtual servers compose cross-server views for different consumers.</p>
       </div>
     </section>
 
     <section class="slide slide-light" data-slide="6" aria-label="Slide 6">
-      <div class="slide-inner s6">
-        <div data-stagger>
-          <div class="slide-eyebrow anim-fade-up" style="color:var(--purple-50);">Virtual MCP Servers</div>
-          <h2 class="h2 anim-fade-up">Compose purpose-built views</h2>
-        </div>
-        <div class="s6-catalog-strip seq-step" data-seq-delay="400">
-          <span class="label">Catalog Tools</span>
-          <span class="s6-tool-chip" data-tool="get-story">get-story</span>
-          <span class="s6-tool-chip" data-tool="add-watcher">add-watcher</span>
-          <span class="s6-tool-chip" data-tool="get-issue">get-issue</span>
-          <span class="s6-tool-chip" data-tool="create-pr">create-PR</span>
-        </div>
-        <div class="s6-down-arrows seq-step" data-seq-delay="800">
-          <span class="arrow">&darr;</span>
-          <span>select tools</span>
-          <span class="arrow">&darr;</span>
-        </div>
-        <div class="s6-vs-row seq-step" data-seq-delay="1200">
-          <div class="s6-vs-box s6-vs-box--read">
-            <div class="h3">Read-Only Reporting</div>
-            <div class="s6-vs-chips">
-              <span class="s6-vs-chip">get-issue</span>
-              <span class="s6-vs-chip">get-story</span>
-            </div>
-          </div>
-          <div class="s6-vs-box s6-vs-box--write">
-            <div class="h3">DevOps Actions</div>
-            <div class="s6-vs-chips">
-              <span class="s6-vs-chip">create-PR</span>
-              <span class="s6-vs-chip">add-watcher</span>
-            </div>
-          </div>
-        </div>
-        <p class="s6-caption seq-step" data-seq-delay="2400">Same catalog, different views, different consumers.</p>
-      </div>
-    </section>
-
-    <section class="slide slide-light" data-slide="7" aria-label="Slide 7">
       <div class="slide-inner s7">
         <div data-stagger>
           <div class="slide-eyebrow anim-fade-up" style="color:var(--teal-50);">Lifecycle</div>
           <h2 class="h2 anim-fade-up">From draft to production</h2>
+          <p class="lead anim-fade-up" style="margin-top:var(--space-xs);">Catalogs are validated against their schema before publishing. Published catalogs are write-protected.</p>
         </div>
         <div class="s7-promo-flow seq-step" data-seq-delay="400">
           <span class="s7-state" data-state="draft">Draft</span>
@@ -1084,11 +1014,12 @@
       </div>
     </section>
 
-    <section class="slide slide-light" data-slide="8" aria-label="Slide 8">
+    <section class="slide slide-light" data-slide="7" aria-label="Slide 7">
       <div class="slide-inner s8">
         <div data-stagger>
           <div class="slide-eyebrow anim-fade-up" style="color:var(--teal-70);">Gateway Registration</div>
           <h2 class="h2 anim-fade-up">Publish once. Discover everywhere.</h2>
+          <p class="lead anim-fade-up" style="margin-top:var(--space-xs);">Publishing a catalog creates a Kubernetes Custom Resource. The MCP Gateway discovers it automatically.</p>
         </div>
         <div class="s8-arch">
           <div class="s8-box s8-box--hub seq-step" data-seq-delay="400">
@@ -1127,7 +1058,7 @@
       </div>
     </section>
 
-    <section class="slide slide-dark" data-slide="9" aria-label="Slide 9">
+    <section class="slide slide-dark" data-slide="8" aria-label="Slide 8">
       <div class="slide-inner s9" data-stagger>
         <div class="slide-eyebrow anim-fade-up">Under the Hood</div>
         <h2 class="h2 anim-fade-up">Built for Enterprise</h2>
@@ -1174,17 +1105,16 @@
       <li><button type="button" role="tab" aria-label="Go to slide 6" data-goto="6"></button></li>
       <li><button type="button" role="tab" aria-label="Go to slide 7" data-goto="7"></button></li>
       <li><button type="button" role="tab" aria-label="Go to slide 8" data-goto="8"></button></li>
-      <li><button type="button" role="tab" aria-label="Go to slide 9" data-goto="9"></button></li>
     </ol>
     <button class="btn-next" type="button" aria-label="Next slide" data-action="next">&rarr;</button>
-    <span class="deck-counter" aria-live="polite">01 / 09</span>
+    <span class="deck-counter" aria-live="polite">01 / 08</span>
   </nav>
 
   <script>
     (function () {
       'use strict';
 
-      const TOTAL = 9;
+      const TOTAL = 8;
       const deck = document.getElementById('deck');
       const slides = Array.from(deck.querySelectorAll('.slide'));
       const dots = Array.from(document.querySelectorAll('.deck-dots button'));
@@ -1234,11 +1164,11 @@
         Array.from(slide.querySelectorAll('.highlight.active')).forEach(function (el) {
           el.classList.remove('active');
         });
-        // Slide 6: reset tool chip highlights
-        Array.from(slide.querySelectorAll('.s6-tool-chip')).forEach(function (el) {
+        // Slide 5: reset tool chip highlights
+        Array.from(slide.querySelectorAll('.s5-tool-chip')).forEach(function (el) {
           el.classList.remove('highlight-teal', 'highlight-purple');
         });
-        // Slide 7: reset state highlights
+        // Slide 6: reset state highlights
         Array.from(slide.querySelectorAll('.s7-state')).forEach(function (el) {
           el.classList.remove('active-teal', 'active-orange');
         });
@@ -1372,31 +1302,31 @@
           setTimeout(function () { el.classList.add('active'); }, 100);
         });
 
-        // Slide 6: highlight tool chips in catalog strip
+        // Slide 5: highlight tool chips in virtual server boxes
         var slideNum = parseInt(cur.getAttribute('data-slide'), 10);
-        if (slideNum === 6) {
+        if (slideNum === 5) {
           setTimeout(function () {
-            var chips = cur.querySelectorAll('.s6-tool-chip');
+            var chips = cur.querySelectorAll('.s5-vs-chips .s5-tool-chip');
             chips.forEach(function (chip) {
               var tool = chip.getAttribute('data-tool');
               if (tool === 'get-story' || tool === 'get-issue') {
                 chip.classList.add('highlight-teal');
               }
             });
-          }, 1600);
+          }, 1800);
           setTimeout(function () {
-            var chips = cur.querySelectorAll('.s6-tool-chip');
+            var chips = cur.querySelectorAll('.s5-vs-chips .s5-tool-chip');
             chips.forEach(function (chip) {
               var tool = chip.getAttribute('data-tool');
               if (tool === 'create-pr' || tool === 'add-watcher') {
                 chip.classList.add('highlight-purple');
               }
             });
-          }, 2000);
+          }, 2200);
         }
 
-        // Slide 7: light up promotion and update states
-        if (slideNum === 7) {
+        // Slide 6: light up promotion and update states
+        if (slideNum === 6) {
           var promoStates = ['draft', 'validate', 'testing', 'production', 'publish'];
           promoStates.forEach(function (state, i) {
             setTimeout(function () {
