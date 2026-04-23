@@ -962,6 +962,24 @@ func TestSetParent_EmptyParentType(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "parent_type is required")
 }
 
+// Bug fix: Remove parent (empty parent_type AND empty parent_instance_id) should succeed
+func TestSetParent_RemoveParent_EmptyBoth(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.mockPinResolution()
+
+	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
+		ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", ParentInstanceID: "p1",
+	}, nil)
+	m.instRepo.On("Update", mock.Anything, mock.MatchedBy(func(inst *models.EntityInstance) bool {
+		return inst.ID == "i1" && inst.ParentInstanceID == ""
+	})).Return(nil)
+	m.catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	body := `{"parent_type":"","parent_instance_id":""}`
+	rec := doInstanceRequest(e, http.MethodPut, "/api/data/v1/catalogs/my-catalog/model/i1/parent", body, apimw.RoleRW)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
 // === TD-22: System Attributes — Instance DTO Injection ===
 
 // T-18.01: instanceDetailToDTO prepends Name system attr

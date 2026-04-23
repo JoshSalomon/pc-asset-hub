@@ -39,6 +39,7 @@ import { useCatalogDiagram } from '../../hooks/useCatalogDiagram'
 import { useInlineEdit } from '../../hooks/useInlineEdit'
 import { usePinManagement } from '../../hooks/usePinManagement'
 import DiagramTabContent from '../../components/DiagramTabContent'
+import MigrationPreviewModal from '../../components/MigrationPreviewModal'
 
 // Self-contained Select wrappers — manage their own isOpen state so that
 // opening the dropdown does NOT cause the parent (and Modal) to re-render.
@@ -525,6 +526,17 @@ export default function CatalogVersionDetailPage({ role }: Props) {
           <Button variant="link" onClick={pinMgmt.handleCloseAddPin}>Cancel</Button>
         </ModalFooter>
       </Modal>
+
+      {/* Migration Preview Modal */}
+      {pinMgmt.migrationPreview && (
+        <MigrationPreviewModal
+          isOpen
+          report={pinMgmt.migrationPreview}
+          entityTypeName={pinMgmt.migrationPendingPin?.entity_type_name || ''}
+          onConfirm={pinMgmt.handleConfirmMigration}
+          onCancel={pinMgmt.handleCancelMigration}
+        />
+      )}
 
       {/* Version Snapshot Modal */}
       <Modal

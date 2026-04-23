@@ -2,6 +2,7 @@ package meta
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -42,6 +43,26 @@ type CatalogVersionService struct {
 	etRepo        repository.EntityTypeRepository
 	etvRepo       repository.EntityTypeVersionRepository
 	catalogRepo   repository.CatalogRepository
+	attrRepo      repository.AttributeRepository
+	instRepo      repository.EntityInstanceRepository
+	iavRepo       repository.InstanceAttributeValueRepository
+	txManager     repository.TransactionManager
+}
+
+type CVServiceOption func(*CatalogVersionService)
+
+func WithMigrationRepos(attrRepo repository.AttributeRepository, instRepo repository.EntityInstanceRepository, iavRepo repository.InstanceAttributeValueRepository) CVServiceOption {
+	return func(s *CatalogVersionService) {
+		s.attrRepo = attrRepo
+		s.instRepo = instRepo
+		s.iavRepo = iavRepo
+	}
+}
+
+func WithTransactionManager(txm repository.TransactionManager) CVServiceOption {
+	return func(s *CatalogVersionService) {
+		s.txManager = txm
+	}
 }
 
 func NewCatalogVersionService(
@@ -54,8 +75,9 @@ func NewCatalogVersionService(
 	etRepo repository.EntityTypeRepository,
 	etvRepo repository.EntityTypeVersionRepository,
 	catalogRepo repository.CatalogRepository,
+	opts ...CVServiceOption,
 ) *CatalogVersionService {
-	return &CatalogVersionService{
+	svc := &CatalogVersionService{
 		cvRepo:        cvRepo,
 		pinRepo:       pinRepo,
 		ltRepo:        ltRepo,
@@ -66,6 +88,10 @@ func NewCatalogVersionService(
 		etvRepo:       etvRepo,
 		catalogRepo:   catalogRepo,
 	}
+	for _, opt := range opts {
+		opt(svc)
+	}
+	return svc
 }
 
 func (s *CatalogVersionService) CreateCatalogVersion(ctx context.Context, label, description string, pins []models.CatalogVersionPin) (*models.CatalogVersion, error) {
@@ -245,6 +271,22 @@ func (s *CatalogVersionService) DeleteCatalogVersion(ctx context.Context, id str
 	} else {
 		if role != RoleAdmin && role != RoleSuperAdmin {
 			return domainerrors.NewForbidden("only Admin and above can delete catalog versions")
+		}
+	}
+
+	// Block deletion if any catalogs are pinned to this CV
+	if s.catalogRepo != nil {
+		catalogs, err := s.catalogRepo.ListByCatalogVersionID(ctx, id)
+		if err != nil {
+			return err
+		}
+		if len(catalogs) > 0 {
+			names := make([]string, len(catalogs))
+			for i, c := range catalogs {
+				names[i] = c.Name
+			}
+			return domainerrors.NewConflict("CatalogVersion",
+				fmt.Sprintf("cannot delete: %d catalog(s) are pinned to this version (%s)", len(catalogs), fmt.Sprintf("%v", names)))
 		}
 	}
 
@@ -494,13 +536,19 @@ func (s *CatalogVersionService) AddPin(ctx context.Context, cvID, entityTypeVers
 		return nil, err
 	}
 
+	if err := s.resetDependentCatalogs(ctx, cvID); err != nil {
+		return nil, err
+	}
+
 	return pin, nil
 }
 
 // UpdatePin changes the pinned entity type version on an existing pin.
 // The new ETV must belong to the same entity type as the current pin.
-func (s *CatalogVersionService) UpdatePin(ctx context.Context, cvID, pinID, newEntityTypeVersionID string, role Role) (*models.CatalogVersionPin, error) {
-	// Verify CV exists and check stage permissions
+// If migration repos are configured and the version actually changes,
+// IAVs are remapped from old to new attribute IDs. In dry-run mode,
+// the migration report is returned without applying changes.
+func (s *CatalogVersionService) UpdatePin(ctx context.Context, cvID, pinID, newEntityTypeVersionID string, role Role, dryRun bool) (*models.UpdatePinResult, error) {
 	cv, err := s.cvRepo.GetByID(ctx, cvID)
 	if err != nil {
 		return nil, err
@@ -509,7 +557,6 @@ func (s *CatalogVersionService) UpdatePin(ctx context.Context, cvID, pinID, newE
 		return nil, err
 	}
 
-	// Get pin and verify it belongs to this CV
 	pin, err := s.pinRepo.GetByID(ctx, pinID)
 	if err != nil {
 		return nil, err
@@ -518,13 +565,11 @@ func (s *CatalogVersionService) UpdatePin(ctx context.Context, cvID, pinID, newE
 		return nil, domainerrors.NewNotFound("CatalogVersionPin", pinID)
 	}
 
-	// Resolve current pin's entity type
 	currentETV, err := s.etvRepo.GetByID(ctx, pin.EntityTypeVersionID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Resolve new ETV and verify same entity type
 	newETV, err := s.etvRepo.GetByID(ctx, newEntityTypeVersionID)
 	if err != nil {
 		return nil, err
@@ -533,13 +578,208 @@ func (s *CatalogVersionService) UpdatePin(ctx context.Context, cvID, pinID, newE
 		return nil, domainerrors.NewValidation("entity type mismatch: new version must belong to the same entity type")
 	}
 
-	// Update pin
-	pin.EntityTypeVersionID = newEntityTypeVersionID
-	if err := s.pinRepo.Update(ctx, pin); err != nil {
+	oldETVID := pin.EntityTypeVersionID
+	var migration *models.MigrationReport
+
+	if oldETVID != newEntityTypeVersionID && s.attrRepo != nil {
+		migration, err = s.buildMigrationReport(ctx, oldETVID, newEntityTypeVersionID, cvID, currentETV.EntityTypeID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if !dryRun {
+		doMutations := func(txCtx context.Context) error {
+			if migration != nil && len(migration.InstanceIDs) > 0 && len(migration.IDMapping) > 0 {
+				if _, err := s.iavRepo.RemapAttributeIDs(txCtx, migration.InstanceIDs, migration.IDMapping); err != nil {
+					return err
+				}
+			}
+			pin.EntityTypeVersionID = newEntityTypeVersionID
+			if err := s.pinRepo.Update(txCtx, pin); err != nil {
+				return err
+			}
+			return s.resetDependentCatalogs(txCtx, cvID)
+		}
+
+		if s.txManager != nil {
+			if err := s.txManager.RunInTransaction(ctx, doMutations); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := doMutations(ctx); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return &models.UpdatePinResult{Pin: pin, Migration: migration}, nil
+}
+
+func (s *CatalogVersionService) buildMigrationReport(ctx context.Context, oldETVID, newETVID, cvID, entityTypeID string) (*models.MigrationReport, error) {
+	oldAttrs, err := s.attrRepo.ListByVersion(ctx, oldETVID)
+	if err != nil {
+		return nil, err
+	}
+	newAttrs, err := s.attrRepo.ListByVersion(ctx, newETVID)
+	if err != nil {
 		return nil, err
 	}
 
-	return pin, nil
+	mapping, mappings, warnings := buildAttributeMapping(oldAttrs, newAttrs)
+
+	instanceIDs, breakdown, err := s.collectAffectedInstances(ctx, cvID, entityTypeID)
+	if err != nil {
+		return nil, err
+	}
+
+	affectedCount := len(instanceIDs)
+	for i := range warnings {
+		warnings[i].AffectedInstances = affectedCount
+	}
+
+	return &models.MigrationReport{
+		AffectedCatalogs:  len(breakdown),
+		AffectedInstances: affectedCount,
+		CatalogBreakdown:  breakdown,
+		AttributeMappings: mappings,
+		Warnings:          warnings,
+		IDMapping:         mapping,
+		InstanceIDs:       instanceIDs,
+	}, nil
+}
+
+func buildAttributeMapping(oldAttrs, newAttrs []*models.Attribute) (map[string]string, []models.AttributeMapping, []models.MigrationWarning) {
+	newByName := make(map[string]*models.Attribute, len(newAttrs))
+	for _, a := range newAttrs {
+		newByName[a.Name] = a
+	}
+
+	oldByOrdinal := make(map[int]*models.Attribute, len(oldAttrs))
+	for _, a := range oldAttrs {
+		oldByOrdinal[a.Ordinal] = a
+	}
+
+	mapping := make(map[string]string)
+	var mappings []models.AttributeMapping
+	var warnings []models.MigrationWarning
+	matchedOld := make(map[string]bool)
+
+	// Match by name
+	for _, oldAttr := range oldAttrs {
+		if newAttr, ok := newByName[oldAttr.Name]; ok {
+			mapping[oldAttr.ID] = newAttr.ID
+			mappings = append(mappings, models.AttributeMapping{
+				OldName: oldAttr.Name, NewName: newAttr.Name, Action: "remap",
+			})
+			matchedOld[oldAttr.ID] = true
+
+			if oldAttr.TypeDefinitionVersionID != newAttr.TypeDefinitionVersionID {
+				warnings = append(warnings, models.MigrationWarning{
+					Type: "type_changed", Attribute: oldAttr.Name,
+					OldType: oldAttr.TypeDefinitionVersionID, NewType: newAttr.TypeDefinitionVersionID,
+				})
+			}
+		} else {
+			mappings = append(mappings, models.AttributeMapping{OldName: oldAttr.Name, Action: "orphaned"})
+			warnings = append(warnings, models.MigrationWarning{Type: "deleted_attribute", Attribute: oldAttr.Name})
+		}
+	}
+
+	// Detect renames (same ordinal, different name, unmatched)
+	for _, newAttr := range newAttrs {
+		if oldAttr, ok := findOldByName(oldAttrs, newAttr.Name); ok && matchedOld[oldAttr.ID] {
+			continue
+		}
+		if oldAttr, ok := oldByOrdinal[newAttr.Ordinal]; ok && !matchedOld[oldAttr.ID] {
+			mapping[oldAttr.ID] = newAttr.ID
+			matchedOld[oldAttr.ID] = true
+			warnings = append(warnings, models.MigrationWarning{
+				Type: "renamed", Attribute: newAttr.Name, OldType: oldAttr.Name, NewType: newAttr.Name,
+			})
+			if oldAttr.TypeDefinitionVersionID != newAttr.TypeDefinitionVersionID {
+				warnings = append(warnings, models.MigrationWarning{
+					Type: "type_changed", Attribute: newAttr.Name,
+					OldType: oldAttr.TypeDefinitionVersionID, NewType: newAttr.TypeDefinitionVersionID,
+				})
+			}
+			for i, m := range mappings {
+				if m.OldName == oldAttr.Name && m.Action == "orphaned" {
+					mappings[i] = models.AttributeMapping{OldName: oldAttr.Name, NewName: newAttr.Name, Action: "remap"}
+					break
+				}
+			}
+			filtered := warnings[:0]
+			for _, w := range warnings {
+				if !(w.Type == "deleted_attribute" && w.Attribute == oldAttr.Name) {
+					filtered = append(filtered, w)
+				}
+			}
+			warnings = filtered
+		}
+	}
+
+	// Detect new attributes (not matched by name or rename)
+	renamedNames := make(map[string]bool)
+	for _, w := range warnings {
+		if w.Type == "renamed" {
+			renamedNames[w.NewType] = true
+		}
+	}
+	for _, newAttr := range newAttrs {
+		if oldAttr, ok := findOldByName(oldAttrs, newAttr.Name); ok && matchedOld[oldAttr.ID] {
+			continue
+		}
+		if renamedNames[newAttr.Name] {
+			continue
+		}
+		mappings = append(mappings, models.AttributeMapping{NewName: newAttr.Name, Action: "added"})
+		if newAttr.Required {
+			warnings = append(warnings, models.MigrationWarning{Type: "new_required", Attribute: newAttr.Name})
+		}
+	}
+
+	return mapping, mappings, warnings
+}
+
+const migrationLimit = 10000
+
+func (s *CatalogVersionService) collectAffectedInstances(ctx context.Context, cvID, entityTypeID string) ([]string, []models.CatalogImpact, error) {
+	catalogs, err := s.catalogRepo.ListByCatalogVersionID(ctx, cvID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var instanceIDs []string
+	var breakdown []models.CatalogImpact
+	for _, cat := range catalogs {
+		instances, total, err := s.instRepo.List(ctx, entityTypeID, cat.ID, models.ListParams{Limit: migrationLimit})
+		if err != nil {
+			return nil, nil, err
+		}
+		if total > migrationLimit {
+			return nil, nil, domainerrors.NewValidation(
+				fmt.Sprintf("catalog %s has %d instances of this entity type, exceeds migration limit of %d",
+					cat.Name, total, migrationLimit))
+		}
+		if total > 0 {
+			breakdown = append(breakdown, models.CatalogImpact{CatalogName: cat.Name, InstanceCount: total})
+		}
+		for _, inst := range instances {
+			instanceIDs = append(instanceIDs, inst.ID)
+		}
+	}
+
+	return instanceIDs, breakdown, nil
+}
+
+func findOldByName(attrs []*models.Attribute, name string) (*models.Attribute, bool) {
+	for _, a := range attrs {
+		if a.Name == name {
+			return a, true
+		}
+	}
+	return nil, false
 }
 
 // RemovePin removes a pin from a catalog version.
@@ -562,7 +802,31 @@ func (s *CatalogVersionService) RemovePin(ctx context.Context, cvID, pinID strin
 		return domainerrors.NewNotFound("CatalogVersionPin", pinID)
 	}
 
-	return s.pinRepo.Delete(ctx, pinID)
+	if err := s.pinRepo.Delete(ctx, pinID); err != nil {
+		return err
+	}
+
+	return s.resetDependentCatalogs(ctx, cvID)
+}
+
+// resetDependentCatalogs resets validation status to draft for all catalogs pinned to a CV.
+func (s *CatalogVersionService) resetDependentCatalogs(ctx context.Context, cvID string) error {
+	if s.catalogRepo == nil {
+		return nil
+	}
+	catalogs, err := s.catalogRepo.ListByCatalogVersionID(ctx, cvID)
+	if err != nil {
+		return err
+	}
+	for _, cat := range catalogs {
+		if cat.ValidationStatus == models.ValidationStatusDraft {
+			continue // already draft, skip unnecessary write
+		}
+		if err := s.catalogRepo.UpdateValidationStatus(ctx, cat.ID, models.ValidationStatusDraft); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // getEntityTypeNamesForCV resolves entity type names from catalog version pins.

@@ -514,6 +514,43 @@ Catalog Version (bill of materials)
 
 4. **Catalog versioning**: A catalog version pins specific entity definition versions and type definition versions together as a bill of materials. Pins can be added, removed, or changed. Each entity type can appear at most once in a CV. Custom type definitions used by pinned entity type attributes are auto-pinned. Deployments reference a fixed catalog version.
 
+### Schema Evolution Safety
+
+Pin changes (add/remove/change version) affect dependent catalogs and instance data:
+
+**Validation status reset**: After any pin change, all catalogs pinned to the affected CV have their validation status automatically reset to `draft`. This prevents stale `valid` status when the schema has changed underneath.
+
+**Instance attribute migration on pin version change**: When `UpdatePin` changes a pin from V_old to V_new, copy-on-write gives V_new's attributes new UUIDs. Existing instance attribute values (IAVs) still reference V_old's attribute IDs and would become orphaned. The system automatically migrates IAVs:
+
+1. **Match by name**: Attributes are matched between V_old and V_new by name. Matched attributes have their IAV `attribute_id` remapped from old to new.
+2. **Deleted attributes**: IAVs for attributes removed in V_new are flagged in warnings (not silently dropped — the data remains in the DB but is unreachable).
+3. **Type changes**: If a matched attribute changed its type definition, a warning is generated (existing values may be invalid under the new type).
+4. **New required attributes**: Warnings for newly added required attributes with no existing values.
+5. **Renamed attributes**: If an attribute name changed between versions but the ordinal position is the same, the system attempts to match by ordinal and warns about the rename.
+
+**Dry-run mode**: `PUT /catalog-versions/:id/pins/:pin-id?dry_run=true` returns a migration report without applying changes:
+
+```json
+{
+  "pin": { ... },
+  "migration": {
+    "affected_catalogs": 2,
+    "affected_instances": 47,
+    "attribute_mappings": [
+      {"old_name": "endpoint", "new_name": "endpoint", "action": "remap"},
+      {"old_name": "old_field", "new_name": null, "action": "orphaned"}
+    ],
+    "warnings": [
+      {"type": "deleted_attribute", "attribute": "old_field", "affected_instances": 12},
+      {"type": "type_changed", "attribute": "port", "old_type": "string", "new_type": "integer", "affected_instances": 47},
+      {"type": "new_required", "attribute": "region", "affected_instances": 47}
+    ]
+  }
+}
+```
+
+**Type definition deletion safety**: A type definition can only be deleted if no attribute in any **used** entity type version references it. A used version is one that is (1) pinned by any catalog version, or (2) the latest version of any entity type. Unused historical versions do not block deletion.
+
 ### Lifecycle States
 
 Each catalog version progresses through:

@@ -17,18 +17,38 @@ type TypeDefinitionService struct {
 	tdRepo   repository.TypeDefinitionRepository
 	tdvRepo  repository.TypeDefinitionVersionRepository
 	attrRepo repository.AttributeRepository
+	pinRepo  repository.CatalogVersionPinRepository
+	etvRepo  repository.EntityTypeVersionRepository
 }
 
 func NewTypeDefinitionService(
 	tdRepo repository.TypeDefinitionRepository,
 	tdvRepo repository.TypeDefinitionVersionRepository,
 	attrRepo repository.AttributeRepository,
+	opts ...TypeDefServiceOption,
 ) *TypeDefinitionService {
-	return &TypeDefinitionService{
+	s := &TypeDefinitionService{
 		tdRepo:   tdRepo,
 		tdvRepo:  tdvRepo,
 		attrRepo: attrRepo,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// TypeDefServiceOption is a functional option for TypeDefinitionService.
+type TypeDefServiceOption func(*TypeDefinitionService)
+
+// WithPinRepo sets the CatalogVersionPinRepository for deletion safety checks.
+func WithPinRepo(repo repository.CatalogVersionPinRepository) TypeDefServiceOption {
+	return func(s *TypeDefinitionService) { s.pinRepo = repo }
+}
+
+// WithETVRepo sets the EntityTypeVersionRepository for deletion safety checks.
+func WithETVRepo(repo repository.EntityTypeVersionRepository) TypeDefServiceOption {
+	return func(s *TypeDefinitionService) { s.etvRepo = repo }
 }
 
 // CreateTypeDefinition creates a new user-defined type definition with V1.
@@ -197,7 +217,9 @@ func (s *TypeDefinitionService) UpdateTypeDefinition(ctx context.Context, id str
 	return tdv, nil
 }
 
-// DeleteTypeDefinition deletes a type definition (if not referenced by any attributes).
+// DeleteTypeDefinition deletes a type definition if it is not referenced by any attribute
+// in a "used" entity type version. A used version is one that is (1) pinned by any catalog
+// version, or (2) the latest version of any entity type.
 func (s *TypeDefinitionService) DeleteTypeDefinition(ctx context.Context, id string) error {
 	td, err := s.tdRepo.GetByID(ctx, id)
 	if err != nil {
@@ -206,7 +228,83 @@ func (s *TypeDefinitionService) DeleteTypeDefinition(ctx context.Context, id str
 	if td.System {
 		return domainerrors.NewValidation("system type definitions cannot be deleted")
 	}
+
+	if err := s.checkTypeDefInUse(ctx, id); err != nil {
+		return err
+	}
+
 	return s.tdRepo.Delete(ctx, id)
+}
+
+// checkTypeDefInUse returns a ConflictError if any attribute in a used entity type version
+// references a version of this type definition.
+func (s *TypeDefinitionService) checkTypeDefInUse(ctx context.Context, typeDefID string) error {
+	if s.pinRepo == nil || s.etvRepo == nil {
+		return domainerrors.NewValidation("type definition deletion safety check requires pin and entity type version repositories — ensure WithPinRepo and WithETVRepo are set")
+	}
+
+	// Get all versions of this type definition
+	versions, err := s.tdvRepo.ListByTypeDefinition(ctx, typeDefID)
+	if err != nil {
+		return err
+	}
+	if len(versions) == 0 {
+		return nil
+	}
+
+	// Collect version IDs
+	tdvIDs := make([]string, len(versions))
+	for i, v := range versions {
+		tdvIDs[i] = v.ID
+	}
+
+	// Find all attributes referencing any version of this type def
+	attrs, err := s.attrRepo.ListByTypeDefinitionVersionIDs(ctx, tdvIDs)
+	if err != nil {
+		return err
+	}
+	if len(attrs) == 0 {
+		return nil
+	}
+
+	// Collect unique entity type version IDs from the referencing attributes.
+	// Note: map iteration order is non-deterministic in Go, so etvIDs order varies
+	// between calls. This is fine — ListByEntityTypeVersionIDs uses IN(?), and the
+	// latest-version loop checks each independently. No ordering dependency.
+	etvIDSet := make(map[string]bool)
+	for _, attr := range attrs {
+		etvIDSet[attr.EntityTypeVersionID] = true
+	}
+	etvIDs := make([]string, 0, len(etvIDSet))
+	for id := range etvIDSet {
+		etvIDs = append(etvIDs, id)
+	}
+
+	// Check if any of these ETVs are pinned by a CV
+	pins, err := s.pinRepo.ListByEntityTypeVersionIDs(ctx, etvIDs)
+	if err != nil {
+		return err
+	}
+	if len(pins) > 0 {
+		return domainerrors.NewConflict("TypeDefinition", "type definition is in use by attributes in a pinned entity type version and cannot be deleted")
+	}
+
+	// Check if any of these ETVs are the latest version of their entity type
+	for _, etvID := range etvIDs {
+		etv, err := s.etvRepo.GetByID(ctx, etvID)
+		if err != nil {
+			return err
+		}
+		latest, err := s.etvRepo.GetLatestByEntityType(ctx, etv.EntityTypeID)
+		if err != nil {
+			return err
+		}
+		if latest.ID == etvID {
+			return domainerrors.NewConflict("TypeDefinition", "type definition is in use by attributes in the latest entity type version and cannot be deleted")
+		}
+	}
+
+	return nil
 }
 
 // ListVersions returns all versions of a type definition.

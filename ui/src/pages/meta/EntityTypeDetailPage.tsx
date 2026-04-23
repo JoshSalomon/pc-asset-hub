@@ -216,7 +216,7 @@ export default function EntityTypeDetailPage({ role }: Props) {
                         value={editDescValue}
                         onChange={(_e, v) => setEditDescValue(v)}
                         aria-label="Description"
-                        style={{ maxWidth: '300px' }}
+                        style={{ width: '100%' }}
                       />
                       <Button variant="primary" size="sm" onClick={handleSaveDescription}>Save</Button>
                       <Button variant="link" size="sm" onClick={() => setEditingDesc(false)}>Cancel</Button>

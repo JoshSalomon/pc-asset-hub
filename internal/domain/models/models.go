@@ -213,6 +213,42 @@ func IsSystemAttributeName(name string) bool {
 	return name == SystemAttrName || name == SystemAttrDescription
 }
 
+// === Migration Types ===
+
+type CatalogImpact struct {
+	CatalogName   string
+	InstanceCount int
+}
+
+type MigrationReport struct {
+	AffectedCatalogs  int
+	AffectedInstances int
+	CatalogBreakdown  []CatalogImpact
+	AttributeMappings []AttributeMapping
+	Warnings          []MigrationWarning
+	IDMapping         map[string]string `json:"-"`
+	InstanceIDs       []string          `json:"-"`
+}
+
+type AttributeMapping struct {
+	OldName string
+	NewName string
+	Action  string // "remap", "orphaned", or "added"
+}
+
+type MigrationWarning struct {
+	Type              string // "deleted_attribute", "type_changed", "new_required", "renamed"
+	Attribute         string
+	AffectedInstances int
+	OldType           string
+	NewType           string
+}
+
+type UpdatePinResult struct {
+	Pin       *CatalogVersionPin
+	Migration *MigrationReport
+}
+
 // ListParams holds common parameters for list operations.
 type ListParams struct {
 	Offset   int

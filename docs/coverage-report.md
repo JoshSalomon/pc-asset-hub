@@ -1,6 +1,6 @@
 e# AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-04-19
+Last updated: 2026-04-20
 
 ---
 
@@ -8,12 +8,12 @@ Last updated: 2026-04-19
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1585 | 100% | 97.8% (4178/4270) | — |
+| Backend (Go) | 1642 | 100% | 97.7% (4378/4483) | — |
 | UI — Unit tests (node) | 41 | 100% | — | — |
 | UI — Browser tests (Playwright) | 1014 | 100% | 95.0% (2718/2861) | 97.4% (2448/2514) |
 | UI — System tests (Playwright + live server) | 121 | 100% | — | — |
 | Live system (bash scripts) | 303 | 100% | — | — |
-| **Total** | **3064** | **100%** | — | — |
+| **Total** | **3121** | **100%** | — | — |
 
 ---
 
@@ -22,20 +22,20 @@ Last updated: 2026-04-19
 | Package | Coverage | Notes |
 |---------|----------|-------|
 | `internal/api/health` | 90.0% (9/10) | Readyz DB-ping error path |
-| `internal/api/meta` | 99.8% (495/496) | `defaultListParams` in version_history_handler: 1 pre-existing uncovered function |
+| `internal/api/meta` | 99.8% (499/500) | `defaultListParams` in version_history_handler: 1 pre-existing uncovered function |
 | `internal/api/middleware` | 100.0% (69/69) | |
 | `internal/api/operational` | 98.4% (307/312) | Copy/Replace/Update handlers bind-error branches only |
 | `internal/domain/errors` | 100.0% (32/32) | |
 | `internal/domain/models` | 100.0% (8/8) | |
 | `internal/infrastructure/config` | 100.0% (21/21) | |
 | `internal/infrastructure/gorm/models` | 100.0% (43/43) | Migration code removed (TD-21 in Session 011) |
-| `internal/infrastructure/gorm/repository` | 92.5% (706/763) | GORM error branches on Delete/Update, partial DB failure paths |
+| `internal/infrastructure/gorm/repository` | 91.6% (717/783) | GORM error branches on Delete/Update, partial DB failure paths |
 | `internal/infrastructure/k8s` | 92.6% (50/54) | K8s client error paths |
 | `internal/operator/api/v1alpha1` | 97.7% (85/87) | `DeepCopyObject` nil-receiver guard |
 | `internal/operator/controllers` | 94.3% (198/210) | `SetupWithManager` (envtest — deferred to Phase B), `SetOwnerReference` error branches |
 | `internal/operator/crdgen` | 94.3% (33/35) | `json.Marshal` error guards on well-formed inputs |
-| `internal/service/meta` | 99.6% (953/957) | BulkCopy error paths, requiresDeepCopy edge cases |
-| `internal/service/operational` | 99.8% (1126/1128) | Cycle guard in resolveParentChain, partial DB failure paths |
+| `internal/service/meta` | 99.3% (1113/1121) | BulkCopy error paths, requiresDeepCopy edge cases |
+| `internal/service/operational` | 99.8% (1151/1153) | Cycle guard in resolveParentChain, partial DB failure paths |
 | `internal/service/validation` | 95.6% (43/45) | |
 
 ### Excluded from Coverage
@@ -982,6 +982,47 @@ Per-file coverage deltas (modified files only, vs main):
 | `useInstances.ts` | 95.7% (66/69) 3 uncov | 95.7% (66/69) 3 uncov | unchanged |
 
 Backend test count: 1582 -> 1585 (+3). Browser test count: 980 -> 1014 (+34). Unit test count: 35 -> 41 (+6).
+
+### New Code Coverage (Session 024 — TD-114: Schema Evolution Safety)
+
+**Backend:** Instance attribute migration on CV pin version change. New `UpdatePin` with dry-run mode, `buildMigrationReport`, `buildAttributeMapping`, `collectAffectedInstances`, `RemapAttributeIDs`. All new Go lines at 100% coverage.
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/meta/catalog_version_service.go` | `WithMigrationRepos` | 100% |
+| `service/meta/catalog_version_service.go` | `WithTransactionManager` | 100% |
+| `service/meta/catalog_version_service.go` | `UpdatePin` (enhanced with dry_run + migration) | 100% |
+| `service/meta/catalog_version_service.go` | `buildMigrationReport` | 100% |
+| `service/meta/catalog_version_service.go` | `buildAttributeMapping` | 100% |
+| `service/meta/catalog_version_service.go` | `collectAffectedInstances` | 100% |
+| `service/meta/catalog_version_service.go` | `findOldByName` | 100% |
+| `service/meta/catalog_version_service.go` | `resetDependentCatalogs` (draft-skip branch) | 100% |
+| `api/meta/catalog_version_handler.go` | `UpdatePin` (enhanced with dry_run + migration response) | 100% |
+| `api/dto/dto.go` | `NewMigrationReportResponse` | 100% |
+| `api/dto/dto.go` | `UpdatePinResponse`, `MigrationReportResponse`, `AttributeMappingDTO`, `MigrationWarningDTO` | N/A (struct fields) |
+| `domain/models/models.go` | `MigrationReport`, `AttributeMapping`, `MigrationWarning`, `UpdatePinResult` | N/A (struct fields) |
+| `gorm/repository/instance_attribute_value_repo.go` | `RemapAttributeIDs` | 100% |
+| `gorm/repository/instance_attribute_value_repo.go` | `SetValues` (empty-slice early return) | 100% (was pre-existing uncovered, now covered) |
+
+New lines: **0 uncovered** (verified by arithmetic: baseline 108 uncovered, current 105 uncovered, delta = -3 improvement).
+
+Per-file coverage deltas (modified files only, measured at actual HEAD baseline):
+
+| Package | Baseline (measured) | Current | Delta |
+|---------|---------------------|---------|-------|
+| `api/meta` | 495/496 (1 uncov) | 499/500 (1 uncov) | +4 covered, +4 total, 0 delta uncov |
+| `gorm/repository` | 706/773 (67 uncov) | 717/783 (66 uncov) | +11 covered, +10 total, **-1 uncov (improved)** |
+| `service/meta` | 1009/1019 (10 uncov) | 1113/1121 (8 uncov) | +104 covered, +102 total, **-2 uncov (improved)** |
+| `domain/models` | 8/8 (0 uncov) | 8/8 (0 uncov) | unchanged |
+| `service/operational` | 1151/1153 (2 uncov) | 1151/1153 (2 uncov) | unchanged |
+
+Backend test count: 1585 -> 1642 (+57 new tests). Overall: 97.7% (4378/4483).
+
+Pre-existing gaps now covered:
+- `instance_attribute_value_repo.go:22-24` — `SetValues` empty-slice early return (closedDB not needed, just called with empty slice)
+- `catalog_version_service.go:794-795` — `resetDependentCatalogs` already-draft catalog skip (test with mixed draft/valid catalogs)
+
+Note: `docs/coverage-report.md` baseline numbers for `service/meta` (953/957) and `gorm/repository` (706/763) were stale from a previous commit. Actual measured baseline at HEAD was 1009/1019 and 706/773 respectively.
 
 ### Coverage Gaps to Address
 

@@ -86,13 +86,13 @@ func main() {
 	assocSvc := svcmeta.NewAssociationService(assocRepo, etvRepo, attrRepo)
 	vhSvc := svcmeta.NewVersionHistoryService(etvRepo, attrRepo, assocRepo)
 	catalogRepo := gormrepo.NewCatalogGormRepo(db)
-	cvSvc := svcmeta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, crManager, watchNamespace, cfg.AllowedStages(), etRepo, etvRepo, catalogRepo)
 	txManager := gormrepo.NewGormTransactionManager(db)
+	cvSvc := svcmeta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, crManager, watchNamespace, cfg.AllowedStages(), etRepo, etvRepo, catalogRepo, svcmeta.WithMigrationRepos(attrRepo, instRepo, iavRepo), svcmeta.WithTransactionManager(txManager))
 	catalogSvc := svcop.NewCatalogService(catalogRepo, cvRepo, instRepo, catalogCRManager, watchNamespace, svcop.WithCopyDeps(iavRepo, linkRepo), svcop.WithTransactionManager(txManager))
 	instanceSvc := svcop.NewInstanceService(instRepo, iavRepo, catalogRepo, cvRepo, pinRepo, attrRepo, etvRepo, etRepo, tdvRepo, tdRepo, assocRepo, linkRepo)
 
 	// Type Definition Service
-	typeDefSvc := svcmeta.NewTypeDefinitionService(tdRepo, tdvRepo, attrRepo)
+	typeDefSvc := svcmeta.NewTypeDefinitionService(tdRepo, tdvRepo, attrRepo, svcmeta.WithPinRepo(pinRepo), svcmeta.WithETVRepo(etvRepo))
 
 	// Handlers
 	etHandler := apimeta.NewEntityTypeHandler(etSvc, etvRepo)

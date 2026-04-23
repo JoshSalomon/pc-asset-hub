@@ -399,13 +399,17 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 		}
 	}
 
-	// Build set of entity type IDs that are targets of containment associations
-	// (i.e., entity types that must be contained by a parent)
+	// Build set of entity type IDs that MUST be contained by a parent.
+	// Only require a parent when source cardinality min >= 1 (e.g., "1" or "1..n").
+	// Source cardinality "0..1" or "0..n" means the child can exist without a parent.
 	containedETIDs := make(map[string]bool)
 	for _, assocs := range assocCache {
 		for _, a := range assocs {
 			if a.Type == models.AssociationTypeContainment {
-				containedETIDs[a.TargetEntityTypeID] = true
+				srcMin, _, _ := ParseCardinality(a.SourceCardinality)
+				if srcMin >= 1 {
+					containedETIDs[a.TargetEntityTypeID] = true
+				}
 			}
 		}
 	}
@@ -465,6 +469,56 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 				Field:        "parent",
 				Violation:    fmt.Sprintf("invalid containment relationship: no containment association from %s to %s", resolveETName(parent.EntityTypeID), etName),
 			})
+		}
+	}
+
+	// Containment target cardinality check: for each containment association,
+	// verify that parent instances have the right number of children (min and max).
+	// Target cardinality = how many children a parent can/must have (e.g., "1..n").
+	// Source cardinality = how many parents a child can have (handled above in containedETIDs).
+	// Count children per (parent instance, child entity type) pair.
+	childCounts := make(map[string]map[string]int) // parentInstanceID → childEntityTypeID → count
+	for _, inst := range instances {
+		if inst.ParentInstanceID != "" {
+			if childCounts[inst.ParentInstanceID] == nil {
+				childCounts[inst.ParentInstanceID] = make(map[string]int)
+			}
+			childCounts[inst.ParentInstanceID][inst.EntityTypeID]++
+		}
+	}
+	for _, inst := range instances {
+		etvID, ok := etToETV[inst.EntityTypeID]
+		if !ok {
+			continue
+		}
+		for _, a := range assocCache[etvID] {
+			if a.Type != models.AssociationTypeContainment {
+				continue
+			}
+			tgtMin, tgtMax, tgtUnbounded := ParseCardinality(a.TargetCardinality)
+			if tgtMin < 1 && tgtUnbounded {
+				continue // 0..n — no constraint to check
+			}
+			count := 0
+			if cc := childCounts[inst.ID]; cc != nil {
+				count = cc[a.TargetEntityTypeID]
+			}
+			if count < tgtMin {
+				validationErrors = append(validationErrors, ValidationError{
+					EntityType:   resolveETName(inst.EntityTypeID),
+					InstanceName: inst.Name,
+					Field:        a.Name,
+					Violation:    fmt.Sprintf("requires at least %d contained %s instance(s), has %d", tgtMin, resolveETName(a.TargetEntityTypeID), count),
+				})
+			}
+			if !tgtUnbounded && count > tgtMax {
+				validationErrors = append(validationErrors, ValidationError{
+					EntityType:   resolveETName(inst.EntityTypeID),
+					InstanceName: inst.Name,
+					Field:        a.Name,
+					Violation:    fmt.Sprintf("exceeds maximum of %d contained %s instance(s), has %d", tgtMax, resolveETName(a.TargetEntityTypeID), count),
+				})
+			}
 		}
 	}
 

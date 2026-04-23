@@ -335,8 +335,8 @@ func (h *InstanceHandler) SetParent(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
-	if req.ParentType == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "parent_type is required")
+	if req.ParentType == "" && req.ParentInstanceID != "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "parent_type is required when setting a parent")
 	}
 
 	if err := h.svc.SetParent(c.Request().Context(), catalogName, entityType, instanceID, req.ParentType, req.ParentInstanceID); err != nil {

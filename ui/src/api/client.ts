@@ -13,6 +13,7 @@ import type {
   VersionDiff,
   ContainmentTreeNode,
   VersionSnapshot,
+  UpdatePinResponse,
   EntityInstance,
   AssociationLink,
   ReferenceDetail,
@@ -189,7 +190,12 @@ export const api = {
         body: JSON.stringify({ entity_type_version_id: entityTypeVersionId }),
       }),
     updatePin: (id: string, pinId: string, entityTypeVersionId: string) =>
-      fetchJSON(`${BASE_URL}/catalog-versions/${id}/pins/${pinId}`, {
+      fetchJSON<UpdatePinResponse>(`${BASE_URL}/catalog-versions/${id}/pins/${pinId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ entity_type_version_id: entityTypeVersionId }),
+      }),
+    updatePinDryRun: (id: string, pinId: string, entityTypeVersionId: string) =>
+      fetchJSON<UpdatePinResponse>(`${BASE_URL}/catalog-versions/${id}/pins/${pinId}?dry_run=true`, {
         method: 'PUT',
         body: JSON.stringify({ entity_type_version_id: entityTypeVersionId }),
       }),

@@ -10,10 +10,14 @@ PROJECT_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 CONTAINER_ENGINE ?= $(shell docker info >/dev/null 2>&1 && echo docker || echo podman)
 KUBE_CMD ?= kubectl --context kind-assethub
 
+# Source directory for builds — override with SOURCE_DIR=/path/to/worktree
+SOURCE_DIR ?= $(PROJECT_ROOT)
+SOURCE_DIR_FLAG := $(if $(filter-out $(PROJECT_ROOT),$(SOURCE_DIR)),--source-dir "$(SOURCE_DIR)")
+
 # === Quick commands (work from any directory) ===
 
 deploy:
-	"$(PROJECT_ROOT)scripts/kind-deploy.sh" rebuild "$(KUBE_CMD)"
+	"$(PROJECT_ROOT)scripts/kind-deploy.sh" $(SOURCE_DIR_FLAG) rebuild "$(KUBE_CMD)"
 
 test-backend:
 	cd "$(PROJECT_ROOT)" && go test ./internal/... -count=1
@@ -71,13 +75,13 @@ clean:
 
 # Docker targets
 docker-build-api:
-	$(CONTAINER_ENGINE) build -f "$(PROJECT_ROOT)build/api-server/Dockerfile" -t assethub/api-server:latest "$(PROJECT_ROOT)"
+	$(CONTAINER_ENGINE) build -f "$(SOURCE_DIR)build/api-server/Dockerfile" -t assethub/api-server:latest "$(SOURCE_DIR)"
 
 docker-build-ui:
-	$(CONTAINER_ENGINE) build -f "$(PROJECT_ROOT)build/ui/Dockerfile" -t assethub/ui:latest "$(PROJECT_ROOT)"
+	$(CONTAINER_ENGINE) build -f "$(SOURCE_DIR)build/ui/Dockerfile" -t assethub/ui:latest "$(SOURCE_DIR)"
 
 docker-build-operator:
-	$(CONTAINER_ENGINE) build -f "$(PROJECT_ROOT)build/operator/Dockerfile" -t assethub/operator:latest "$(PROJECT_ROOT)"
+	$(CONTAINER_ENGINE) build -f "$(SOURCE_DIR)build/operator/Dockerfile" -t assethub/operator:latest "$(SOURCE_DIR)"
 
 docker-build-all: docker-build-api docker-build-ui docker-build-operator
 

@@ -1,6 +1,10 @@
 package dto
 
-import "time"
+import (
+	"time"
+
+	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
+)
 
 // === Entity Type DTOs ===
 
@@ -207,6 +211,61 @@ type LifecycleTransitionResponse struct {
 	PerformedBy string    `json:"performed_by"`
 	PerformedAt time.Time `json:"performed_at"`
 	Notes       string    `json:"notes,omitempty"`
+}
+
+// === Migration DTOs ===
+
+type UpdatePinResponse struct {
+	Pin       CatalogVersionPinResponse `json:"pin"`
+	Migration *MigrationReportResponse  `json:"migration,omitempty"`
+}
+
+type CatalogImpactDTO struct {
+	CatalogName   string `json:"catalog_name"`
+	InstanceCount int    `json:"instance_count"`
+}
+
+type MigrationReportResponse struct {
+	AffectedCatalogs  int                      `json:"affected_catalogs"`
+	AffectedInstances int                      `json:"affected_instances"`
+	CatalogBreakdown  []CatalogImpactDTO       `json:"catalog_breakdown,omitempty"`
+	AttributeMappings []AttributeMappingDTO    `json:"attribute_mappings"`
+	Warnings          []MigrationWarningDTO    `json:"warnings"`
+}
+
+type AttributeMappingDTO struct {
+	OldName string `json:"old_name"`
+	NewName string `json:"new_name,omitempty"`
+	Action  string `json:"action"`
+}
+
+type MigrationWarningDTO struct {
+	Type              string `json:"type"`
+	Attribute         string `json:"attribute"`
+	AffectedInstances int    `json:"affected_instances"`
+	OldType           string `json:"old_type,omitempty"`
+	NewType           string `json:"new_type,omitempty"`
+}
+
+func NewMigrationReportResponse(r *models.MigrationReport) *MigrationReportResponse {
+	var breakdown []CatalogImpactDTO
+	for _, ci := range r.CatalogBreakdown {
+		breakdown = append(breakdown, CatalogImpactDTO{CatalogName: ci.CatalogName, InstanceCount: ci.InstanceCount})
+	}
+	resp := &MigrationReportResponse{
+		AffectedCatalogs:  r.AffectedCatalogs,
+		AffectedInstances: r.AffectedInstances,
+		CatalogBreakdown:  breakdown,
+		AttributeMappings: make([]AttributeMappingDTO, len(r.AttributeMappings)),
+		Warnings:          make([]MigrationWarningDTO, len(r.Warnings)),
+	}
+	for i, m := range r.AttributeMappings {
+		resp.AttributeMappings[i] = AttributeMappingDTO{OldName: m.OldName, NewName: m.NewName, Action: m.Action}
+	}
+	for i, w := range r.Warnings {
+		resp.Warnings[i] = MigrationWarningDTO{Type: w.Type, Attribute: w.Attribute, AffectedInstances: w.AffectedInstances, OldType: w.OldType, NewType: w.NewType}
+	}
+	return resp
 }
 
 // === Version History DTOs ===
