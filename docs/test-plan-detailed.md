@@ -3752,12 +3752,203 @@ Fixes 17 TD items across 6 internal stages. Primarily UI changes (browser tests)
 
 ---
 
+## Milestone 19: Schema Evolution Safety (Phase 2)
+
+Protects instance data during schema changes. 4 TD items across 3 internal stages. Primarily backend (Go service, repository, API handler) with UI tests for validation display, deletion errors, status updates, and migration warnings. References: TD-99, TD-1, TD-10, TD-114.
+
+### Stage 1: Containment Cardinality Enforcement (TD-99)
+
+#### Service — Validation
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.01 | Containment assoc with source cardinality `1..n` — parent has 0 children → validation error | Unit | Error: "requires at least 1 contained {child-type}" |
+| T-29.02 | Containment assoc with source cardinality `1..n` — parent has 1 child → passes | Unit | No error for this parent |
+| T-29.03 | Containment assoc with source cardinality `1` — parent has 0 children → validation error | Unit | Error: "requires exactly 1 contained {child-type}" |
+| T-29.04 | Containment assoc with source cardinality `1` — parent has 1 child → passes | Unit | No error |
+| T-29.05 | Containment assoc with source cardinality `0..n` — parent has 0 children → passes | Unit | No error (default, not mandatory) |
+| T-29.06 | Containment assoc with source cardinality `2..5` — parent has 1 child → validation error | Unit | Error: "requires at least 2 contained {child-type}" |
+| T-29.07 | Containment assoc with source cardinality `2..5` — parent has 3 children → passes | Unit | No error |
+| T-29.08 | Multiple containment associations on same parent — each checked independently | Unit | Separate errors per association |
+| T-29.09 | Entity type with no containment associations — no cardinality check | Unit | No containment cardinality errors |
+
+#### Integration — End-to-End Validation
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.10 | Catalog with `1..n` containment — parent with 0 children → invalid | Integration | Status `invalid`, error in list |
+| T-29.11 | Catalog with `1..n` containment — parent with 2 children → valid (no other errors) | Integration | Status `valid` |
+
+#### API — Validation Endpoint
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.12 | POST /catalogs/{name}/validate returns containment cardinality error in errors array | API | Error with entity type, instance name, violation |
+
+#### UI — Validation Results
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.13 | Containment cardinality error displayed in validation results list | Browser | Error row visible with parent instance name |
+
+### Stage 1: Type Definition Deletion Safety (TD-1)
+
+#### Service — Deletion Check
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.14 | Delete type def used by attribute in CV-pinned entity type version → blocked | Unit | ConflictError with message identifying the pinned version |
+| T-29.15 | Delete type def used by attribute in latest entity type version (not pinned) → blocked | Unit | ConflictError with message identifying the latest version |
+| T-29.16 | Delete type def used only by old non-pinned, non-latest version → allowed | Unit | Deletion succeeds |
+| T-29.17 | Delete type def not used by any attribute → allowed | Unit | Deletion succeeds |
+| T-29.18 | Delete system type def → still blocked (existing check) | Unit | Error: system types cannot be deleted |
+| T-29.19 | Delete type def used by attributes in multiple versions — some pinned, some not → blocked | Unit | ConflictError |
+| T-29.20 | Delete type def after CV pin removed and new latest version doesn't use it → allowed | Unit | Deletion succeeds |
+
+#### Integration — End-to-End Deletion
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.21 | Create type def → create entity type with attr using it → pin in CV → delete type def → fails | Integration | ConflictError |
+| T-29.22 | Same setup → remove pin → create new ETV version without that attr → delete type def → succeeds | Integration | Deletion succeeds |
+
+#### API — Delete Endpoint
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.23 | DELETE /type-definitions/{id} with type in use by pinned version → 409 | API | 409 with conflict message |
+| T-29.24 | DELETE /type-definitions/{id} with type only in unused historical version → 200 | API | 200, type deleted |
+
+#### UI — Deletion Error
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.25 | Delete type definition in use → error alert with conflict message | Browser | Alert visible with explanation |
+
+### Stage 2: Pin Changes Reset Validation Status (TD-10)
+
+#### Service — Validation Status Reset
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.26 | AddPin resets validation status to `draft` for all catalogs pinned to the CV | Unit | All dependent catalogs set to `draft` |
+| T-29.27 | UpdatePin resets validation status to `draft` for all catalogs pinned to the CV | Unit | All dependent catalogs set to `draft` |
+| T-29.28 | RemovePin resets validation status to `draft` for all catalogs pinned to the CV | Unit | All dependent catalogs set to `draft` |
+| T-29.29 | Pin change on CV with no dependent catalogs → no error | Unit | Pin change succeeds, no catalog updates |
+| T-29.30 | Pin change on CV — catalogs pinned to other CVs unaffected | Unit | Only dependent catalogs reset |
+| T-29.31 | Pin change on CV with mix of valid/invalid/draft catalogs → all reset to draft | Unit | All set to `draft` regardless of prior status |
+
+#### Integration — End-to-End Reset
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.32 | CV with 2 catalogs (one `valid`, one `invalid`) → AddPin → both now `draft` | Integration | Both catalogs `draft` |
+| T-29.33 | CV with 1 `valid` catalog → RemovePin → catalog now `draft` | Integration | Catalog `draft` |
+
+#### API — Pin Endpoints
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.34 | POST /pins → subsequent GET /catalogs shows dependent catalogs as `draft` | API | Status `draft` |
+| T-29.35 | PUT /pins/:id → subsequent GET /catalogs shows dependent catalogs as `draft` | API | Status `draft` |
+| T-29.36 | DELETE /pins/:id → subsequent GET /catalogs shows dependent catalogs as `draft` | API | Status `draft` |
+
+#### UI — Status Update
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.37 | After changing pin version on BOM tab → catalog status badge shows `draft` | Browser | Status badge updated |
+
+### Stage 3: Instance Attribute Migration (TD-114)
+
+#### Service — Attribute Matching & Mapping
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.38 | Match attributes by name — same name in V1 and V2 → mapped | Unit | Mapping: old_id → new_id |
+| T-29.39 | Attribute in V1 not in V2 → orphaned warning | Unit | Warning type `deleted_attribute` |
+| T-29.40 | Attribute in V2 not in V1 → no warning (new attribute, no data to migrate) | Unit | No warning for this attr |
+| T-29.41 | Attribute in V2 not in V1 and required → new_required warning | Unit | Warning type `new_required` |
+| T-29.42 | Matched attribute changed type definition → type_changed warning | Unit | Warning with old_type, new_type |
+| T-29.43 | Same ordinal position, different name → renamed warning with ordinal match | Unit | Warning type `renamed` with old/new names |
+| T-29.44 | Same name, same type → clean remap, no warning | Unit | Mapping only, no warning |
+
+#### Service — IAV Remapping
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.45 | IAVs with matched attributes have attribute_id updated to new ID | Unit | IAV.AttributeID = new attr ID |
+| T-29.46 | IAVs for orphaned attributes remain in DB (not deleted) | Unit | IAVs still exist, flagged in warnings |
+| T-29.47 | Migration scoped to catalogs pinned to this CV only | Unit | Other catalogs' IAVs untouched |
+| T-29.48 | Migration scoped to instances of the affected entity type only | Unit | Other entity types' IAVs untouched |
+| T-29.49 | Multiple catalogs pinned to same CV — all migrated | Unit | IAVs in both catalogs remapped |
+| T-29.50 | Instance with no attribute values — no error | Unit | Migration succeeds, no IAVs to remap |
+
+#### Service — Dry-Run
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.51 | Dry-run returns migration report (mappings, warnings, counts) | Unit | Report with affected_catalogs, affected_instances, attribute_mappings, warnings |
+| T-29.52 | Dry-run does not modify IAVs | Unit | IAVs unchanged after dry-run |
+| T-29.53 | Dry-run does not change pin version | Unit | Pin still points to V_old |
+
+#### Integration — Full Round-Trip
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.54 | Create V1 (attrs A, B, C) → pin → create instances with values → create V2 (attrs A, B renamed to D, new required E, C deleted) → UpdatePin V1→V2 → IAVs remapped for A, D matched by ordinal, C orphaned, E warned | Integration | IAVs remapped, all warnings present |
+| T-29.55 | After migration → GET instance returns attribute values under V2 attribute names | Integration | Values visible under new schema |
+| T-29.56 | Dry-run → GET instance still returns values under V1 attribute names | Integration | No change applied |
+
+#### API — UpdatePin with Migration
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.57 | PUT /pins/:id response includes `migration` object | API | Response has migration.affected_catalogs, affected_instances, attribute_mappings, warnings |
+| T-29.58 | PUT /pins/:id?dry_run=true returns migration report, IAVs unchanged | API | 200 with report, no side effects |
+| T-29.59 | PUT /pins/:id (no dry_run) applies migration and returns report | API | 200 with report, IAVs remapped |
+| T-29.60 | PUT /pins/:id with V_new identical to V_old attributes → no warnings, clean remap | API | Empty warnings array |
+
+#### UI — Migration Warnings
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.61 | Changing pin version on BOM tab shows migration warnings | Browser | Warning dialog/panel visible |
+| T-29.62 | Migration warnings show attribute names and affected instance counts | Browser | Details visible per warning |
+| T-29.63 | Dry-run preview available before applying pin change | Browser | Preview action/button available |
+
+#### Quality Review Fixes (Phase 6)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.66 | UpdatePin wraps remap + pin update + catalog reset in a transaction | Unit | Transaction rollback on pin update failure; RemapAttributeIDs called but rolled back |
+| T-29.67 | Migration fails if any catalog has more than 10,000 instances | Unit | Validation error "exceeds migration limit" |
+
+### Regression
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-29.68 | All existing backend tests pass (no regressions from TD-99, TD-1, TD-10, TD-114) | Unit/Integration/API | 100% pass |
+| T-29.69 | All existing browser tests pass (no regressions from UI changes) | Browser | 100% pass |
+
+---
+
+**Milestone 19 totals: 69 test cases** (T-29.01 through T-29.69)
+- Stage 1 — TD-99: 13 tests (Unit 9, Integration 2, API 1, Browser 1)
+- Stage 1 — TD-1: 12 tests (Unit 7, Integration 2, API 2, Browser 1)
+- Stage 2 — TD-10: 12 tests (Unit 6, Integration 2, API 3, Browser 1)
+- Stage 3 — TD-114: 26 tests (Unit 16, Integration 3, API 4, Browser 3)
+- Quality Review: 2 tests (Unit 2)
+- Regression: 2 tests
+
+---
+
 ## Phase Exit Criteria
 
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All test cases (T-1.01 through T-28.60, T-31.01–T-31.202; T-13.78–13.85 retired; T-31.79 subsumed by T-31.96–102; 29 enum-specific tests retired — see T-31 retired test cases list) pass
+- All test cases (T-1.01 through T-29.65, T-31.01–T-31.202; T-13.78–13.85 retired; T-31.79 subsumed by T-31.96–102; 29 enum-specific tests retired — see T-31 retired test cases list) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

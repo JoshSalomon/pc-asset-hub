@@ -4,7 +4,7 @@
 
 This document defines the testing strategy for the AI Asset Hub. It covers the testing layers, frameworks, coverage requirements, and the mapping of feature areas to test types.
 
----
+---	
 
 ## 2. Testing Layers
 
@@ -251,6 +251,11 @@ Each feature area is tested at the appropriate layers:
 | TypeDefinitionService.GetVersion optimization (TD-100) | X | X | | | |
 | Remove legacy enum migration code (TD-101) | X | | | | |
 | Seed test robustness (TD-103) | X | | | | |
+| Containment cardinality enforcement in validation (TD-99) | X | X | X | X | |
+| Type definition deletion safety (TD-1) | X | X | X | X | |
+| Pin changes reset catalog validation status (TD-10) | X | X | X | X | |
+| Instance attribute migration on pin version change (TD-114) | X | X | X | X | |
+| Pin version change dry-run mode (TD-114) | X | | X | X | |
 
 ### Bug Fix & UX Polish Sprint Test Strategy (Phase 1)
 
@@ -290,6 +295,40 @@ This phase fixes 17 TD items across 6 stages. Most changes are UI-only (browser 
 
 - **TD-100 (GetVersion N+1):** Unit test — verify new `GetByVersion(ctx, typeDefID, versionNumber)` repo method returns the correct version directly. Integration test — verify the repo method queries correctly against real SQLite.
 - **TD-101 (Migration removal):** Unit test — verify `InitDB` no longer references legacy tables/columns. Verify AutoMigrate still creates the correct schema from scratch.
+
+### Schema Evolution Safety Test Strategy (Phase 2)
+
+This phase addresses 4 critical TD items across 3 stages. Primarily backend (Go service + repository + API handler) with UI tests for validation display, deletion errors, status updates, and migration warnings.
+
+**Stage 1: Independent validation & safety improvements**
+
+- **TD-99 (Containment cardinality enforcement):**
+  - **Unit tests (service):** Verify containment association with source cardinality min >= 1 (e.g., `1..n`) produces validation error when parent has zero children of that type. Verify parent with enough children passes. Verify containment with `0..n` (default) does not require children. Verify multiple containment associations checked independently per parent.
+  - **Integration tests:** End-to-end validation against real SQLite — set up a catalog with containment association having `1..n` cardinality, create parent with zero children, validate, verify error returned.
+  - **API tests:** Verify `POST /catalogs/{name}/validate` returns containment cardinality errors in the error list.
+  - **UI tests (browser):** Verify containment cardinality validation errors appear in the validation results component.
+
+- **TD-1 (Type definition deletion safety):**
+  - **Unit tests (service):** Verify deletion blocked when type def is used by an attribute in a CV-pinned entity type version. Verify deletion blocked when used by an attribute in the latest entity type version. Verify deletion allowed when only used by old non-pinned, non-latest versions. Verify system type deletion still blocked.
+  - **Integration tests:** End-to-end deletion with real SQLite — create type def, create entity type with attribute using it, pin in CV, verify deletion fails. Remove pin and create newer version not using it, verify deletion now succeeds.
+  - **API tests:** Verify `DELETE /type-definitions/{id}` returns 409 with clear error when in use by a used version. Verify 200 when only used by unused historical versions.
+  - **UI tests (browser):** Verify delete type definition shows error alert when deletion is rejected (409).
+
+**Stage 2: Pin change consequences**
+
+- **TD-10 (Pin changes reset validation status):**
+  - **Unit tests (service):** Verify AddPin resets validation status to `draft` for all catalogs pinned to the CV. Verify UpdatePin resets. Verify RemovePin resets. Verify catalogs pinned to other CVs are unaffected. Verify CV with no dependent catalogs — no error.
+  - **Integration tests:** Set up CV with 2 catalogs (one `valid`, one `invalid`), change a pin, verify both reset to `draft`.
+  - **API tests:** Verify `POST /pins`, `PUT /pins/:id`, `DELETE /pins/:id` — response succeeds and dependent catalogs show `draft` on subsequent `GET /catalogs`.
+  - **UI tests (browser):** Verify after changing pin version on BOM tab, navigating to catalog list shows updated `draft` status badge for affected catalogs.
+
+**Stage 3: Instance attribute migration**
+
+- **TD-114 (Instance attribute migration on pin version change):**
+  - **Unit tests (service):** Verify match-by-name maps old attribute IDs to new. Verify IAVs are remapped to new attribute IDs after migration. Verify deleted attributes produce warnings (orphaned IAVs). Verify type-changed attributes produce warnings. Verify new required attributes produce warnings. Verify renamed attributes (same ordinal, different name) produce warnings. Verify dry-run returns report without applying changes. Verify migration scoped to catalogs pinned to this CV only. Verify instances of other entity types unaffected.
+  - **Integration tests:** Full round-trip — create entity type V1 with attributes, create CV, pin V1, create catalog with instances, add attribute values, create V2 with one renamed + one deleted + one new required attribute, UpdatePin V1→V2, verify IAVs remapped, verify warnings returned.
+  - **API tests:** Verify `PUT /pins/:id` response includes `migration` object with `affected_catalogs`, `affected_instances`, `attribute_mappings`, and `warnings`. Verify `PUT /pins/:id?dry_run=true` returns migration report without applying changes (IAVs unchanged). Verify `PUT /pins/:id` (no dry_run) applies the migration.
+  - **UI tests (browser):** Verify changing pin version on BOM tab shows migration warnings dialog/panel before or after applying. Verify dry-run preview available. Verify warnings display attribute names, types, and affected instance counts.
 
 ### Type System Test Strategy (FF-14)
 

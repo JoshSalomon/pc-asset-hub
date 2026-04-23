@@ -733,7 +733,7 @@ Acceptance Criteria:
 - Type definitions can be assigned as the type of any custom attribute on any entity type.
 - Multiple attributes across different entity types can reference the same type definition.
 - Updating a type definition does not retroactively affect existing catalog versions — they continue to reference the pinned version.
-- A type definition cannot be deleted if it is referenced by any attribute in any entity type version.
+- A type definition cannot be deleted if it is referenced by any attribute in a **used** entity type version. A used version is defined as: (1) any entity type version pinned by a catalog version, or (2) the latest version of any entity type (which belongs to an implicit pre-production catalog). Unused historical versions that are not pinned by any CV and are not the latest version should not block deletion.
 - System type definitions (string, integer, number, boolean, date, url) are immutable and always available.
 - Enum type definitions store an ordered list of values as their constraint. Enum management is unified under type definitions — there is no separate enum system.
 - The type definitions list page supports sorting by column (name, base type) and filtering by base type dropdown.
@@ -867,7 +867,7 @@ As an RW user, I want to validate all entity instances in a catalog against the 
 
 Acceptance Criteria:
 - RW (and above) users can trigger validation. RO users cannot.
-- Validation checks: required attributes have values, attribute values conform to their type definition constraints (string max_length/pattern, integer/number min/max, boolean/date/url format, enum value in list, list max_length/element type, JSON syntax), mandatory associations are satisfied (cardinality `1` or `1..n`), containment hierarchy is consistent, and the Name system attribute is non-empty for all instances.
+- Validation checks: required attributes have values, attribute values conform to their type definition constraints (string max_length/pattern, integer/number min/max, boolean/date/url format, enum value in list, list max_length/element type, JSON syntax), mandatory associations are satisfied (cardinality `1` or `1..n`), containment hierarchy is consistent, containment source cardinality is enforced (if a containment association has source cardinality min >= 1, parent instances must have at least that many contained children of the specified type), and the Name system attribute is non-empty for all instances.
 - Validation returns a list of errors (entity name, field, violation) — not just pass/fail.
 - Validation status is updated to `valid` (no errors) or `invalid` (errors found).
 - Any subsequent data change resets the status to `draft`.
@@ -1557,6 +1557,14 @@ Acceptance Criteria:
   - **production**: blocked entirely, regardless of role. Returns validation error.
 - **UI — BOM tab**: The version column is an inline dropdown showing all available versions of the entity type. Selecting a different version calls the change pin endpoint. Pin controls (Add Pin, Remove, version dropdown) are hidden when the CV stage does not permit editing for the current role.
 - **UI — Add Pin modal**: The entity type dropdown filters out entity types that are already pinned in this CV. Only unpinned entity types are shown.
+- **Validation status reset**: After any pin change (add, remove, or change version), all catalogs pinned to this CV have their validation status reset to `draft`. This ensures catalogs are not left in a stale `valid` state after schema changes.
+- **Instance attribute migration on pin version change**: When a pin version is changed (e.g., V1 → V2), existing instance attribute values (IAVs) in dependent catalogs reference the old version's attribute IDs (which have new UUIDs after copy-on-write). The system automatically migrates IAVs:
+  - Match attributes by name between old and new entity type versions.
+  - Remap IAV `attribute_id` from old to new for matching attributes.
+  - Generate warnings for: attributes deleted in the new version (IAVs orphaned), attributes whose type definition changed (existing values may be invalid), new required attributes with no existing values, attributes that appear renamed (same ordinal position, different name — matched by ordinal with a rename warning).
+  - The migration runs automatically on pin version change. Warnings are returned in the API response.
+  - **Dry-run mode**: `PUT /pins/:pin-id?dry_run=true` returns the migration report (attribute mappings, warnings, affected instance counts) without applying any changes. This allows the user to preview the impact before committing.
+  - **UI — Migration preview dialog**: When a user changes a pin version on the BOM tab, the UI calls dry-run first. If the migration affects instances or has warnings, a preview dialog shows the per-catalog breakdown (catalog name + instance count), attribute mapping table (remap/orphaned/added), and warning alerts (deleted, type changed, new required, renamed) before applying. The user can confirm ("Apply Change") or cancel. If no instances are affected, the change is applied directly without showing the dialog.
 
 ---
 
