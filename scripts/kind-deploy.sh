@@ -3,7 +3,11 @@
 # Deploy AI Asset Hub to a Kubernetes cluster.
 #
 # Usage:
-#   ./scripts/kind-deploy.sh [command] [kube-cmd]
+#   ./scripts/kind-deploy.sh [--source-dir DIR] [command] [kube-cmd]
+#
+# Options:
+#   --source-dir DIR  Use DIR as Docker build context instead of this repo.
+#                     Must contain go.mod and ui/. Useful for worktree builds.
 #
 # Commands:
 #   deploy   - build images, create cluster, deploy everything (full setup)
@@ -20,8 +24,8 @@
 #
 # Examples:
 #   ./scripts/kind-deploy.sh deploy "kubectl --context kind-assethub"
-#   ./scripts/kind-deploy.sh rebuild "oc"
 #   ./scripts/kind-deploy.sh rebuild "kubectl --context kind-assethub"
+#   ./scripts/kind-deploy.sh --source-dir .worktrees/my-branch rebuild "kubectl --context kind-assethub"
 #   ./scripts/kind-deploy.sh teardown
 #
 set -euo pipefail
@@ -29,6 +33,24 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CLUSTER_NAME="assethub"
+
+# Source directory for Docker build context — defaults to PROJECT_ROOT.
+# Override with --source-dir to build from a worktree.
+SOURCE_DIR="$PROJECT_ROOT"
+
+# Parse --source-dir option (must come before positional args)
+while [[ "${1:-}" == --* ]]; do
+    case "$1" in
+        --source-dir)
+            shift
+            candidate="$(realpath -e "$1" 2>/dev/null)" || { echo "ERROR: --source-dir: directory does not exist: $1" >&2; exit 1; }
+            [[ -f "$candidate/go.mod" && -d "$candidate/ui" ]] || { echo "ERROR: --source-dir: not a valid project root: $candidate" >&2; exit 1; }
+            SOURCE_DIR="$candidate"
+            shift
+            ;;
+        *) echo "ERROR: unknown option: $1" >&2; exit 1 ;;
+    esac
+done
 
 # Kubernetes CLI command — second positional argument, defaults to "oc"
 KUBE_CMD="${2:-oc}"
@@ -54,6 +76,9 @@ fi
 
 echo "==> Using container engine: $ENGINE"
 echo "==> Using kube command: $KUBE_CMD"
+if [ "$SOURCE_DIR" != "$PROJECT_ROOT" ]; then
+    echo "==> Using source dir: $SOURCE_DIR (worktree)"
+fi
 
 log() { echo "==> $*"; }
 err() { echo "ERROR: $*" >&2; exit 1; }
@@ -63,16 +88,16 @@ err() { echo "ERROR: $*" >&2; exit 1; }
 # ──────────────────────────────────────────────
 build_images() {
     log "Building API server image..."
-    $ENGINE build -f "$PROJECT_ROOT/build/api-server/Dockerfile" \
-        -t assethub/api-server:latest "$PROJECT_ROOT"
+    $ENGINE build -f "$SOURCE_DIR/build/api-server/Dockerfile" \
+        -t assethub/api-server:latest "$SOURCE_DIR"
 
     log "Building UI image..."
-    $ENGINE build -f "$PROJECT_ROOT/build/ui/Dockerfile" \
-        -t assethub/ui:latest "$PROJECT_ROOT"
+    $ENGINE build -f "$SOURCE_DIR/build/ui/Dockerfile" \
+        -t assethub/ui:latest "$SOURCE_DIR"
 
     log "Building operator image..."
-    $ENGINE build -f "$PROJECT_ROOT/build/operator/Dockerfile" \
-        -t assethub/operator:latest "$PROJECT_ROOT"
+    $ENGINE build -f "$SOURCE_DIR/build/operator/Dockerfile" \
+        -t assethub/operator:latest "$SOURCE_DIR"
 
     log "All images built successfully."
 }
@@ -283,7 +308,10 @@ case "${1:-deploy}" in
         teardown
         ;;
     *)
-        echo "Usage: $0 {deploy|up|rebuild|teardown} [kube-cmd]"
+        echo "Usage: $0 [--source-dir DIR] {deploy|up|rebuild|teardown} [kube-cmd]"
+        echo ""
+        echo "  Options:"
+        echo "    --source-dir DIR  Build from DIR instead of this repo (e.g., a worktree)"
         echo ""
         echo "  Commands:"
         echo "    deploy   - build images, create cluster, deploy everything (full setup)"
@@ -295,8 +323,7 @@ case "${1:-deploy}" in
         echo "    The kubectl/oc command to use for cluster operations."
         echo "    Examples:"
         echo "      $0 deploy \"kubectl --context kind-assethub\""
-        echo "      $0 rebuild \"oc\""
-        echo "      $0 rebuild \"kubectl --context kind-assethub\""
+        echo "      $0 --source-dir .worktrees/my-branch rebuild \"kubectl --context kind-assethub\""
         exit 1
         ;;
 esac

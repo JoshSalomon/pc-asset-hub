@@ -67,6 +67,16 @@ if [ "$EXISTING_COUNT" -gt 0 ]; then
   echo "  Found existing catalog: $EXISTING_CATALOG (will use for read-only tests)"
 fi
 
+# Look up system type definition version IDs for attribute creation
+TD_RESP=$(api GET "$META_API/type-definitions" Admin)
+TD_BODY=$(get_body "$TD_RESP")
+STRING_TDV=$(echo "$TD_BODY" | jq -r '.items[] | select(.name == "string") | .latest_version_id')
+if [ -z "$STRING_TDV" ] || [ "$STRING_TDV" = "null" ]; then
+  echo "  ERROR: Could not find string type definition version ID"
+  exit 1
+fi
+echo "  String TDV: $STRING_TDV"
+
 # Create our own test entity types and catalog for mutation tests
 echo "Creating test entity types..."
 ET_RESP=$(api POST "$META_API/entity-types" Admin "{\"name\":\"vt-server-${TIMESTAMP}\"}")
@@ -80,13 +90,25 @@ else
   exit 1
 fi
 
-# Add required attribute
+# Add required attribute (using type_definition_version_id)
 ATTR_RESP=$(api POST "$META_API/entity-types/$SERVER_ET_ID/attributes" Admin \
-  '{"name":"hostname","description":"Server hostname","type":"string","required":true}')
+  "{\"name\":\"hostname\",\"description\":\"Server hostname\",\"type_definition_version_id\":\"$STRING_TDV\",\"required\":true}")
+ATTR_STATUS=$(get_status "$ATTR_RESP")
+if [ "$ATTR_STATUS" != "201" ]; then
+  echo "  ERROR: Could not create required attribute hostname ($ATTR_STATUS)"
+  echo "  $(get_body "$ATTR_RESP")"
+  exit 1
+fi
 
 # Add optional attribute
-api POST "$META_API/entity-types/$SERVER_ET_ID/attributes" Admin \
-  '{"name":"notes","description":"Notes","type":"string","required":false}' > /dev/null 2>&1 || true
+ATTR2_RESP=$(api POST "$META_API/entity-types/$SERVER_ET_ID/attributes" Admin \
+  "{\"name\":\"notes\",\"description\":\"Notes\",\"type_definition_version_id\":\"$STRING_TDV\",\"required\":false}")
+ATTR2_STATUS=$(get_status "$ATTR2_RESP")
+if [ "$ATTR2_STATUS" != "201" ]; then
+  echo "  ERROR: Could not create optional attribute notes ($ATTR2_STATUS)"
+  echo "  $(get_body "$ATTR2_RESP")"
+  exit 1
+fi
 
 # Get latest version
 SERVER_VERSIONS_RESP=$(api GET "$META_API/entity-types/$SERVER_ET_ID/versions" Admin)

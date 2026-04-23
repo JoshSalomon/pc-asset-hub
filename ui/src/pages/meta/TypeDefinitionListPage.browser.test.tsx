@@ -537,6 +537,21 @@ test('delete failure shows error', async () => {
   await expect.element(dialog.getByText('Type in use')).toBeVisible()
 })
 
+test('delete failure disables Delete button and hides confirmation text', async () => {
+  ;(api.typeDefinitions.delete as Mock).mockRejectedValue(new Error('Type in use'))
+  ;(api.typeDefinitions.list as Mock).mockResolvedValue({ items: [mockEnumType], total: 1 })
+  renderPage()
+  await expect.element(page.getByRole('button', { name: 'StatusEnum' })).toBeVisible()
+  await page.getByRole('button', { name: 'Delete' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'Delete' }).click()
+  await expect.element(dialog.getByText('Type in use')).toBeVisible()
+  // Delete button should be disabled after error
+  await expect.element(dialog.getByRole('button', { name: 'Delete' })).toBeDisabled()
+  // "Are you sure" text should not be visible
+  await expect.element(dialog.getByText('Are you sure')).not.toBeInTheDocument()
+})
+
 test('delete failure shows generic error for non-Error', async () => {
   ;(api.typeDefinitions.delete as Mock).mockRejectedValue('broke')
   ;(api.typeDefinitions.list as Mock).mockResolvedValue({ items: [mockEnumType], total: 1 })

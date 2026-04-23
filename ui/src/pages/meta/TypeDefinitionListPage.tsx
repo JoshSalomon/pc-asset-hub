@@ -487,10 +487,10 @@ export default function TypeDefinitionListPage({ role }: Props) {
         <ModalHeader title="Confirm Deletion" />
         <ModalBody>
           {deleteError && <Alert variant="danger" title={deleteError} isInline style={{ marginBottom: '1rem' }} />}
-          Are you sure you want to delete type definition <strong>{deleteTarget?.name}</strong>?
+          {!deleteError && <>Are you sure you want to delete type definition <strong>{deleteTarget?.name}</strong>?</>}
         </ModalBody>
         <ModalFooter>
-          <Button variant="danger" onClick={handleDelete}>Delete</Button>
+          <Button variant="danger" onClick={handleDelete} isDisabled={!!deleteError}>Delete</Button>
           <Button variant="link" onClick={() => { setDeleteTarget(null); setDeleteError(null) }}>Cancel</Button>
         </ModalFooter>
       </Modal>
