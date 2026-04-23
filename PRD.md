@@ -1602,6 +1602,48 @@ Acceptance Criteria:
 
 ---
 
+**US-55: Export a catalog to a file**
+As an Admin, I want to export a catalog (schema + data) to a JSON file, so that I can transfer it to another Asset Hub deployment, create backups, or share configurations.
+
+**Why**: Catalogs contain the complete asset configuration — entity types, type definitions, instances, and their relationships. Without export, the only way to move a configuration between environments is to recreate it manually, which is error-prone and impractical for complex schemas.
+
+Acceptance Criteria:
+- `GET /api/data/v1/catalogs/{name}/export` returns a JSON file containing: catalog metadata, catalog version (label, description), pinned type definitions (custom only — system types referenced by name), pinned entity types (attributes, associations), and all instances (with attribute values, containment hierarchy, association links).
+- The file format uses names (not IDs) for all cross-references. System type definitions are referenced by name and resolved on the target system during import.
+- Instances are nested under their containment association names (e.g., `"tools": [...]`), not in a flat list. This preserves the namespace scoping of contained instance names.
+- Attribute values for list and json types are exported as parsed JSON (not escaped strings). The importer re-serializes based on the type definition's base type.
+- Association links to contained instances use `target_path` (parent ancestry array) to disambiguate. `target_path` is omitted for root-level targets.
+- Optional `entities` query parameter allows exporting a subset of pinned entity types. Dependencies (containment targets, reference targets) are auto-included but can be unchecked.
+- If the user excludes entity types that are link targets, a warning is shown: links to excluded types will be dropped. User can go back or continue.
+- Catalogs in any validation status (`valid`, `invalid`, `draft`) can be exported. A warning dialog appears for non-valid catalogs.
+- The response sets `Content-Disposition: attachment` to trigger the browser's Save As dialog with default filename `{catalog-name}-export.json`.
+- `source_system` field in the export is free-form text, user-editable, defaulting to the AssetHub CR name. Informational only.
+- `format_version: "1.0"` is included for forward compatibility.
+- Access: Admin+ (provisional — may change, see US-56 note).
+- The export file includes only the pinned version of each entity type and type definition — no version history.
+
+---
+
+**US-56: Import a catalog from a file**
+As an Admin, I want to import a catalog from a previously exported JSON file into this Asset Hub deployment, so that I can replicate configurations across environments or restore from backup.
+
+**Why**: The counterpart to export — without import, export files are read-only archives. Import enables the portability, backup/restore, and environment cloning workflows that make the export feature useful.
+
+Acceptance Criteria:
+- `POST /api/data/v1/catalogs/import` accepts a JSON body containing the export data plus optional overrides: `catalog_name`, `catalog_version_label`, `rename_map` (per-entity renames for entity types and type definitions), and `reuse_existing` (list of entity type names to reuse instead of creating).
+- **Dry-run mode**: `?dry_run=true` parses the file, applies rename_map, and returns a collision report listing each schema entity as `new`, `identical`, or `conflict` — without creating anything. Includes a summary with counts.
+- **Mass rename**: A prefix and/or suffix can be applied to all entity type and type definition names before collision detection. This applies to all imported entities, not just conflicting ones (useful for backup imports).
+- **Collision resolution**: Entity types and type definitions with the same name on the target system are classified as `identical` (structurally equivalent, field-by-field comparison per base type) or `conflict` (different structure). Identical entities at V1 are auto-suggested as "reuse" (likely re-import after partial failure). Identical at V>1 let the user choose "reuse existing" or "create new". Conflicts must be renamed.
+- **Reuse existing**: When reusing an entity type, the CV pins the latest version of the existing entity type on the target system. Associated type definitions are also reused. Instances are always created fresh (never reused — they are namespaced by catalog).
+- **Two-transaction import**: Transaction 1 creates schema entities (type definitions V1, entity types V1 with attributes and associations, CV with pins). Transaction 2 creates operational data (catalog, instances, IAVs, association links). If T2 fails, schema entities from T1 remain — re-import detects them as identical+V1 and auto-suggests reuse.
+- Imported pins are always V1. CV lifecycle stage is always `development`. Catalog validation status is always `draft`.
+- File format version is validated — unsupported versions are rejected.
+- Reference integrity is validated before import — attributes referencing unknown type definitions, associations referencing unknown entity types, and links referencing unknown instances produce clear errors.
+- Access: Admin+ (provisional). The PRD notes that import and export roles may diverge in the future (e.g., different roles for internal vs external export), to be refined when use cases are better understood.
+- The file format is JSON for Phase 1. YAML format support may be added in a future phase — this is documented as a possible enhancement but not implemented now.
+
+---
+
 ## 10. Open Design Decisions
 
 The following items are acknowledged but not yet fully specified:
@@ -1822,7 +1864,7 @@ Import catalog data (entity instances, attribute values, association links, cont
 
 **Scope:** Details on file format, API mapping configuration, conflict resolution (merge vs. overwrite), and validation behavior will be discussed and specified in a future design session.
 
-### FF-12: Catalog Export/Import (System Portability)
+### FF-12: Catalog Export/Import (System Portability) — IMPLEMENTING (see US-55, US-56)
 
 Export a complete catalog — including its catalog version, pinned entity type definitions (with attributes, associations, enums), and all operational data (instances, attribute values, containment hierarchy, association links) — to a portable file. Import that file into a different Asset Hub deployment to recreate the full catalog.
 

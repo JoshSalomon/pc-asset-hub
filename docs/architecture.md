@@ -169,6 +169,7 @@ Manages catalogs and entity instances. Used by all roles. Scoped to a specific c
 - Containment traversal via sub-resource URLs
 - Forward and reverse reference queries
 - Filtering, sorting, pagination
+- Catalog export/import (JSON file, Admin+)
 
 ### URL Structure
 
@@ -204,6 +205,8 @@ Operational API (catalog-name is DNS-label: [a-z0-9-], max 63 chars):
   /api/data/v1/catalogs/{catalog-name}/{entity-type}/{instance-id}/references
   /api/data/v1/catalogs/{catalog-name}/{entity-type}/{instance-id}/references/{ref-type}
   /api/data/v1/catalogs/{catalog-name}/validate
+  /api/data/v1/catalogs/{catalog-name}/export
+  /api/data/v1/catalogs/import
 ```
 
 ### Catalog Scoping
