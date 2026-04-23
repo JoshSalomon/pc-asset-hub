@@ -233,7 +233,7 @@ type MigrationReport struct {
 type AttributeMapping struct {
 	OldName string
 	NewName string
-	Action  string // "remap" or "orphaned"
+	Action  string // "remap", "orphaned", or "added"
 }
 
 type MigrationWarning struct {
