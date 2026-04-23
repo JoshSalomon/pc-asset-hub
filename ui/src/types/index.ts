@@ -234,3 +234,35 @@ export interface ListResponse<T> {
   items: T[]
   total: number
 }
+
+export interface AttributeMapping {
+  old_name: string
+  new_name?: string
+  action: 'remap' | 'orphaned' | 'added'
+}
+
+export interface MigrationWarning {
+  type: 'deleted_attribute' | 'type_changed' | 'new_required' | 'renamed'
+  attribute: string
+  affected_instances: number
+  old_type?: string
+  new_type?: string
+}
+
+export interface CatalogImpact {
+  catalog_name: string
+  instance_count: number
+}
+
+export interface MigrationReport {
+  affected_catalogs: number
+  affected_instances: number
+  catalog_breakdown?: CatalogImpact[]
+  attribute_mappings: AttributeMapping[]
+  warnings: MigrationWarning[]
+}
+
+export interface UpdatePinResponse {
+  pin: CatalogVersionPin
+  migration?: MigrationReport
+}

@@ -277,6 +277,9 @@ func TestEntityInstance_ErrorBranches(t *testing.T) {
 
 	err = instRepo.DeleteByCatalogID(ctx, "x")
 	assert.Error(t, err)
+
+	_, err = iavRepo.RemapAttributeIDs(ctx, []string{"i1"}, map[string]string{"old": "new"})
+	assert.Error(t, err)
 }
 
 func TestCatalogVersionTypePin_ErrorBranches(t *testing.T) {

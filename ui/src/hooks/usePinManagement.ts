@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import { api } from '../api/client'
-import type { CatalogVersionPin, EntityType, EntityTypeVersion } from '../types'
+import type { CatalogVersionPin, EntityType, EntityTypeVersion, MigrationReport } from '../types'
 
 interface UsePinManagementOptions {
   catalogVersionId: string | undefined
@@ -103,16 +103,55 @@ export function usePinManagement({ catalogVersionId, loadPins, onError }: UsePin
     setPinVersionSelectOpen(null)
   }, [])
 
+  // Migration preview state
+  const [migrationPreview, setMigrationPreview] = useState<MigrationReport | null>(null)
+  const [migrationPendingPin, setMigrationPendingPin] = useState<CatalogVersionPin | null>(null)
+  const [migrationPendingEtvId, setMigrationPendingEtvId] = useState('')
+
   const handleUpdatePinVersion = useCallback(async (pin: CatalogVersionPin, newEtvId: string) => {
     if (!catalogVersionId) return
     setPinVersionSelectOpen(null)
     try {
-      await api.catalogVersions.updatePin(catalogVersionId, pin.pin_id, newEtvId)
-      loadPins()
+      // Dry-run first to preview migration impact
+      const result = await api.catalogVersions.updatePinDryRun(catalogVersionId, pin.pin_id, newEtvId)
+      const hasStructuralChanges = result.migration &&
+        result.migration.affected_instances > 0 && (
+        result.migration.warnings.length > 0 ||
+        result.migration.attribute_mappings.some(m => m.action !== 'remap')
+      )
+      if (hasStructuralChanges) {
+        // Show preview modal
+        setMigrationPreview(result.migration!)
+        setMigrationPendingPin(pin)
+        setMigrationPendingEtvId(newEtvId)
+      } else {
+        // No migration impact — apply directly
+        await api.catalogVersions.updatePin(catalogVersionId, pin.pin_id, newEtvId)
+        loadPins()
+      }
     } catch (e) {
       onError(e instanceof Error ? e.message : 'Failed to update pin version')
     }
   }, [catalogVersionId, loadPins, onError])
+
+  const handleConfirmMigration = useCallback(async () => {
+    if (!catalogVersionId || !migrationPendingPin) return
+    try {
+      await api.catalogVersions.updatePin(catalogVersionId, migrationPendingPin.pin_id, migrationPendingEtvId)
+      setMigrationPreview(null)
+      setMigrationPendingPin(null)
+      setMigrationPendingEtvId('')
+      loadPins()
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed to apply pin version change')
+    }
+  }, [catalogVersionId, migrationPendingPin, migrationPendingEtvId, loadPins, onError])
+
+  const handleCancelMigration = useCallback(() => {
+    setMigrationPreview(null)
+    setMigrationPendingPin(null)
+    setMigrationPendingEtvId('')
+  }, [])
 
   return {
     // Add pin modal
@@ -137,5 +176,11 @@ export function usePinManagement({ catalogVersionId, loadPins, onError }: UsePin
 
     // Remove pin
     handleRemovePin,
+
+    // Migration preview
+    migrationPreview,
+    migrationPendingPin,
+    handleConfirmMigration,
+    handleCancelMigration,
   }
 }

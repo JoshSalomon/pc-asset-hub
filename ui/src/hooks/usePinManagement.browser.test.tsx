@@ -10,6 +10,7 @@ vi.mock('../api/client', () => ({
     catalogVersions: {
       addPin: vi.fn(),
       updatePin: vi.fn(),
+      updatePinDryRun: vi.fn(),
       removePin: vi.fn(),
     },
     versions: { list: vi.fn() },
@@ -42,6 +43,7 @@ function TestComponent({ cvId, loadPins, onError }: {
       <span data-testid="entityTypeVersions">{pm.entityTypeVersions.map(v => `V${v.version}`).join(',')}</span>
       <span data-testid="pinVersionSelectOpen">{pm.pinVersionSelectOpen || ''}</span>
       <span data-testid="pinVersionOptions">{JSON.stringify(pm.pinVersionOptions)}</span>
+      <span data-testid="migrationPreview">{pm.migrationPreview ? 'showing' : 'none'}</span>
 
       <button onClick={pm.handleOpenAddPin}>OpenAddPin</button>
       <button onClick={pm.handleCloseAddPin}>CloseAddPin</button>
@@ -73,6 +75,7 @@ beforeEach(() => {
   ] })
   ;(api.catalogVersions.addPin as Mock).mockResolvedValue({})
   ;(api.catalogVersions.updatePin as Mock).mockResolvedValue({})
+  ;(api.catalogVersions.updatePinDryRun as Mock).mockResolvedValue({ pin: {}, migration: null })
   ;(api.catalogVersions.removePin as Mock).mockResolvedValue(undefined)
 })
 
@@ -201,7 +204,7 @@ test('handleUpdatePinVersion does nothing without cvId', async () => {
 })
 
 test('handleUpdatePinVersion error calls onError', async () => {
-  ;(api.catalogVersions.updatePin as Mock).mockRejectedValue(new Error('400: mismatch'))
+  ;(api.catalogVersions.updatePinDryRun as Mock).mockRejectedValue(new Error('400: mismatch'))
   render(<TestComponent cvId="cv1" loadPins={loadPins} onError={onError} />)
   await page.getByRole('button', { name: 'UpdateVersion' }).click()
   await vi.waitFor(() => expect(onError).toHaveBeenCalledWith('400: mismatch'))
@@ -239,4 +242,71 @@ test('loadPinVersionOptions handles error gracefully', async () => {
     const text = page.getByTestId('pinVersionOptions').element().textContent || ''
     expect(text).toContain('"et-1":[]')
   })
+})
+
+// Bug fix: clean remap (all attrs match, no warnings) should NOT show dialog
+test('handleUpdatePinVersion skips dialog for clean remap with no warnings', async () => {
+  ;(api.catalogVersions.updatePinDryRun as Mock).mockResolvedValue({
+    pin: {},
+    migration: {
+      affected_catalogs: 1,
+      affected_instances: 5,
+      attribute_mappings: [
+        { old_name: 'hostname', new_name: 'hostname', action: 'remap' },
+        { old_name: 'port', new_name: 'port', action: 'remap' },
+      ],
+      warnings: [],
+    },
+  })
+  render(<TestComponent cvId="cv1" loadPins={loadPins} onError={onError} />)
+  await page.getByRole('button', { name: 'UpdateVersion' }).click()
+  // Should NOT show migration preview — all clean remaps
+  await expect.element(page.getByTestId('migrationPreview')).toHaveTextContent('none')
+  // Should apply directly
+  await vi.waitFor(() => expect(api.catalogVersions.updatePin).toHaveBeenCalledWith('cv1', 'pin-1', 'etv-new'))
+})
+
+// Dialog SHOULD show when there are non-remap actions
+test('handleUpdatePinVersion shows dialog when orphaned attr exists', async () => {
+  ;(api.catalogVersions.updatePinDryRun as Mock).mockResolvedValue({
+    pin: {},
+    migration: {
+      affected_catalogs: 1,
+      affected_instances: 5,
+      attribute_mappings: [
+        { old_name: 'hostname', new_name: 'hostname', action: 'remap' },
+        { old_name: 'old_field', action: 'orphaned' },
+      ],
+      warnings: [{ type: 'deleted_attribute', attribute: 'old_field', affected_instances: 5 }],
+    },
+  })
+  render(<TestComponent cvId="cv1" loadPins={loadPins} onError={onError} />)
+  await page.getByRole('button', { name: 'UpdateVersion' }).click()
+  // Should show migration preview — has orphaned attr
+  await expect.element(page.getByTestId('migrationPreview')).toHaveTextContent('showing')
+  // Should NOT have called updatePin (waiting for confirm)
+  expect(api.catalogVersions.updatePin).not.toHaveBeenCalled()
+})
+
+// Bug fix: dialog should NOT show when warnings exist but 0 instances affected
+test('handleUpdatePinVersion skips dialog when warnings but 0 affected instances', async () => {
+  ;(api.catalogVersions.updatePinDryRun as Mock).mockResolvedValue({
+    pin: {},
+    migration: {
+      affected_catalogs: 0,
+      affected_instances: 0,
+      attribute_mappings: [
+        { old_name: 'dd', new_name: 'd', action: 'remap' },
+      ],
+      warnings: [
+        { type: 'renamed', attribute: 'd', affected_instances: 0, old_type: 'dd', new_type: 'd' },
+      ],
+    },
+  })
+  render(<TestComponent cvId="cv1" loadPins={loadPins} onError={onError} />)
+  await page.getByRole('button', { name: 'UpdateVersion' }).click()
+  // Should NOT show dialog — 0 instances affected, nothing to migrate
+  await expect.element(page.getByTestId('migrationPreview')).toHaveTextContent('none')
+  // Should apply directly
+  await vi.waitFor(() => expect(api.catalogVersions.updatePin).toHaveBeenCalledWith('cv1', 'pin-1', 'etv-new'))
 })

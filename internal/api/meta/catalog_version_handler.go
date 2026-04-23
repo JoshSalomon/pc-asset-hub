@@ -218,16 +218,25 @@ func (h *CatalogVersionHandler) UpdatePin(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
+	dryRun := c.QueryParam("dry_run") == "true"
 	role := mapRole(middleware.GetRoleFromContext(c))
-	pin, err := h.svc.UpdatePin(c.Request().Context(), cvID, pinID, req.EntityTypeVersionID, role)
+	result, err := h.svc.UpdatePin(c.Request().Context(), cvID, pinID, req.EntityTypeVersionID, role, dryRun)
 	if err != nil {
 		return mapError(err)
 	}
 
-	return c.JSON(http.StatusOK, dto.CatalogVersionPinResponse{
-		PinID:               pin.ID,
-		EntityTypeVersionID: pin.EntityTypeVersionID,
-	})
+	resp := dto.UpdatePinResponse{
+		Pin: dto.CatalogVersionPinResponse{
+			PinID:               result.Pin.ID,
+			EntityTypeVersionID: result.Pin.EntityTypeVersionID,
+		},
+	}
+
+	if result.Migration != nil {
+		resp.Migration = dto.NewMigrationReportResponse(result.Migration)
+	}
+
+	return c.JSON(http.StatusOK, resp)
 }
 
 func (h *CatalogVersionHandler) ListTransitions(c echo.Context) error {

@@ -1102,3 +1102,72 @@ func TestTD16_DeleteByInstanceID(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, vals)
 }
+
+// T-29.45b: RemapAttributeIDs updates attribute_id for matched instances
+func TestT29_45b_RemapAttributeIDs(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	inst1ID := id()
+	inst2ID := id()
+	oldAttrID := id()
+	newAttrID := id()
+	unmatchedAttrID := id()
+
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: inst1ID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
+		Name: "inst-1", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: inst2ID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
+		Name: "inst-2", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	// Set IAVs on both instances
+	require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{
+		{ID: id(), InstanceID: inst1ID, InstanceVersion: 1, AttributeID: oldAttrID, ValueString: "hello"},
+		{ID: id(), InstanceID: inst2ID, InstanceVersion: 1, AttributeID: oldAttrID, ValueString: "world"},
+		{ID: id(), InstanceID: inst1ID, InstanceVersion: 1, AttributeID: unmatchedAttrID, ValueString: "keep"},
+	}))
+
+	// Remap old attr → new attr for both instances
+	count, err := tc.iavRepo.RemapAttributeIDs(ctx, []string{inst1ID, inst2ID}, map[string]string{oldAttrID: newAttrID})
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), count)
+
+	// Verify IAVs now reference the new attribute ID
+	vals1, err := tc.iavRepo.GetValuesForVersion(ctx, inst1ID, 1)
+	require.NoError(t, err)
+	require.Len(t, vals1, 2)
+	for _, v := range vals1 {
+		if v.ValueString == "hello" {
+			assert.Equal(t, newAttrID, v.AttributeID)
+		} else if v.ValueString == "keep" {
+			assert.Equal(t, unmatchedAttrID, v.AttributeID, "unmatched attr should not change")
+		}
+	}
+
+	vals2, err := tc.iavRepo.GetValuesForVersion(ctx, inst2ID, 1)
+	require.NoError(t, err)
+	require.Len(t, vals2, 1)
+	assert.Equal(t, newAttrID, vals2[0].AttributeID)
+}
+
+// SetValues with empty slice is a no-op
+func TestSetValues_EmptySlice(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+	err := tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{})
+	require.NoError(t, err)
+}
+
+// RemapAttributeIDs with empty inputs returns 0
+func TestRemapAttributeIDs_EmptyInputs(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	count, err := tc.iavRepo.RemapAttributeIDs(ctx, []string{}, map[string]string{"a": "b"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), count)
+
+	count, err = tc.iavRepo.RemapAttributeIDs(ctx, []string{"inst1"}, map[string]string{})
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), count)
+}

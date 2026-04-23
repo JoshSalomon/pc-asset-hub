@@ -1,6 +1,7 @@
 package meta_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,7 +10,9 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
+	"github.com/project-catalyst/pc-asset-hub/internal/api/dto"
 	apimeta "github.com/project-catalyst/pc-asset-hub/internal/api/meta"
 	apimw "github.com/project-catalyst/pc-asset-hub/internal/api/middleware"
 	domainerrors "github.com/project-catalyst/pc-asset-hub/internal/domain/errors"
@@ -1006,4 +1009,236 @@ func TestCVUpdatePin_BindError(t *testing.T) {
 	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1/pins/pin1",
 		"bad{json", apimw.RoleAdmin)
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// === TD-114: Migration API Handler Tests (T-29.57 through T-29.60) ===
+
+func setupCVServerWithMigration(cvRepo *mocks.MockCatalogVersionRepo, pinRepo *mocks.MockCatalogVersionPinRepo, etvRepo *mocks.MockEntityTypeVersionRepo, catalogRepo *mocks.MockCatalogRepo, attrRepo *mocks.MockAttributeRepo, instRepo *mocks.MockEntityInstanceRepo, iavRepo *mocks.MockInstanceAttributeValueRepo) *echo.Echo {
+	svc := svcmeta.NewCatalogVersionService(cvRepo, pinRepo, nil, nil, "", nil, nil, etvRepo, catalogRepo,
+		svcmeta.WithMigrationRepos(attrRepo, instRepo, iavRepo))
+	handler := apimeta.NewCatalogVersionHandler(svc)
+
+	e := echo.New()
+	g := e.Group("/api/meta/v1")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	requireRW := apimw.RequireRole(apimw.RoleRW)
+	apimeta.RegisterCatalogVersionRoutes(g, handler, requireRW)
+	return e
+}
+
+// T-29.57: PUT /pins/:id response includes migration object
+func TestT29_57_UpdatePinResponseIncludesMigration(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	catalogRepo := new(mocks.MockCatalogRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	iavRepo := new(mocks.MockInstanceAttributeValueRepo)
+	e := setupCVServerWithMigration(cvRepo, pinRepo, etvRepo, catalogRepo, attrRepo, instRepo, iavRepo)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "pin1").Return(&models.CatalogVersionPin{
+		ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1-v1",
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v1").Return(&models.EntityTypeVersion{
+		ID: "etv1-v1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v2").Return(&models.EntityTypeVersion{
+		ID: "etv1-v2", EntityTypeID: "et1", Version: 2,
+	}, nil)
+	pinRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+	attrRepo.On("ListByVersion", mock.Anything, "etv1-v1").Return([]*models.Attribute{
+		{ID: "old-a", Name: "endpoint", Ordinal: 0, TypeDefinitionVersionID: "tdv-str"},
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "etv1-v2").Return([]*models.Attribute{
+		{ID: "new-a", Name: "endpoint", Ordinal: 0, TypeDefinitionVersionID: "tdv-str"},
+	}, nil)
+	catalogRepo.On("ListByCatalogVersionID", mock.Anything, "cv1").Return([]*models.Catalog{
+		{ID: "cat1", CatalogVersionID: "cv1", ValidationStatus: models.ValidationStatusValid},
+	}, nil)
+	catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
+	instRepo.On("List", mock.Anything, "et1", "cat1", mock.Anything).Return([]*models.EntityInstance{
+		{ID: "inst1"},
+	}, 1, nil)
+	iavRepo.On("RemapAttributeIDs", mock.Anything, mock.Anything, mock.Anything).Return(1, nil)
+
+	body := `{"entity_type_version_id":"etv1-v2"}`
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1/pins/pin1", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.UpdatePinResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, "pin1", resp.Pin.PinID)
+	assert.Equal(t, "etv1-v2", resp.Pin.EntityTypeVersionID)
+	require.NotNil(t, resp.Migration)
+	assert.Equal(t, 1, resp.Migration.AffectedCatalogs)
+	assert.Equal(t, 1, resp.Migration.AffectedInstances)
+	require.Len(t, resp.Migration.AttributeMappings, 1)
+	assert.Equal(t, "remap", resp.Migration.AttributeMappings[0].Action)
+}
+
+// T-29.58: PUT /pins/:id?dry_run=true returns migration report, IAVs unchanged
+func TestT29_58_DryRunReturnsMigrationReport(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	catalogRepo := new(mocks.MockCatalogRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	iavRepo := new(mocks.MockInstanceAttributeValueRepo)
+	e := setupCVServerWithMigration(cvRepo, pinRepo, etvRepo, catalogRepo, attrRepo, instRepo, iavRepo)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "pin1").Return(&models.CatalogVersionPin{
+		ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1-v1",
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v1").Return(&models.EntityTypeVersion{
+		ID: "etv1-v1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v2").Return(&models.EntityTypeVersion{
+		ID: "etv1-v2", EntityTypeID: "et1", Version: 2,
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "etv1-v1").Return([]*models.Attribute{
+		{ID: "old-a", Name: "endpoint", Ordinal: 0, TypeDefinitionVersionID: "tdv-str"},
+		{ID: "old-b", Name: "removed", Ordinal: 1, TypeDefinitionVersionID: "tdv-str"},
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "etv1-v2").Return([]*models.Attribute{
+		{ID: "new-a", Name: "endpoint", Ordinal: 0, TypeDefinitionVersionID: "tdv-str"},
+	}, nil)
+	catalogRepo.On("ListByCatalogVersionID", mock.Anything, "cv1").Return([]*models.Catalog{
+		{ID: "cat1", CatalogVersionID: "cv1"},
+	}, nil)
+	instRepo.On("List", mock.Anything, "et1", "cat1", mock.Anything).Return([]*models.EntityInstance{
+		{ID: "inst1"},
+	}, 1, nil)
+
+	body := `{"entity_type_version_id":"etv1-v2"}`
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1/pins/pin1?dry_run=true", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.UpdatePinResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	// Pin should still be at old version (dry-run)
+	assert.Equal(t, "etv1-v1", resp.Pin.EntityTypeVersionID)
+	require.NotNil(t, resp.Migration)
+	assert.Len(t, resp.Migration.Warnings, 1)
+	assert.Equal(t, "deleted_attribute", resp.Migration.Warnings[0].Type)
+
+	// Verify IAVs were NOT modified
+	iavRepo.AssertNotCalled(t, "RemapAttributeIDs", mock.Anything, mock.Anything, mock.Anything)
+	// Verify pin was NOT updated
+	pinRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+}
+
+// T-29.59: PUT /pins/:id (no dry_run) applies migration and returns report
+func TestT29_59_UpdatePinAppliesMigration(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	catalogRepo := new(mocks.MockCatalogRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	iavRepo := new(mocks.MockInstanceAttributeValueRepo)
+	e := setupCVServerWithMigration(cvRepo, pinRepo, etvRepo, catalogRepo, attrRepo, instRepo, iavRepo)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "pin1").Return(&models.CatalogVersionPin{
+		ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1-v1",
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v1").Return(&models.EntityTypeVersion{
+		ID: "etv1-v1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v2").Return(&models.EntityTypeVersion{
+		ID: "etv1-v2", EntityTypeID: "et1", Version: 2,
+	}, nil)
+	pinRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+	attrRepo.On("ListByVersion", mock.Anything, "etv1-v1").Return([]*models.Attribute{
+		{ID: "old-a", Name: "endpoint", Ordinal: 0, TypeDefinitionVersionID: "tdv-str"},
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "etv1-v2").Return([]*models.Attribute{
+		{ID: "new-a", Name: "endpoint", Ordinal: 0, TypeDefinitionVersionID: "tdv-str"},
+	}, nil)
+	catalogRepo.On("ListByCatalogVersionID", mock.Anything, "cv1").Return([]*models.Catalog{
+		{ID: "cat1", CatalogVersionID: "cv1", ValidationStatus: models.ValidationStatusValid},
+	}, nil)
+	catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
+	instRepo.On("List", mock.Anything, "et1", "cat1", mock.Anything).Return([]*models.EntityInstance{
+		{ID: "inst1"},
+	}, 1, nil)
+	iavRepo.On("RemapAttributeIDs", mock.Anything, []string{"inst1"}, map[string]string{"old-a": "new-a"}).Return(1, nil)
+
+	body := `{"entity_type_version_id":"etv1-v2"}`
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1/pins/pin1", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.UpdatePinResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, "etv1-v2", resp.Pin.EntityTypeVersionID)
+	require.NotNil(t, resp.Migration)
+	assert.Equal(t, 1, resp.Migration.AffectedInstances)
+
+	// Verify IAVs were remapped
+	iavRepo.AssertCalled(t, "RemapAttributeIDs", mock.Anything, []string{"inst1"}, map[string]string{"old-a": "new-a"})
+	// Verify pin was updated
+	pinRepo.AssertCalled(t, "Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin"))
+}
+
+// T-29.60: PUT /pins/:id with V_new identical to V_old attributes → no warnings, clean remap
+func TestT29_60_IdenticalVersionNoWarnings(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	catalogRepo := new(mocks.MockCatalogRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	iavRepo := new(mocks.MockInstanceAttributeValueRepo)
+	e := setupCVServerWithMigration(cvRepo, pinRepo, etvRepo, catalogRepo, attrRepo, instRepo, iavRepo)
+
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{
+		ID: "cv1", LifecycleStage: models.LifecycleStageDevelopment,
+	}, nil)
+	pinRepo.On("GetByID", mock.Anything, "pin1").Return(&models.CatalogVersionPin{
+		ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1-v1",
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v1").Return(&models.EntityTypeVersion{
+		ID: "etv1-v1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1-v2").Return(&models.EntityTypeVersion{
+		ID: "etv1-v2", EntityTypeID: "et1", Version: 2,
+	}, nil)
+	pinRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+	attrRepo.On("ListByVersion", mock.Anything, "etv1-v1").Return([]*models.Attribute{
+		{ID: "old-a", Name: "endpoint", Ordinal: 0, TypeDefinitionVersionID: "tdv-str"},
+		{ID: "old-b", Name: "port", Ordinal: 1, TypeDefinitionVersionID: "tdv-int"},
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "etv1-v2").Return([]*models.Attribute{
+		{ID: "new-a", Name: "endpoint", Ordinal: 0, TypeDefinitionVersionID: "tdv-str"},
+		{ID: "new-b", Name: "port", Ordinal: 1, TypeDefinitionVersionID: "tdv-int"},
+	}, nil)
+	catalogRepo.On("ListByCatalogVersionID", mock.Anything, "cv1").Return([]*models.Catalog{
+		{ID: "cat1", CatalogVersionID: "cv1", ValidationStatus: models.ValidationStatusValid},
+	}, nil)
+	catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
+	instRepo.On("List", mock.Anything, "et1", "cat1", mock.Anything).Return([]*models.EntityInstance{
+		{ID: "inst1"},
+	}, 1, nil)
+	iavRepo.On("RemapAttributeIDs", mock.Anything, mock.Anything, mock.Anything).Return(2, nil)
+
+	body := `{"entity_type_version_id":"etv1-v2"}`
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1/pins/pin1", body, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dto.UpdatePinResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.NotNil(t, resp.Migration)
+	assert.Empty(t, resp.Migration.Warnings, "no warnings for identical attributes")
+	assert.Len(t, resp.Migration.AttributeMappings, 2)
 }

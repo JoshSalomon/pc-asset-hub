@@ -16,6 +16,7 @@ vi.mock('../../api/client', () => ({
       update: vi.fn(),
       addPin: vi.fn(),
       updatePin: vi.fn(),
+      updatePinDryRun: vi.fn(),
       removePin: vi.fn(),
     },
     versions: {
@@ -87,6 +88,7 @@ beforeEach(() => {
   ;(api.catalogVersions.update as Mock).mockResolvedValue({ ...mockCV, description: 'updated' })
   ;(api.catalogVersions.addPin as Mock).mockResolvedValue({ entity_type_version_id: 'etv-new' })
   ;(api.catalogVersions.updatePin as Mock).mockResolvedValue({ pin_id: 'pin-1', entity_type_version_id: 'etv-v2' })
+  ;(api.catalogVersions.updatePinDryRun as Mock).mockResolvedValue({ pin: {}, migration: null })
   ;(api.catalogVersions.removePin as Mock).mockResolvedValue(undefined)
   ;(api.entityTypes.list as Mock).mockResolvedValue({ items: [
     { id: 'et-1', name: 'Model', created_at: '', updated_at: '' },
@@ -618,7 +620,9 @@ test('T-28.16: Selecting different version calls updatePin', async () => {
   // Should see version options — select V2
   await expect.element(page.getByRole('option', { name: 'V2' })).toBeVisible()
   await page.getByRole('option', { name: 'V2' }).click()
-  expect(api.catalogVersions.updatePin).toHaveBeenCalledWith('cv-1', 'pin-1', 'etv-v2')
+  // Dry-run called first, then actual updatePin (no migration impact → direct apply)
+  expect(api.catalogVersions.updatePinDryRun).toHaveBeenCalledWith('cv-1', 'pin-1', 'etv-v2')
+  await vi.waitFor(() => expect(api.catalogVersions.updatePin).toHaveBeenCalledWith('cv-1', 'pin-1', 'etv-v2'))
 })
 
 // T-28.18: RO user sees plain text, not dropdown
@@ -663,7 +667,7 @@ test('Update pin version error shows alert', async () => {
     { id: 'etv-v1', entity_type_id: 'et-1', version: 1, description: 'V1', created_at: '' },
     { id: 'etv-1', entity_type_id: 'et-1', version: 3, description: 'V3', created_at: '' },
   ], total: 2 })
-  ;(api.catalogVersions.updatePin as Mock).mockRejectedValue(new Error('400: entity type mismatch'))
+  ;(api.catalogVersions.updatePinDryRun as Mock).mockRejectedValue(new Error('400: entity type mismatch'))
   renderDetail('Admin')
   await page.getByRole('tab', { name: 'Bill of Materials' }).click()
   await page.getByRole('button', { name: 'Version for Model' }).click()
