@@ -475,7 +475,7 @@ func TestT15_16_ContainmentExcludedFromAssocCheck(t *testing.T) {
 	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "assoc1", Name: "contains-tool", Type: models.AssociationTypeContainment,
-			TargetEntityTypeID: "et2", TargetCardinality: "1..n"},
+			TargetEntityTypeID: "et2", TargetCardinality: "0..n"},
 	}, nil)
 	// No GetForwardRefs call should be made for containment assocs
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusValid).Return(nil)
@@ -1293,7 +1293,7 @@ func TestValidation_ContainedTypeWithoutParent(t *testing.T) {
 	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	// Server (et1/etv1) has containment association to Tool (et2)
 	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
-		{ID: "assoc1", Name: "contains-tool", Type: models.AssociationTypeContainment, TargetEntityTypeID: "et2"},
+		{ID: "assoc1", Name: "contains-tool", Type: models.AssociationTypeContainment, TargetEntityTypeID: "et2", SourceCardinality: "1"},
 	}, nil)
 	m.assocRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Association{}, nil)
 	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
@@ -1679,4 +1679,280 @@ func TestT31_ConstraintsSkippedForCorrupted(t *testing.T) {
 	for _, e := range result.Errors {
 		assert.NotContains(t, e.Violation, "exceeds maximum length")
 	}
+}
+
+// T-29.01: Containment assoc with source cardinality 1..n — parent has 0 children → validation error
+func TestT29_01_ContainmentCardinalityMinNotMet(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupTwoEntityTypes(ctx)
+
+	// Parent instance with NO children
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	// Containment association with source cardinality 1..n (parent must have >= 1 child)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", Name: "contains-tool", Type: models.AssociationTypeContainment,
+			TargetEntityTypeID: "et2", TargetCardinality: "1..n"},
+	}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusInvalid, result.Status)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, "Server", result.Errors[0].EntityType)
+	assert.Equal(t, "server-1", result.Errors[0].InstanceName)
+	assert.Contains(t, result.Errors[0].Violation, "requires at least 1")
+}
+
+// T-29.02: Containment assoc with source cardinality 1..n — parent has 1 child → passes
+func TestT29_02_ContainmentCardinalityMinMet(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupTwoEntityTypes(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
+		{ID: "inst2", EntityTypeID: "et2", CatalogID: "c1", Name: "tool-1", ParentInstanceID: "inst1"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst2", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", Name: "contains-tool", Type: models.AssociationTypeContainment,
+			TargetEntityTypeID: "et2", TargetCardinality: "1..n"},
+	}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusValid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusValid, result.Status)
+	assert.Empty(t, result.Errors)
+}
+
+// T-29.03: Containment assoc with source cardinality 1 — parent has 0 children → error
+func TestT29_03_ContainmentCardinalityExactOneNotMet(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupTwoEntityTypes(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", Name: "contains-tool", Type: models.AssociationTypeContainment,
+			TargetEntityTypeID: "et2", TargetCardinality: "1"},
+	}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusInvalid, result.Status)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Violation, "requires at least 1")
+}
+
+// T-29.05: Containment assoc with source cardinality 0..n — parent has 0 children → passes
+func TestT29_05_ContainmentCardinalityDefaultNoMin(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupTwoEntityTypes(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", Name: "contains-tool", Type: models.AssociationTypeContainment,
+			TargetEntityTypeID: "et2", TargetCardinality: "0..n"},
+	}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusValid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusValid, result.Status)
+	assert.Empty(t, result.Errors)
+}
+
+// T-29.06: Containment assoc with source cardinality 2..5 — parent has 1 child → error
+func TestT29_06_ContainmentCardinalityCustomMinNotMet(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupTwoEntityTypes(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
+		{ID: "inst2", EntityTypeID: "et2", CatalogID: "c1", Name: "tool-1", ParentInstanceID: "inst1"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst2", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", Name: "contains-tool", Type: models.AssociationTypeContainment,
+			TargetEntityTypeID: "et2", TargetCardinality: "2..5"},
+	}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusInvalid, result.Status)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Violation, "requires at least 2")
+}
+
+// T-29.07: Containment assoc with source cardinality 2..5 — parent has 3 children → passes
+func TestT29_07_ContainmentCardinalityCustomMinMet(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupTwoEntityTypes(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
+		{ID: "inst2", EntityTypeID: "et2", CatalogID: "c1", Name: "tool-1", ParentInstanceID: "inst1"},
+		{ID: "inst3", EntityTypeID: "et2", CatalogID: "c1", Name: "tool-2", ParentInstanceID: "inst1"},
+		{ID: "inst4", EntityTypeID: "et2", CatalogID: "c1", Name: "tool-3", ParentInstanceID: "inst1"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", Name: "contains-tool", Type: models.AssociationTypeContainment,
+			TargetEntityTypeID: "et2", TargetCardinality: "2..5"},
+	}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusValid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusValid, result.Status)
+	assert.Empty(t, result.Errors)
+}
+
+// T-29.04: Containment assoc with source cardinality 1..3 — parent has 5 children → max exceeded error
+func TestT29_04_ContainmentCardinalityMaxExceeded(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupTwoEntityTypes(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
+		{ID: "inst2", EntityTypeID: "et2", CatalogID: "c1", Name: "tool-1", ParentInstanceID: "inst1"},
+		{ID: "inst3", EntityTypeID: "et2", CatalogID: "c1", Name: "tool-2", ParentInstanceID: "inst1"},
+		{ID: "inst4", EntityTypeID: "et2", CatalogID: "c1", Name: "tool-3", ParentInstanceID: "inst1"},
+		{ID: "inst5", EntityTypeID: "et2", CatalogID: "c1", Name: "tool-4", ParentInstanceID: "inst1"},
+		{ID: "inst6", EntityTypeID: "et2", CatalogID: "c1", Name: "tool-5", ParentInstanceID: "inst1"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", Name: "contains-tool", Type: models.AssociationTypeContainment,
+			TargetEntityTypeID: "et2", TargetCardinality: "1..3"},
+	}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusInvalid, result.Status)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0].Violation, "exceeds maximum of 3")
+}
+
+// T-29.09: Entity type with no containment associations — no cardinality check
+func TestT29_09_NoContainmentAssociations(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", Name: "ref-model", Type: models.AssociationTypeDirectional,
+			TargetEntityTypeID: "et2"},
+	}, nil)
+	m.linkRepo.On("GetForwardRefs", ctx, "inst1").Return([]*models.AssociationLink{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusValid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusValid, result.Status)
+	assert.Empty(t, result.Errors)
+}
+
+// Bug fix: Parentless child should be valid when containment source cardinality is 0..1
+func TestContainment_OptionalParent_NoError(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupTwoEntityTypes(ctx)
+
+	// Tool instance with NO parent — should be valid because source cardinality is 0..1
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et2", CatalogID: "c1", Name: "standalone-tool"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	// Containment with source cardinality 0..1 — child can optionally have a parent
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", Name: "contains-tool", Type: models.AssociationTypeContainment,
+			TargetEntityTypeID: "et2", SourceCardinality: "0..1", TargetCardinality: "0..n"},
+	}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusValid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusValid, result.Status)
+	assert.Empty(t, result.Errors)
+}
+
+// Bug fix: Child count should be checked against TargetCardinality, not SourceCardinality
+func TestContainment_TargetCardinality_ChildCount(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupTwoEntityTypes(ctx)
+
+	// Server with 2 tools — source cardinality is "1" (each tool has 1 parent),
+	// target cardinality is "0..n" (server can have any number of tools)
+	// This should PASS — 2 children is within 0..n
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "server-1"},
+		{ID: "inst2", EntityTypeID: "et2", CatalogID: "c1", Name: "tool-1", ParentInstanceID: "inst1"},
+		{ID: "inst3", EntityTypeID: "et2", CatalogID: "c1", Name: "tool-2", ParentInstanceID: "inst1"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc1", Name: "tools", Type: models.AssociationTypeContainment,
+			TargetEntityTypeID: "et2", SourceCardinality: "1", TargetCardinality: "0..n"},
+	}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusValid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusValid, result.Status)
+	assert.Empty(t, result.Errors, "source cardinality 1 means each child has 1 parent, NOT that parent has max 1 child")
 }
