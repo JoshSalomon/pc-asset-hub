@@ -218,7 +218,11 @@ func (h *CatalogVersionHandler) UpdatePin(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
-	dryRun := c.QueryParam("dry_run") == "true"
+	dryRunParam := c.QueryParam("dry_run")
+	if dryRunParam != "" && dryRunParam != "true" && dryRunParam != "false" {
+		return echo.NewHTTPError(http.StatusBadRequest, "dry_run must be 'true' or 'false'")
+	}
+	dryRun := dryRunParam == "true"
 	role := mapRole(middleware.GetRoleFromContext(c))
 	result, err := h.svc.UpdatePin(c.Request().Context(), cvID, pinID, req.EntityTypeVersionID, role, dryRun)
 	if err != nil {

@@ -1242,3 +1242,12 @@ func TestT29_60_IdenticalVersionNoWarnings(t *testing.T) {
 	assert.Empty(t, resp.Migration.Warnings, "no warnings for identical attributes")
 	assert.Len(t, resp.Migration.AttributeMappings, 2)
 }
+
+// Review fix: invalid dry_run parameter should return 400
+func TestCVUpdatePin_InvalidDryRunParam(t *testing.T) {
+	e := setupCVServer()
+	rec := doRequest(e, http.MethodPut, "/api/meta/v1/catalog-versions/cv1/pins/pin1?dry_run=yes",
+		`{"entity_type_version_id":"etv-new"}`, apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "dry_run")
+}
