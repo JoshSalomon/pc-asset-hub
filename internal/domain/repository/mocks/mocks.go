@@ -106,6 +106,13 @@ func (m *MockAttributeRepo) ListByVersion(ctx context.Context, entityTypeVersion
 	}
 	return args.Get(0).([]*models.Attribute), args.Error(1)
 }
+func (m *MockAttributeRepo) ListByTypeDefinitionVersionIDs(ctx context.Context, tdvIDs []string) ([]*models.Attribute, error) {
+	args := m.Called(ctx, tdvIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Attribute), args.Error(1)
+}
 func (m *MockAttributeRepo) Update(ctx context.Context, attr *models.Attribute) error {
 	return m.Called(ctx, attr).Error(0)
 }
@@ -323,6 +330,9 @@ func (m *MockCatalogVersionPinRepo) ListByCatalogVersion(ctx context.Context, ca
 }
 func (m *MockCatalogVersionPinRepo) ListByEntityTypeVersionIDs(ctx context.Context, etvIDs []string) ([]*models.CatalogVersionPin, error) {
 	args := m.Called(ctx, etvIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]*models.CatalogVersionPin), args.Error(1)
 }
 func (m *MockCatalogVersionPinRepo) Delete(ctx context.Context, id string) error {

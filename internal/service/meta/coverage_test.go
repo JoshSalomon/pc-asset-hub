@@ -986,9 +986,10 @@ func TestPromote_TransitionError(t *testing.T) {
 
 // DeleteCatalogVersion: repo delete error (line 250)
 func TestDeleteCV_RepoError(t *testing.T) {
-	svc, cvRepo, _, _, _, _, _ := setupCVSvc(nil)
+	svc, cvRepo, _, _, _, _, catRepo := setupCVSvc(nil)
 
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1", LifecycleStage: "development"}, nil)
+	catRepo.On("ListByCatalogVersionID", mock.Anything, "cv1").Return([]*models.Catalog{}, nil)
 	cvRepo.On("Delete", mock.Anything, "cv1").Return(fmt.Errorf("delete error"))
 
 	err := svc.DeleteCatalogVersion(context.Background(), "cv1", meta.RoleAdmin)
@@ -998,9 +999,10 @@ func TestDeleteCV_RepoError(t *testing.T) {
 // DeleteCatalogVersion: crManager.Delete (line 255)
 func TestDeleteCV_WithCRManager(t *testing.T) {
 	crMgr := &mockCVCRManager{}
-	svc, cvRepo, _, _, _, _, _ := setupCVSvc(crMgr)
+	svc, cvRepo, _, _, _, _, catRepo := setupCVSvc(crMgr)
 
 	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1", LifecycleStage: "testing"}, nil)
+	catRepo.On("ListByCatalogVersionID", mock.Anything, "cv1").Return([]*models.Catalog{}, nil)
 	cvRepo.On("Delete", mock.Anything, "cv1").Return(nil)
 
 	err := svc.DeleteCatalogVersion(context.Background(), "cv1", meta.RoleAdmin)

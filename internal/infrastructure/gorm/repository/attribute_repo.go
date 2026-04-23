@@ -91,6 +91,22 @@ func (r *AttributeGormRepo) Reorder(ctx context.Context, entityTypeVersionID str
 	})
 }
 
+func (r *AttributeGormRepo) ListByTypeDefinitionVersionIDs(ctx context.Context, tdvIDs []string) ([]*models.Attribute, error) {
+	if len(tdvIDs) == 0 {
+		return nil, nil
+	}
+	var records []gormmodels.Attribute
+	result := r.db.WithContext(ctx).Where("type_definition_version_id IN ?", tdvIDs).Find(&records)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	attrs := make([]*models.Attribute, len(records))
+	for i := range records {
+		attrs[i] = records[i].ToModel()
+	}
+	return attrs, nil
+}
+
 func (r *AttributeGormRepo) BulkCopyToVersion(ctx context.Context, fromVersionID string, toVersionID string) error {
 	var records []gormmodels.Attribute
 	if err := r.db.WithContext(ctx).Where("entity_type_version_id = ?", fromVersionID).Find(&records).Error; err != nil {
