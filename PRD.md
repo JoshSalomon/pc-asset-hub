@@ -1864,7 +1864,7 @@ Import catalog data (entity instances, attribute values, association links, cont
 
 **Scope:** Details on file format, API mapping configuration, conflict resolution (merge vs. overwrite), and validation behavior will be discussed and specified in a future design session.
 
-### FF-12: Catalog Export/Import (System Portability) — IMPLEMENTING (see US-55, US-56)
+### FF-12: Catalog Export/Import (System Portability) — IMPLEMENTED (see US-55, US-56)
 
 Export a complete catalog — including its catalog version, pinned entity type definitions (with attributes, associations, enums), and all operational data (instances, attribute values, containment hierarchy, association links) — to a portable file. Import that file into a different Asset Hub deployment to recreate the full catalog.
 
@@ -1969,5 +1969,113 @@ Extensible export system that allows users to attach **exporter plugins** to cat
 - FF-12 (Catalog Export/Import) covers a built-in generic export format for system portability. FF-15 is complementary — it's about producing consumer-specific output formats via a plugin system, not a generic interchange format.
 - Section 4.2 mentions entity type CRDs as future scope. A `custom-crd-exporter` would be one way to implement that feature without building it into the core.
 
-**Decision:** Deferred. Design the plugin interface and registration mechanism when the first concrete export use case is identified.
+**Decision:** Deferred. Design the plugin interface and registration mechanism when the first concrete export use case is identified. Architecture options documented in `docs/p-next-phase-candidates.txt`.
+
+### FF-16: Catalog Views (Instance-Level Access Control)
+
+Read-only projections of a catalog that expose a filtered subset of entity types and instances to specific users or teams. A view is a first-class RBAC-controlled resource — different users can be granted access to different views of the same catalog, seeing only the data relevant to their role. An instance can appear in multiple views.
+
+**Motivation:** A single catalog may contain data managed by different teams or serving different consumers. Today, catalog-level RBAC is all-or-nothing: a user either sees all data in a catalog or none. Views enable fine-grained access without duplicating data across multiple catalogs. Example: a shared `prod-ai-assets` catalog with a "platform-team" view (jira-server, slack-server and their tools) and a "security-team" view (jira-server, guardrail instances, audit policies) — note `jira-server` appears in both views.
+
+**Concept:**
+
+- A **catalog view** is a named, read-only resource that references a catalog and defines filter criteria for what is visible.
+- A view acts as a **read-only virtual catalog** — users access instances through the view the same way they access instances through a catalog, but the view filters what they can see.
+- The same instance can appear in multiple views.
+- RBAC binds to views: users get access to views, not directly to catalog data.
+- Views inherit the catalog's CV, pins, and validation status — they don't have independent schema.
+
+**Instance selection — how to define what's in a view:**
+
+| Mechanism | Example | Pros | Cons |
+|-----------|---------|------|------|
+| **Explicit instance list** | `instances: [jira-server, slack-server]` | Simple, precise | Must update view when adding instances |
+| **Attribute-based filter** | `where team = 'platform'` | Dynamic, auto-includes new matching instances | Requires good attribute conventions |
+| **Tag/label-based** | `labels: {team: platform}` | Clean, K8s-native, multi-valued | Requires adding labels to instances (new concept) |
+| **Entity type filter + instance filter** | Entity types [mcp-server, mcp-tool] where `owner = 'team-a'` | Two-level filtering, flexible | More complex filter definition |
+
+Recommendation: Start with **explicit list + entity type filter** (simple, covers most cases). Add dynamic attribute/label filters later.
+
+**API sketch:**
+
+```
+GET    /api/data/v1/catalogs/{name}/views              — list views
+POST   /api/data/v1/catalogs/{name}/views              — create view (Admin+)
+GET    /api/data/v1/views/{view-name}/instances/...     — access data through view (read-only)
+GET    /api/data/v1/views/{view-name}/tree              — containment tree filtered by view
+```
+
+**Key design considerations:**
+
+- **Read-only first**: Views are read-only projections. Write operations go through the catalog directly. This avoids touching every write path and keeps the initial scope manageable.
+- **Cross-view references**: When an instance in the view links to an instance outside the view, show the link with a "not accessible" indicator rather than hiding it (soft boundary). This avoids confusing users with silently missing relationships.
+- **Containment in views**: If a parent instance is in the view but some children are not, the tree shows only the visible children. The parent shows a count indicator ("3 of 5 children visible").
+- **Export**: A view can be exported like a catalog with entity filter — produces a JSON file with only the view's visible data.
+- **Performance**: Since views are read-only, the filter can be applied at query time as a WHERE clause (instance IDs IN view membership). No write-path changes needed.
+
+**Relationship to existing features:**
+- Builds on US-39 (Catalog RBAC) — views add instance-level granularity to catalog-level access control.
+- Pairs with FF-6 (Operational UI Editing) — the operational UI would show a view selector, and editing is done at the catalog level, not the view level.
+- Reuses EAV filtering infrastructure from the data viewer (if attribute-based filters are implemented).
+- Export (FF-12) entity filter is a precedent — views are essentially persistent, named entity filters with RBAC.
+
+**Decision:** Deferred. Design when multi-team catalog sharing becomes a concrete requirement.
+
+### FF-17: Instance Diagram (Entity-Centric Graph Explorer)
+
+Interactive diagram that visualizes a single instance and its relationships at a user-controlled depth. Unlike the model diagram (which shows entity types and their schema-level associations), the instance diagram shows actual data: real instances, their attribute values, and the live links and containment relationships between them.
+
+**Motivation:** The current model diagram shows the schema — entity types and how they relate. But operators working with catalog data need to see the actual instance graph: "show me the `jira` MCP server, its tools, the guardrails linked to it, and the policies linked to those guardrails." Today this requires clicking through multiple pages and mentally assembling the picture. An instance diagram makes relationships immediately visible and navigable.
+
+**Concept:**
+
+- The diagram starts from a **focus instance** chosen by the user (e.g., from the instance detail page or the data viewer tree).
+- The diagram shows the focus instance at the center with its **attribute values** displayed inside the node.
+- Connected instances are shown at **depth 1** (default): all instances linked via associations (both link and containment) to the focus instance.
+- The user can increase depth (2, 3, ...) to expand further — depth 2 shows the neighbors' neighbors, etc.
+- **Double-click** on any instance in the diagram makes it the new focus instance and regenerates the diagram from that center point.
+- Each node shows: instance name, entity type, and key attribute values (configurable or top N).
+- Each edge shows: association name and direction (link vs containment).
+
+**Containment display — open design question:**
+
+Containment has a parent-child hierarchy. How to represent it in an entity-centric radial diagram:
+
+| Option | From parent (container) | From child (contained) |
+|--------|------------------------|----------------------|
+| **A: Directional edges** | Downward edges to children, labeled with association name | Upward edge to parent, labeled "contained by" |
+| **B: Nested grouping** | Children rendered inside the parent node (visual containment) | Parent shown as surrounding boundary | 
+| **C: Separate edge style** | Containment edges are dashed/colored differently from link edges | Same visual distinction in reverse |
+
+Option A is simplest and consistent with how links work. Option B is visually richer but harder to implement and gets cluttered at depth > 1. Option C is a middle ground — same layout as A but visually distinguishable.
+
+**UI integration:**
+
+- "View Diagram" button on the instance detail panel in the operational data viewer
+- Depth control: slider or dropdown (1-5, default 1)
+- Legend: node colors by entity type, edge styles for link vs containment
+- Toolbar: zoom, fit, reset focus, export as image
+- The diagram reuses the existing diagram infrastructure (EntityTypeDiagram component pattern) but with instance data instead of schema data
+
+**API support:**
+
+```
+GET /api/data/v1/catalogs/{name}/instances/{id}/graph?depth=N
+```
+
+Returns the instance and its connected instances up to depth N, with all attribute values, links, and containment relationships. The backend walks the graph from the focus instance, following associations in both directions.
+
+**Performance considerations:**
+
+- Depth must be capped (max 5) to prevent explosion on highly connected graphs
+- The API should return instance count at each depth level so the UI can warn before expanding ("depth 2 would add 47 instances — continue?")
+- Consider lazy loading: depth 1 by default, expand on demand per node
+
+**Relationship to existing features:**
+- Complements the model diagram (FF existing) which shows schema-level relationships.
+- Builds on the data viewer tree (which shows containment only, no links) by adding link visualization.
+- The containment tree endpoint (`GET /catalogs/{name}/tree`) provides part of the data; this extends it with links and attribute values.
+- Could integrate with FF-16 (Catalog Views) — the instance diagram respects view boundaries.
+
+**Decision:** Deferred. Design alongside operational UI improvements (FF-6).
 
