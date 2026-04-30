@@ -70,6 +70,8 @@ function TestComponent({ entityTypeId, initialTab }: { entityTypeId?: string; in
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Versions load eagerly now — provide default mock
+  ;(api.versions.list as Mock).mockResolvedValue({ items: [], total: 0 })
 })
 
 // T-20.01: Loads entity type on mount

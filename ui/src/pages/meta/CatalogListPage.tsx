@@ -32,6 +32,7 @@ import { api, setAuthRole } from '../../api/client'
 import type { Catalog, CatalogVersion, Role } from '../../types'
 import { statusColor } from '../../utils/statusColor'
 import { DNS_LABEL_RE } from '../../utils/dnsLabel'
+import ImportCatalogModal from '../../components/ImportCatalogModal'
 
 function validateCatalogName(name: string): string | null {
   if (!name) return 'Name is required'
@@ -61,7 +62,11 @@ export default function CatalogListPage({ role }: { role: Role }) {
   const [deleteTarget, setDeleteTarget] = useState<Catalog | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
+  // Import modal
+  const [importOpen, setImportOpen] = useState(false)
+
   const canCreate = role === 'RW' || role === 'Admin' || role === 'SuperAdmin'
+  const isAdmin = role === 'Admin' || role === 'SuperAdmin'
 
   const loadCatalogs = useCallback(async () => {
     setAuthRole(role)
@@ -135,6 +140,11 @@ export default function CatalogListPage({ role }: { role: Role }) {
           {canCreate && (
             <ToolbarItem>
               <Button variant="primary" onClick={() => { setCreateOpen(true); loadCVs() }}>Create Catalog</Button>
+            </ToolbarItem>
+          )}
+          {isAdmin && (
+            <ToolbarItem>
+              <Button variant="secondary" onClick={() => setImportOpen(true)}>Import Catalog</Button>
             </ToolbarItem>
           )}
           <ToolbarItem>
@@ -259,6 +269,16 @@ export default function CatalogListPage({ role }: { role: Role }) {
           <Button variant="link" onClick={() => { setDeleteTarget(null); setDeleteError(null) }}>Cancel</Button>
         </ModalFooter>
       </Modal>
+
+      {/* Import Catalog Modal */}
+      <ImportCatalogModal
+        isOpen={importOpen}
+        onClose={() => { setImportOpen(false); loadCatalogs() }}
+        onSuccess={(catalogName) => {
+          loadCatalogs()
+          navigate(`/schema/catalogs/${catalogName}`)
+        }}
+      />
     </PageSection>
   )
 }

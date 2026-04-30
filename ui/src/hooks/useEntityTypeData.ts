@@ -82,6 +82,7 @@ export function useEntityTypeData(entityTypeId: string | undefined, initialTab?:
   }, [loadEntityType])
 
   useEffect(() => {
+    loadVersions()
     if (activeTab === 'attributes') {
       loadAttributes()
       api.typeDefinitions.list().then((r) => setTypeDefinitions(r.items || [])).catch(() => {})

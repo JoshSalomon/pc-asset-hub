@@ -1324,6 +1324,49 @@ func TestT12_19_CreateAssociationLink(t *testing.T) {
 	assert.Equal(t, "inst2", link.TargetInstanceID)
 }
 
+// T-12.19b: CreateAssociationLink — bidirectional from reverse side
+func TestT12_19b_CreateBidirectionalLinkFromReverseSide(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	// guard entity type (et2) creates link → server (et1)
+	// but "guardrails" association is defined on server's ETV, targeting guard
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusDraft,
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "guard").Return(&models.EntityType{ID: "et2", Name: "guard"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	// Source = guard instance, Target = server instance
+	s.instRepo.On("GetByID", ctx, "guard-inst").Return(&models.EntityInstance{
+		ID: "guard-inst", EntityTypeID: "et2", CatalogID: "cat1", Version: 1,
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "server-inst").Return(&models.EntityInstance{
+		ID: "server-inst", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	// Guard's ETV (etv2) has NO associations
+	s.assocRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Association{}, nil)
+	// Server's ETV (etv1) has the bidirectional "guardrails" targeting guard (et2)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "assoc-gr", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2",
+			Type: models.AssociationTypeBidirectional, Name: "guardrails"},
+	}, nil)
+	s.linkRepo.On("GetForwardRefs", ctx, "guard-inst").Return([]*models.AssociationLink{}, nil)
+	s.linkRepo.On("Create", ctx, mock.AnythingOfType("*models.AssociationLink")).Return(nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	link, err := s.svc.CreateAssociationLink(ctx, "my-catalog", "guard", "guard-inst", "server-inst", "guardrails")
+	require.NoError(t, err, "bidirectional link from reverse side should succeed")
+	assert.Equal(t, "assoc-gr", link.AssociationID)
+	assert.Equal(t, "guard-inst", link.SourceInstanceID)
+	assert.Equal(t, "server-inst", link.TargetInstanceID)
+}
+
 // T-12.20: CreateAssociationLink with nonexistent association name
 func TestT12_20_LinkNonexistentAssociation(t *testing.T) {
 	s := setupInstanceService()

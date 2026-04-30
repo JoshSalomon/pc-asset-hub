@@ -688,6 +688,16 @@ test('T-28.21: catalogVersions.updatePin sends PUT with entity_type_version_id',
   expect(JSON.parse(opts.body)).toEqual({ entity_type_version_id: 'etv-new' })
 })
 
+test('catalogVersions.updatePinDryRun sends PUT with dry_run=true', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ pin: {}, migration: { affected_instances: 5 } }))
+
+  await api.catalogVersions.updatePinDryRun('cv-1', 'pin-1', 'etv-new')
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalog-versions/cv-1/pins/pin-1?dry_run=true')
+  expect(opts.method).toBe('PUT')
+  expect(JSON.parse(opts.body)).toEqual({ entity_type_version_id: 'etv-new' })
+})
+
 // === Phase 2 CRUD: catalogVersions.removePin ===
 
 test('catalogVersions.removePin sends DELETE', async () => {
@@ -730,4 +740,83 @@ test('T-18.46: attributes.list returns system attrs', async () => {
   expect(result.items[0].name).toBe('Name')
   expect(result.items[1].system).toBe(true)
   expect(result.items[2].system).toBeUndefined()
+})
+
+// === Catalog Export/Import ===
+
+test('catalogs.export calls correct URL and returns data', async () => {
+  const exportData = { catalog: { name: 'my-cat' }, entity_types: [] }
+  mockFetch.mockReturnValue(Promise.resolve({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(exportData),
+    text: () => Promise.resolve(JSON.stringify(exportData)),
+  }))
+
+  const result = await api.catalogs.export('my-cat')
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-cat/export')
+  expect(opts.headers).toHaveProperty('Content-Type', 'application/json')
+  expect(result).toEqual(exportData)
+})
+
+test('catalogs.export with query params', async () => {
+  const exportData = { catalog: { name: 'my-cat' }, entity_types: [] }
+  mockFetch.mockReturnValue(Promise.resolve({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(exportData),
+    text: () => Promise.resolve(JSON.stringify(exportData)),
+  }))
+
+  await api.catalogs.export('my-cat', { entities: 'all', source_system: 'test' })
+  const url = mockFetch.mock.calls[0][0]
+  expect(url).toContain('entities=all')
+  expect(url).toContain('source_system=test')
+})
+
+test('catalogs.export includes auth role header', async () => {
+  const exportData = { catalog: { name: 'my-cat' } }
+  mockFetch.mockReturnValue(Promise.resolve({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(exportData),
+    text: () => Promise.resolve(JSON.stringify(exportData)),
+  }))
+
+  setAuthRole('Admin')
+  await api.catalogs.export('my-cat')
+  const headers = mockFetch.mock.calls[0][1].headers
+  expect(headers['X-User-Role']).toBe('Admin')
+})
+
+test('catalogs.export throws on error', async () => {
+  mockFetch.mockReturnValue(Promise.resolve({
+    ok: false,
+    status: 403,
+    text: () => Promise.resolve('forbidden'),
+  }))
+
+  await expect(api.catalogs.export('my-cat')).rejects.toThrow('403: forbidden')
+})
+
+test('catalogs.import sends POST with body', async () => {
+  const importData = { data: { catalog: { name: 'imported' } } }
+  mockFetch.mockReturnValue(jsonResponse({ status: 'ok', catalog_name: 'imported' }))
+
+  await api.catalogs.import(importData)
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/import')
+  expect(url).not.toContain('dry_run')
+  expect(opts.method).toBe('POST')
+  expect(JSON.parse(opts.body)).toEqual(importData)
+})
+
+test('catalogs.import with dry_run sends query param', async () => {
+  const importData = { data: { catalog: { name: 'imported' } } }
+  mockFetch.mockReturnValue(jsonResponse({ status: 'ok', collisions: [] }))
+
+  await api.catalogs.import(importData, { dry_run: true })
+  const url = mockFetch.mock.calls[0][0]
+  expect(url).toContain('?dry_run=true')
 })

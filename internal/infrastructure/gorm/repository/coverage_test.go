@@ -234,6 +234,24 @@ func TestCV_List(t *testing.T) {
 	assert.Len(t, filtered, 1)
 }
 
+func TestCV_ListOrderedAlphabetically(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	repo := repository.NewCatalogVersionGormRepo(db)
+	ctx := context.Background()
+
+	now := time.Now()
+	require.NoError(t, repo.Create(ctx, &models.CatalogVersion{ID: newID(), VersionLabel: "charlie", LifecycleStage: models.LifecycleStageDevelopment, CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.Create(ctx, &models.CatalogVersion{ID: newID(), VersionLabel: "alpha", LifecycleStage: models.LifecycleStageDevelopment, CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)}))
+	require.NoError(t, repo.Create(ctx, &models.CatalogVersion{ID: newID(), VersionLabel: "bravo", LifecycleStage: models.LifecycleStageDevelopment, CreatedAt: now.Add(2 * time.Second), UpdatedAt: now.Add(2 * time.Second)}))
+
+	items, _, err := repo.List(ctx, models.ListParams{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, items, 3)
+	assert.Equal(t, "alpha", items[0].VersionLabel)
+	assert.Equal(t, "bravo", items[1].VersionLabel)
+	assert.Equal(t, "charlie", items[2].VersionLabel)
+}
+
 func TestCVPin_Delete(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	cvRepo := repository.NewCatalogVersionGormRepo(db)

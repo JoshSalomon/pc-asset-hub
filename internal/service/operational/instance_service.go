@@ -711,9 +711,38 @@ func (s *InstanceService) CreateAssociationLink(ctx context.Context, catalogName
 		return nil, err
 	}
 	var assoc *models.Association
+	reverse := false
 	for _, a := range assocs {
 		if a.Name == associationName {
 			assoc = a
+			break
+		}
+	}
+	// For bidirectional associations, check the target's entity type versions too
+	if assoc == nil {
+		pins, err := s.pinRepo.ListByCatalogVersion(ctx, catalog.CatalogVersionID)
+		if err != nil {
+			return nil, err
+		}
+		for _, pin := range pins {
+			etv, err := s.etvRepo.GetByID(ctx, pin.EntityTypeVersionID)
+			if err != nil {
+				continue
+			}
+			if etv.EntityTypeID != targetInst.EntityTypeID {
+				continue
+			}
+			targetAssocs, err := s.assocRepo.ListByVersion(ctx, etv.ID)
+			if err != nil {
+				return nil, err
+			}
+			for _, a := range targetAssocs {
+				if a.Name == associationName && a.Type == models.AssociationTypeBidirectional {
+					assoc = a
+					reverse = true
+					break
+				}
+			}
 			break
 		}
 	}
@@ -721,9 +750,15 @@ func (s *InstanceService) CreateAssociationLink(ctx context.Context, catalogName
 		return nil, domainerrors.NewNotFound("Association", associationName)
 	}
 
-	// Validate target instance's entity type matches association's target
-	if targetInst.EntityTypeID != assoc.TargetEntityTypeID {
-		return nil, domainerrors.NewValidation(fmt.Sprintf("target instance entity type %s does not match association target %s", targetInst.EntityTypeID, assoc.TargetEntityTypeID))
+	// Validate entity type match (forward: target matches assoc target; reverse: source matches assoc target)
+	if reverse {
+		if sourceInst.EntityTypeID != assoc.TargetEntityTypeID {
+			return nil, domainerrors.NewValidation(fmt.Sprintf("source instance entity type %s does not match association target %s", sourceInst.EntityTypeID, assoc.TargetEntityTypeID))
+		}
+	} else {
+		if targetInst.EntityTypeID != assoc.TargetEntityTypeID {
+			return nil, domainerrors.NewValidation(fmt.Sprintf("target instance entity type %s does not match association target %s", targetInst.EntityTypeID, assoc.TargetEntityTypeID))
+		}
 	}
 
 	// Check for duplicate link

@@ -451,6 +451,48 @@
       "phase": 0,
       "difficulty": 0.6,
       "created_at": "2026-04-15T11:20:04.968359+00:00"
+    },
+    "mem_5d443426": {
+      "topic": "vi.stubGlobal('URL') breaks vitest browser coverage collection",
+      "tags": [
+        "vitest",
+        "coverage",
+        "debugging",
+        "playwright",
+        "browser-tests"
+      ],
+      "phase": 0,
+      "difficulty": 0.9,
+      "created_at": "2026-04-26T21:49:37.476420+00:00"
+    },
+    "mem_111e172d": {
+      "topic": "Nemo file manager drag-and-drop broken on Chromium (X11)",
+      "tags": [
+        "nemo",
+        "drag-and-drop",
+        "chromium",
+        "x11",
+        "linux",
+        "import"
+      ],
+      "phase": 0,
+      "difficulty": 0.8,
+      "created_at": "2026-04-28T18:21:21.433895+00:00"
+    },
+    "mem_d73312e5": {
+      "topic": "Import/Export E2E testing failure — 10+ bugs missed due to shallow tests",
+      "tags": [
+        "import-export",
+        "testing",
+        "e2e",
+        "serialization",
+        "round-trip",
+        "TDD",
+        "lessons-learned"
+      ],
+      "phase": 0,
+      "difficulty": 0.9,
+      "created_at": "2026-04-30T14:09:51.037952+00:00"
     }
   }
 }

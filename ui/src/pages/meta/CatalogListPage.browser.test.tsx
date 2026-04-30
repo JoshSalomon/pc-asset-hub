@@ -11,6 +11,7 @@ vi.mock('../../api/client', () => ({
       list: vi.fn(),
       create: vi.fn(),
       delete: vi.fn(),
+      import: vi.fn(),
     },
     catalogVersions: {
       list: vi.fn(),
@@ -239,4 +240,111 @@ test('T-16.64: published badge shown in catalog list', async () => {
   await expect.element(page.getByText('production-app-a')).toBeVisible()
   // staging-app-b has published: true
   await expect.element(page.getByText('published')).toBeVisible()
+})
+
+// === Import Button Tests ===
+
+// Import button visible for Admin
+test('import button visible for Admin', async () => {
+  renderList('Admin')
+  await expect.element(page.getByText('production-app-a')).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Import Catalog' })).toBeVisible()
+})
+
+// Import button hidden for RW (isAdmin check — RW is not Admin)
+test('import button hidden for RW', async () => {
+  renderList('RW')
+  await expect.element(page.getByText('production-app-a')).toBeVisible()
+  expect(page.getByRole('button', { name: 'Import Catalog' }).query()).toBeNull()
+})
+
+// Import button hidden for RO
+test('import button hidden for RO', async () => {
+  renderList('RO')
+  await expect.element(page.getByText('production-app-a')).toBeVisible()
+  expect(page.getByRole('button', { name: 'Import Catalog' }).query()).toBeNull()
+})
+
+// Clicking import button opens the import modal
+test('clicking import button opens import modal', async () => {
+  renderList('Admin')
+  await expect.element(page.getByText('production-app-a')).toBeVisible()
+  await page.getByRole('button', { name: 'Import Catalog' }).click()
+  // Modal should show the file upload form
+  await expect.element(page.getByText('Catalog File (JSON)')).toBeVisible()
+})
+
+// Cover CatalogListPage.tsx:278-279 (onSuccess callback: loadCatalogs + navigate)
+test('import onSuccess reloads catalogs and navigates', async () => {
+  // We need to capture navigation. Use MemoryRouter with a catch-all route.
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs']}>
+      <Routes>
+        <Route path="/schema/catalogs" element={<CatalogListPage role="Admin" />} />
+        <Route path="/schema/catalogs/:name" element={<div data-testid="navigated">Navigated</div>} />
+      </Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByText('production-app-a')).toBeVisible()
+  // Open import modal
+  await page.getByRole('button', { name: 'Import Catalog' }).click()
+  await expect.element(page.getByText('Catalog File (JSON)')).toBeVisible()
+
+  // Upload a JSON file
+  const sampleExport = {
+    catalog: { name: 'imported-cat' },
+    catalog_version: { label: 'v1.0' },
+    entity_types: [],
+    type_definitions: [],
+  }
+  const blob = new Blob([JSON.stringify(sampleExport)], { type: 'application/json' })
+  const file = new File([blob], 'export.json', { type: 'application/json' })
+  await new Promise(resolve => setTimeout(resolve, 50))
+  const input = document.querySelector('input[type="file"]') as HTMLInputElement
+  const dataTransfer = new DataTransfer()
+  dataTransfer.items.add(file)
+  Object.defineProperty(input, 'files', { value: dataTransfer.files, writable: true, configurable: true })
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+  await new Promise(resolve => setTimeout(resolve, 200))
+
+  // Mock dry run (no collisions) and actual import
+  const dryRunResult = {
+    status: 'ok',
+    collisions: [],
+    summary: { total_entities: 0, conflicts: 0, identical: 0, new: 0 },
+  }
+  const importResult = {
+    status: 'ok',
+    catalog_name: 'imported-cat',
+    catalog_id: 'cat-new',
+    types_created: 0,
+    types_reused: 0,
+    instances_created: 0,
+    links_created: 0,
+  }
+  ;(api.catalogs.import as Mock)
+    .mockResolvedValueOnce(dryRunResult)
+    .mockResolvedValueOnce(importResult)
+
+  // Click Analyze
+  await page.getByRole('button', { name: 'Analyze' }).click()
+  // Should go to confirm step
+  await expect.element(page.getByText(/Ready to import/)).toBeVisible()
+  // Click Import
+  await page.getByRole('button', { name: 'Import' }).click()
+  // Wait for done step
+  await expect.element(page.getByText('Import Complete')).toBeVisible()
+
+  // Record how many times catalogs.list was called before clicking View Catalog
+  const callsBefore = (api.catalogs.list as Mock).mock.calls.length
+
+  // Click View Catalog — triggers onSuccess which calls loadCatalogs() and navigate()
+  await page.getByRole('button', { name: 'View Catalog' }).click()
+
+  // Verify loadCatalogs was called (api.catalogs.list called again)
+  await vi.waitFor(() => {
+    expect((api.catalogs.list as Mock).mock.calls.length).toBeGreaterThan(callsBefore)
+  })
+  // Verify navigation happened (should navigate to /schema/catalogs/imported-cat)
+  await expect.element(page.getByTestId('navigated')).toBeVisible()
 })

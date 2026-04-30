@@ -439,7 +439,7 @@ test('add and remove attribute on entity type', async () => {
   // Select the 'string' system type from the type selector
   await pg.getByRole('dialog').getByText('Select type...').click()
   await pg.waitForTimeout(500)
-  await pg.locator('.pf-v6-c-menu__item-text').getByText('string (string)', { exact: true }).click()
+  await pg.getByRole('option', { name: 'string' }).first().click()
   await pg.waitForTimeout(300)
   await pg.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
 
@@ -1034,4 +1034,140 @@ test('Association cardinality is stored and displayed', async () => {
   // Clean up
   await apiCall('DELETE', `/api/meta/v1/entity-types/${etId1}`)
   await apiCall('DELETE', `/api/meta/v1/entity-types/${etId2}`)
+})
+
+// === Import/Export System Tests ===
+
+test('T-30.96: Export catalog via UI downloads JSON file', async () => {
+  // Setup: create a catalog with entity type and instance
+  const suffix = Date.now()
+  const etRes = await apiCall('POST', '/api/meta/v1/entity-types', { name: `SysTest_ExportET_${suffix}` })
+  const etId = (etRes.body as { entity_type: { id: string } }).entity_type.id
+  const etvId = (etRes.body as { version: { id: string } }).version.id
+  trackResource('entity-type', etId)
+
+  const cvRes = await apiCall('POST', '/api/meta/v1/catalog-versions', {
+    version_label: `v-sys-export-${suffix}`,
+    pins: [{ entity_type_version_id: etvId }],
+  })
+  const cvId = (cvRes.body as { id: string }).id
+  trackResource('catalog-version', cvId)
+
+  const catName = `systest-export-${suffix}`
+  await apiCall('POST', '/api/data/v1/catalogs', {
+    name: catName, description: 'Export test', catalog_version_id: cvId,
+  })
+
+  // Navigate to catalog detail
+  await pg.goto(`${UI_URL}/schema/catalogs/${catName}`)
+  await visible(pg.getByRole('heading', { name: catName }))
+
+  // Set up download listener
+  const [download] = await Promise.all([
+    pg.waitForEvent('download'),
+    pg.getByRole('button', { name: 'Export', exact: true }).click(),
+  ])
+
+  // Verify download
+  const fileName = download.suggestedFilename()
+  expect(fileName).toContain(catName)
+  expect(fileName).toContain('.json')
+
+  // Read and verify content
+  const path = await download.path()
+  if (path) {
+    const fs = await import('fs')
+    const content = JSON.parse(fs.readFileSync(path, 'utf8'))
+    expect(content.format_version).toBe('1.0')
+    expect(content.catalog.name).toBe(catName)
+    expect(content.entity_types.length).toBeGreaterThanOrEqual(1)
+  }
+
+  // Clean up
+  await apiCall('DELETE', `/api/data/v1/catalogs/${catName}`)
+})
+
+test('T-30.97: Import catalog via UI wizard creates catalog', async () => {
+  // Setup: create and export a catalog via API
+  const suffix = Date.now()
+  const etRes = await apiCall('POST', '/api/meta/v1/entity-types', { name: `SysTest_ImportET_${suffix}` })
+  const etId = (etRes.body as { entity_type: { id: string } }).entity_type.id
+  const etvId = (etRes.body as { version: { id: string } }).version.id
+  trackResource('entity-type', etId)
+
+  const cvRes = await apiCall('POST', '/api/meta/v1/catalog-versions', {
+    version_label: `v-sys-import-${suffix}`,
+    pins: [{ entity_type_version_id: etvId }],
+  })
+  const cvId = (cvRes.body as { id: string }).id
+  trackResource('catalog-version', cvId)
+
+  const sourceName = `systest-import-src-${suffix}`
+  await apiCall('POST', '/api/data/v1/catalogs', {
+    name: sourceName, description: 'Import source', catalog_version_id: cvId,
+  })
+
+  // Export via API
+  const exportRes = await apiCall('GET', `/api/data/v1/catalogs/${sourceName}/export`)
+  const exportData = exportRes.body
+  // Navigate to catalog list
+  await pg.goto(`${UI_URL}/schema/catalogs`)
+  await visible(pg.getByText(sourceName))
+
+  // Click Import
+  await pg.getByRole('button', { name: 'Import Catalog' }).click()
+  await visible(pg.getByText('Catalog File (JSON)'))
+
+  // Upload the export data as a file
+  const fs = await import('fs')
+  const os = await import('os')
+  const tmpPath = `${os.tmpdir()}/systest-export-${suffix}.json`
+  fs.writeFileSync(tmpPath, JSON.stringify(exportData))
+
+  const fileInput = pg.locator('input[type="file"]')
+  await fileInput.setInputFiles(tmpPath)
+
+  // Wait for fields to populate
+  await pg.waitForTimeout(500)
+
+  // Change catalog name and CV label to avoid collisions
+  const targetName = `systest-imported-${suffix}`
+  const nameInput = pg.getByRole('textbox', { name: /Catalog Name/i })
+  await nameInput.fill(targetName)
+  const cvLabelInput = pg.getByRole('textbox', { name: /Catalog Version Label/i })
+  await cvLabelInput.fill(`v-sys-imported-${suffix}`)
+
+  // Click Analyze
+  await pg.getByRole('button', { name: 'Analyze' }).click()
+
+  // Wait for dry-run response
+  await pg.waitForTimeout(2000)
+
+  // If on collision step, reuse existing and continue
+  const continueBtn = pg.getByRole('button', { name: 'Continue' })
+  if (await continueBtn.isVisible().catch(() => false)) {
+    await continueBtn.click()
+  }
+
+  // On confirm step — click Import
+  await visible(pg.getByRole('button', { name: 'Import', exact: true }))
+  await pg.getByRole('button', { name: 'Import', exact: true }).click()
+
+  // Wait for success
+  await visible(pg.getByText('Import Complete'), 30000)
+  await visible(pg.getByText(targetName))
+
+  // Click View Catalog
+  await pg.getByRole('button', { name: 'View Catalog' }).click()
+  await visible(pg.getByRole('heading', { name: targetName }))
+
+  // Verify catalog exists and is draft
+  const catRes = await apiCall('GET', `/api/data/v1/catalogs/${targetName}`)
+  expect(catRes.status).toBe(200)
+  expect((catRes.body as { validation_status: string }).validation_status).toBe('draft')
+
+  // Clean up
+  fs.unlinkSync(tmpPath)
+  await apiCall('DELETE', `/api/data/v1/catalogs/${sourceName}`)
+  await apiCall('DELETE', `/api/data/v1/catalogs/${targetName}`)
 })

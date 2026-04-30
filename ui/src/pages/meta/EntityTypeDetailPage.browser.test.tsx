@@ -169,7 +169,6 @@ test('shows error when entity type load fails', async () => {
 // === Copy ===
 
 test('T-C.44: copy entity type via modal', async () => {
-  // Need versions loaded for copy to use latest version
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
 
@@ -179,7 +178,8 @@ test('T-C.44: copy entity type via modal', async () => {
   await page.getByRole('textbox', { name: /New Name/i }).fill('CopiedModel')
   await page.getByRole('dialog').getByRole('button', { name: 'Copy' }).click()
 
-  expect(api.entityTypes.copy).toHaveBeenCalledWith('et-1', { source_version: 1, new_name: 'CopiedModel' })
+  // Versions load eagerly now — uses latest version (V2), not fallback 1
+  expect(api.entityTypes.copy).toHaveBeenCalledWith('et-1', { source_version: 2, new_name: 'CopiedModel' })
 })
 
 test('copy shows error on failure', async () => {
@@ -2001,7 +2001,7 @@ test('rename deep copy success navigates to new entity', async () => {
 })
 
 // Copy entity type success navigates to home
-test('copy entity type success navigates to home', async () => {
+test('copy entity type uses latest version, not fallback 1', async () => {
   renderDetail()
   await expect.element(page.getByRole('heading', { name: 'MLModel' })).toBeVisible()
 
@@ -2009,8 +2009,8 @@ test('copy entity type success navigates to home', async () => {
   await page.getByRole('textbox', { name: /New Name/i }).fill('CopiedModel')
   await page.getByRole('dialog').getByRole('button', { name: 'Copy' }).click()
 
-  expect(api.entityTypes.copy).toHaveBeenCalledWith('et-1', { source_version: 1, new_name: 'CopiedModel' })
-  // Should navigate to home page
+  // mockVersions has V1 and V2 — copy should use the latest (V2), not fallback 1
+  expect(api.entityTypes.copy).toHaveBeenCalledWith('et-1', { source_version: 2, new_name: 'CopiedModel' })
   await expect.element(page.getByText('Home Page')).toBeVisible()
 })
 

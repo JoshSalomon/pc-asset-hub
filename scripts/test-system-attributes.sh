@@ -72,6 +72,10 @@ fi
 ET_ID=$(echo "$ET_BODY" | jq -r '.entity_type.id')
 echo "  Entity type: $ET_ID ($ET_NAME)"
 
+# Look up system "string" type definition version ID for attribute creation
+TD_RESP=$(api GET "$META_API/type-definitions" Admin)
+STRING_TDV_ID=$(get_body "$TD_RESP" | jq -r '.items[] | select(.name=="string") | .latest_version_id')
+
 # ─── Test 1: Attribute list includes system attrs ─────────────────────
 
 header "Test 1: Attribute list includes system attributes"
@@ -120,7 +124,7 @@ fi
 
 header "Test 2: Reserved name rejection"
 
-NAME_RESP=$(api POST "$META_API/entity-types/$ET_ID/attributes" Admin '{"name":"name","type":"string"}')
+NAME_RESP=$(api POST "$META_API/entity-types/$ET_ID/attributes" Admin '{"name":"name","type_definition_version_id":"'"${STRING_TDV_ID}"'"}')
 NAME_STATUS=$(get_status "$NAME_RESP")
 if [ "$NAME_STATUS" = "400" ]; then
   pass "Create attribute 'name' rejected (400)"
@@ -128,7 +132,7 @@ else
   fail "Reserved name 'name'" "expected 400, got $NAME_STATUS"
 fi
 
-DESC_RESP=$(api POST "$META_API/entity-types/$ET_ID/attributes" Admin '{"name":"description","type":"string"}')
+DESC_RESP=$(api POST "$META_API/entity-types/$ET_ID/attributes" Admin '{"name":"description","type_definition_version_id":"'"${STRING_TDV_ID}"'"}')
 DESC_STATUS=$(get_status "$DESC_RESP")
 if [ "$DESC_STATUS" = "400" ]; then
   pass "Create attribute 'description' rejected (400)"
@@ -137,7 +141,7 @@ else
 fi
 
 # Uppercase "Name" should be allowed
-UPPER_RESP=$(api POST "$META_API/entity-types/$ET_ID/attributes" Admin '{"name":"Name","type":"string"}')
+UPPER_RESP=$(api POST "$META_API/entity-types/$ET_ID/attributes" Admin '{"name":"Name","type_definition_version_id":"'"${STRING_TDV_ID}"'"}')
 UPPER_STATUS=$(get_status "$UPPER_RESP")
 if [ "$UPPER_STATUS" = "201" ]; then
   pass "Create attribute 'Name' (uppercase) allowed"
@@ -150,7 +154,7 @@ fi
 header "Test 3: Version snapshot includes system attrs"
 
 # Add a hostname attribute — capture the new version from response
-HOST_RESP=$(api POST "$META_API/entity-types/$ET_ID/attributes" Admin '{"name":"hostname","type":"string","required":true}')
+HOST_RESP=$(api POST "$META_API/entity-types/$ET_ID/attributes" Admin '{"name":"hostname","type_definition_version_id":"'"${STRING_TDV_ID}"'","required":true}')
 HOST_STATUS=$(get_status "$HOST_RESP")
 HOST_BODY=$(get_body "$HOST_RESP")
 if [ "$HOST_STATUS" = "201" ]; then

@@ -54,6 +54,8 @@ function TestComponent({ cvId, loadPins, onError }: {
       <button onClick={() => pm.handleTogglePinVersionSelect(mockPin)}>ToggleVersion</button>
       <button onClick={pm.closePinVersionSelect}>CloseVersionSelect</button>
       <button onClick={() => pm.handleUpdatePinVersion(mockPin, 'etv-new')}>UpdateVersion</button>
+      <button onClick={pm.handleConfirmMigration}>ConfirmMigration</button>
+      <button onClick={pm.handleCancelMigration}>CancelMigration</button>
     </div>
   )
 }
@@ -309,4 +311,71 @@ test('handleUpdatePinVersion skips dialog when warnings but 0 affected instances
   await expect.element(page.getByTestId('migrationPreview')).toHaveTextContent('none')
   // Should apply directly
   await vi.waitFor(() => expect(api.catalogVersions.updatePin).toHaveBeenCalledWith('cv1', 'pin-1', 'etv-new'))
+})
+
+// handleConfirmMigration applies the pending pin change and clears preview
+test('handleConfirmMigration applies pin update and clears preview', async () => {
+  ;(api.catalogVersions.updatePinDryRun as Mock).mockResolvedValue({
+    pin: {},
+    migration: {
+      affected_catalogs: 1,
+      affected_instances: 5,
+      attribute_mappings: [{ old_name: 'old_field', action: 'orphaned' }],
+      warnings: [{ type: 'deleted_attribute', attribute: 'old_field', affected_instances: 5 }],
+    },
+  })
+  ;(api.catalogVersions.updatePin as Mock).mockResolvedValue({ pin: {} })
+  render(<TestComponent cvId="cv1" loadPins={loadPins} onError={onError} />)
+
+  await page.getByRole('button', { name: 'UpdateVersion' }).click()
+  await expect.element(page.getByTestId('migrationPreview')).toHaveTextContent('showing')
+
+  await page.getByRole('button', { name: 'ConfirmMigration' }).click()
+
+  await vi.waitFor(() => expect(api.catalogVersions.updatePin).toHaveBeenCalledWith('cv1', 'pin-1', 'etv-new'))
+  await expect.element(page.getByTestId('migrationPreview')).toHaveTextContent('none')
+  expect(loadPins).toHaveBeenCalled()
+})
+
+// handleConfirmMigration error calls onError
+test('handleConfirmMigration error calls onError', async () => {
+  ;(api.catalogVersions.updatePinDryRun as Mock).mockResolvedValue({
+    pin: {},
+    migration: {
+      affected_catalogs: 1,
+      affected_instances: 5,
+      attribute_mappings: [{ old_name: 'old_field', action: 'orphaned' }],
+      warnings: [{ type: 'deleted_attribute', attribute: 'old_field', affected_instances: 5 }],
+    },
+  })
+  ;(api.catalogVersions.updatePin as Mock).mockRejectedValue(new Error('migration failed'))
+  render(<TestComponent cvId="cv1" loadPins={loadPins} onError={onError} />)
+
+  await page.getByRole('button', { name: 'UpdateVersion' }).click()
+  await expect.element(page.getByTestId('migrationPreview')).toHaveTextContent('showing')
+
+  await page.getByRole('button', { name: 'ConfirmMigration' }).click()
+  await vi.waitFor(() => expect(onError).toHaveBeenCalledWith('migration failed'))
+})
+
+// handleCancelMigration clears preview without applying
+test('handleCancelMigration clears preview without applying', async () => {
+  ;(api.catalogVersions.updatePinDryRun as Mock).mockResolvedValue({
+    pin: {},
+    migration: {
+      affected_catalogs: 1,
+      affected_instances: 5,
+      attribute_mappings: [{ old_name: 'old_field', action: 'orphaned' }],
+      warnings: [{ type: 'deleted_attribute', attribute: 'old_field', affected_instances: 5 }],
+    },
+  })
+  render(<TestComponent cvId="cv1" loadPins={loadPins} onError={onError} />)
+
+  await page.getByRole('button', { name: 'UpdateVersion' }).click()
+  await expect.element(page.getByTestId('migrationPreview')).toHaveTextContent('showing')
+
+  await page.getByRole('button', { name: 'CancelMigration' }).click()
+
+  await expect.element(page.getByTestId('migrationPreview')).toHaveTextContent('none')
+  expect(api.catalogVersions.updatePin).not.toHaveBeenCalled()
 })

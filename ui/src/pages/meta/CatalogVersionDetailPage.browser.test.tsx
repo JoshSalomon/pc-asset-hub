@@ -60,6 +60,7 @@ const mockSnapshot = {
     { id: 'as1', name: 'tools', type: 'containment', target_entity_type_id: 'et-2', target_entity_type_name: 'Tool', source_role: 'model', target_role: 'tool', source_cardinality: '1', target_cardinality: '0..n', direction: 'outgoing' },
     { id: 'as2', name: 'platform', type: 'containment', target_entity_type_id: 'et-1', target_entity_type_name: 'Model', source_role: 'parent', target_role: 'child', source_cardinality: '1', target_cardinality: '0..1', direction: 'incoming', source_entity_type_id: 'et-3', source_entity_type_name: 'Platform' },
     { id: 'as3', name: 'datasets', type: 'bidirectional', target_entity_type_id: 'et-4', target_entity_type_name: 'Dataset', source_role: 'model', target_role: 'data', source_cardinality: '0..n', target_cardinality: '0..n', direction: 'outgoing' },
+    { id: 'as4', name: 'pre-execute', type: 'directional', target_entity_type_id: 'et-5', target_entity_type_name: 'Guardrail', source_role: '', target_role: '', source_cardinality: '0..n', target_cardinality: '0..n', direction: 'outgoing' },
   ],
 }
 
@@ -178,6 +179,30 @@ test('promote error shows alert', async () => {
   await expect.element(page.getByText('403: forbidden')).toBeVisible()
 })
 
+test('demote calls API and reloads', async () => {
+  ;(api.catalogVersions.get as Mock).mockResolvedValue({ ...mockCV, lifecycle_stage: 'testing' })
+  renderDetail('Admin')
+  await expect.element(page.getByRole('button', { name: 'Demote' })).toBeVisible()
+  await page.getByRole('button', { name: 'Demote' }).click()
+  expect(api.catalogVersions.demote).toHaveBeenCalledWith('cv-1', 'development')
+})
+
+test('demote error shows alert', async () => {
+  ;(api.catalogVersions.get as Mock).mockResolvedValue({ ...mockCV, lifecycle_stage: 'testing' })
+  ;(api.catalogVersions.demote as Mock).mockRejectedValue(new Error('500: demote failed'))
+  renderDetail('Admin')
+  await page.getByRole('button', { name: 'Demote' }).click()
+  await expect.element(page.getByText('500: demote failed')).toBeVisible()
+})
+
+test('demote production to testing', async () => {
+  ;(api.catalogVersions.get as Mock).mockResolvedValue({ ...mockCV, lifecycle_stage: 'production' })
+  renderDetail('SuperAdmin')
+  await expect.element(page.getByRole('button', { name: 'Demote' })).toBeVisible()
+  await page.getByRole('button', { name: 'Demote' }).click()
+  expect(api.catalogVersions.demote).toHaveBeenCalledWith('cv-1', 'testing')
+})
+
 // === Bill of Materials Tab ===
 
 test('BOM tab shows pinned entity types', async () => {
@@ -267,6 +292,26 @@ test('T-E.67: BOM modal has no edit controls', async () => {
   await expect.element(page.getByRole('dialog').getByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
   // Close button exists in footer
   await expect.element(page.getByRole('dialog').getByRole('button', { name: 'Close' }).first()).toBeVisible()
+})
+
+test('BOM snapshot modal X button closes modal', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: 'Bill of Materials' }).click()
+  await page.getByRole('button', { name: 'Model', exact: true }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // PF header X button (triggers onClose prop)
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).first().click()
+  await expect.element(page.getByRole('dialog')).not.toBeInTheDocument()
+})
+
+test('BOM snapshot modal footer Close button closes modal', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: 'Bill of Materials' }).click()
+  await page.getByRole('button', { name: 'Model', exact: true }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // Footer Close button (triggers onClick handler)
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).last().click()
+  await expect.element(page.getByRole('dialog')).not.toBeInTheDocument()
 })
 
 // Snapshot load error keeps modal open with error inside
