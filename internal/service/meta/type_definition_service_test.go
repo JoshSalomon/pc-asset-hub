@@ -877,3 +877,17 @@ func TestDeleteTypeDefinition_ListPinsError(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "pin query error")
 }
+
+// Coverage: checkTypeDefInUse with no versions returns nil (L251 early return)
+func TestDeleteTypeDefinition_NoVersions_SkipsInUseCheck(t *testing.T) {
+	svc, tdRepo, tdvRepo, _, _, _ := newTypeDefSvcWithPins()
+
+	td := &models.TypeDefinition{ID: "td-1", Name: "guardrailID", BaseType: models.BaseTypeString}
+	tdRepo.On("GetByID", mock.Anything, "td-1").Return(td, nil)
+	tdvRepo.On("ListByTypeDefinition", mock.Anything, "td-1").Return([]*models.TypeDefinitionVersion{}, nil)
+	tdRepo.On("Delete", mock.Anything, "td-1").Return(nil)
+
+	err := svc.DeleteTypeDefinition(context.Background(), "td-1")
+	assert.NoError(t, err)
+	tdRepo.AssertCalled(t, "Delete", mock.Anything, "td-1")
+}

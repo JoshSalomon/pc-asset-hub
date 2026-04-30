@@ -68,7 +68,7 @@ func (r *CatalogVersionGormRepo) List(ctx context.Context, params models.ListPar
 		return nil, 0, err
 	}
 
-	query = query.Order("created_at DESC")
+	query = query.Order("version_label ASC")
 	if params.Limit > 0 {
 		query = query.Limit(params.Limit)
 	}

@@ -53,6 +53,7 @@ func main() {
 	instRepo := gormrepo.NewEntityInstanceGormRepo(db)
 	iavRepo := gormrepo.NewInstanceAttributeValueGormRepo(db)
 	linkRepo := gormrepo.NewAssociationLinkGormRepo(db)
+	typePinRepo := gormrepo.NewCatalogVersionTypePinGormRepo(db)
 
 	// Optional K8s client for CR management (CatalogVersion + Catalog CRs)
 	var crManager svcmeta.CatalogVersionCRManager
@@ -105,6 +106,10 @@ func main() {
 	validationSvc := svcop.NewCatalogValidationService(catalogRepo, instRepo, iavRepo, pinRepo, etvRepo, attrRepo, assocRepo, tdvRepo, tdRepo, linkRepo, etRepo)
 	catalogHandler := apiop.NewCatalogHandler(catalogSvc, validationSvc, catalogAccessChecker)
 	instanceHandler := apiop.NewInstanceHandler(instanceSvc, catalogSvc)
+	exportSvc := svcop.NewExportService(catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, tdvRepo, instRepo, iavRepo, linkRepo)
+	exportHandler := apiop.NewExportHandler(exportSvc, catalogAccessChecker)
+	importSvc := svcop.NewImportService(catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, tdvRepo, instRepo, iavRepo, linkRepo, typePinRepo, svcop.WithImportTransactionManager(txManager))
+	importHandler := apiop.NewImportHandler(importSvc, catalogAccessChecker)
 	healthHandler := apihealth.NewHandler(db)
 
 	// Echo server
@@ -142,7 +147,9 @@ func main() {
 	catalogGroup := e.Group("/api/data/v1/catalogs")
 	catalogGroup.Use(middleware.RBACMiddleware(rbacProvider))
 	requireWriteAccess := middleware.RequireWriteAccess(catalogSvc)
+	apiop.RegisterImportRoutes(catalogGroup, importHandler, requireAdmin)
 	apiop.RegisterCatalogRoutes(catalogGroup, catalogHandler, requireRW, requireAdmin, requireWriteAccess)
+	apiop.RegisterExportRoutes(catalogGroup, exportHandler, requireAdmin)
 
 	// Operational API — Instance CRUD (under catalogs, with per-catalog access check)
 	instanceGroup := catalogGroup.Group("/:catalog-name")

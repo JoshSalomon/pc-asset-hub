@@ -3943,12 +3943,198 @@ Protects instance data during schema changes. 4 TD items across 3 internal stage
 
 ---
 
+## Milestone 20: Catalog Import/Export (US-55, US-56)
+
+Export a catalog (schema + data) to a JSON file and import it into another Asset Hub deployment. 6 implementation stages. References: US-55, US-56, FF-12, design spec `docs/superpowers/specs/2026-04-23-import-export-design.md`.
+
+### Stage 1: Export Service + API
+
+#### Service — Export File Building
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.01 | Export builds JSON with format_version, exported_at, source_system | Unit | Metadata fields present |
+| T-30.02 | Export includes catalog name, description, validation_status | Unit | Catalog section matches |
+| T-30.03 | Export includes CV label and description | Unit | catalog_version section matches |
+| T-30.04 | Export includes custom type definitions (not system types) | Unit | Only custom TDs in type_definitions |
+| T-30.05 | Export includes entity types with attributes and associations | Unit | All pinned ETs with attrs/assocs |
+| T-30.06 | Export nests instances under containment association names | Unit | `"tools": [...]` not flat `"children"` |
+| T-30.07 | Export omits entity_type for contained instances | Unit | No entity_type field on children |
+| T-30.08 | Export recursive containment (3+ levels) | Unit | Grandchildren nested correctly |
+| T-30.09 | Export attribute values: scalars as strings | Unit | `"endpoint": "https://..."` |
+| T-30.10 | Export attribute values: list as parsed JSON array | Unit | `"tags": ["a","b"]` not escaped |
+| T-30.11 | Export attribute values: json as parsed JSON object | Unit | `"config": {"k":"v"}` not escaped |
+| T-30.12 | Export links with target_name for root targets (no target_path) | Unit | target_path absent |
+| T-30.13 | Export links with target_path for contained targets | Unit | `"target_path": ["server-1"]` |
+| T-30.14 | Export with entity filter — only selected entity types | Unit | Excluded types absent |
+| T-30.15 | Export with entity filter — dependencies auto-included | Unit | Containment/ref targets included |
+| T-30.16 | Export detects dangling links when entity type excluded | Unit | Warning returned with link count |
+| T-30.17 | Export drops links to excluded entity types | Unit | Links absent from output |
+| T-30.18 | Export empty catalog (no instances) | Unit | instances: [] |
+
+#### Integration — Round-Trip
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.19 | Full export against real SQLite — complex catalog with containment + links | Integration | JSON matches expected structure |
+
+#### API — Export Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.20 | GET /catalogs/{name}/export returns JSON with Content-Disposition header | API | 200, attachment header |
+| T-30.21 | GET /catalogs/{name}/export?entities=a,b filters entity types | API | Only a,b in response |
+| T-30.22 | GET /catalogs/{name}/export for nonexistent catalog → 404 | API | 404 |
+| T-30.23 | GET /catalogs/{name}/export as RO → 403 | API | 403 |
+| T-30.24 | GET /catalogs/{name}/export as RW → 403 | API | 403 |
+| T-30.25 | GET /catalogs/{name}/export as Admin → 200 | API | 200 |
+
+### Stage 2: Import Service + API
+
+#### Service — Dry-Run Collision Detection
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.26 | Dry-run with all new entities → status "ready" | Unit | No collisions |
+| T-30.27 | Dry-run with identical entity type (same attrs, same ordinals) → "identical" | Unit | identical resolution |
+| T-30.28 | Dry-run with conflicting entity type (different attrs) → "conflict" | Unit | conflict resolution |
+| T-30.29 | Dry-run with identical type definition (field-by-field match) → "identical" | Unit | identical resolution |
+| T-30.30 | Dry-run with conflicting type definition (different constraints) → "conflict" | Unit | conflict resolution |
+| T-30.31 | Dry-run with identical+V1 entity type → auto-suggest reuse | Unit | identical, version=1 |
+| T-30.32 | Dry-run with identical+V5 entity type → user decides | Unit | identical, version=5 |
+| T-30.33 | Dry-run with catalog name collision → conflict | Unit | conflict for catalog |
+| T-30.34 | Dry-run with CV label collision → conflict | Unit | conflict for CV |
+| T-30.35 | Dry-run with rename_map applied → no collision after rename | Unit | status "ready" |
+| T-30.36 | Dry-run validates reference integrity — unknown type_definition in attribute → error | Unit | Validation error |
+| T-30.37 | Dry-run validates reference integrity — unknown entity type in association target → error | Unit | Validation error |
+| T-30.38 | Dry-run with system type reference (e.g., "string") → resolved, no collision | Unit | System type found |
+
+#### Service — Schema Transaction
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.39 | Import creates type definitions as V1 | Unit | Version 1, correct constraints |
+| T-30.40 | Import creates entity types as V1 with attributes and associations | Unit | Version 1, attrs/assocs match |
+| T-30.41 | Import creates CV with development lifecycle | Unit | Stage = development |
+| T-30.42 | Import creates entity type pins on CV | Unit | Pins match imported entity types |
+| T-30.43 | Import auto-pins type definitions via existing auto-pin logic | Unit | Type pins created |
+| T-30.44 | Import skips reused entity types (not recreated) | Unit | Existing ET used, no Create call |
+| T-30.45 | Import skips reused type definitions | Unit | Existing TD used, no Create call |
+| T-30.46 | Import reuse pins latest version of existing entity type | Unit | Pin points to latest ETV |
+| T-30.47 | Schema transaction rollback on error | Unit | No partial schema created |
+
+#### Service — Data Transaction
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.48 | Import creates catalog with draft status | Unit | validation_status = draft |
+| T-30.49 | Import creates root instances | Unit | Instances created, no parent |
+| T-30.50 | Import creates contained instances with correct parent | Unit | ParentInstanceID set |
+| T-30.51 | Import creates recursive containment (3 levels) | Unit | Grandchildren parented correctly |
+| T-30.52 | Import sets IAVs — string values stored as-is | Unit | ValueString matches |
+| T-30.53 | Import re-serializes list values from parsed JSON to string | Unit | ValueJSON = `["a","b"]` |
+| T-30.54 | Import re-serializes json values from parsed JSON to string | Unit | ValueJSON = `{"k":"v"}` |
+| T-30.55 | Import creates association links — root target resolved by name | Unit | Link created with correct target |
+| T-30.56 | Import creates association links — contained target resolved by name + path | Unit | Link target matches path |
+| T-30.57 | Data transaction rollback on error — catalog not created | Unit | No catalog, no instances |
+
+#### Integration — Full Import Round-Trip
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.58 | Export → import into fresh DB → all data matches | Integration | Round-trip fidelity |
+| T-30.59 | Re-import after partial failure → identical+V1 reuse → data created | Integration | Second import succeeds |
+
+#### API — Import Handler
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.60 | POST /catalogs/import with valid file → 201 with summary | API | 201, created counts |
+| T-30.61 | POST /catalogs/import?dry_run=true → collision report | API | 200 with collisions |
+| T-30.62 | POST /catalogs/import?dry_run=yes → 400 | API | Invalid dry_run |
+| T-30.63 | POST /catalogs/import with rename_map → entities renamed | API | Renamed entities in response |
+| T-30.64 | POST /catalogs/import with reuse_existing → existing entities reused | API | No new ETs for reused |
+| T-30.65 | POST /catalogs/import with unresolved conflicts → 409 | API | 409 with collision list |
+| T-30.66 | POST /catalogs/import with invalid format_version → 400 | API | Unsupported version |
+| T-30.67 | POST /catalogs/import with invalid JSON → 400 | API | Parse error |
+| T-30.68 | POST /catalogs/import as RO → 403 | API | 403 |
+| T-30.69 | POST /catalogs/import as RW → 403 | API | 403 |
+
+### Stage 3: Export UI
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.70 | Export button visible for Admin on catalog detail page | Browser | Button visible |
+| T-30.71 | Export button hidden for RO/RW | Browser | Button absent |
+| T-30.72 | Export modal opens with "Export all" default mode | Browser | Modal visible, export all selected |
+| T-30.73 | "Select entities" mode shows tree with checkboxes | Browser | Entity tree with checkboxes |
+| T-30.74 | Selecting entity type auto-checks dependencies | Browser | Dependencies checked |
+| T-30.75 | Unchecking dependency shows dangling link warning | Browser | Warning message visible |
+| T-30.76 | Draft/invalid catalog shows validation warning | Browser | Warning banner visible |
+| T-30.77 | Export triggers file download | Browser | Download initiated |
+
+### Stage 4: Import UI
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.78 | Import button visible for Admin on catalog list page | Browser | Button visible |
+| T-30.79 | Import button hidden for RO/RW | Browser | Button absent |
+| T-30.80 | Step 1: file upload populates catalog name and CV label from file | Browser | Fields pre-filled |
+| T-30.81 | Step 1: mass rename prefix/suffix applied to entity names | Browser | Preview shows renamed names |
+| T-30.82 | Step 1: Analyze calls dry-run API | Browser | API called |
+| T-30.83 | Step 2: collision table shows new/identical/conflict rows | Browser | Table with correct statuses |
+| T-30.84 | Step 2: identical+V1 auto-selects "reuse existing" | Browser | Reuse pre-selected |
+| T-30.85 | Step 2: conflict row shows rename field | Browser | Editable name field |
+| T-30.86 | Step 2: skipped when no collisions (goes to Step 3) | Browser | Step 3 shown directly |
+| T-30.87 | Step 3: summary shows entity/instance/link counts | Browser | Correct counts |
+| T-30.88 | Import success shows message with link to catalog | Browser | Success alert with link |
+| T-30.89 | Partial failure shows error message with re-import suggestion | Browser | Error with guidance |
+
+### Stage 5: Live Test Script
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.90 | Export catalog → import → verify instances match | Live API | Round-trip fidelity |
+| T-30.91 | Export → import with rename_map → verify renamed entities | Live API | Entities renamed |
+| T-30.92 | Export → import with collision → dry-run detects → rename → import succeeds | Live API | Full collision flow |
+| T-30.93 | Export → import with reuse_existing → verify existing ET reused | Live API | Pin points to existing ET |
+| T-30.94 | Export with entity filter → verify partial export | Live API | Subset exported |
+| T-30.95 | Import invalid file → 400 | Live API | Rejected |
+
+### Stage 6: Live Browser Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.96 | Export catalog via UI → file downloaded | System | File saved |
+| T-30.97 | Import exported file via UI wizard → catalog created | System | Catalog visible in list |
+| T-30.98 | Import with collisions → resolve via wizard → import succeeds | System | Full wizard flow |
+
+### Regression
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-30.99 | All existing backend tests pass | Unit/Integration/API | 100% pass |
+| T-30.100 | All existing browser tests pass | Browser | 100% pass |
+
+---
+
+**Milestone 20 totals: 100 test cases** (T-30.01 through T-30.100)
+- Stage 1 — Export: 25 tests (Unit 18, Integration 1, API 6)
+- Stage 2 — Import: 34 tests (Unit 19, Integration 2, API 10, plus dry-run unit 13)
+- Stage 3 — Export UI: 8 tests (Browser)
+- Stage 4 — Import UI: 12 tests (Browser)
+- Stage 5 — Live script: 6 tests (Live API)
+- Stage 6 — Live browser: 3 tests (System)
+- Regression: 2 tests
+
+---
+
 ## Phase Exit Criteria
 
 ### Phase A Exit Criteria (First Human Checkpoint)
 
 **Tests**:
-- All test cases (T-1.01 through T-29.65, T-31.01–T-31.202; T-13.78–13.85 retired; T-31.79 subsumed by T-31.96–102; 29 enum-specific tests retired — see T-31 retired test cases list) pass
+- All test cases (T-1.01 through T-30.100, T-31.01–T-31.202; T-13.78–13.85 retired; T-31.79 subsumed by T-31.96–102; 29 enum-specific tests retired — see T-31 retired test cases list) pass
 - All tests run against SQLite (in-memory) and mocked/simulated infrastructure
 - Operator envtest tests pass (envtest downloads and runs etcd/kube-apiserver binaries directly — no containers)
 - RBAC tests pass with mocked SubjectAccessReview

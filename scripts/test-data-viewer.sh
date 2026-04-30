@@ -81,27 +81,28 @@ SERVER_NAME="${PREFIX}---srv-${SUFFIX}"
 TOOL_NAME="${PREFIX}---tool-${SUFFIX}"
 MODEL_NAME="${PREFIX}---mdl-${SUFFIX}"
 
-SERVER_ET=$(json_post "${META_URL}/entity-types" Admin "{\"name\":\"${SERVER_NAME}\",\"description\":\"server\"}" | jq -r '.entity_type.id')
-TOOL_ET=$(json_post "${META_URL}/entity-types" Admin "{\"name\":\"${TOOL_NAME}\",\"description\":\"tool\"}" | jq -r '.entity_type.id')
-MODEL_ET=$(json_post "${META_URL}/entity-types" Admin "{\"name\":\"${MODEL_NAME}\",\"description\":\"model\"}" | jq -r '.entity_type.id')
+SERVER_RESP=$(json_post "${META_URL}/entity-types" Admin "{\"name\":\"${SERVER_NAME}\",\"description\":\"server\"}")
+SERVER_ET=$(echo "$SERVER_RESP" | jq -r '.entity_type.id')
+TOOL_RESP=$(json_post "${META_URL}/entity-types" Admin "{\"name\":\"${TOOL_NAME}\",\"description\":\"tool\"}")
+TOOL_ET=$(echo "$TOOL_RESP" | jq -r '.entity_type.id')
+TOOL_ETV=$(echo "$TOOL_RESP" | jq -r '.version.id')
+MODEL_RESP=$(json_post "${META_URL}/entity-types" Admin "{\"name\":\"${MODEL_NAME}\",\"description\":\"model\"}")
+MODEL_ET=$(echo "$MODEL_RESP" | jq -r '.entity_type.id')
+MODEL_ETV=$(echo "$MODEL_RESP" | jq -r '.version.id')
 echo "  Entity types: server=${SERVER_ET:0:8}, tool=${TOOL_ET:0:8}, model=${MODEL_ET:0:8}"
 
 # Add string attribute to server
+STRING_TDV_ID=$(json_get "${META_URL}/type-definitions" Admin | jq -r '.items[] | select(.name=="string") | .latest_version_id')
 json_post "${META_URL}/entity-types/${SERVER_ET}/attributes" Admin \
-  "{\"name\":\"endpoint\",\"type\":\"string\"}" > /dev/null
+  "{\"name\":\"endpoint\",\"type_definition_version_id\":\"${STRING_TDV_ID}\",\"required\":true}" > /dev/null
 
 # Add containment: server contains tool
 json_post "${META_URL}/entity-types/${SERVER_ET}/associations" Admin \
   "{\"target_entity_type_id\":\"${TOOL_ET}\",\"type\":\"containment\",\"name\":\"tools\"}" > /dev/null
 
-# Add directional: server uses model
-json_post "${META_URL}/entity-types/${SERVER_ET}/associations" Admin \
-  "{\"target_entity_type_id\":\"${MODEL_ET}\",\"type\":\"directional\",\"name\":\"uses-model\"}" > /dev/null
-
-# Get latest versions
-SERVER_ETV=$(json_get "${META_URL}/entity-types/${SERVER_ET}/versions" Admin | jq -r '.items[-1].id')
-TOOL_ETV=$(json_get "${META_URL}/entity-types/${TOOL_ET}/versions" Admin | jq -r '.items[-1].id')
-MODEL_ETV=$(json_get "${META_URL}/entity-types/${MODEL_ET}/versions" Admin | jq -r '.items[-1].id')
+# Add directional: server uses model — capture latest server ETV
+SERVER_ETV=$(json_post "${META_URL}/entity-types/${SERVER_ET}/associations" Admin \
+  "{\"target_entity_type_id\":\"${MODEL_ET}\",\"type\":\"directional\",\"name\":\"uses-model\"}" | jq -r '.id')
 
 # Create CV
 CV=$(json_post "${META_URL}/catalog-versions" Admin \

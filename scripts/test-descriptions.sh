@@ -30,7 +30,7 @@ cleanup() {
     curl -s -X DELETE "${API_BASE}/api/meta/v1/entity-types/${id}" "${HEADERS[@]}" > /dev/null 2>&1 || true
   done
   for id in "${ENUM_IDS[@]}"; do
-    curl -s -X DELETE "${API_BASE}/api/meta/v1/enums/${id}" "${HEADERS[@]}" > /dev/null 2>&1 || true
+    curl -s -X DELETE "${API_BASE}/api/meta/v1/type-definitions/${id}" "${HEADERS[@]}" > /dev/null 2>&1 || true
   done
   for id in "${CV_IDS[@]}"; do
     curl -s -X DELETE "${API_BASE}/api/meta/v1/catalog-versions/${id}" "${HEADERS[@]}" > /dev/null 2>&1 || true
@@ -85,7 +85,7 @@ fi
 echo ""
 echo "=== Test 3: Enum description ==="
 
-ENUM_RES=$(curl -s -X POST "${API_BASE}/api/meta/v1/enums" "${HEADERS[@]}" -d '{"name":"desc-test-enum","description":"Enum for testing","values":["a","b"]}')
+ENUM_RES=$(curl -s -X POST "${API_BASE}/api/meta/v1/type-definitions" "${HEADERS[@]}" -d '{"name":"desc-test-enum","description":"Enum for testing","base_type":"enum","constraints":{"values":["a","b"]}}')
 ENUM_ID=$(echo "$ENUM_RES" | jq -r '.id')
 ENUM_IDS+=("$ENUM_ID")
 
@@ -96,14 +96,14 @@ else
   fail "Enum create description" "expected 'Enum for testing', got '$CREATE_DESC'"
 fi
 
-LIST_ENUM_DESC=$(curl -s "${API_BASE}/api/meta/v1/enums" "${HEADERS[@]}" | jq -r '.items[] | select(.name=="desc-test-enum") | .description')
+LIST_ENUM_DESC=$(curl -s "${API_BASE}/api/meta/v1/type-definitions" "${HEADERS[@]}" | jq -r '.items[] | select(.name=="desc-test-enum") | .description')
 if [ "$LIST_ENUM_DESC" = "Enum for testing" ]; then
   pass "Enum list includes description"
 else
   fail "Enum list description" "expected 'Enum for testing', got '$LIST_ENUM_DESC'"
 fi
 
-GET_ENUM_DESC=$(curl -s "${API_BASE}/api/meta/v1/enums/${ENUM_ID}" "${HEADERS[@]}" | jq -r '.description')
+GET_ENUM_DESC=$(curl -s "${API_BASE}/api/meta/v1/type-definitions/${ENUM_ID}" "${HEADERS[@]}" | jq -r '.description')
 if [ "$GET_ENUM_DESC" = "Enum for testing" ]; then
   pass "Enum get includes description"
 else
@@ -112,7 +112,7 @@ fi
 
 # === Enum without description ===
 
-ENUM_NO_DESC=$(curl -s -X POST "${API_BASE}/api/meta/v1/enums" "${HEADERS[@]}" -d '{"name":"desc-test-enum-2","values":["x"]}')
+ENUM_NO_DESC=$(curl -s -X POST "${API_BASE}/api/meta/v1/type-definitions" "${HEADERS[@]}" -d '{"name":"desc-test-enum-2","base_type":"enum","constraints":{"values":["x"]}}')
 ENUM_NO_DESC_ID=$(echo "$ENUM_NO_DESC" | jq -r '.id')
 ENUM_IDS+=("$ENUM_NO_DESC_ID")
 NO_DESC_VAL=$(echo "$ENUM_NO_DESC" | jq -r '.description')
@@ -246,16 +246,16 @@ ADD_PIN2_RES=$(curl -s -X POST "${API_BASE}/api/meta/v1/catalog-versions/${CV_ID
 ADD_PIN2_ID=$(echo "$ADD_PIN2_RES" | jq -r '.pin_id')
 
 # Create a second version of the same entity type by adding an attribute
-curl -s -X POST "${API_BASE}/api/meta/v1/entity-types/${ET_ID}/attributes" "${HEADERS[@]}" \
-  -d '{"name":"update-test-attr","type":"string","description":"for update pin test"}' > /dev/null
-# List versions to get the new ETV ID
-VERSIONS_RES=$(curl -s "${API_BASE}/api/meta/v1/entity-types/${ET_ID}/versions" "${HEADERS[@]}")
-ETV_V2_ID=$(echo "$VERSIONS_RES" | jq -r '.items | sort_by(.version) | last | .id')
-ETV_V2_VER=$(echo "$VERSIONS_RES" | jq -r '.items | sort_by(.version) | last | .version')
+# Look up string TDV ID
+STRING_TDV_ID=$(curl -s "${API_BASE}/api/meta/v1/type-definitions" "${HEADERS[@]}" | jq -r '.items[] | select(.name=="string") | .latest_version_id')
+ETV_V2_RES=$(curl -s -X POST "${API_BASE}/api/meta/v1/entity-types/${ET_ID}/attributes" "${HEADERS[@]}" \
+  -d "{\"name\":\"update-test-attr\",\"type_definition_version_id\":\"${STRING_TDV_ID}\",\"description\":\"for update pin test\"}")
+ETV_V2_ID=$(echo "$ETV_V2_RES" | jq -r '.id')
+ETV_V2_VER=$(echo "$ETV_V2_RES" | jq -r '.version')
 
 UPDATE_PIN_RES=$(curl -s -X PUT "${API_BASE}/api/meta/v1/catalog-versions/${CV_ID}/pins/${ADD_PIN2_ID}" "${HEADERS[@]}" \
   -d "{\"entity_type_version_id\":\"${ETV_V2_ID}\"}")
-UPDATE_PIN_ETV=$(echo "$UPDATE_PIN_RES" | jq -r '.entity_type_version_id')
+UPDATE_PIN_ETV=$(echo "$UPDATE_PIN_RES" | jq -r '.pin.entity_type_version_id')
 if [ "$UPDATE_PIN_ETV" = "$ETV_V2_ID" ]; then
   pass "UpdatePin changed pinned version to V${ETV_V2_VER}"
 else

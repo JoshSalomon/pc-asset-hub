@@ -106,3 +106,53 @@ test('migration preview with no impact shows clean message', async () => {
 
   await expect.element(page.getByText('No instance data will be affected')).toBeVisible()
 })
+
+// Cover catalog_breakdown rendering (L34)
+test('migration preview shows catalog breakdown list', async () => {
+  const reportWithBreakdown: MigrationReport = {
+    ...baseReport,
+    catalog_breakdown: [
+      { catalog_name: 'prod-catalog', instance_count: 30 },
+      { catalog_name: 'staging-catalog', instance_count: 17 },
+    ],
+  }
+  render(
+    <MigrationPreviewModal
+      isOpen
+      report={reportWithBreakdown}
+      entityTypeName="Server"
+      onConfirm={vi.fn()}
+      onCancel={vi.fn()}
+    />
+  )
+
+  await expect.element(page.getByText('prod-catalog')).toBeVisible()
+  await expect.element(page.getByText('30 instance(s)')).toBeVisible()
+  await expect.element(page.getByText('staging-catalog')).toBeVisible()
+  await expect.element(page.getByText('17 instance(s)')).toBeVisible()
+})
+
+// Cover 'renamed' warning type (L97) and default warning type (L99)
+test('migration preview shows renamed and unknown warning types', async () => {
+  const reportWithRenamedAndUnknown: MigrationReport = {
+    affected_catalogs: 1,
+    affected_instances: 5,
+    attribute_mappings: [],
+    warnings: [
+      { type: 'renamed', attribute: 'host', affected_instances: 5, old_type: 'hostname', new_type: 'host' },
+      { type: 'some_future_type' as never, attribute: 'data', affected_instances: 3 },
+    ],
+  }
+  render(
+    <MigrationPreviewModal
+      isOpen
+      report={reportWithRenamedAndUnknown}
+      entityTypeName="Server"
+      onConfirm={vi.fn()}
+      onCancel={vi.fn()}
+    />
+  )
+
+  await expect.element(page.getByText(/Attribute renamed.*"hostname".*"host"/)).toBeVisible()
+  await expect.element(page.getByText('some_future_type: data')).toBeVisible()
+})

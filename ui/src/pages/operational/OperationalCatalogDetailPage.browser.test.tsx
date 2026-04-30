@@ -447,3 +447,10 @@ test('T-21.25: diagram tab shows empty state when no pins', async () => {
   await page.getByRole('tab', { name: 'Model Diagram' }).click()
   await expect.element(page.getByText('No model diagram available')).toBeVisible()
 })
+
+// Cover L141: catalog not found guard (catalog is null after load completes without error)
+test('shows catalog not found when API returns null-like response', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue(null)
+  renderDetail()
+  await expect.element(page.getByText('Catalog not found')).toBeVisible()
+})

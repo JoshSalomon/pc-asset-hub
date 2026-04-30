@@ -241,6 +241,27 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    export: async (name: string, params?: { entities?: string; source_system?: string }) => {
+      const query = new URLSearchParams()
+      if (params?.entities) query.set('entities', params.entities)
+      if (params?.source_system) query.set('source_system', params.source_system)
+      const qs = query.toString()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (currentRole) headers['X-User-Role'] = currentRole
+      const res = await fetch(`${DATA_BASE_URL}/catalogs/${name}/export${qs ? `?${qs}` : ''}`, { headers })
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`${res.status}: ${body}`)
+      }
+      return res.json()
+    },
+    import: (data: unknown, params?: { dry_run?: boolean }) => {
+      const query = params?.dry_run ? '?dry_run=true' : ''
+      return fetchJSON<unknown>(`${DATA_BASE_URL}/catalogs/import${query}`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      })
+    },
   },
 
   instances: {

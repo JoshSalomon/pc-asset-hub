@@ -43,6 +43,9 @@ test-live:
 	"$(PROJECT_ROOT)scripts/test-descriptions.sh"
 	"$(PROJECT_ROOT)scripts/test-phase1-fixes.sh"
 	"$(PROJECT_ROOT)scripts/test-type-constraints.sh"
+	"$(PROJECT_ROOT)scripts/test-schema-evolution.sh"
+	"$(PROJECT_ROOT)scripts/test-import-export.sh"
+	"$(PROJECT_ROOT)scripts/test-import-export-e2e.sh"
 
 test-all: test-backend test-unit test-browser test-system test-live
 

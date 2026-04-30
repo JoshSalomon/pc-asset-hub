@@ -330,7 +330,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
         </DescriptionListGroup>
       </DescriptionList>
 
-      {catalog.published && !isAdmin && (
+      {catalog.published && !canMutate && (
         <Alert variant="info" title="This catalog is published. Editing requires SuperAdmin privileges." isInline style={{ marginBottom: '1rem' }} />
       )}
 
@@ -374,6 +374,24 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
             setReplaceOpen(true)
           }}>
             Replace
+          </Button>
+        )}
+        {isAdmin && (
+          <Button variant="secondary" onClick={async () => {
+            try {
+              const data = await api.catalogs.export(catalog.name)
+              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = url
+              a.download = `${catalog.name}-export.json`
+              a.click()
+              URL.revokeObjectURL(url)
+            } catch (e) {
+              setError(e instanceof Error ? e.message : 'Failed to export catalog')
+            }
+          }}>
+            Export
           </Button>
         )}
       </div>

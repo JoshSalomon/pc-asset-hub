@@ -256,6 +256,16 @@ Each feature area is tested at the appropriate layers:
 | Pin changes reset catalog validation status (TD-10) | X | X | X | X | |
 | Instance attribute migration on pin version change (TD-114) | X | X | X | X | |
 | Pin version change dry-run mode (TD-114) | X | | X | X | |
+| Catalog export — file format + entity selection (US-55) | X | X | X | X | |
+| Catalog import — dry-run collision detection (US-56) | X | X | X | X | |
+| Catalog import — schema transaction (US-56) | X | X | X | | |
+| Catalog import — data transaction (US-56) | X | X | X | | |
+| Catalog import — rename map + reuse existing (US-56) | X | X | X | X | |
+| Catalog import — partial failure recovery (US-56) | X | X | X | | |
+| Export UI — entity selection + warnings (US-55) | | | | X | |
+| Import UI — wizard with collision resolution (US-56) | | | | X | |
+| Import/Export live round-trip | | | X | | |
+| Import/Export live browser tests | | | | X | |
 
 ### Bug Fix & UX Polish Sprint Test Strategy (Phase 1)
 
@@ -329,6 +339,40 @@ This phase addresses 4 critical TD items across 3 stages. Primarily backend (Go 
   - **Integration tests:** Full round-trip — create entity type V1 with attributes, create CV, pin V1, create catalog with instances, add attribute values, create V2 with one renamed + one deleted + one new required attribute, UpdatePin V1→V2, verify IAVs remapped, verify warnings returned.
   - **API tests:** Verify `PUT /pins/:id` response includes `migration` object with `affected_catalogs`, `affected_instances`, `attribute_mappings`, and `warnings`. Verify `PUT /pins/:id?dry_run=true` returns migration report without applying changes (IAVs unchanged). Verify `PUT /pins/:id` (no dry_run) applies the migration.
   - **UI tests (browser):** Verify changing pin version on BOM tab shows migration warnings dialog/panel before or after applying. Verify dry-run preview available. Verify warnings display attribute names, types, and affected instance counts.
+
+### Catalog Import/Export Test Strategy (FF-12, US-55, US-56)
+
+Catalog import/export spans all layers. 6 implementation stages with corresponding test layers.
+
+**Stage 1: Export service + API**
+
+- **Unit tests (service):** Verify export builds correct JSON structure from catalog data. Verify nested instances by association name. Verify attribute values: scalars as strings, list/json as parsed JSON. Verify links with target_path for contained targets, omitted for root. Verify system type definitions excluded from type_definitions section. Verify entity selection filter (subset of pinned entity types). Verify dangling link detection when entity types are excluded. Verify format_version and metadata fields populated.
+- **Integration tests:** Full export round-trip against real SQLite — create catalog with CV, entity types, instances, containment, links → export → verify JSON structure matches expected output.
+- **API tests (handler):** Verify `GET /catalogs/{name}/export` returns JSON with Content-Disposition header. Verify `?entities=a,b` filters entity types. Verify 404 for nonexistent catalog. Verify 403 for non-Admin.
+
+**Stage 2: Import service + API**
+
+- **Unit tests (service — dry-run):** Verify collision detection: new entities, identical entities (field-by-field comparison), conflicting entities. Verify identical+V1 auto-classified as re-import. Verify rename_map applied before collision check. Verify reuse_existing resolves to latest version on target. Verify system type resolution by name. Verify reference integrity validation (unknown type defs, unknown entity types, unknown link targets).
+- **Unit tests (service — schema transaction):** Verify type definitions created as V1. Verify entity types created as V1 with attributes + associations. Verify CV created with development stage. Verify pins created with auto-pin for type defs. Verify reused entities skipped (not recreated). Verify rollback on schema error.
+- **Unit tests (service — data transaction):** Verify catalog created with draft status. Verify instances created with containment hierarchy (recursive tree walk). Verify IAVs set correctly (list/json re-serialized to strings). Verify association links created with target resolved by name + path. Verify rollback on data error.
+- **Integration tests:** Full import round-trip — export a catalog → import into fresh DB → verify all data matches. Re-import after partial failure → verify identical+V1 detection and reuse.
+- **API tests (handler):** Verify `POST /catalogs/import` with valid file returns 201 with summary. Verify `?dry_run=true` returns collision report without creating data. Verify dry_run validation (only "true"/"false"/absent). Verify rename_map + reuse_existing in request body. Verify 400 for invalid file format, unsupported format_version, reference integrity errors. Verify 403 for non-Admin. Verify 409 for unresolved conflicts.
+
+**Stage 3: Export UI**
+
+- **Browser tests:** Verify Export button visible for Admin+ on catalog detail page. Verify Export button hidden for RO/RW. Verify export modal opens with "Export all" default. Verify "Select entities" mode shows tree with checkboxes. Verify dependency auto-check when entity type selected. Verify dangling link warning when dependency unchecked. Verify validation status warning for draft/invalid catalogs. Verify download triggers.
+
+**Stage 4: Import UI**
+
+- **Browser tests:** Verify Import button visible for Admin+ on catalog list page. Verify Import button hidden for RO/RW. Verify wizard Step 1: file upload, catalog name/CV label fields pre-filled from file, mass rename prefix/suffix fields. Verify wizard Step 2: collision table with new/identical/conflict rows, rename fields for conflicts, reuse toggle for identical, auto-reuse for identical+V1. Verify Step 2 skipped when no collisions. Verify wizard Step 3: summary of entities to create. Verify success message with link to imported catalog. Verify partial failure message.
+
+**Stage 5: Live test script**
+
+- **Live API tests (curl):** Export → import round-trip with real data. Verify exported instances match imported. Verify re-import after partial failure. Verify collision detection with existing data. Verify mass rename. Verify entity selection filter.
+
+**Stage 6: Live browser tests**
+
+- **System tests (Playwright):** Export a catalog via UI, verify file downloaded. Import the exported file via UI wizard, verify catalog created. Verify collision resolution flow. Verify mass rename flow.
 
 ### Type System Test Strategy (FF-14)
 
