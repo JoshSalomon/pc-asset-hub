@@ -3,6 +3,7 @@ package operational
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -1271,7 +1272,8 @@ func TestT30_28_ExportChildFilteredOutReturnsNil(t *testing.T) {
 	assert.Empty(t, result.Instances[0].Children, "child of filtered-out type should not appear")
 }
 
-// T-30.29: Export — etvRepo.GetByID returns nil in containment/assoc cache loops
+// T-30.29: Export — pinned ETV not found in cache loop is now a hard error
+// (previously silently skipped, fixed per Copilot review PR#18)
 func TestT30_29_ExportNilETVInCacheLoop(t *testing.T) {
 	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, _, _, instRepo, _, _ := newExportService()
 
@@ -1281,8 +1283,6 @@ func TestT30_29_ExportNilETVInCacheLoop(t *testing.T) {
 
 	et := &models.EntityType{ID: "et-1", Name: "server"}
 	etv := &models.EntityTypeVersion{ID: "etv-1", EntityTypeID: "et-1", Version: 1, Description: "server"}
-	// Two pins: one good, one with an ETV that is filtered out in entity-type loop
-	// but returns nil in cache-building loops.
 	badET := &models.EntityType{ID: "et-bad", Name: "bad-type"}
 	badETV := &models.EntityTypeVersion{ID: "etv-bad", EntityTypeID: "et-bad", Version: 1}
 	goodPin := &models.CatalogVersionPin{ID: "pin-1", CatalogVersionID: "cv-1", EntityTypeVersionID: "etv-1"}
@@ -1292,29 +1292,23 @@ func TestT30_29_ExportNilETVInCacheLoop(t *testing.T) {
 	cvRepo.On("GetByID", ctx(), "cv-1").Return(cv, nil)
 	pinRepo.On("ListByCatalogVersion", ctx(), "cv-1").Return([]*models.CatalogVersionPin{goodPin, badPin}, nil)
 
-	// Good pin resolves normally
 	etvRepo.On("GetByID", ctx(), "etv-1").Return(etv, nil)
 	etRepo.On("GetByID", ctx(), "et-1").Return(et, nil)
 	attrRepo.On("ListByVersion", ctx(), "etv-1").Return([]*models.Attribute{}, nil)
 	assocRepo.On("ListByVersion", ctx(), "etv-1").Return([]*models.Association{}, nil)
 
-	// Bad pin in entity-type loop (first pass): resolves to bad-type, which is filtered out
+	// Bad pin resolves in first loop (filtered out), then fails in cache loop
 	etvRepo.On("GetByID", ctx(), "etv-bad").Return(badETV, nil).Once()
 	etRepo.On("GetByID", ctx(), "et-bad").Return(badET, nil).Once()
-
-	// In the name cache loop (lines 291-300), bad pin resolves again, and in
-	// the containment cache loop (lines 310-314) and assoc cache loop (330-332),
-	// we simulate etvRepo returning nil to hit the defensive nil checks.
 	etvRepo.On("GetByID", ctx(), "etv-bad").Return(nil, domainerrors.NewNotFound("ETV", "etv-bad"))
 
 	instRepo.On("ListByCatalog", ctx(), "cat-1").Return([]*models.EntityInstance{}, nil)
 
-	// Filter to only "server" — "bad-type" is excluded from the entity-type loop
+	// Even with entity filter excluding "bad-type", the cache loop now propagates
+	// the error — a pinned ETV that can't be found is a data integrity issue
 	result, err := svc.ExportCatalog(context.Background(), "test-catalog", []string{"server"}, "")
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Len(t, result.EntityTypes, 1)
-	assert.Equal(t, "server", result.EntityTypes[0].Name)
+	require.Error(t, err)
+	assert.Nil(t, result)
 }
 
 // T-30.30: ExportInstance MarshalJSON — json.Marshal error path (unmarshalable attribute value)
@@ -1373,6 +1367,74 @@ func TestT30_30_BuildParentPathCycleDetection(t *testing.T) {
 	// Should terminate (not infinite loop) and return a path
 	assert.NotNil(t, path)
 	assert.LessOrEqual(t, len(path), 2, "cycle should be detected and path should be bounded")
+}
+
+// T-30.32: Export returns error when cache loop ETV lookup fails (not silently skipped)
+// The entity-type building loop (first pass) succeeds, but the cache-building loop
+// (second pass over same pins) fails — error must be propagated, not swallowed.
+func TestT30_32_ExportCacheLoopETVError(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, _, _, instRepo, _, _ := newExportService()
+
+	now := time.Now()
+	catalog := &models.Catalog{ID: "cat-1", Name: "test", CatalogVersionID: "cv-1", ValidationStatus: models.ValidationStatusValid, CreatedAt: now, UpdatedAt: now}
+	cv := &models.CatalogVersion{ID: "cv-1", VersionLabel: "v1"}
+	et := &models.EntityType{ID: "et-1", Name: "server"}
+	etv := &models.EntityTypeVersion{ID: "etv-1", EntityTypeID: "et-1", Version: 1, Description: "desc"}
+	pin := &models.CatalogVersionPin{ID: "pin-1", CatalogVersionID: "cv-1", EntityTypeVersionID: "etv-1"}
+
+	catalogRepo.On("GetByName", ctx(), "test").Return(catalog, nil)
+	cvRepo.On("GetByID", ctx(), "cv-1").Return(cv, nil)
+	pinRepo.On("ListByCatalogVersion", ctx(), "cv-1").Return([]*models.CatalogVersionPin{pin}, nil)
+
+	// First pass (entity-type building loop): succeeds
+	etvRepo.On("GetByID", ctx(), "etv-1").Return(etv, nil).Once()
+	etRepo.On("GetByID", ctx(), "et-1").Return(et, nil).Once()
+	attrRepo.On("ListByVersion", ctx(), "etv-1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", ctx(), "etv-1").Return([]*models.Association{}, nil)
+
+	instRepo.On("ListByCatalog", ctx(), "cat-1").Return([]*models.EntityInstance{}, nil)
+
+	// Subsequent passes (cache loops): ETV lookup fails — transient DB error
+	// Currently silently swallowed; should propagate
+	etvRepo.On("GetByID", ctx(), "etv-1").Return(nil, fmt.Errorf("connection refused"))
+
+	result, err := svc.ExportCatalog(context.Background(), "test", nil, "")
+	require.Error(t, err, "cache loop should propagate ETV lookup error, not silently skip")
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "connection refused")
+}
+
+// T-30.33: Export returns error when cache loop ET lookup fails
+func TestT30_33_ExportCacheLoopETError(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, _, _, instRepo, _, _ := newExportService()
+
+	now := time.Now()
+	catalog := &models.Catalog{ID: "cat-1", Name: "test", CatalogVersionID: "cv-1", ValidationStatus: models.ValidationStatusValid, CreatedAt: now, UpdatedAt: now}
+	cv := &models.CatalogVersion{ID: "cv-1", VersionLabel: "v1"}
+	et := &models.EntityType{ID: "et-1", Name: "server"}
+	etv := &models.EntityTypeVersion{ID: "etv-1", EntityTypeID: "et-1", Version: 1, Description: "desc"}
+	pin := &models.CatalogVersionPin{ID: "pin-1", CatalogVersionID: "cv-1", EntityTypeVersionID: "etv-1"}
+
+	catalogRepo.On("GetByName", ctx(), "test").Return(catalog, nil)
+	cvRepo.On("GetByID", ctx(), "cv-1").Return(cv, nil)
+	pinRepo.On("ListByCatalogVersion", ctx(), "cv-1").Return([]*models.CatalogVersionPin{pin}, nil)
+
+	// First pass (entity-type building loop): succeeds
+	etvRepo.On("GetByID", ctx(), "etv-1").Return(etv, nil).Once()
+	etRepo.On("GetByID", ctx(), "et-1").Return(et, nil).Once()
+	attrRepo.On("ListByVersion", ctx(), "etv-1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", ctx(), "etv-1").Return([]*models.Association{}, nil)
+
+	instRepo.On("ListByCatalog", ctx(), "cat-1").Return([]*models.EntityInstance{}, nil)
+
+	// Subsequent passes (cache loops): ETV succeeds but ET lookup fails
+	etvRepo.On("GetByID", ctx(), "etv-1").Return(etv, nil)
+	etRepo.On("GetByID", ctx(), "et-1").Return(nil, fmt.Errorf("database locked"))
+
+	result, err := svc.ExportCatalog(context.Background(), "test", nil, "")
+	require.Error(t, err, "cache loop should propagate ET lookup error, not silently skip")
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "database locked")
 }
 
 func ctx() context.Context {

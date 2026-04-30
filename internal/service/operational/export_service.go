@@ -319,14 +319,16 @@ func (s *ExportService) ExportCatalog(ctx context.Context, catalogName string, e
 	etNameByID := make(map[string]string)
 	etvByETID := make(map[string]*models.EntityTypeVersion)
 	for _, pin := range pins {
-		etv, _ := s.etvRepo.GetByID(ctx, pin.EntityTypeVersionID)
-		if etv != nil {
-			et, _ := s.etRepo.GetByID(ctx, etv.EntityTypeID)
-			if et != nil {
-				etNameByID[et.ID] = et.Name
-			}
-			etvByETID[etv.EntityTypeID] = etv
+		etv, err := s.etvRepo.GetByID(ctx, pin.EntityTypeVersionID)
+		if err != nil {
+			return nil, err
 		}
+		et, err := s.etRepo.GetByID(ctx, etv.EntityTypeID)
+		if err != nil {
+			return nil, err
+		}
+		etNameByID[et.ID] = et.Name
+		etvByETID[etv.EntityTypeID] = etv
 	}
 
 	// Build instance map for containment tree + link resolution
@@ -338,11 +340,14 @@ func (s *ExportService) ExportCatalog(ctx context.Context, catalogName string, e
 	// Resolve containment association names: parent ET → association name → child ET
 	assocNameByParentChild := make(map[string]map[string]string) // parentETID → childETID → assocName
 	for _, pin := range pins {
-		etv, _ := s.etvRepo.GetByID(ctx, pin.EntityTypeVersionID)
-		if etv == nil {
-			continue
+		etv, err := s.etvRepo.GetByID(ctx, pin.EntityTypeVersionID)
+		if err != nil {
+			return nil, err
 		}
-		assocs, _ := s.assocRepo.ListByVersion(ctx, etv.ID)
+		assocs, err := s.assocRepo.ListByVersion(ctx, etv.ID)
+		if err != nil {
+			return nil, err
+		}
 		for _, assoc := range assocs {
 			if assoc.Type == models.AssociationTypeContainment {
 				if assocNameByParentChild[etv.EntityTypeID] == nil {
@@ -356,11 +361,14 @@ func (s *ExportService) ExportCatalog(ctx context.Context, catalogName string, e
 	// Resolve association ID → name and target entity type name
 	assocByID := make(map[string]*models.Association)
 	for _, pin := range pins {
-		etv, _ := s.etvRepo.GetByID(ctx, pin.EntityTypeVersionID)
-		if etv == nil {
-			continue
+		etv, err := s.etvRepo.GetByID(ctx, pin.EntityTypeVersionID)
+		if err != nil {
+			return nil, err
 		}
-		assocs, _ := s.assocRepo.ListByVersion(ctx, etv.ID)
+		assocs, err := s.assocRepo.ListByVersion(ctx, etv.ID)
+		if err != nil {
+			return nil, err
+		}
 		for _, a := range assocs {
 			assocByID[a.ID] = a
 		}
