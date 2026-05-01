@@ -866,10 +866,10 @@ Two authorization fixes: (1) the validate endpoint on published catalogs is now 
 
 All API error responses (4xx, 5xx) must use a uniform JSON shape. Each handler was built independently across 4 development phases — format drift is likely. This cross-cutting strategy ensures consumers can rely on a single error schema.
 
-**Expected format**: `{"error": "<code>", "message": "<human-readable>", "details": {...optional}}`. HTTP status codes: 400 (validation), 403 (RBAC), 404 (not found), 409 (conflict/duplicate), 422 (semantic — e.g., cycle detection).
+**Expected format (current contract)**: Error responses use Echo's `NewHTTPError` which returns `{"message": "<human-readable>"}`. HTTP status codes: 400 (validation), 403 (RBAC), 404 (not found), 409 (conflict/duplicate), 422 (semantic — e.g., cycle detection).
 
-- **API tests (systematic)**: For every endpoint, trigger each possible error status code and verify the response body matches the standard error shape. Verify `Content-Type: application/json` on all error responses. Verify no endpoint returns plain text errors. Verify `error` field is a machine-readable code (e.g., `"not_found"`, `"conflict"`, `"forbidden"`). Verify `message` field is human-readable.
-- **Live tests (curl)**: Sample at least one 400, 403, 404, and 409 from both Meta and Operational APIs. Verify consistent JSON shape. Verify no HTML error pages leak through from Echo's default error handler.
+- **API tests (systematic)**: For every endpoint, trigger each possible error status code and verify the response body is JSON and contains a `message` field. Verify `Content-Type: application/json` on all error responses. Verify no endpoint returns plain text or HTML errors.
+- **Live tests (curl)**: Sample at least one 400, 403, 404, and 409 from both Meta and Operational APIs. Verify the body is JSON with a `message` field. Verify no HTML error pages leak through from Echo's default error handler.
 
 ### 5.43 API Input Sanitization and Fuzzing
 

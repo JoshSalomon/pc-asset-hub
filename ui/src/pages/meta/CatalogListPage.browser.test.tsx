@@ -302,11 +302,12 @@ test('import onSuccess reloads catalogs and navigates', async () => {
   const blob = new Blob([JSON.stringify(sampleExport)], { type: 'application/json' })
   const file = new File([blob], 'export.json', { type: 'application/json' })
   await new Promise(resolve => setTimeout(resolve, 50))
-  const dropzone = document.querySelector('[data-testid="file-dropzone"]') as HTMLElement
+  const dropzone = document.querySelector('[data-testid="file-dropzone"]')
+  expect(dropzone, 'file-dropzone element must exist on upload step').not.toBeNull()
   const dataTransfer = new DataTransfer()
   dataTransfer.items.add(file)
-  dropzone.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer }))
-  dropzone.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer }))
+  dropzone!.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer }))
+  dropzone!.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer }))
   await new Promise(resolve => setTimeout(resolve, 300))
 
   // Mock dry run (no collisions) and actual import
