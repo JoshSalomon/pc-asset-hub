@@ -24,6 +24,7 @@ If unsure which phase you're in, ask before proceeding.
 - When reporting test results, if tests are failing, fix them before reporting success.
 - Ask before making bulk changes (e.g., sed replacements across files).
 - Never claim work is done without running verification commands and showing actual output.
+- Before opening a PR, ALL test suites must pass: backend (`go test ./internal/... -count=1`), browser (`cd ui && npx vitest run --config vitest.browser.config.ts`), live API scripts (`make test-live`), and live browser system tests (`cd ui && npx vitest run --config vitest.system.config.ts`).
 
 ## Code Coverage — Non-Negotiable
 
