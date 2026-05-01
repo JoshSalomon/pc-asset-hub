@@ -73,8 +73,14 @@ func (s *EntityTypeService) CreateEntityType(ctx context.Context, name, descript
 	if name == "" {
 		return nil, nil, domainerrors.NewValidation("name is required")
 	}
+	if len(name) > 255 {
+		return nil, nil, domainerrors.NewValidation("entity type name must not exceed 255 characters")
+	}
 	if reservedEntityTypeNames[name] {
 		return nil, nil, domainerrors.NewValidation("entity type name '" + name + "' is reserved and cannot be used")
+	}
+	if len(description) > 1024 {
+		return nil, nil, domainerrors.NewValidation("entity type description must not exceed 1024 characters")
 	}
 
 	now := time.Now()

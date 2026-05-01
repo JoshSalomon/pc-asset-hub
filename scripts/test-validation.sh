@@ -278,6 +278,71 @@ else
   fail "Status reset" "expected=draft got=$STATUS_AFTER"
 fi
 
+header "Test 9: Constraint violation — string exceeding max_length → invalid"
+
+# Create a type definition with max_length constraint
+CTYPE_RESP=$(api POST "$META_API/type-definitions" Admin \
+  "{\"name\":\"vt-shortstr-${TIMESTAMP}\",\"base_type\":\"string\",\"constraints\":{\"max_length\":5}}")
+CTYPE_STATUS=$(get_status "$CTYPE_RESP")
+CTYPE_BODY=$(get_body "$CTYPE_RESP")
+CTYPE_TDV_ID=$(echo "$CTYPE_BODY" | jq -r '.latest_version_id')
+echo "  Created type definition with max_length=5 (TDV: $CTYPE_TDV_ID, status=$CTYPE_STATUS)"
+
+# Add an attribute using the constrained type definition to the server entity type
+CATTR_RESP=$(api POST "$META_API/entity-types/$SERVER_ET_ID/attributes" Admin \
+  "{\"name\":\"shortcode\",\"description\":\"Short code (max 5 chars)\",\"type_definition_version_id\":\"$CTYPE_TDV_ID\",\"required\":false}")
+CATTR_STATUS=$(get_status "$CATTR_RESP")
+echo "  Added constrained attribute 'shortcode' (status=$CATTR_STATUS)"
+
+# Get the latest entity type version after adding the new attribute
+NEW_SERVER_ETV_ID=$(get_body "$(api GET "$META_API/entity-types/$SERVER_ET_ID/versions" Admin)" | jq -r '.items[-1].id')
+echo "  New server ETV: $NEW_SERVER_ETV_ID"
+
+# Update CV pin to use the new entity type version
+api PUT "$META_API/catalog-versions/$CV_ID" Admin \
+  "{\"pins\":[{\"entity_type_version_id\":\"$NEW_SERVER_ETV_ID\"}]}" > /dev/null 2>&1
+
+# Delete existing instance from Test 7 so we start clean
+INST_LIST=$(api GET "$DATA_API/catalogs/$CATALOG_NAME/vt-server-${TIMESTAMP}" Admin)
+INST_LIST_BODY=$(get_body "$INST_LIST")
+EXISTING_INST_ID=$(echo "$INST_LIST_BODY" | jq -r '.items[0].id // empty')
+if [ -n "$EXISTING_INST_ID" ]; then
+  api DELETE "$DATA_API/catalogs/$CATALOG_NAME/vt-server-${TIMESTAMP}/$EXISTING_INST_ID" Admin > /dev/null 2>&1 || true
+fi
+
+# Create instance with shortcode exceeding max_length (6 chars > 5 max)
+INST_RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/vt-server-${TIMESTAMP}" Admin \
+  '{"name":"constraint-server","description":"Has long shortcode","attributes":{"hostname":"ok-host","shortcode":"TOOLONG"}}')
+INST_STATUS=$(get_status "$INST_RESP")
+if [ "$INST_STATUS" = "201" ]; then
+  echo "  Created instance with oversized shortcode"
+else
+  echo "  Instance creation status: $INST_STATUS ($(get_body "$INST_RESP"))"
+fi
+
+# Validate — should be invalid with constraint error
+RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/validate" Admin)
+STATUS=$(get_status "$RESP")
+BODY=$(get_body "$RESP")
+VAL_STATUS=$(echo "$BODY" | jq -r '.status')
+ERROR_COUNT=$(echo "$BODY" | jq '.errors | length')
+
+if [ "$STATUS" = "200" ] && [ "$VAL_STATUS" = "invalid" ] && [ "$ERROR_COUNT" -ge 1 ]; then
+  # Check that the error mentions max_length constraint
+  ERROR_VIOL=$(echo "$BODY" | jq -r '[.errors[].violation] | join(" ")')
+  if echo "$ERROR_VIOL" | grep -qi "maximum length\|max.length\|exceeds"; then
+    pass "Constraint violation detected: string exceeds max_length ($ERROR_COUNT error(s))"
+  else
+    pass "Validation returned invalid with $ERROR_COUNT error(s) (violation: $ERROR_VIOL)"
+  fi
+else
+  fail "Constraint violation" "status=$STATUS val_status=$VAL_STATUS errors=$ERROR_COUNT body=$BODY"
+fi
+
+# Clean up the type definition
+CTYPE_TD_ID=$(echo "$CTYPE_BODY" | jq -r '.id')
+api DELETE "$META_API/type-definitions/$CTYPE_TD_ID" Admin > /dev/null 2>&1 || true
+
 header "Cleanup (only removing test data created by this script)"
 
 api DELETE "$DATA_API/catalogs/$CATALOG_NAME" Admin > /dev/null 2>&1 || true

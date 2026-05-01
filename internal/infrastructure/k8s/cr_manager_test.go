@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,7 +10,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/project-catalyst/pc-asset-hub/internal/operator/api/v1alpha1"
 	"github.com/project-catalyst/pc-asset-hub/internal/service/meta"
@@ -257,4 +260,88 @@ func TestT16_51_CatalogDeleteNonexistent(t *testing.T) {
 
 	err := mgr.Delete(context.Background(), "nonexistent", "assethub")
 	require.NoError(t, err) // no error
+}
+
+// === Error Path Tests ===
+
+// CatalogVersion CreateOrUpdate: Get returns non-NotFound error (line 53-55)
+func TestCVCreateOrUpdate_GetError(t *testing.T) {
+	s := testScheme()
+	cl := fake.NewClientBuilder().WithScheme(s).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if _, ok := obj.(*v1alpha1.CatalogVersion); ok {
+					return fmt.Errorf("injected Get error")
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+		}).Build()
+	mgr := NewK8sCRManager(cl)
+
+	err := mgr.CreateOrUpdate(context.Background(), meta.CatalogVersionCRSpec{
+		Name: "test", Namespace: "assethub",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get CatalogVersion")
+}
+
+// Catalog CreateOrUpdate: Get returns non-NotFound error (line 106-108)
+func TestCatalogCreateOrUpdate_GetError(t *testing.T) {
+	s := testScheme()
+	cl := fake.NewClientBuilder().WithScheme(s).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if _, ok := obj.(*v1alpha1.Catalog); ok {
+					return fmt.Errorf("injected Catalog Get error")
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+		}).Build()
+	mgr := NewK8sCatalogCRManager(cl)
+
+	err := mgr.CreateOrUpdate(context.Background(), operational.CatalogCRSpec{
+		Name: "test", Namespace: "assethub",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get Catalog")
+}
+
+// CatalogVersion Delete: Get returns non-NotFound error (line 145-146)
+func TestCVDelete_GetError(t *testing.T) {
+	s := testScheme()
+	cl := fake.NewClientBuilder().WithScheme(s).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if _, ok := obj.(*v1alpha1.CatalogVersion); ok {
+					return fmt.Errorf("injected CV Delete Get error")
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+		}).Build()
+	mgr := NewK8sCRManager(cl)
+
+	err := mgr.Delete(context.Background(), "some-cv", "assethub")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get CatalogVersion")
+	assert.Contains(t, err.Error(), "for deletion")
+}
+
+// Catalog Delete: Get returns non-NotFound error (line 131-132)
+func TestCatalogDelete_GetError(t *testing.T) {
+	s := testScheme()
+	cl := fake.NewClientBuilder().WithScheme(s).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if _, ok := obj.(*v1alpha1.Catalog); ok {
+					return fmt.Errorf("injected Catalog Delete Get error")
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+		}).Build()
+	mgr := NewK8sCatalogCRManager(cl)
+
+	err := mgr.Delete(context.Background(), "some-cat", "assethub")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get Catalog")
+	assert.Contains(t, err.Error(), "for deletion")
 }

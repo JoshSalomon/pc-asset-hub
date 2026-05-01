@@ -249,6 +249,10 @@ func (s *CatalogService) Publish(ctx context.Context, name string) error {
 		return err
 	}
 
+	if catalog.Published {
+		return nil
+	}
+
 	if catalog.ValidationStatus != models.ValidationStatusValid {
 		return domainerrors.NewValidation("catalog must be valid to publish (current status: " + string(catalog.ValidationStatus) + ")")
 	}

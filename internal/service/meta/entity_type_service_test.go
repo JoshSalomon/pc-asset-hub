@@ -2,6 +2,7 @@ package meta_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -945,6 +946,24 @@ func TestCreateEntityType_ReservedNameRejected(t *testing.T) {
 		assert.True(t, domainerrors.IsValidation(err))
 		assert.Contains(t, err.Error(), "reserved")
 	}
+}
+
+func TestCreateEntityType_NameTooLong(t *testing.T) {
+	svc := meta.NewEntityTypeService(nil, nil, nil, nil)
+	longName := strings.Repeat("a", 256)
+	_, _, err := svc.CreateEntityType(context.Background(), longName, "desc")
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "255")
+}
+
+func TestCreateEntityType_DescriptionTooLong(t *testing.T) {
+	svc := meta.NewEntityTypeService(nil, nil, nil, nil)
+	longDesc := strings.Repeat("x", 1025)
+	_, _, err := svc.CreateEntityType(context.Background(), "valid-name", longDesc)
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "1024")
 }
 
 func TestRenameEntityType_ReservedNameRejected(t *testing.T) {

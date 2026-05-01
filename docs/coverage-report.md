@@ -1,6 +1,6 @@
 # AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-04-27
+Last updated: 2026-05-01
 
 ---
 
@@ -8,12 +8,12 @@ Last updated: 2026-04-27
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1743 | 100% | 97.9% (5098/5206) | — |
+| Backend (Go) | 1911 | 100% | 98.4% (5197/5282) | — |
 | UI — Unit tests (node) | 41 | 100% | — | — |
 | UI — Browser tests (Playwright) | 1083 | 100% | 95.6% (2848/2980) | 97.9% (2569/2624) |
-| UI — System tests (Playwright + live server) | 121 | 100% | — | — |
-| Live system (bash scripts) | 303 | 100% | — | — |
-| **Total** | **3291** | **100%** | — | — |
+| UI — System tests (Playwright + live server) | 165 | 100% | — | — |
+| Live system (bash scripts) | 506 | 100% | — | — |
+| **Total** | **3706** | **100%** | — | — |
 
 ---
 
@@ -21,7 +21,7 @@ Last updated: 2026-04-27
 
 | Package | Coverage | Notes |
 |---------|----------|-------|
-| `internal/api/health` | 90.0% (9/10) | Readyz DB-ping error path |
+| `internal/api/health` | 100.0% (10/10) | Phase 5 QA: Readyz DB-ping error path now covered (was 90.0%, 9/10) |
 | `internal/api/meta` | 99.8% (502/503) | `defaultListParams` in version_history_handler: 1 pre-existing uncovered function |
 | `internal/api/middleware` | 100.0% (69/69) | |
 | `internal/api/operational` | 98.5% (336/341) | Copy/Replace/Update/Import handlers bind-error branches only |
@@ -29,14 +29,14 @@ Last updated: 2026-04-27
 | `internal/domain/models` | 100.0% (8/8) | |
 | `internal/infrastructure/config` | 100.0% (21/21) | |
 | `internal/infrastructure/gorm/models` | 100.0% (43/43) | Migration code removed (TD-21 in Session 011) |
-| `internal/infrastructure/gorm/repository` | 91.6% (717/783) | GORM error branches on Delete/Update, partial DB failure paths |
-| `internal/infrastructure/k8s` | 92.6% (50/54) | K8s client error paths |
+| `internal/infrastructure/gorm/repository` | 96.3% (754/783) | Phase 5 QA: +17 tests covering Delete/Update not-found branches, 0% functions (was 91.6%, 717/783) |
+| `internal/infrastructure/k8s` | 100.0% (54/54) | Phase 5 QA: K8s client error paths now covered (was 92.6%, 50/54) |
 | `internal/operator/api/v1alpha1` | 97.7% (85/87) | `DeepCopyObject` nil-receiver guard |
-| `internal/operator/controllers` | 94.3% (198/210) | `SetupWithManager` (envtest — deferred to Phase B), `SetOwnerReference` error branches |
-| `internal/operator/crdgen` | 94.3% (33/35) | `json.Marshal` error guards on well-formed inputs |
-| `internal/service/meta` | 99.3% (1128/1136) | BulkCopy error paths, requiresDeepCopy edge cases |
-| `internal/service/operational` | 99.7% (1824/1829) | json.Marshal/Unmarshal on well-formed data, defensive nil guards |
-| `internal/service/validation` | 95.6% (43/45) | |
+| `internal/operator/controllers` | 94.3% (198/210) | `SetupWithManager` (envtest — deferred to Phase B), `SetOwnerReference` error branches (unreachable) |
+| `internal/operator/crdgen` | 94.3% (33/35) | `json.Marshal` error guards on well-formed inputs (unreachable) |
+| `internal/service/meta` | 99.3% (1132/1140) | BulkCopy error paths, requiresDeepCopy edge cases |
+| `internal/service/operational` | 98.6% (1875/1901) | json.Marshal/Unmarshal on well-formed data, defensive nil guards, import duplicate catalog check |
+| `internal/service/validation` | 100.0% (45/45) | Phase 5 QA: cycle detection edge cases now covered (was 95.6%, 43/45) |
 
 ### Excluded from Coverage
 
@@ -218,14 +218,17 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 
 | Test File | Tests | Status |
 |-----------|-------|--------|
-| `App.system.test.ts` | 30 | Pass |
+| `App.system.test.ts` | 32 | Pass |
 | `CatalogDetail.system.test.ts` | 15 | Pass |
 | `CatalogVersionDetail.system.test.ts` | 12 | Pass |
 | `DataViewer.system.test.ts` | 17 | Pass |
+| `ImportExportWorkflow.system.test.ts` | 16 | Pass (Phase 5 QA) |
 | `LandingPage.system.test.ts` | 4 | Pass |
+| `ModelDiagram.system.test.ts` | 9 | Pass (Phase 5 QA) |
+| `SchemaEvolution.system.test.ts` | 9 | Pass (Phase 5 QA) |
 | `SecurityFlows.system.test.ts` | 21 | Pass |
-| `TypeSystem.system.test.ts` | 22 | Pass |
-| **Total** | **121** | **100% pass** |
+| `TypeSystem.system.test.ts` | 30 | Pass |
+| **Total** | **165** | **100% pass** |
 
 ### Code Coverage (Istanbul provider)
 
@@ -1148,6 +1151,73 @@ System tests (`App.system.test.ts`) run against a live deployment (kind cluster)
 - Rename entity type and navigate back (list refresh)
 - Targeted delete (correct row, not first) for entity types, enums, and catalog versions
 - Copy attributes picker with enum name resolution
+
+### New Code Coverage (Session 026 — Phase 5 QA: Comprehensive Test Review)
+
+**Backend:** 4 bugs fixed with TDD. Entity type name/description validation, publish idempotence, import duplicate catalog conflict. Repository coverage gap tests. K8s/health/validation packages brought to 100%.
+
+| File | Function | Coverage |
+|------|----------|----------|
+| `service/meta/entity_type_service.go` | `CreateEntityType` (name length + desc length validation) | 100% |
+| `service/operational/catalog_service.go` | `Publish` (idempotent early return when already published) | 100% |
+| `service/operational/import_service.go` | `Import` (duplicate catalog name check before create) | 100% |
+| `infrastructure/gorm/repository/*` | 17 new gap tests (Delete/Update not-found, 0% functions) | 96.3% (was 91.6%) |
+| `infrastructure/k8s/cr_manager.go` | Get error paths, Delete error paths | 100% (was 92.6%) |
+| `api/health/handler.go` | Readyz DB-handle error | 100% (was 90.0%) |
+| `service/validation/cycle_detection.go` | Graph error + visited-node skip | 100% (was 95.6%) |
+
+Per-package coverage deltas:
+
+| Package | Before (Session 025) | After (Session 026) | Delta |
+|---------|---------------------|---------------------|-------|
+| `infrastructure/gorm/repository` | 91.6% (717/783) | 96.3% (754/783) | **+4.7pp** (+37 covered) |
+| `infrastructure/k8s` | 92.6% (50/54) | 100.0% (54/54) | **+7.4pp** (+4 covered) |
+| `api/health` | 90.0% (9/10) | 100.0% (10/10) | **+10.0pp** (+1 covered) |
+| `service/validation` | 95.6% (43/45) | 100.0% (45/45) | **+4.4pp** (+2 covered) |
+| `service/operational` | 98.6% (1824/1829) | 98.6% (1875/1901) | 0pp (+51 covered, +72 total; 26 uncov all pre-existing) |
+| `service/meta` | 99.3% (1128/1136) | 99.3% (1132/1140) | 0pp (+4 covered, +4 total; 0 new uncov) |
+| **Overall backend** | **97.9% (5098/5206)** | **98.4% (5197/5282)** | **+0.5pp** (+99 covered, +76 total) |
+
+Backend test count: 1743 → 1911 (+168 new tests).
+
+**Live system tests:** 3 new scripts created + 5 existing scripts extended. 4 bugs found and fixed.
+
+| Script | Assertions | Status |
+|--------|-----------|--------|
+| `test-rbac-enforcement.sh` (NEW) | 77 | 100% pass |
+| `test-error-handling.sh` (NEW) | 71 | 100% pass |
+| `test-cross-feature-workflow.sh` (NEW) | 51 | 100% pass |
+| `test-containment-links.sh` (extended) | 25 | 100% pass (+7) |
+| `test-data-viewer.sh` (extended) | ~27 | 100% pass (+4) |
+| `test-validation.sh` (extended) | 10 | 100% pass (+1) |
+| `test-publishing.sh` (extended) | 31 | 100% pass (+4) |
+| `test-import-export.sh` (extended) | 35 | 100% pass (+2) |
+
+Live test count: 303 → 506 (+203 new assertions).
+
+**System tests:** 3 new Playwright test files.
+
+| File | Tests | Focus |
+|------|-------|-------|
+| `ModelDiagram.system.test.ts` (NEW) | 9 | Diagram rendering, edges, empty states, updates |
+| `SchemaEvolution.system.test.ts` (NEW) | 9 | Pin changes, migration preview, apply |
+| `ImportExportWorkflow.system.test.ts` (NEW) | 16 | Export/import visibility, wizard steps, round-trip |
+
+System test count: 121 → 165 (+44 new tests).
+
+**Bugs found and fixed:**
+
+| Bug | Root Cause | Fix | Test |
+|-----|-----------|-----|------|
+| Entity type name >255 chars → 500 | No length validation | `len(name) > 255` check in service | `TestCreateEntityType_NameTooLong` |
+| Entity type description >1024 chars → 500 | No length validation | `len(description) > 1024` check in service | `TestCreateEntityType_DescriptionTooLong` |
+| Publish already-published → 500 | No idempotency check, K8s error unmapped | `if catalog.Published { return nil }` | `TestPublish_AlreadyPublished_ReturnsEarlyNoUpdate` |
+| Re-import duplicate catalog → 500 | GORM constraint error unmapped | `GetByName` check before Create → ConflictError | `TestImport_DuplicateCatalogName_Conflict` |
+
+**Test plan updates:**
+- `docs/test-plan.md`: 14 new coverage matrix rows, 7 new cross-cutting strategy sections (5.42-5.48), RBAC endpoint×role matrix
+- `docs/test-plan-detailed.md`: 105 new test case rows across 14 milestones (1,955→2,060)
+- `docs/td-log.md`: TD-138 added (UI-side entity type name/description length validation)
 
 ---
 

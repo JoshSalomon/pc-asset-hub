@@ -490,8 +490,8 @@ describe('Publishing', () => {
     // Wait for publish to complete and page to refresh
     await pg.waitForTimeout(1000)
 
-    // Verify published badge
-    await visible(pg.getByText('published'))
+    // Verify published badge (use Label role to avoid matching alert heading)
+    await visible(pg.locator('.pf-v6-c-label__text').filter({ hasText: 'published' }))
   })
 
   test('published catalog shows write protection for RW', async () => {

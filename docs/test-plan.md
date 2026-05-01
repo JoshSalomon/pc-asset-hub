@@ -266,6 +266,19 @@ Each feature area is tested at the appropriate layers:
 | Import UI — wizard with collision resolution (US-56) | | | | X | |
 | Import/Export live round-trip | | | X | | |
 | Import/Export live browser tests | | | | X | |
+| Set parent instance (PUT /:type/:id/parent) | X | X | X | | |
+| Attribute reorder (PUT /attributes/reorder) | X | | X | X | |
+| Health check endpoint (GET /healthz) | | | X | | |
+| Import dry-run mode (collision report only) | X | X | X | X | |
+| Type definition version pinning in CVs (US-53) | X | X | X | X | |
+| TD-2 regression: CV timestamp sort determinism | | X | X | | |
+| TD-3 regression: association target+role uniqueness | X | X | X | | |
+| TD-7 regression: bidirectional assoc removal from both sides | X | X | X | | |
+| TD-67 regression: struct validator tag enforcement | | | X | | |
+| TD-102 regression: enum filter exact match | | | X | X | |
+| TD-119 regression: regex cache bounded growth | | | | X | |
+| TD-129 regression: deterministic etvIDs ordering | X | | | | |
+| TD-130 regression: migration limit early rejection | X | | X | | |
 
 ### Bug Fix & UX Polish Sprint Test Strategy (Phase 1)
 
@@ -848,3 +861,146 @@ Two authorization fixes: (1) the validate endpoint on published catalogs is now 
 - **Browser tests (catalog detail — validate button)**: Verify Validate button hidden on published catalogs for non-SuperAdmin users. Verify Validate button visible on published catalogs for SuperAdmin. Verify Validate button visible on unpublished catalogs for RW (no regression).
 - **Browser tests (CV detail — edit controls)**: Verify Edit buttons hidden on production CVs for all roles. Verify Edit buttons hidden on testing CVs for RW and Admin. Verify Edit buttons visible on testing CVs for SuperAdmin. Verify Edit buttons visible on development CVs for RW (no regression).
 - **Live tests**: Verify validate on published catalog blocked for RW. Verify CV metadata update blocked on production CV. Verify CV metadata update on testing CV blocked for RW, allowed for SuperAdmin.
+
+### 5.42 Error Response Format Consistency
+
+All API error responses (4xx, 5xx) must use a uniform JSON shape. Each handler was built independently across 4 development phases — format drift is likely. This cross-cutting strategy ensures consumers can rely on a single error schema.
+
+**Expected format**: `{"error": "<code>", "message": "<human-readable>", "details": {...optional}}`. HTTP status codes: 400 (validation), 403 (RBAC), 404 (not found), 409 (conflict/duplicate), 422 (semantic — e.g., cycle detection).
+
+- **API tests (systematic)**: For every endpoint, trigger each possible error status code and verify the response body matches the standard error shape. Verify `Content-Type: application/json` on all error responses. Verify no endpoint returns plain text errors. Verify `error` field is a machine-readable code (e.g., `"not_found"`, `"conflict"`, `"forbidden"`). Verify `message` field is human-readable.
+- **Live tests (curl)**: Sample at least one 400, 403, 404, and 409 from both Meta and Operational APIs. Verify consistent JSON shape. Verify no HTML error pages leak through from Echo's default error handler.
+
+### 5.43 API Input Sanitization and Fuzzing
+
+No systematic tests exist for malformed or adversarial input. This strategy covers boundary-value inputs, malformed payloads, and injection attempts across all endpoints that accept request bodies.
+
+- **API tests (malformed JSON)**: Send `{invalid json` to every POST/PUT endpoint. Verify 400 with descriptive error. Verify no panic or 500.
+- **API tests (wrong Content-Type)**: Send valid JSON with `Content-Type: text/plain` and `Content-Type: application/xml`. Verify graceful rejection (400 or ignored with correct behavior).
+- **API tests (boundary strings)**: Test name fields with: empty string, single char, max-length string (63 for DNS labels, 255 for general names), max+1, string of only whitespace, string with null bytes, Unicode characters (emoji, RTL, zero-width joiners), SQL injection patterns (`'; DROP TABLE --`), XSS patterns (`<script>alert(1)</script>`).
+- **API tests (numeric boundaries)**: Test numeric attribute values with: 0, -1, `MAX_INT64`, `MIN_INT64`, `NaN`, `Infinity`, very large decimals.
+- **API tests (empty bodies)**: Send empty body (`{}`) to every POST endpoint. Verify appropriate validation errors, not panics.
+- **Live tests (curl)**: Malformed JSON, wrong Content-Type, boundary-length names against the live system. Verify no 500s.
+
+### 5.44 Cross-Feature Workflow Integration
+
+Individual features are tested in isolation but no test verifies the complete end-to-end workflow spanning multiple feature areas. Bugs often appear at feature boundaries.
+
+- **Live tests (curl — full lifecycle)**: Create entity types → add attributes → create associations → create CV → pin entity types → create catalog → populate instances → create containment → create links → validate → publish → export → import into new catalog → validate imported catalog → copy catalog → replace catalog. Verify data integrity at each step. Verify final state matches expected.
+- **Live tests (curl — re-import)**: Export a catalog, modify it, re-import. Verify collision detection. Verify rename map. Verify reuse-existing.
+- **System tests (Playwright — full journey)**: Same lifecycle flow through the UI. Verify no dead ends, broken navigation, or stale state.
+- **Live tests (curl — publish lifecycle)**: Create → validate → publish → attempt mutations (expect 403 for RW) → copy → edit copy → validate copy → replace → verify published state transferred → unpublish archive.
+
+### 5.45 Concurrency and Race Conditions
+
+Optimistic locking is tested per-entity but no tests verify behavior under concurrent access. Real-world deployments will have multiple users operating simultaneously.
+
+- **API tests (parallel updates)**: Send two concurrent PUT requests to the same entity with the same version. Verify exactly one succeeds (200) and one fails (409). Verify the failed request's error message is actionable.
+- **API tests (publish race)**: Two simultaneous publish requests for the same catalog. Verify exactly one succeeds. Verify no duplicate Catalog CRs.
+- **API tests (import during mutation)**: Start an import while another request is modifying the target catalog's schema. Verify either transactional isolation or a clear conflict error.
+- **Live tests (curl)**: Parallel curl requests using `&` to simulate concurrent access. Verify no 500 errors, no data corruption, no orphaned records.
+
+### 5.46 Idempotency Testing
+
+Operations that should be safe to retry must be tested for idempotent behavior. Network retries and UI double-clicks can cause duplicate requests.
+
+- **API tests (publish idempotent)**: Publish an already-published catalog. Verify 200 (not error). Verify no duplicate CRs.
+- **API tests (unpublish idempotent)**: Unpublish an already-unpublished catalog. Verify 200.
+- **API tests (promote idempotent)**: Promote a CV that's already at the target stage. Verify graceful behavior.
+- **API tests (import identical)**: Import the same file twice. Verify second import detects identical entities and handles gracefully (reuse or clear conflict report).
+- **API tests (delete idempotent)**: Delete an already-deleted resource. Verify 404 (not 500).
+- **Live tests**: Repeat the above against the live system.
+
+### 5.47 Cascading Data Integrity
+
+Delete and mutation operations cascade through related entities. Tests must verify that all related data is correctly cleaned up and no orphans remain.
+
+- **Integration tests (entity type delete cascade)**: Delete entity type → verify all versions, attributes, and associations removed. Verify CV pins referencing the deleted type are handled.
+- **Integration tests (catalog delete cascade)**: Delete catalog → verify all instances, attribute values, association links, and containment relationships removed. Verify no orphaned IAVs in the database.
+- **Integration tests (instance delete cascade)**: Delete parent instance → verify all contained children recursively deleted. Verify all association links (both as source and target) removed. Verify attribute values removed.
+- **API tests (post-delete verification)**: After each cascading delete, query for the deleted entity's children/links/values. Verify all return 404 or empty lists.
+- **Live tests (curl)**: Create a deep hierarchy (3+ levels), delete the root, query for all descendants. Verify clean cascade.
+
+### 5.48 RBAC Endpoint Coverage Matrix
+
+Section 5.1 covers RBAC strategy generally. This section provides a comprehensive endpoint × role matrix to ensure no endpoint lacks RBAC testing. Every row must have a corresponding test.
+
+**Meta API Endpoints:**
+
+| Endpoint | RO | RW | Admin | SuperAdmin |
+|---|---|---|---|---|
+| `GET /entity-types` | 200 | 200 | 200 | 200 |
+| `GET /entity-types/:id` | 200 | 200 | 200 | 200 |
+| `POST /entity-types` | 403 | 403 | 200 | 200 |
+| `PUT /entity-types/:id` | 403 | 403 | 200 | 200 |
+| `DELETE /entity-types/:id` | 403 | 403 | 200 | 200 |
+| `POST /entity-types/:id/copy` | 403 | 403 | 200 | 200 |
+| `POST /entity-types/:id/rename` | 403 | 403 | 200 | 200 |
+| `GET /entity-types/:id/attributes` | 200 | 200 | 200 | 200 |
+| `POST /entity-types/:id/attributes` | 403 | 403 | 200 | 200 |
+| `PUT /entity-types/:id/attributes/:name` | 403 | 403 | 200 | 200 |
+| `DELETE /entity-types/:id/attributes/:name` | 403 | 403 | 200 | 200 |
+| `PUT /entity-types/:id/attributes/reorder` | 403 | 403 | 200 | 200 |
+| `POST /entity-types/:id/attributes/copy` | 403 | 403 | 200 | 200 |
+| `GET /entity-types/:id/associations` | 200 | 200 | 200 | 200 |
+| `POST /entity-types/:id/associations` | 403 | 403 | 200 | 200 |
+| `PUT /entity-types/:id/associations/:name` | 403 | 403 | 200 | 200 |
+| `DELETE /entity-types/:id/associations/:name` | 403 | 403 | 200 | 200 |
+| `GET /entity-types/:id/versions` | 200 | 200 | 200 | 200 |
+| `GET /entity-types/:id/versions/diff` | 200 | 200 | 200 | 200 |
+| `GET /entity-types/:id/versions/:v/snapshot` | 200 | 200 | 200 | 200 |
+| `GET /entity-types/containment-tree` | 200 | 200 | 200 | 200 |
+| `POST /type-definitions` | 403 | 403 | 200 | 200 |
+| `GET /type-definitions` | 200 | 200 | 200 | 200 |
+| `GET /type-definitions/:id` | 200 | 200 | 200 | 200 |
+| `PUT /type-definitions/:id` | 403 | 403 | 200 | 200 |
+| `DELETE /type-definitions/:id` | 403 | 403 | 200 | 200 |
+| `GET /type-definitions/:id/versions` | 200 | 200 | 200 | 200 |
+| `GET /type-definitions/:id/versions/:v` | 200 | 200 | 200 | 200 |
+| `GET /catalog-versions` | 200 | 200 | 200 | 200 |
+| `GET /catalog-versions/:id` | 200 | 200 | 200 | 200 |
+| `POST /catalog-versions` | 403 | 200 | 200 | 200 |
+| `PUT /catalog-versions/:id` | note1 | note1 | note1 | note1 |
+| `DELETE /catalog-versions/:id` | 403 | 200 | 200 | 200 |
+| `POST /catalog-versions/:id/promote` | 403 | 200 | 200 | 200 |
+| `POST /catalog-versions/:id/demote` | 403 | 200 | 200 | 200 |
+| `GET /catalog-versions/:id/pins` | 200 | 200 | 200 | 200 |
+| `POST /catalog-versions/:id/pins` | 403 | 200 | 200 | 200 |
+| `PUT /catalog-versions/:id/pins/:pin-id` | 403 | 200 | 200 | 200 |
+| `DELETE /catalog-versions/:id/pins/:pin-id` | 403 | 200 | 200 | 200 |
+| `GET /catalog-versions/:id/transitions` | 200 | 200 | 200 | 200 |
+
+note1: CV metadata edit depends on lifecycle stage — see section 5.41.
+
+**Operational API Endpoints:**
+
+| Endpoint | RO | RW | Admin | SuperAdmin |
+|---|---|---|---|---|
+| `GET /catalogs` | 200 | 200 | 200 | 200 |
+| `POST /catalogs` | 403 | 200 | 200 | 200 |
+| `GET /catalogs/{name}` | 200 | 200 | 200 | 200 |
+| `PUT /catalogs/{name}` | 403 | 200 | 200 | 200 |
+| `DELETE /catalogs/{name}` | 403 | 200 | 200 | 200 |
+| `POST /catalogs/copy` | 403 | 200 | 200 | 200 |
+| `POST /catalogs/replace` | 403 | 403 | 200 | 200 |
+| `POST /catalogs/{name}/validate` | 403 | note2 | note2 | 200 |
+| `POST /catalogs/{name}/publish` | 403 | 403 | 200 | 200 |
+| `POST /catalogs/{name}/unpublish` | 403 | 403 | 200 | 200 |
+| `GET /catalogs/{name}/export` | 403 | 403 | 200 | 200 |
+| `POST /catalogs/import` | 403 | 403 | 200 | 200 |
+| `GET /catalogs/{name}/tree` | 200 | 200 | 200 | 200 |
+| `POST /catalogs/{name}/{type}` | 403 | note3 | note3 | 200 |
+| `GET /catalogs/{name}/{type}` | 200 | 200 | 200 | 200 |
+| `GET /catalogs/{name}/{type}/{id}` | 200 | 200 | 200 | 200 |
+| `PUT /catalogs/{name}/{type}/{id}` | 403 | note3 | note3 | 200 |
+| `DELETE /catalogs/{name}/{type}/{id}` | 403 | note3 | note3 | 200 |
+| `PUT /catalogs/{name}/{type}/{id}/parent` | 403 | note3 | note3 | 200 |
+| `POST /catalogs/{name}/{type}/{id}/links` | 403 | note3 | note3 | 200 |
+| `DELETE /catalogs/{name}/{type}/{id}/links/{lid}` | 403 | note3 | note3 | 200 |
+| `GET /catalogs/{name}/{type}/{id}/references` | 200 | 200 | 200 | 200 |
+| `GET /catalogs/{name}/{type}/{id}/referenced-by` | 200 | 200 | 200 | 200 |
+| `POST /catalogs/{name}/{type}/{id}/{child-type}` | 403 | note3 | note3 | 200 |
+| `GET /catalogs/{name}/{type}/{id}/{child-type}` | 200 | 200 | 200 | 200 |
+
+note2: Validate on unpublished catalog = 200 for RW+. On published catalog = 403 for RW/Admin, 200 for SuperAdmin.
+note3: On unpublished catalog = 200 for RW+. On published catalog = 403 for RW/Admin, 200 for SuperAdmin.

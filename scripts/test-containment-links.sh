@@ -319,6 +319,96 @@ else
   fail "Reverse refs after cascade" "count=${REV_AFTER_COUNT}, expected 0"
 fi
 
+# --- Test 9: Deep containment (3 levels) ---
+
+echo ""
+echo "=== Test: Deep containment (3 levels) ==="
+
+# Add containment: tool contains model (creates 3rd level: server → tool → model)
+json_post "${META_URL}/entity-types/${TOOL_ET}/associations" Admin \
+  "{\"target_entity_type_id\":\"${MODEL_ET}\",\"type\":\"containment\",\"name\":\"sub-models\"}" > /dev/null
+
+# Get updated ETVs after adding the new association
+DEEP_TOOL_ETV=$(json_get "${META_URL}/entity-types/${TOOL_ET}/versions" Admin | jq -r '.items[-1].id')
+DEEP_MODEL_ETV=$(json_get "${META_URL}/entity-types/${MODEL_ET}/versions" Admin | jq -r '.items[-1].id')
+
+# Update CV pins to use latest versions
+DEEP_CV=$(json_post "${META_URL}/catalog-versions" Admin \
+  "{\"version_label\":\"${PREFIX}---deep-cv-${SUFFIX}\",\"pins\":[{\"entity_type_version_id\":\"${SERVER_ETV}\"},{\"entity_type_version_id\":\"${DEEP_TOOL_ETV}\"},{\"entity_type_version_id\":\"${DEEP_MODEL_ETV}\"}]}" | jq -r '.id')
+
+# Create a new catalog for the deep containment test
+DEEP_CATALOG="${PREFIX}---deep-${SUFFIX}"
+json_post "${DATA_URL}/catalogs" RW \
+  "{\"name\":\"${DEEP_CATALOG}\",\"description\":\"Deep containment test\",\"catalog_version_id\":\"${DEEP_CV}\"}" > /dev/null
+CLEANUP_IDS+=("${DEEP_CATALOG}")
+
+# Level 1: Create server instance (root)
+DEEP_A=$(json_post "${DATA_URL}/catalogs/${DEEP_CATALOG}/${SERVER_NAME}" RW \
+  '{"name":"deep-root","description":"Level 1 server"}' | jq -r '.id')
+if [ -n "$DEEP_A" ] && [ "$DEEP_A" != "null" ]; then
+  pass "Create level-1 server (id=${DEEP_A})"
+else
+  fail "Create level-1 server" "no id returned"
+fi
+
+# Level 2: Create tool under server
+DEEP_B=$(json_post "${DATA_URL}/catalogs/${DEEP_CATALOG}/${SERVER_NAME}/${DEEP_A}/${TOOL_NAME}" RW \
+  '{"name":"deep-tool","description":"Level 2 tool"}' | jq -r '.id')
+if [ -n "$DEEP_B" ] && [ "$DEEP_B" != "null" ]; then
+  pass "Create level-2 tool (id=${DEEP_B})"
+else
+  fail "Create level-2 tool" "no id returned"
+fi
+
+# Level 3: Create model under tool
+DEEP_C=$(json_post "${DATA_URL}/catalogs/${DEEP_CATALOG}/${TOOL_NAME}/${DEEP_B}/${MODEL_NAME}" RW \
+  '{"name":"deep-model","description":"Level 3 model"}' | jq -r '.id')
+if [ -n "$DEEP_C" ] && [ "$DEEP_C" != "null" ]; then
+  pass "Create level-3 model (id=${DEEP_C})"
+else
+  fail "Create level-3 model" "no id returned"
+fi
+
+# Verify tree has 3 levels
+DEEP_TREE=$(json_get "${DATA_URL}/catalogs/${DEEP_CATALOG}/tree" RO)
+DEEP_ROOT_COUNT=$(echo "$DEEP_TREE" | jq 'length')
+DEEP_L2_COUNT=$(echo "$DEEP_TREE" | jq '[.[] | select(.instance_name=="deep-root") | .children[]] | length')
+DEEP_L3_COUNT=$(echo "$DEEP_TREE" | jq '[.[] | select(.instance_name=="deep-root") | .children[] | select(.instance_name=="deep-tool") | .children[]] | length')
+
+if [ "$DEEP_ROOT_COUNT" -ge 1 ] && [ "$DEEP_L2_COUNT" -ge 1 ] && [ "$DEEP_L3_COUNT" -ge 1 ]; then
+  pass "Tree has 3 levels (root=$DEEP_ROOT_COUNT, L2=$DEEP_L2_COUNT, L3=$DEEP_L3_COUNT)"
+else
+  fail "3-level tree" "root=$DEEP_ROOT_COUNT, L2=$DEEP_L2_COUNT, L3=$DEEP_L3_COUNT"
+fi
+
+# Delete root → verify cascade deletes levels 2 and 3
+DEL_CODE=$(http_code -X DELETE "${DATA_URL}/catalogs/${DEEP_CATALOG}/${SERVER_NAME}/${DEEP_A}" \
+  -H 'X-User-Role: RW')
+if [ "$DEL_CODE" = "204" ]; then
+  pass "Delete root instance (204)"
+else
+  fail "Delete root instance" "got ${DEL_CODE}, expected 204"
+fi
+
+# Verify level-2 tool is gone
+L2_CODE=$(http_code "${DATA_URL}/catalogs/${DEEP_CATALOG}/${TOOL_NAME}/${DEEP_B}" -H "X-User-Role: RO")
+if [ "$L2_CODE" = "404" ]; then
+  pass "Level-2 tool cascade deleted (404)"
+else
+  fail "Level-2 cascade" "expected 404, got $L2_CODE"
+fi
+
+# Verify level-3 model is gone
+L3_CODE=$(http_code "${DATA_URL}/catalogs/${DEEP_CATALOG}/${MODEL_NAME}/${DEEP_C}" -H "X-User-Role: RO")
+if [ "$L3_CODE" = "404" ]; then
+  pass "Level-3 model cascade deleted (404)"
+else
+  fail "Level-3 cascade" "expected 404, got $L3_CODE"
+fi
+
+# Clean up the extra CV (catalog cleanup handled by trap)
+json_delete "${META_URL}/catalog-versions/${DEEP_CV}" "SuperAdmin" > /dev/null 2>&1 || true
+
 # --- Summary ---
 
 echo ""
