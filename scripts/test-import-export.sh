@@ -503,6 +503,66 @@ else
   fail "Re-export of assoc-test-cat" "got $CODE"
 fi
 
+# === Test 15: Import with invalid format_version → 400 ===
+h "Test 15: Import with invalid format_version"
+BADFMT_DATA=$(jq '.format_version = "99.0"' /tmp/export-resp.json)
+BADFMT_REQ=$(jq -n \
+  --arg s "${P}-server" --arg g "${P}-guard" --arg t "${P}-tool" \
+  --argjson data "$BADFMT_DATA" '{
+  catalog_name: "badfmt-cat",
+  reuse_existing: [$s, $g, $t],
+  data: $data
+}')
+
+CODE=$(curl -s -o /tmp/badfmt-resp.json -w "%{http_code}" \
+  "$API/api/data/v1/catalogs/import" \
+  -H 'X-User-Role: Admin' -H 'Content-Type: application/json' \
+  -d "$BADFMT_REQ")
+
+if [ "$CODE" = "400" ]; then
+  pass "Invalid format_version returns 400"
+else
+  fail "Invalid format_version returns 400" "got $CODE — $(cat /tmp/badfmt-resp.json)"
+fi
+
+# === Test 16: Re-import identical catalog → collision detection ===
+h "Test 16: Re-import identical catalog (collision)"
+# import-test-cat was created in Test 8. Re-importing with the same catalog name
+# should detect the name collision.
+REIMPORT_REQ=$(jq -n --arg lbl "${P}-reimport-v1-$SUFFIX" \
+  --arg s "${P}-server" --arg g "${P}-guard" --arg t "${P}-tool" \
+  --slurpfile data /tmp/import-data.json '{
+  catalog_name: "import-test-cat",
+  catalog_version_label: $lbl,
+  reuse_existing: [$s, $g, $t],
+  data: $data[0]
+}')
+
+# Dry run should detect the conflict
+CODE=$(curl -s -o /tmp/reimport-dry.json -w "%{http_code}" \
+  "$API/api/data/v1/catalogs/import?dry_run=true" \
+  -H 'X-User-Role: Admin' -H 'Content-Type: application/json' \
+  -d "$REIMPORT_REQ")
+
+DR_STATUS=$(jq -r '.status' /tmp/reimport-dry.json)
+if [ "$DR_STATUS" = "conflicts_found" ]; then
+  pass "Re-import dry run detects catalog name collision"
+else
+  fail "Re-import dry run detects collision" "status=$DR_STATUS (code=$CODE)"
+fi
+
+# Actual import should also fail/detect the collision
+CODE=$(curl -s -o /tmp/reimport-resp.json -w "%{http_code}" \
+  "$API/api/data/v1/catalogs/import" \
+  -H 'X-User-Role: Admin' -H 'Content-Type: application/json' \
+  -d "$REIMPORT_REQ")
+
+if [ "$CODE" = "409" ] || [ "$CODE" = "400" ]; then
+  pass "Re-import actual request rejects duplicate catalog ($CODE)"
+else
+  fail "Re-import actual request rejects duplicate" "got $CODE — $(cat /tmp/reimport-resp.json)"
+fi
+
 # === Summary ===
 h "Summary"
 echo "  Total: $TOTAL, Passed: $PASS, Failed: $FAIL"

@@ -430,6 +430,91 @@ else
   fail "T-30.25: UpdateCatalogVersion on testing CV as SuperAdmin" "expected=200 got=$STATUS"
 fi
 
+header "Test 18: Publish idempotence — publish already-published catalog (200)"
+
+# Re-validate and publish the catalog (it's currently unpublished from line 395)
+api POST "$DATA_API/catalogs/$CATALOG_NAME/validate" SuperAdmin > /dev/null 2>&1
+api POST "$DATA_API/catalogs/$CATALOG_NAME/publish" Admin > /dev/null 2>&1
+
+# Publish again — should be idempotent (200, not error)
+RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/publish" Admin)
+STATUS=$(get_status "$RESP")
+if [ "$STATUS" = "200" ]; then
+  pass "Publish idempotent on already-published catalog (200)"
+else
+  fail "Publish idempotence" "expected=200 got=$STATUS body=$(get_body "$RESP")"
+fi
+
+# Verify catalog is still published
+RESP=$(api GET "$DATA_API/catalogs/$CATALOG_NAME" Admin)
+BODY=$(get_body "$RESP")
+PUBLISHED=$(echo "$BODY" | jq -r '.published')
+if [ "$PUBLISHED" = "true" ]; then
+  pass "Catalog still published after idempotent publish"
+else
+  fail "Post-idempotent publish state" "published=$PUBLISHED"
+fi
+
+header "Test 19: Unpublish → re-publish cycle"
+
+# Unpublish
+RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" Admin)
+STATUS=$(get_status "$RESP")
+if [ "$STATUS" = "200" ]; then
+  echo "  Unpublished successfully"
+else
+  fail "Unpublish for re-publish test" "expected=200 got=$STATUS"
+fi
+
+# Verify unpublished
+RESP=$(api GET "$DATA_API/catalogs/$CATALOG_NAME" Admin)
+BODY=$(get_body "$RESP")
+PUBLISHED=$(echo "$BODY" | jq -r '.published')
+if [ "$PUBLISHED" != "false" ]; then
+  fail "Unpublish verification" "expected published=false got=$PUBLISHED"
+fi
+
+# Verify CR removed after unpublish
+CR_EXISTS=$(kubectl --context kind-assethub -n assethub get catalog "$CATALOG_NAME" -o name 2>/dev/null)
+if [ -n "$CR_EXISTS" ]; then
+  echo "  Warning: CR still exists after unpublish"
+fi
+
+# Re-validate (status was reset to draft by unpublish)
+api POST "$DATA_API/catalogs/$CATALOG_NAME/validate" SuperAdmin > /dev/null 2>&1
+
+# Re-publish
+RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/publish" Admin)
+STATUS=$(get_status "$RESP")
+if [ "$STATUS" = "200" ]; then
+  pass "Re-publish after unpublish succeeds (200)"
+else
+  fail "Re-publish" "expected=200 got=$STATUS body=$(get_body "$RESP")"
+fi
+
+# Verify catalog is published again
+RESP=$(api GET "$DATA_API/catalogs/$CATALOG_NAME" Admin)
+BODY=$(get_body "$RESP")
+PUBLISHED=$(echo "$BODY" | jq -r '.published')
+PUBLISHED_AT=$(echo "$BODY" | jq -r '.published_at')
+if [ "$PUBLISHED" = "true" ] && [ "$PUBLISHED_AT" != "null" ]; then
+  pass "Catalog published again with published_at set"
+else
+  fail "Re-publish state" "published=$PUBLISHED published_at=$PUBLISHED_AT"
+fi
+
+# Verify CR recreated after re-publish
+sleep 1
+CR_EXISTS=$(kubectl --context kind-assethub -n assethub get catalog "$CATALOG_NAME" -o name 2>/dev/null)
+if [ -n "$CR_EXISTS" ]; then
+  pass "CR recreated after re-publish"
+else
+  fail "CR recreation" "CR not found after re-publish"
+fi
+
+# Clean up: unpublish for cleanup section
+api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" Admin > /dev/null 2>&1
+
 header "Cleanup (only removing test data created by this script)"
 
 api DELETE "$DATA_API/catalogs/$CATALOG_NAME" Admin > /dev/null 2>&1 || true

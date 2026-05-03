@@ -1,4 +1,31 @@
 
+## TDD Workflow — MANDATORY
+
+Always follow strict RED→GREEN TDD:
+1. Write the failing test FIRST. Run it. Confirm it fails for the right reason (RED).
+2. Only THEN write the minimal code to make it pass (GREEN).
+3. Run ALL existing tests to confirm no regressions.
+4. Never write tests and implementation code simultaneously.
+5. Never skip the RED verification step.
+6. Never write multiple tests before implementing any.
+If unsure which phase you're in, ask before proceeding.
+
+### Rationalizations that mean STOP
+
+- "This fix is obvious, I'll just write both" — no. RED first.
+- "I'll write a few tests then implement" — no. One test at a time.
+- "The test would obviously fail" — prove it. Run it.
+- "I'll refactor after" — refactor is step 3, after GREEN.
+
+## Process & Methodology Compliance
+
+- Always follow the prescribed skill or process workflow (feat-plan, bug-solver, coverage-report) in order. Do not skip steps.
+- Do not commit code until ALL tests pass and the user approves.
+- When reporting test results, if tests are failing, fix them before reporting success.
+- Ask before making bulk changes (e.g., sed replacements across files).
+- Never claim work is done without running verification commands and showing actual output.
+- Before opening a PR, ALL test suites must pass: backend (`go test ./internal/... -count=1`), browser (`cd ui && npx vitest run --config vitest.browser.config.ts`), live API scripts (`make test-live`), and live browser system tests (`cd ui && npx vitest run --config vitest.system.config.ts`).
+
 ## Code Coverage — Non-Negotiable
 
 **100% coverage is the goal. Not 95%. Not 98%. 100%.**

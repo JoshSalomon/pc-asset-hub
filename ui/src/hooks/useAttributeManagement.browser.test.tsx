@@ -185,3 +185,84 @@ test('T-20.17: useAttributeManagement copy attributes calls api', async () => {
     attribute_names: ['color'],
   }))
 })
+
+// T-20.18: handleReorderAttribute out-of-bounds — move first item up (swapIndex < 0)
+test('T-20.18: reorder first item up is a no-op', async () => {
+  function ReorderUpTestComponent() {
+    const onRefresh = vi.fn()
+    const setAttributes = vi.fn()
+    const setTypeDefinitions = vi.fn()
+    const setError = vi.fn()
+    const mgmt = useAttributeManagement({
+      entityTypeId: 'et-1',
+      attributes: mockAttributes,
+      typeDefinitions: mockTypeDefinitions,
+      onRefresh,
+      setAttributes,
+      setTypeDefinitions,
+      setError,
+    })
+    return (
+      <div>
+        <button onClick={() => mgmt.handleReorderAttribute(0, 'up')}>Reorder First Up</button>
+      </div>
+    )
+  }
+  render(<ReorderUpTestComponent />)
+  await page.getByRole('button', { name: 'Reorder First Up' }).click()
+  expect(api.attributes.reorder).not.toHaveBeenCalled()
+})
+
+// T-20.19: handleReorderAttribute out-of-bounds — move last item down (swapIndex >= length)
+test('T-20.19: reorder last item down is a no-op', async () => {
+  function ReorderDownTestComponent() {
+    const onRefresh = vi.fn()
+    const setAttributes = vi.fn()
+    const setTypeDefinitions = vi.fn()
+    const setError = vi.fn()
+    const mgmt = useAttributeManagement({
+      entityTypeId: 'et-1',
+      attributes: mockAttributes,
+      typeDefinitions: mockTypeDefinitions,
+      onRefresh,
+      setAttributes,
+      setTypeDefinitions,
+      setError,
+    })
+    return (
+      <div>
+        <button onClick={() => mgmt.handleReorderAttribute(1, 'down')}>Reorder Last Down</button>
+      </div>
+    )
+  }
+  render(<ReorderDownTestComponent />)
+  await page.getByRole('button', { name: 'Reorder Last Down' }).click()
+  expect(api.attributes.reorder).not.toHaveBeenCalled()
+})
+
+// T-20.20: handleAddAttribute with undefined entityTypeId — should not call API
+test('T-20.20: addAttribute with undefined entityTypeId is a no-op', async () => {
+  function NoEntityIdComponent() {
+    const onRefresh = vi.fn()
+    const setAttributes = vi.fn()
+    const setTypeDefinitions = vi.fn()
+    const setError = vi.fn()
+    const mgmt = useAttributeManagement({
+      entityTypeId: undefined,
+      attributes: mockAttributes,
+      typeDefinitions: mockTypeDefinitions,
+      onRefresh,
+      setAttributes,
+      setTypeDefinitions,
+      setError,
+    })
+    return (
+      <div>
+        <button onClick={() => mgmt.handleAddAttribute({ name: 'test', description: 'desc', typeDefinitionVersionId: 'tdv1', required: false })}>Add Attr No ET</button>
+      </div>
+    )
+  }
+  render(<NoEntityIdComponent />)
+  await page.getByRole('button', { name: 'Add Attr No ET' }).click()
+  expect(api.attributes.add).not.toHaveBeenCalled()
+})

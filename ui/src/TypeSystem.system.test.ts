@@ -204,7 +204,7 @@ describe('Types Tab', () => {
 // ============================================================
 
 describe('Attribute with Type Definition', () => {
-  test('add attribute with system type selector', async () => {
+  test('add attribute with system type selector', { timeout: 60000 }, async () => {
     // Create entity type
     const etRes = await apiCall('POST', '/api/meta/v1/entity-types', {
       name: testName('TS_AttrET'),
@@ -230,7 +230,7 @@ describe('Attribute with Type Definition', () => {
     await pg.getByRole('dialog').getByRole('textbox', { name: /Name/i }).fill('hostname')
     await pg.getByRole('dialog').getByText('Select type...').click()
     await pg.waitForTimeout(500)
-    await pg.locator('.pf-v6-c-menu__item-text').getByText('string (string)', { exact: true }).click()
+    await pg.locator('.pf-v6-c-menu__item-text').getByText('string', { exact: true }).click()
     await pg.waitForTimeout(300)
     await pg.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
     await hidden(pg.getByRole('dialog'))

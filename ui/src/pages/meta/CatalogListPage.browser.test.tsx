@@ -4,6 +4,7 @@ import { page } from 'vitest/browser'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import CatalogListPage from './CatalogListPage'
 import { api } from '../../api/client'
+import { statusColor } from '../../utils/statusColor'
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -292,6 +293,7 @@ test('import onSuccess reloads catalogs and navigates', async () => {
 
   // Upload a JSON file
   const sampleExport = {
+    format_version: '1.0',
     catalog: { name: 'imported-cat' },
     catalog_version: { label: 'v1.0' },
     entity_types: [],
@@ -300,12 +302,13 @@ test('import onSuccess reloads catalogs and navigates', async () => {
   const blob = new Blob([JSON.stringify(sampleExport)], { type: 'application/json' })
   const file = new File([blob], 'export.json', { type: 'application/json' })
   await new Promise(resolve => setTimeout(resolve, 50))
-  const input = document.querySelector('input[type="file"]') as HTMLInputElement
+  const dropzone = document.querySelector('[data-testid="file-dropzone"]')
+  expect(dropzone, 'file-dropzone element must exist on upload step').not.toBeNull()
   const dataTransfer = new DataTransfer()
   dataTransfer.items.add(file)
-  Object.defineProperty(input, 'files', { value: dataTransfer.files, writable: true, configurable: true })
-  input.dispatchEvent(new Event('change', { bubbles: true }))
-  await new Promise(resolve => setTimeout(resolve, 200))
+  dropzone!.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer }))
+  dropzone!.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer }))
+  await new Promise(resolve => setTimeout(resolve, 300))
 
   // Mock dry run (no collisions) and actual import
   const dryRunResult = {
@@ -347,4 +350,28 @@ test('import onSuccess reloads catalogs and navigates', async () => {
   })
   // Verify navigation happened (should navigate to /schema/catalogs/imported-cat)
   await expect.element(page.getByTestId('navigated')).toBeVisible()
+})
+
+// === CV load error — modal opens but CV list is empty ===
+test('CV load error — create modal opens but CV select has no options', async () => {
+  ;(api.catalogVersions.list as Mock).mockRejectedValue(new Error('500: CV service down'))
+  renderList('Admin')
+  await expect.element(page.getByText('production-app-a')).toBeVisible()
+  await page.getByRole('button', { name: 'Create Catalog' }).click()
+  // Modal should still open — verify by checking the name input placeholder
+  await expect.element(page.getByPlaceholder('e.g. production-app-a')).toBeVisible()
+  // CV toggle should show placeholder (no CV selected)
+  await expect.element(page.getByText('Select a catalog version')).toBeVisible()
+  // Open the select — it should have no options
+  await page.getByText('Select a catalog version').click()
+  // No CV options should be visible (release-1.0 or release-2.0)
+  expect(page.getByText('release-1.0').query()).toBeNull()
+  expect(page.getByText('release-2.0').query()).toBeNull()
+})
+
+// === statusColor default branch ===
+test('statusColor returns grey for unknown status', () => {
+  expect(statusColor('unknown')).toBe('grey')
+  expect(statusColor('')).toBe('grey')
+  expect(statusColor('pending')).toBe('grey')
 })

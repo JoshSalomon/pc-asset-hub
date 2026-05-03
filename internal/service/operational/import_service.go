@@ -353,6 +353,13 @@ func (s *ImportService) Import(ctx context.Context, req *ImportRequest) (*Import
 		reuseSet[name] = true
 	}
 
+	// Check if catalog name already exists
+	if _, err := s.catalogRepo.GetByName(ctx, catalogName); err == nil {
+		return nil, domainerrors.NewConflict("Catalog", fmt.Sprintf("catalog %q already exists", catalogName))
+	} else if !domainerrors.IsNotFound(err) {
+		return nil, err
+	}
+
 	// Track created/reused IDs
 	typesCreated := 0
 	typesReused := 0

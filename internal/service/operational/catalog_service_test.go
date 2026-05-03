@@ -584,6 +584,22 @@ func TestT16_09_PublishAlreadyPublished(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// Publish already-published catalog returns early without calling UpdatePublished
+func TestPublish_AlreadyPublished_ReturnsEarlyNoUpdate(t *testing.T) {
+	svc, catRepo, _, _ := setupCatalogService()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid, Published: true,
+	}, nil)
+	// NOTE: UpdatePublished is NOT mocked — if called, test will panic
+
+	err := svc.Publish(ctx, "my-catalog")
+	require.NoError(t, err)
+	catRepo.AssertNotCalled(t, "UpdatePublished", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
 // Publish: UpdatePublished error propagated
 func TestPublish_UpdatePublishedError(t *testing.T) {
 	svc, catRepo, _, _ := setupCatalogService()

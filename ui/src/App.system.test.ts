@@ -12,8 +12,8 @@
 import { test, expect, beforeAll, afterAll } from 'vitest'
 import { chromium, type Browser, type Page, type Locator } from 'playwright'
 
-const UI_URL = 'http://localhost:30000'
-const API_URL = 'http://localhost:30080'
+const UI_URL = process.env.UI_URL || 'http://localhost:30000'
+const API_URL = process.env.API_URL || 'http://localhost:30080'
 
 let browser: Browser
 let pg: Page

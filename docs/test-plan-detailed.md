@@ -337,6 +337,10 @@ Version history endpoints are read-only — all authenticated roles can access.
 | T-1.37 | Transition production→development → stage updated, transition logged | Integration | US-12: demote to Development |
 | T-1.38 | Invalid transition (development→production directly) → rejected | Integration | — |
 | T-1.39 | List transitions for catalog version → returns history in order | Integration | — |
+| T-1.40 | Delete non-existent entity type ID → NotFound error (RowsAffected=0 branch) | Integration | Error path |
+| T-1.41 | Delete non-existent attribute ID → NotFound error | Integration | Error path |
+| T-1.42 | ListByTypeDefinitionVersionIDs with empty slice → nil result, no DB query | Integration | Edge case |
+| T-1.43 | Delete non-existent association ID → NotFound error | Integration | Error path |
 
 ---
 
@@ -465,6 +469,14 @@ Version history endpoints are read-only — all authenticated roles can access.
 | T-3.51 | CompareVersions (attribute modified) → diff shows modification (yellow) | Unit | US-36: highlights modified |
 | T-3.52 | CompareVersions (association added/removed) → diff includes association changes | Unit | US-36: association changes |
 | T-3.53 | CompareVersions with same version → empty diff | Unit | — |
+| T-3.54 | RenameEntityType with nil pinRepo/cvRepo → requiresDeepCopy returns false (graceful degradation) | Unit | Error path |
+| T-3.55 | GetVersionSnapshot with nil TypeDefinitionVersionRepo → returns snapshot with unresolved type info | Unit | Error path |
+| T-3.56 | GetVersionSnapshot when entity type name resolution fails → returns partial snapshot (uses ID fallback) | Unit | Error path |
+| T-3.57 | Promote/Demote with crManager=nil → succeeds, K8s operations skipped (DB-only mode) | Unit | Error path |
+| T-3.58 | GetCatalogVersion with empty allowedStages → all stages allowed (no filtering) | Unit | Edge case |
+| T-3.59 | ValidateCardinality with Unicode characters (e.g., "5..∞") → validation error | Unit | Boundary |
+| T-3.60 | ValidateCardinality with extremely large range (e.g., "1..999999999") → accepted or bounded | Unit | Boundary |
+| T-3.61 | Cycle detection with 100+ entity types in graph → completes without timeout | Unit | Performance boundary |
 
 ---
 
@@ -520,6 +532,9 @@ Version history endpoints are read-only — all authenticated roles can access.
 | T-4.29 | Sort descending by attribute → correct order | Unit | US-17: sort descending |
 | T-4.30 | Pagination → correct page boundaries, total count | Unit | US-17: pagination support |
 | T-4.31 | Filter by non-existent attribute → error (not empty result) | Unit | US-17: error for non-existent attr |
+| T-4.32 | CreateInstance with required attribute as nil/empty in draft mode → value skipped silently | Unit | Edge case |
+| T-4.33 | CreateInstance with unrecognized base type in attribute → fallback to string storage | Unit | Error path |
+| T-4.34 | UpdateInstance when catalog validation status update fails → error logged, instance still updated | Unit | Error path |
 
 ---
 
@@ -610,6 +625,8 @@ Version history endpoints are read-only — all authenticated roles can access.
 |----|-----------|-------|-------------------|
 | T-5.50 | GET /entity-types/{id}/versions → 200, all versions in order | API | — |
 | T-5.51 | GET /entity-types/{id}/versions/{v1}/compare/{v2} → 200, diff | API | — |
+| T-5.52 | List entity types when description resolution partially fails → entities returned without description (no 500) | API | Error path |
+| T-5.53 | GetByID when description resolution fails → entity returned with empty description | API | Error path |
 
 ---
 
@@ -653,6 +670,9 @@ Version history endpoints are read-only — all authenticated roles can access.
 | T-6.22 | Response includes type, ID, name for each reference | API | US-19: response includes type, ID, name |
 | T-6.23 | Reverse reference query → returns referring entities | API | US-20: find referring entities |
 | T-6.24 | Reverse reference response includes type, ID, name | API | US-20: response includes type, ID, name |
+| T-6.25 | List instances with non-numeric limit param → defaults to 20 silently | API | Edge case |
+| T-6.26 | List instances with negative offset → defaults to 0 or validation error | API | Edge case |
+| T-6.27 | GET /healthz → 200 with health status | API | Availability |
 
 ---
 
@@ -751,6 +771,10 @@ Version history endpoints are read-only — all authenticated roles can access.
 | T-7.52 | RW user: same as RO for meta operations | UI | US-38: RW same as RO for meta |
 | T-7.53 | State-disabled controls show grayed out with tooltip | UI | US-38: disabled with tooltip |
 | T-7.54 | Role-hidden controls have no placeholder | UI | US-38: no placeholder |
+| T-7.55 | Entity type list with zero entity types → empty state message rendered | UI | Edge case |
+| T-7.56 | Entity type detail page with API 500 error → error display with retry option | UI | Error path |
+| T-7.57 | Add attribute modal with server-side duplicate name (409) → error alert shown | UI | Error path |
+| T-7.58 | User role changes from Admin to RO during session → create/edit buttons disappear on re-render | UI | Edge case |
 
 ---
 
@@ -784,6 +808,9 @@ Version history endpoints are read-only — all authenticated roles can access.
 | T-9.07 | Demotion → CRDs/CRs removed from cluster | Operator | US-25: cleanup on demotion |
 | T-9.08 | Reconciliation failure → error in CR status conditions | Operator | US-25: errors reported |
 | T-9.09 | Operator does not modify the database | Operator | US-25: reads CRs only |
+| T-9.10 | AssetHub CR with replicas=-1 → defaults to 1 replica | Operator | Boundary |
+| T-9.11 | AssetHub CR with invalid clusterRole value → defaults to "development" | Operator | Error path |
+| T-9.12 | CatalogVersion with nil EntityTypes slice → DeepCopy handles safely (no panic) | Operator | Edge case |
 
 ---
 
@@ -1290,6 +1317,14 @@ Catalogs are named data containers pinned to a catalog version. The operational 
 | ID | Test Case | Layer | Expected |
 |----|-----------|-------|----------|
 | T-10.51 | Old CV-scoped routes (/api/catalog/{cv}/...) no longer registered | API | 404 for old route pattern |
+| T-10.52 | List catalogs where one CV is deleted after catalog creation → empty label for that catalog, others normal | Unit | Error path |
+| T-10.53 | Delete catalog where CRManager.Delete fails → error propagated, DB state consistent | Unit | Error path |
+| T-10.54 | Delete catalog where linkRepo.DeleteByInstance returns error → error propagated | Unit | Error path |
+| T-10.55 | Delete catalog where iavRepo.DeleteByInstanceID returns error → error propagated | Unit | Error path |
+| T-10.56 | UpdateMetadata: description-only update on published catalog → status stays valid, CR synced | Unit | Edge case |
+| T-10.57 | UpdateMetadata: published catalog attempting both rename and CV change → correct error priority | Unit | Edge case |
+| T-10.58 | UpdateMetadata: UpdateName() fails mid-operation → partial state not persisted | Unit | Error path |
+| T-10.59 | UpdateMetadata: Update() fails → transaction not left inconsistent | Unit | Error path |
 
 ---
 
@@ -1399,6 +1434,11 @@ Entity instances are created within a catalog, scoped to an entity type pinned i
 | T-11.56 | Delete instance shows confirmation dialog | Browser | Confirmation with instance name |
 | T-11.57 | Delete instance removes from list | Browser | Instance disappears after confirm |
 | T-11.58 | Empty instance list shows empty state | Browser | "No instances" message |
+| T-11.59 | Update instance clearing optional attribute (set to empty string) → value not carried forward from previous version | Unit | Edge case |
+| T-11.60 | Update instance where GetValuesForVersion fails for previous version → error propagated | Unit | Error path |
+| T-11.61 | Update instance where SetValues fails → error and version not incremented | Unit | Error path |
+| T-11.62 | Delete instance with >1000 children → all children deleted (cascadeDelete pagination) | Integration | Boundary |
+| T-11.63 | Delete instance where linkRepo.DeleteByInstance fails → error propagated, instance not deleted | Unit | Error path |
 
 ---
 
@@ -1508,6 +1548,9 @@ Contained instances are created under a parent instance via sub-resource URLs. A
 | T-12.61 | Link to instance action creates association link | Browser | Modal for selecting target instance and association, API called |
 | T-12.62 | Unlink action removes association link | Browser | Confirmation dialog, link removed from list |
 | T-12.63 | RO user sees references but no link/unlink controls | Browser | Read-only view, no action buttons |
+| T-12.64 | SetParent with empty parentID → clears parent relationship, validation status reset | Unit | Edge case |
+| T-12.65 | Create bidirectional link where association defined on target entity type (not source) → lookup succeeds | Unit | Edge case |
+| T-12.66 | Create link where GetForwardRefs fails during duplicate check → error propagated | Unit | Error path |
 
 ## Milestone 13: Catalog Data Viewer
 
@@ -1712,6 +1755,11 @@ Test cases T-13.78 through T-13.85 are retired.
 | T-13.100 | No delete buttons visible in operational UI | Browser | No "Delete" buttons anywhere |
 | T-13.101 | No link/unlink actions in reference tabs | Browser | No write actions on references |
 | T-13.102 | Read-only enforcement applies regardless of role (even SuperAdmin) | Browser | SuperAdmin sees same read-only view |
+| T-13.103 | GetContainmentTree where entity type deleted after instance creation → entity type ID used as fallback name in tree nodes | Unit | Error path |
+| T-13.104 | GetContainmentTree where ListByCatalog fails with DB error → error propagated | Unit | Error path |
+| T-13.105 | Resolve parent chain with instance nesting >50 levels → chain stops at 50, no error | Unit | Boundary |
+| T-13.106 | Resolve parent chain where GetByID fails for ancestor → error propagated | Unit | Error path |
+| T-13.107 | Resolve parent chain where entity type lookup fails for ancestor → entity type ID used as fallback name | Unit | Error path |
 
 ## Milestone 14: Catalog-Level RBAC
 
@@ -1758,6 +1806,8 @@ Phase 5 of the catalog implementation plan. Adds per-catalog access control via 
 | T-14.20 | `GET /api/data/v1/catalogs/{name}/{type}/{id}` returns 403 when denied | API | 403 response |
 | T-14.21 | All sub-resource operations allowed when catalog access granted | API | 200 response |
 | T-14.22 | Header mode: all catalog operations pass regardless of catalog name | API | 200 response for any catalog |
+| T-14.23 | RequireWriteAccess: IsPublished returns NotFound → write allowed (catalog presumed unpublished) | Unit | Error path |
+| T-14.24 | RequireWriteAccess: IsPublished returns non-NotFound error → 500 returned | Unit | Error path |
 
 ---
 
@@ -1877,6 +1927,12 @@ Phase 6 of the catalog implementation plan. On-demand validation of all entity i
 | ID | Test Case | Layer | Expected |
 |----|-----------|-------|----------|
 | T-15.81 | Validate button hidden for RO in operational UI | Browser | Button not rendered |
+| T-15.82 | Validate: assocRepo.ListByVersion fails during pre-load → error propagated | Unit | Error path |
+| T-15.83 | Validate: linkRepo.GetForwardRefs fails during target cardinality check → error propagated | Unit | Error path |
+| T-15.84 | Validate: linkRepo.GetReverseRefs fails during source cardinality check → error propagated | Unit | Error path |
+| T-15.85 | ParseCardinality with non-numeric min (e.g., "a..5") → returns (0, 0, true) fallback | Unit | Edge case |
+| T-15.86 | ParseCardinality with non-numeric max (e.g., "1..b") → returns (min, 0, true) fallback | Unit | Edge case |
+| T-15.87 | ParseCardinality with malformed input (e.g., "1..2..3") → safe parsing, no panic | Unit | Edge case |
 
 ### Validation Service — Integration Tests
 
@@ -2060,6 +2116,9 @@ Phase 7 of the catalog implementation plan. Explicit publish/unpublish operation
 |----|-----------|-------|----------|
 | T-16.68 | Promote dialog shows warnings for draft/invalid catalogs | Browser | Warning text visible |
 | T-16.69 | Promote dialog shows no warnings when all catalogs valid | Browser | No warning shown |
+| T-16.70 | Publish valid catalog where CRManager.CreateOrUpdate fails → DB rolled back to published=false | Unit | Error path |
+| T-16.71 | Publish catalog where CV lookup fails → catalog published despite missing CV label in CR | Unit | Error path |
+| T-16.72 | Update published valid catalog description only → status remains valid, not reset to draft | Unit | Edge case |
 
 ---
 
@@ -2209,6 +2268,14 @@ Phase 8 of the catalog implementation plan. Copy Catalog deep-clones all data fr
 |----|-----------|-------|----------|
 | T-17.87 | copyCatalog client function sends POST with correct body | Browser | mockFetch called correctly |
 | T-17.88 | replaceCatalog client function sends POST with correct body | Browser | mockFetch called correctly |
+| T-17.89 | Copy catalog where GetValuesForVersion fails for source instance → error propagated, no partial copy | Unit | Error path |
+| T-17.90 | Copy catalog where GetForwardRefs fails for source instance → error propagated | Unit | Error path |
+| T-17.91 | Copy catalog with cross-catalog parent reference (parentID not in idMap) → parent cleared on copy | Unit | Edge case |
+| T-17.92 | Copy catalog where transaction fails mid-mutation → rollback, no partial catalog created | Integration | Error path |
+| T-17.93 | Replace catalog where target name + "-archive-" + date exceeds 63 chars → clear error message | Unit | Boundary |
+| T-17.94 | Replace catalog where first UpdateName fails → transaction rolled back, no names changed | Unit | Error path |
+| T-17.95 | Replace published source with unpublished target → source becomes unpublished after replace | Unit | Edge case |
+| T-17.96 | Replace catalog where post-transaction GetByName fails → error handling, no stale response | Unit | Error path |
 
 ---
 
@@ -2432,6 +2499,16 @@ Pure refactoring of `CatalogDetailPage.tsx` into 3 custom hooks + 5 modal compon
 | ID | Test Case | Layer | Expected |
 |----|-----------|-------|----------|
 | T-19.55 | All existing CatalogDetailPage browser tests pass | Browser | 131 tests pass unchanged |
+| T-19.56 | collectAffectedInstances: catalog with >10,000 instances of entity type → validation error "exceeds migration limit" | Unit | Boundary |
+| T-19.57 | collectAffectedInstances: catalog with 0 instances of target entity type → skipped in affected breakdown | Unit | Edge case |
+| T-19.58 | checkTypeDefInUse with nil pinRepo or etvRepo → validation error "deletion safety check requires..." | Unit | Error path |
+| T-19.59 | checkTypeDefInUse: type def version exists but never used in any attributes → deletion succeeds (len(attrs)==0 path) | Unit | Edge case |
+| T-19.60 | checkTypeDefInUse: type def used by attributes in 2+ pinned ETV versions → ConflictError identifies pinned versions | Unit | Edge case |
+| T-19.61 | resetDependentCatalogs with nil catalogRepo → graceful no-op, no error | Unit | Error path |
+| T-19.62 | resetDependentCatalogs: skip catalogs already in draft status → no unnecessary DB writes | Unit | Optimization |
+| T-19.63 | resetDependentCatalogs: second catalog reset fails → error propagated, pin unchanged | Unit | Error path |
+| T-19.64 | buildMigrationReport: collectAffectedInstances returns error → error propagated, no migration applied | Unit | Error path |
+| T-19.65 | buildAttributeMapping: attribute renamed AND old name also orphaned → warnings show only orphan, not renamed attr | Unit | Edge case |
 
 ---
 
@@ -4115,10 +4192,38 @@ Export a catalog (schema + data) to a JSON file and import it into another Asset
 |----|-----------|-------|----------|
 | T-30.99 | All existing backend tests pass | Unit/Integration/API | 100% pass |
 | T-30.100 | All existing browser tests pass | Browser | 100% pass |
+| T-30.101 | Export link where association was deleted → link skipped with warning, export succeeds | Unit | Error path |
+| T-30.102 | Export link where association lookup fails (DB error) → link skipped, export completes | Unit | Error path |
+| T-30.103 | Export instance with corrupted JSON value in DB (unparseable) → exported as literal string fallback | Unit | Error path |
+| T-30.104 | Export link to target instance of excluded entity type → link dropped silently (filtered) | Unit | Edge case |
+| T-30.105 | DryRun: tdRepo.GetByName() returns non-NotFound error → error propagated | Unit | Error path |
+| T-30.106 | DryRun: attrRepo.ListByVersion() fails → error propagated | Unit | Error path |
+| T-30.107 | DryRun: isEntityTypeIdentical where tdvRepo.GetByID() fails → error propagated | Unit | Error path |
+| T-30.108 | Import: system type definition version missing during schema transaction → error "failed to resolve system type definition" | Unit | Error path |
+| T-30.109 | Import with reuse_existing=['NonExistent'] → error "reuse_existing entity type not found" | Unit | Error path |
+| T-30.110 | Import: attribute references type_definition that doesn't exist in import data → error "type definition not found for attribute" | Unit | Error path |
+| T-30.111 | Import: association target_entity_type doesn't exist → error "association target entity type not found" | Unit | Error path |
+| T-30.112 | Import: during data phase, entity type in instance not in etNameToVersionID map → error with context | Unit | Error path |
+| T-30.113 | Import instance: JSON has attributes not in entity type schema → extra attributes silently skipped | Unit | Edge case |
+| T-30.114 | Import instance link: target instance name not found → link skipped silently | Unit | Edge case |
+| T-30.115 | Import instance link: association name not defined → link skipped silently | Unit | Edge case |
+| T-30.116 | Import attribute: numeric value as string "3.14" → both ValueNumber and ValueString set | Unit | Edge case |
+| T-30.117 | Import attribute: numeric value as float 3.14 → ValueNumber=3.14, ValueString="3.14" | Unit | Edge case |
+| T-30.118 | Import attribute: unparseable numeric string "abc" → ValueString set, ValueNumber nil | Unit | Edge case |
+| T-30.119 | POST /catalogs/import with malformed JSON body → 400 "invalid request body" | API | Error path |
+| T-30.120 | GET /catalogs/{name}/export?entities= (empty string) → treats as no filter, exports all | API | Edge case |
+| T-30.121 | Import wizard: upload file >50MB → error "File too large (max 50 MB)" | Browser | Boundary |
+| T-30.122 | Import wizard: upload invalid JSON → error "Invalid JSON file" | Browser | Error path |
+| T-30.123 | Import wizard: upload JSON missing format_version → error "missing required fields" | Browser | Error path |
+| T-30.124 | Import wizard: auto-reuse filters out catalog/CV collisions, only auto-reuses entity types | Browser | Edge case |
+| T-30.125 | Import wizard: conflict entity with no prefix/suffix → error "Name already exists — use existing or go back" | Browser | Error path |
+| T-30.126 | Import wizard: conflict entity with prefix set → preview shows "as prefix-name" | Browser | Edge case |
+| T-30.127 | Import wizard: unresolved conflict for entity with no prefix/suffix → Continue button disabled | Browser | Edge case |
+| T-30.128 | Import wizard: all conflicts resolved → Continue button enabled | Browser | Edge case |
 
 ---
 
-**Milestone 20 totals: 100 test cases** (T-30.01 through T-30.100)
+**Milestone 20 totals: 128 test cases** (T-30.01 through T-30.128)
 - Stage 1 — Export: 25 tests (Unit 18, Integration 1, API 6)
 - Stage 2 — Import: 34 tests (Unit 19, Integration 2, API 10, plus dry-run unit 13)
 - Stage 3 — Export UI: 8 tests (Browser)
@@ -4126,6 +4231,7 @@ Export a catalog (schema + data) to a JSON file and import it into another Asset
 - Stage 5 — Live script: 6 tests (Live API)
 - Stage 6 — Live browser: 3 tests (System)
 - Regression: 2 tests
+- Phase 5 additions (error paths, edge cases, boundaries): 28 tests
 
 ---
 

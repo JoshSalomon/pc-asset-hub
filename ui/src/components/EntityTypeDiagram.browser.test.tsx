@@ -145,6 +145,52 @@ describe('buildModel edge data', () => {
   })
 })
 
+describe('buildModel edge filtering', () => {
+  test('incoming association produces 0 edges', () => {
+    const incomingOnly: DiagramEntityType[] = [
+      {
+        entityType: { id: 'et1', name: 'Server', created_at: '', updated_at: '' },
+        version: 1,
+        attributes: [],
+        associations: [
+          {
+            id: 'assoc-in', name: 'tools', type: 'containment', direction: 'incoming',
+            target_entity_type_id: 'et2', target_entity_type_name: 'Tool',
+            source_role: 'parent', target_role: 'child',
+            source_cardinality: '1', target_cardinality: '0..n',
+          },
+        ],
+      },
+      {
+        entityType: { id: 'et2', name: 'Tool', created_at: '', updated_at: '' },
+        version: 1, attributes: [], associations: [],
+      },
+    ]
+    const model = buildModel(incomingOnly)
+    expect(model.edges!.length).toBe(0)
+  })
+
+  test('association to external (not-in-diagram) entity type produces 0 edges', () => {
+    const externalTarget: DiagramEntityType[] = [
+      {
+        entityType: { id: 'et1', name: 'Server', created_at: '', updated_at: '' },
+        version: 1,
+        attributes: [],
+        associations: [
+          {
+            id: 'assoc-ext', name: 'external-link', type: 'directional', direction: 'outgoing',
+            target_entity_type_id: 'et-external', target_entity_type_name: 'ExternalType',
+            source_role: '', target_role: '',
+            source_cardinality: '0..n', target_cardinality: '0..n',
+          },
+        ],
+      },
+    ]
+    const model = buildModel(externalTarget)
+    expect(model.edges!.length).toBe(0)
+  })
+})
+
 // TD-83: Node dimensions must match rendered dimensions
 describe('TD-83: node dimension consistency', () => {
   // The renderer uses headerHeight=26 and attributes at y = headerHeight + 14 + i*14

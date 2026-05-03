@@ -375,6 +375,54 @@ else
   fail "T8.3 Reverse refs" "got $RVREFS_LEN"
 fi
 
+echo ""
+echo "=== T9: Pagination Beyond Total ==="
+
+# T9.1: offset greater than total instances → empty results
+RESP=$(json_get "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}?offset=100" RO)
+TOTAL=$(echo "$RESP" | jq '.total')
+ITEMS=$(echo "$RESP" | jq '.items | length')
+if [ "$ITEMS" -eq 0 ] && [ "$TOTAL" -eq 3 ]; then
+  pass "T9.1 offset=100 returns 0 items, total=3"
+else
+  fail "T9.1 Offset beyond total" "total=$TOTAL, items=$ITEMS"
+fi
+
+# T9.2: offset exactly at total → empty results
+RESP=$(json_get "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}?offset=3" RO)
+ITEMS=$(echo "$RESP" | jq '.items | length')
+if [ "$ITEMS" -eq 0 ]; then
+  pass "T9.2 offset=total returns 0 items"
+else
+  fail "T9.2 Offset at total" "items=$ITEMS, expected 0"
+fi
+
+echo ""
+echo "=== T10: Empty Catalog Tree ==="
+
+# Create a new catalog with no instances for the empty tree test
+EMPTY_CATALOG="${PREFIX}---empty-${SUFFIX}"
+json_post "${DATA_URL}/catalogs" RW \
+  "{\"name\":\"${EMPTY_CATALOG}\",\"catalog_version_id\":\"${CV}\"}" > /dev/null
+CLEANUP_IDS+=("${EMPTY_CATALOG}")
+
+# T10.1: GET /tree on catalog with no instances → empty tree
+TREE=$(json_get "${DATA_URL}/catalogs/${EMPTY_CATALOG}/tree" RO)
+TREE_LEN=$(echo "$TREE" | jq 'length')
+if [ "$TREE_LEN" -eq 0 ]; then
+  pass "T10.1 Empty catalog tree returns [] (length=0)"
+else
+  fail "T10.1 Empty tree" "expected 0, got $TREE_LEN"
+fi
+
+# T10.2: Verify response is a valid JSON array (not null or error)
+TREE_TYPE=$(echo "$TREE" | jq 'type')
+if [ "$TREE_TYPE" = '"array"' ]; then
+  pass "T10.2 Empty tree is a valid JSON array"
+else
+  fail "T10.2 Empty tree type" "expected array, got $TREE_TYPE"
+fi
+
 # ================================================================
 # Summary
 # ================================================================

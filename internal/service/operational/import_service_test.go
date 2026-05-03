@@ -3,6 +3,7 @@ package operational
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -2667,4 +2668,39 @@ func TestT30_67_ImportIdenticalTDReused(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, result.TypesReused) // hex12 reused
 	assert.Equal(t, 1, result.TypesCreated) // entity type created
+}
+
+// Import with catalog name that already exists returns ConflictError
+func TestImport_DuplicateCatalogName_Conflict(t *testing.T) {
+	svc, catalogRepo, _, _, _, _, _, _, _, _, _, _, _, _ := newImportService()
+
+	data := minimalExportData()
+	data.Catalog.Name = "existing-catalog"
+
+	// Catalog already exists in the database
+	catalogRepo.On("GetByName", mock.Anything, "existing-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "existing-catalog",
+	}, nil)
+
+	req := &ImportRequest{Data: data}
+	_, err := svc.Import(context.Background(), req)
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsConflict(err), "expected ConflictError, got: %v", err)
+	assert.Contains(t, err.Error(), "existing-catalog")
+}
+
+// Import: GetByName returns non-NotFound DB error → propagated (not swallowed)
+func TestImport_CatalogNameCheck_DBError(t *testing.T) {
+	svc, catalogRepo, _, _, _, _, _, _, _, _, _, _, _, _ := newImportService()
+
+	data := minimalExportData()
+	data.Catalog.Name = "db-error-catalog"
+
+	// GetByName returns a non-NotFound error (e.g., DB connection failure)
+	catalogRepo.On("GetByName", mock.Anything, "db-error-catalog").Return(nil, fmt.Errorf("database connection lost"))
+
+	req := &ImportRequest{Data: data}
+	_, err := svc.Import(context.Background(), req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "database connection lost")
 }

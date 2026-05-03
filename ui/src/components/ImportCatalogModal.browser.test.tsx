@@ -33,24 +33,25 @@ function createJsonFile(content: object, name = 'export.json'): File {
   return new File([blob], name, { type: 'application/json' })
 }
 
-// Helper to upload a file into the modal using native input
+// Helper to upload a file into the modal via drag-and-drop on the dropzone.
+// The native file input onChange doesn't trigger React synthetic events reliably
+// in Playwright browser mode, but native drag-and-drop events work because
+// the component registers addEventListener directly on the DOM element.
 async function uploadFile(fileContent: object, fileName = 'export.json') {
   const file = createJsonFile(fileContent, fileName)
-  // Wait briefly for the modal to fully render
   await new Promise(resolve => setTimeout(resolve, 50))
-  const input = document.querySelector('input[type="file"]') as HTMLInputElement
-  if (!input) throw new Error('File input not found — modal may not be on upload step')
-  // Create a DataTransfer to simulate file selection
+  const dropzone = document.querySelector('[data-testid="file-dropzone"]') as HTMLElement
+  if (!dropzone) throw new Error('Dropzone not found — modal may not be on upload step')
   const dataTransfer = new DataTransfer()
   dataTransfer.items.add(file)
-  // Use configurable so re-defining works across multiple uploads in same test
-  Object.defineProperty(input, 'files', { value: dataTransfer.files, writable: true, configurable: true })
-  input.dispatchEvent(new Event('change', { bubbles: true }))
+  dropzone.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer }))
+  dropzone.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer }))
   // Wait for FileReader to process
-  await new Promise(resolve => setTimeout(resolve, 200))
+  await new Promise(resolve => setTimeout(resolve, 300))
 }
 
 const sampleExportData = {
+  format_version: '1.0',
   catalog: { name: 'my-catalog' },
   catalog_version: { label: 'v1.0' },
   entity_types: [{ name: 'Server' }],
@@ -128,7 +129,7 @@ test('drag and drop file populates catalog name and version fields', async () =>
   dropzone.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer }))
   dropzone.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer }))
 
-  await new Promise(resolve => setTimeout(resolve, 200))
+  await new Promise(resolve => setTimeout(resolve, 300))
 
   const nameInput = page.getByRole('textbox', { name: /Catalog Name/i })
   await expect.element(nameInput).toBeVisible()
@@ -245,6 +246,7 @@ test('empty name shows validation error', async () => {
   renderModal()
   await uploadFile(sampleExportData)
   const nameInput = page.getByRole('textbox', { name: /Catalog Name/i })
+  await expect.element(nameInput).toBeVisible()
   await nameInput.fill('')
   await expect.element(page.getByText('Name is required')).toBeVisible()
 })
@@ -253,6 +255,7 @@ test('name too long shows validation error', async () => {
   renderModal()
   await uploadFile(sampleExportData)
   const nameInput = page.getByRole('textbox', { name: /Catalog Name/i })
+  await expect.element(nameInput).toBeVisible()
   await nameInput.fill('a'.repeat(64))
   await expect.element(page.getByText('Name must be at most 63 characters')).toBeVisible()
 })
@@ -261,6 +264,7 @@ test('invalid DNS label shows validation error', async () => {
   renderModal()
   await uploadFile(sampleExportData)
   const nameInput = page.getByRole('textbox', { name: /Catalog Name/i })
+  await expect.element(nameInput).toBeVisible()
   await nameInput.fill('INVALID!')
   await expect.element(page.getByText('Must be lowercase alphanumeric and hyphens')).toBeVisible()
 })
