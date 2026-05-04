@@ -1644,6 +1644,48 @@ Acceptance Criteria:
 
 ---
 
+**US-57: Create, edit, and delete instances in the operational data viewer**
+As an operator with RW access, I want to create, edit, and delete instances directly in the operational data viewer, so that I don't need to switch to the schema management UI for data operations.
+
+**Why**: The operational UI is the natural workspace for operators managing catalog data. Requiring a switch to the meta UI breaks their workflow and creates confusion about which UI to use for what.
+
+Acceptance Criteria:
+- **Create Instance**: A "Create Instance" button appears at the top of the tree section. Opens a modal with entity type dropdown (showing all types pinned in the catalog's CV), name, description, and attribute fields. Additionally, each entity type group header in the tree shows an inline "+" icon that opens the same modal pre-filled with that entity type.
+- **Edit Instance**: An "Edit" button appears in the instance detail panel when an instance is selected. Opens a modal pre-filled with current name, description, and attribute values.
+- **Delete Instance**: A "Delete" button appears in the instance detail panel. If the instance has children (containment), a confirmation dialog shows all instances that will be cascade-deleted. On confirm, the instance and all descendants are deleted.
+- **Post-mutation refresh**: After any create/edit/delete, the tree reloads and re-selects the affected node (or the parent node if the selected instance was deleted).
+- **Published catalog protection**: Write controls are hidden for non-SuperAdmin users on published catalogs. SuperAdmin sees write controls on all catalogs.
+- All operations use the existing backend APIs — no new endpoints needed.
+- Access: RW+ on non-published catalogs, SuperAdmin on published catalogs. RO users see no write controls.
+
+**US-58: Manage containment and links in the operational data viewer**
+As an operator, I want to manage containment relationships (add child, set parent, remove from container) and association links (create, delete) directly in the operational data viewer.
+
+**Why**: Containment and links are the core relationship model. Without these operations in the operational UI, operators must switch to the meta UI for any relationship change, which defeats the purpose of the operational editing feature.
+
+Acceptance Criteria:
+- **Add Child**: An "Add Child" button appears in the detail panel for instances with containment associations. Opens a modal showing containment-eligible child types (from the CV's association definitions). Creates a new contained instance.
+- **Set Parent**: A "Set Parent" button appears for instances that can be contained. Opens a modal to select a valid parent instance. Changes the instance's parent container.
+- **Remove from Container**: A "Remove from Container" button appears for contained instances. Removes the parent reference, making the instance a root instance.
+- **Create Link**: A "Create Link" button appears in the detail panel. Opens a modal showing link-eligible associations (non-containment) and valid target instances. Creates the association link.
+- **Delete Link**: Each link in the forward/reverse references section has a "Delete" button (for associations the user has write access to). Deletes the association link.
+- All operations use the existing backend APIs.
+
+**US-59: Role-aware write controls in the operational data viewer**
+As an administrator, I want the operational data viewer to show or hide write controls based on the user's role and the catalog's publish status, so that unauthorized users cannot accidentally modify data.
+
+**Why**: The operational UI must enforce the same RBAC rules as the meta UI. Role-aware rendering prevents confusion — RO users should never see buttons they can't use.
+
+Acceptance Criteria:
+- **RO role**: All write controls (Create, Edit, Delete, Add Child, Set Parent, Remove Container, Create Link, Delete Link) are hidden. Tree and detail panel are read-only. The "+" icons on entity type groups are hidden.
+- **RW role on non-published catalog**: All write controls are visible and functional.
+- **Admin/SuperAdmin on non-published catalog**: All write controls visible + Validate button visible.
+- **Non-SuperAdmin on published catalog**: All write controls hidden. Published badge displayed. Only browse and validate (read-only validation results) available.
+- **SuperAdmin on published catalog**: All write controls visible. Published badge displayed as warning.
+- The write protection logic reuses the same `canMutate` pattern from the meta `CatalogDetailPage`.
+
+---
+
 ## 10. Open Design Decisions
 
 The following items are acknowledged but not yet fully specified:
@@ -1769,15 +1811,22 @@ The entity type diagram currently uses a hardcoded Dagre (hierarchical top-to-bo
 
 **Decision:** Deferred. Current Dagre layout works well for the UML class diagram use case.
 
-### FF-6: Operational UI Editing
+### FF-6: Operational UI Editing — IMPLEMENTING (see US-57, US-58, US-59)
 
-The operational UI (Phase 4) is initially read-only — a data viewer for operators and consumers to browse, filter, and navigate catalog data. A future enhancement would add write capabilities to the operational UI, allowing authorized users to create, edit, and delete instances, manage containment, and create association links directly from the operational interface.
+Add write capabilities to the operational data viewer: create, edit, delete instances, manage containment, and create/delete association links. Reuses existing modals from the meta CatalogDetailPage, adapted for the operational app shell. Role-aware rendering based on user role and catalog publish status.
 
-**Motivation:** Some teams may prefer a single UI for both browsing and editing catalog data, rather than switching between the meta UI (editing) and operational UI (browsing). This is especially relevant when catalog-level RBAC (US-39) is in place — an operator with write access to a specific catalog should be able to edit it from the same interface they use to browse it.
+**Design decisions (resolved):**
 
-**Scope:** Reuse the existing create/edit/delete modals from the meta UI's `CatalogDetailPage`, adapted for the operational app shell. Role-aware rendering (RO vs RW) determines which controls are visible.
-
-**Decision:** Deferred. The read-only viewer must be validated with users first. Editing features can be added incrementally once the browsing UX is stable.
+| Decision | Choice |
+|----------|--------|
+| Write controls location | Instance detail panel + "Create Instance" at top of tree |
+| Schema management | Instance data only (no schema editing in operational UI) |
+| Entity type selection | Dropdown in Create modal + inline "+" icon on tree entity type groups |
+| Validation after mutations | Manual only (Validate button) |
+| Delete with children | Cascade delete with confirmation dialog listing affected instances |
+| Post-mutation tree behavior | Refresh tree and re-select affected node (or parent on delete) |
+| Meta page scope | Keep both UIs — meta keeps instance editing, operational gets it too |
+| Backend changes | None — all APIs already exist |
 
 ### FF-7: Catalog Versioning (Snapshots)
 
