@@ -50,3 +50,7 @@ tmp/
 
 # Git worktrees
 .worktrees/
+
+# Local tooling
+.playwright-mcp/
+.superpowers/

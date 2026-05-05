@@ -42,6 +42,17 @@
       --purple-40: #876fd4;
       --purple-10: #ece6ff;
 
+      /* Server-source colors */
+      --jira-bg: #e6f4ff;
+      --jira-border: #1a7fbd;
+      --jira-text: #0a5a8a;
+      --github-bg: #f0f0f0;
+      --github-border: #555555;
+      --github-text: #333333;
+      --slack-bg: var(--orange-10);
+      --slack-border: var(--orange-40);
+      --slack-text: #8a4b00;
+
       /* Diagram */
       --border-diagram: #e0e0e0;
       --border-subtle-dark: #383838;
@@ -395,6 +406,64 @@
     .s2 .gap-card .h3 { margin-bottom: 0.25rem; }
     .s2 .gap-card p { margin: 0; color: var(--text-dark-secondary); font-size: var(--fs-small); }
 
+    /* Slide 2 — Definitions */
+    .s2-definitions {
+      display: flex;
+      gap: var(--space-lg);
+      margin-top: var(--space-lg);
+      padding: var(--space-md) var(--space-lg);
+      background: var(--bg-light-alt);
+      border: 1px solid var(--border-diagram);
+      border-radius: 8px;
+    }
+    .s2-def {
+      flex: 1;
+      padding: var(--space-sm) 0;
+    }
+    .s2-def strong {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-small);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .s2-def--registry strong { color: var(--teal-70); }
+    .s2-def--catalog strong { color: var(--orange-40); }
+    .s2-def p {
+      margin: 0.25rem 0 0;
+      font-size: var(--fs-small);
+      color: var(--text-dark-secondary);
+    }
+    .s2-scope {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      margin-top: var(--space-md);
+      padding: var(--space-sm) var(--space-lg);
+      background: var(--teal-10);
+      border-radius: 6px;
+      border: 1px solid var(--teal-40);
+    }
+    .s2-scope-label {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-label);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--teal-70);
+      margin-right: var(--space-xs);
+    }
+    .s2-scope-chip {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      background: #fff;
+      border: 1px solid var(--teal-40);
+      color: var(--teal-70);
+    }
+
     /* === SLIDE 3 — Schema + Catalog === */
     .s3-panels {
       display: grid;
@@ -535,6 +604,7 @@
     }
     .s4-explainer-card--contain { border-left-color: var(--teal-50); }
     .s4-explainer-card--ref { border-left-color: var(--purple-50); }
+    .s4-explainer-card--question { border-left-color: var(--orange-40); background: var(--orange-10); }
     .s4-explainer-card h4 {
       font-family: var(--font-display);
       font-weight: 700;
@@ -543,6 +613,7 @@
     }
     .s4-explainer-card--contain h4 { color: var(--teal-70); }
     .s4-explainer-card--ref h4 { color: var(--purple-50); }
+    .s4-explainer-card--question h4 { color: var(--orange-40); }
     .s4-explainer-card p {
       font-size: 0.78rem;
       line-height: 1.45;
@@ -578,7 +649,7 @@
     }
     .s5-servers-row {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr;
       gap: var(--space-lg);
     }
     .s5-server-box {
@@ -602,6 +673,21 @@
       border: 1px solid #ddd;
       background: #fff;
       transition: all 350ms var(--ease-pop);
+    }
+    .s5-tool-chip--jira {
+      background: var(--jira-bg);
+      border-color: var(--jira-border);
+      color: var(--jira-text);
+    }
+    .s5-tool-chip--github {
+      background: var(--github-bg);
+      border-color: var(--github-border);
+      color: var(--github-text);
+    }
+    .s5-tool-chip--slack {
+      background: var(--slack-bg);
+      border-color: var(--slack-border);
+      color: var(--slack-text);
     }
     .s5-contains-label {
       text-align: center;
@@ -647,6 +733,19 @@
       margin-bottom: var(--space-xs);
       color: var(--purple-50);
     }
+    .s5-vs-badge {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--purple-50);
+      background: rgba(94, 64, 190, 0.12);
+      padding: 2px 8px;
+      border-radius: 3px;
+      margin-bottom: 0.35rem;
+    }
     .s5-vs-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
     .s5-tool-chip.highlight-teal {
       background: var(--teal-10);
@@ -660,6 +759,39 @@
       color: var(--purple-50);
       box-shadow: 0 0 12px rgba(94, 64, 190, 0.25);
     }
+    .s5-value-blurb {
+      margin-top: var(--space-md);
+      padding: var(--space-sm) var(--space-lg);
+      background: var(--bg-light-alt);
+      border: 1px solid var(--border-diagram);
+      border-radius: 6px;
+      font-size: var(--fs-small);
+      color: var(--text-dark-secondary);
+      text-align: center;
+      line-height: 1.5;
+    }
+    .s5-legend {
+      display: flex;
+      justify-content: center;
+      gap: var(--space-lg);
+      margin-top: var(--space-sm);
+    }
+    .s5-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.75rem;
+      color: var(--text-dark-muted);
+    }
+    .s5-legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      border: 1px solid;
+    }
+    .s5-legend-swatch--jira { background: var(--jira-bg); border-color: var(--jira-border) !important; }
+    .s5-legend-swatch--github { background: var(--github-bg); border-color: var(--github-border) !important; }
+    .s5-legend-swatch--slack { background: var(--slack-bg); border-color: var(--slack-border) !important; }
     .s5-caption {
       margin-top: var(--space-lg);
       font-style: italic;
@@ -686,6 +818,8 @@
       color: var(--text-dark-secondary);
       background: #fff;
       transition: all 350ms var(--ease-pop);
+      position: relative;
+      cursor: default;
     }
     .s7-arrow { color: var(--text-dark-muted); font-size: 1.3rem; }
     .s7-state.active-teal {
@@ -699,6 +833,43 @@
       background: var(--orange-10);
       color: #8a4b00;
       box-shadow: 0 0 12px rgba(245, 146, 27, 0.25);
+    }
+    /* Tooltip system for lifecycle states */
+    .s7-state[data-tooltip]::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: calc(100% + 10px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-dark);
+      color: var(--text-light-primary);
+      font-family: var(--font-text);
+      font-size: 0.72rem;
+      font-weight: 400;
+      padding: 6px 12px;
+      border-radius: 6px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 180ms ease-out;
+      z-index: 10;
+    }
+    .s7-state[data-tooltip]::before {
+      content: '';
+      position: absolute;
+      bottom: calc(100% + 4px);
+      left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: var(--bg-dark);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 180ms ease-out;
+      z-index: 10;
+    }
+    .s7-state[data-tooltip]:hover::after,
+    .s7-state[data-tooltip]:hover::before {
+      opacity: 1;
     }
     .s7-update-flow {
       margin-top: var(--space-xl);
@@ -728,6 +899,18 @@
       font-size: var(--fs-small);
       color: var(--text-dark-muted);
       font-style: italic;
+    }
+    .s7-atomic-note {
+      margin-top: var(--space-md);
+      padding: var(--space-sm) var(--space-md);
+      background: var(--orange-10);
+      border: 1px solid var(--orange-40);
+      border-radius: 6px;
+      font-size: var(--fs-small);
+      color: #8a4b00;
+    }
+    .s7-atomic-note strong {
+      font-weight: 700;
     }
 
     /* === SLIDE 7 — Gateway Registration === */
@@ -776,6 +959,16 @@
       gap: var(--space-md);
       flex-wrap: wrap;
     }
+    .s8-update-title {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-small);
+      color: var(--orange-40);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      width: 100%;
+      margin-bottom: 0;
+    }
     .s8-update-item {
       font-size: var(--fs-small);
       color: var(--text-dark-secondary);
@@ -794,6 +987,54 @@
       font-size: var(--fs-small);
       text-align: center;
     }
+    /* Slide 7 — Example flow */
+    .s8-example-flow {
+      margin-top: var(--space-lg);
+      padding: var(--space-md) var(--space-lg);
+      background: var(--bg-light-alt);
+      border: 1px solid var(--border-diagram);
+      border-radius: 8px;
+    }
+    .s8-example-title {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-small);
+      color: var(--teal-70);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: var(--space-sm);
+    }
+    .s8-example-steps {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      flex-wrap: wrap;
+    }
+    .s8-ex-step {
+      font-size: var(--fs-small);
+      padding: 0.35rem 0.7rem;
+      border-radius: 4px;
+      border: 1px solid var(--border-diagram);
+      background: #fff;
+      color: var(--text-dark-secondary);
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 350ms var(--ease-pop), transform 350ms var(--ease-pop);
+    }
+    .s8-ex-step.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .s8-ex-step--teal { border-color: var(--teal-50); color: var(--teal-70); font-weight: 500; }
+    .s8-ex-step--orange { border-color: var(--orange-40); color: #8a4b00; font-family: var(--font-mono); font-weight: 500; }
+    .s8-ex-step--purple { border-color: var(--purple-50); color: var(--purple-50); font-weight: 500; }
+    .s8-ex-arrow {
+      color: var(--text-dark-muted);
+      font-size: 1.1rem;
+      opacity: 0;
+      transition: opacity 350ms var(--ease-pop);
+    }
+    .s8-ex-arrow.visible { opacity: 1; }
 
     /* === SLIDE 8 — Under the Hood === */
     .s9 {
@@ -832,6 +1073,76 @@
       color: var(--text-light-secondary);
       font-size: var(--fs-body-lead);
       margin-top: var(--space-md);
+    }
+    /* RBAC section */
+    .s9-rbac {
+      width: 100%;
+      margin-top: var(--space-sm);
+      padding: var(--space-md);
+      border: 1px solid var(--border-subtle-dark);
+      border-radius: 8px;
+      text-align: center;
+    }
+    .s9-rbac-title {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-small);
+      color: var(--text-light-primary);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: var(--space-sm);
+    }
+    .s9-rbac-roles {
+      display: flex;
+      justify-content: center;
+      gap: var(--space-sm);
+      flex-wrap: wrap;
+    }
+    .s9-role {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      font-weight: 500;
+    }
+    .s9-role--ro { background: var(--teal-10); color: var(--teal-70); border: 1px solid var(--teal-50); }
+    .s9-role--rw { background: var(--purple-10); color: var(--purple-50); border: 1px solid var(--purple-40); }
+    .s9-role--admin { background: var(--orange-10); color: #8a4b00; border: 1px solid var(--orange-40); }
+    .s9-role--super { background: var(--rh-red-light); color: var(--rh-red-dark); border: 1px solid var(--rh-red); }
+    .s9-rbac-note {
+      font-size: 0.72rem;
+      color: var(--text-light-muted);
+      margin-top: var(--space-xs);
+      font-style: italic;
+    }
+    /* Upcoming feature */
+    .s9-upcoming {
+      width: 100%;
+      padding: var(--space-md);
+      border: 2px dashed var(--border-subtle-dark);
+      border-radius: 8px;
+      text-align: center;
+    }
+    .s9-upcoming-label {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-label);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-light-muted);
+      margin-bottom: 0.35rem;
+    }
+    .s9-upcoming-title {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-small);
+      color: var(--text-light-primary);
+    }
+    .s9-upcoming-desc {
+      font-size: 0.75rem;
+      color: var(--text-light-muted);
+      margin-top: 0.25rem;
     }
 
     /* === REDUCED MOTION === */
@@ -910,6 +1221,23 @@
         <div class="slide-eyebrow anim-fade-up">The Problem</div>
         <h2 class="h2 anim-fade-up">MCP gives us servers and tools.<br>But the ecosystem has <span style="color:var(--rh-red);">gaps</span>.</h2>
         <p class="lead anim-fade-up">MCP defines how tools communicate. But who tracks what&rsquo;s available, decides what&rsquo;s exposed, and governs changes? Nobody &mdash; yet.</p>
+        <div class="s2-definitions anim-fade-up">
+          <div class="s2-def s2-def--registry">
+            <strong>Registry</strong>
+            <p>Curation &mdash; tracking and managing what exists in your deployment.</p>
+          </div>
+          <div class="s2-def s2-def--catalog">
+            <strong>Catalog</strong>
+            <p>Discoverability &mdash; finding and accessing only what you are allowed to use.</p>
+          </div>
+        </div>
+        <div class="s2-scope anim-fade-up">
+          <span class="s2-scope-label">Scope</span>
+          <span class="s2-scope-chip">Guardrails</span>
+          <span class="s2-scope-chip">Virtual Servers</span>
+          <span class="s2-scope-chip">Tool Catalog / Selection</span>
+          <span class="s2-scope-chip">MCP Gateway Support</span>
+        </div>
         <div class="gap-cards" data-stagger>
           <div class="gap-card anim-slide-right">
             <div class="gap-icon">&times;</div>
@@ -1011,7 +1339,11 @@
               <h4>Reference &mdash; independent lifecycle</h4>
               <p>A Virtual Server picks tools from <em>any</em> server in the catalog. It doesn't own them &mdash; it just exposes a curated subset as a single endpoint for a specific use case.</p>
             </div>
-            <div class="s4-explainer-card seq-step" data-seq-delay="1400" style="border-left-color:var(--text-dark-muted);">
+            <div class="s4-explainer-card s4-explainer-card--question seq-step" data-seq-delay="1400">
+              <h4>UX Decision Point</h4>
+              <p>Should a Virtual Server reference only tools, or also its source servers? The data model supports indirect resolution (tool &rarr; server), but a direct reference may improve the UX. To be validated.</p>
+            </div>
+            <div class="s4-explainer-card seq-step" data-seq-delay="1600" style="border-left-color:var(--text-dark-muted);">
               <h4 style="color:var(--text-dark-secondary);">Why it matters</h4>
               <p>These entity types and relationships aren't hardcoded. They're defined at runtime through the schema manager &mdash; so the same system can catalog MCP tools today, and models or prompts tomorrow.</p>
             </div>
@@ -1032,40 +1364,58 @@
             <div class="s5-server-box seq-step" data-seq-delay="400">
               <div class="h3">Jira Server</div>
               <div class="s5-tool-chips">
-                <span class="s5-tool-chip">get-story</span>
-                <span class="s5-tool-chip">add-watcher</span>
+                <span class="s5-tool-chip s5-tool-chip--jira">get-story</span>
+                <span class="s5-tool-chip s5-tool-chip--jira">add-watcher</span>
               </div>
             </div>
             <div class="s5-server-box seq-step" data-seq-delay="600">
               <div class="h3">GitHub Server</div>
               <div class="s5-tool-chips">
-                <span class="s5-tool-chip">get-issue</span>
-                <span class="s5-tool-chip">create-PR</span>
+                <span class="s5-tool-chip s5-tool-chip--github">get-issue</span>
+                <span class="s5-tool-chip s5-tool-chip--github">create-PR</span>
+              </div>
+            </div>
+            <div class="s5-server-box seq-step" data-seq-delay="800">
+              <div class="h3">Slack Server</div>
+              <div class="s5-tool-chips">
+                <span class="s5-tool-chip s5-tool-chip--slack">send-msg</span>
+                <span class="s5-tool-chip s5-tool-chip--slack">list-channels</span>
               </div>
             </div>
           </div>
-          <div class="s5-contains-label seq-step" data-seq-delay="800">contains &rarr;</div>
+          <div class="s5-contains-label seq-step" data-seq-delay="1000">contains &rarr;</div>
         </div>
-        <div class="s5-separator seq-step" data-seq-delay="1000">
+        <div class="s5-separator seq-step" data-seq-delay="1200">
           <span class="s5-separator-label">references &uarr;</span>
         </div>
         <div class="s5-vs-row">
-          <div class="s5-vs-box seq-step" data-seq-delay="1200">
+          <div class="s5-vs-box seq-step" data-seq-delay="1400">
+            <div class="s5-vs-badge">Virtual Server</div>
             <div class="h3">Read-Only Reporting</div>
             <div class="s5-vs-chips">
-              <span class="s5-tool-chip" data-tool="get-issue">get-issue</span>
-              <span class="s5-tool-chip" data-tool="get-story">get-story</span>
+              <span class="s5-tool-chip s5-tool-chip--github" data-tool="get-issue">get-issue</span>
+              <span class="s5-tool-chip s5-tool-chip--jira" data-tool="get-story">get-story</span>
+              <span class="s5-tool-chip s5-tool-chip--slack" data-tool="list-channels">list-channels</span>
             </div>
           </div>
-          <div class="s5-vs-box seq-step" data-seq-delay="1400">
+          <div class="s5-vs-box seq-step" data-seq-delay="1600">
+            <div class="s5-vs-badge">Virtual Server</div>
             <div class="h3">DevOps Actions</div>
             <div class="s5-vs-chips">
-              <span class="s5-tool-chip" data-tool="create-pr">create-PR</span>
-              <span class="s5-tool-chip" data-tool="add-watcher">add-watcher</span>
+              <span class="s5-tool-chip s5-tool-chip--github" data-tool="create-pr">create-PR</span>
+              <span class="s5-tool-chip s5-tool-chip--jira" data-tool="add-watcher">add-watcher</span>
+              <span class="s5-tool-chip s5-tool-chip--slack" data-tool="send-msg">send-msg</span>
             </div>
           </div>
         </div>
-        <p class="s5-caption seq-step" data-seq-delay="2400">Servers contain their tools. Virtual servers compose cross-server views for different consumers.</p>
+        <div class="s5-value-blurb seq-step" data-seq-delay="1800">
+          Virtual servers let you compose cross-server tool sets tailored to specific workloads &mdash; a read-only reporting agent never sees write operations, while a DevOps agent gets exactly the actions it needs from multiple sources.
+        </div>
+        <div class="s5-legend seq-step" data-seq-delay="2000">
+          <div class="s5-legend-item"><span class="s5-legend-swatch s5-legend-swatch--jira"></span> Jira</div>
+          <div class="s5-legend-item"><span class="s5-legend-swatch s5-legend-swatch--github"></span> GitHub</div>
+          <div class="s5-legend-item"><span class="s5-legend-swatch s5-legend-swatch--slack"></span> Slack</div>
+        </div>
       </div>
     </section>
 
@@ -1077,28 +1427,33 @@
           <p class="lead anim-fade-up" style="margin-top:var(--space-xs);">Catalogs are validated against their schema before publishing. Published catalogs are write-protected.</p>
         </div>
         <div class="s7-promo-flow seq-step" data-seq-delay="400">
-          <span class="s7-state" data-state="draft">Draft</span>
+          <span class="s7-state" data-state="draft" data-tooltip="Create a new catalog from schema">Draft</span>
           <span class="s7-arrow">&rarr;</span>
-          <span class="s7-state" data-state="validate">Validate</span>
+          <span class="s7-state" data-state="validate" data-tooltip="Check completeness against schema rules">Validate</span>
           <span class="s7-arrow">&rarr;</span>
-          <span class="s7-state" data-state="testing">Testing</span>
+          <span class="s7-state" data-state="testing" data-tooltip="Run integration tests before promotion">Testing</span>
           <span class="s7-arrow">&rarr;</span>
-          <span class="s7-state" data-state="production">Production</span>
+          <span class="s7-state" data-state="production" data-tooltip="Active catalog serving workloads">Production</span>
           <span class="s7-arrow">&rarr;</span>
-          <span class="s7-state" data-state="publish">Publish</span>
+          <span class="s7-state" data-state="publish" data-tooltip="Generate Kubernetes CR for gateway discovery">Publish</span>
         </div>
-        <div class="s7-update-flow seq-step" data-seq-delay="1200">
+        <div class="s7-update-flow seq-step" data-seq-delay="2800">
           <div class="s7-update-label">Safe Update Path</div>
           <div class="s7-update-states">
-            <span class="s7-state" data-state="copy">Copy</span>
+            <span class="s7-state" data-state="copy" data-tooltip="Clone the production catalog to a working copy">Copy</span>
             <span class="s7-arrow">&rarr;</span>
-            <span class="s7-state" data-state="edit">Edit</span>
+            <span class="s7-state" data-state="edit" data-tooltip="Modify entities and associations in the copy">Edit</span>
             <span class="s7-arrow">&rarr;</span>
-            <span class="s7-state" data-state="validate2">Validate</span>
+            <span class="s7-state" data-state="validate2" data-tooltip="Re-validate the edited copy against schema">Validate</span>
             <span class="s7-arrow">&rarr;</span>
-            <span class="s7-state s7-state--replace" data-state="replace">Atomic Replace</span>
+            <span class="s7-state" data-state="testing2" data-tooltip="Test updated catalog before replacing production">Testing</span>
+            <span class="s7-arrow">&rarr;</span>
+            <span class="s7-state s7-state--replace" data-state="replace" data-tooltip="Swap production with the validated copy in one operation">Atomic Replace</span>
           </div>
           <p class="s7-update-note">Data version increments &bull; Old catalog archived for rollback</p>
+        </div>
+        <div class="s7-atomic-note seq-step" data-seq-delay="5400">
+          <strong>Why atomic?</strong> A catalog is a single versioned entity. You cannot add or change entities individually &mdash; the entire catalog must be validated and promoted together.
         </div>
       </div>
     </section>
@@ -1107,8 +1462,8 @@
       <div class="slide-inner s8">
         <div data-stagger>
           <div class="slide-eyebrow anim-fade-up" style="color:var(--teal-70);">Gateway Registration</div>
-          <h2 class="h2 anim-fade-up">Publish once. Discover everywhere.</h2>
-          <p class="lead anim-fade-up" style="margin-top:var(--space-xs);">Publishing a catalog creates a Kubernetes Custom Resource. The MCP Gateway discovers it automatically.</p>
+          <h2 class="h2 anim-fade-up">Publish once. Gateway watches.</h2>
+          <p class="lead anim-fade-up" style="margin-top:var(--space-xs);">Publishing a catalog creates a Kubernetes Custom Resource. The MCP Gateway controller watches for changes and auto-discovers new catalogs.</p>
         </div>
         <div class="s8-arch">
           <div class="s8-box s8-box--hub seq-step" data-seq-delay="400">
@@ -1128,29 +1483,46 @@
           </div>
           <div class="s8-arrow seq-step" data-seq-delay="1000">
             <span>watches</span>
-            <span class="arrow">&rarr;</span>
+            <span class="arrow">&larr;</span>
           </div>
           <div class="s8-box s8-box--gw seq-step" data-seq-delay="1200">
             <div class="h3" style="color:var(--purple-50);">MCP Gateway</div>
           </div>
         </div>
-        <div class="s8-update-flow seq-step" data-seq-delay="1600">
-          <span class="s8-update-item">Catalog updated</span>
-          <span class="s8-update-arrow">&rarr;</span>
-          <span class="s8-update-item s8-update-item--orange">dataVersion: 2</span>
-          <span class="s8-update-arrow">&rarr;</span>
-          <span class="s8-update-item">Gateway invalidates cache</span>
-          <span class="s8-update-arrow">&rarr;</span>
-          <span class="s8-update-item s8-update-item--teal">Re-fetches metadata</span>
+        <div class="s8-example-flow seq-step" data-seq-delay="1600">
+          <div class="s8-example-title">Example: Publishing dev-tools Catalog</div>
+          <div class="s8-example-steps">
+            <span class="s8-ex-step s8-ex-step--teal" data-ex-delay="200">Validated</span>
+            <span class="s8-ex-arrow" data-ex-delay="400">&rarr;</span>
+            <span class="s8-ex-step s8-ex-step--orange" data-ex-delay="600">CR: dev-tools v1</span>
+            <span class="s8-ex-arrow" data-ex-delay="800">&rarr;</span>
+            <span class="s8-ex-step s8-ex-step--purple" data-ex-delay="1000">Gateway detects</span>
+            <span class="s8-ex-arrow" data-ex-delay="1200">&rarr;</span>
+            <span class="s8-ex-step" data-ex-delay="1400">Fetch metadata</span>
+            <span class="s8-ex-arrow" data-ex-delay="1600">&rarr;</span>
+            <span class="s8-ex-step s8-ex-step--teal" data-ex-delay="1800">Tools available</span>
+          </div>
         </div>
-        <p class="s8-caption seq-step" data-seq-delay="2000">Zero-downtime catalog updates.</p>
+        <div class="s8-example-flow seq-step" data-seq-delay="4200">
+          <div class="s8-example-title" style="color:var(--orange-40);">Subsequent Update</div>
+          <div class="s8-example-steps">
+            <span class="s8-ex-step s8-ex-step2" data-ex2-delay="200">Catalog updated</span>
+            <span class="s8-ex-arrow s8-ex-arrow2" data-ex2-delay="400">&rarr;</span>
+            <span class="s8-ex-step s8-ex-step2 s8-ex-step--orange" data-ex2-delay="600">dataVersion: 2</span>
+            <span class="s8-ex-arrow s8-ex-arrow2" data-ex2-delay="800">&rarr;</span>
+            <span class="s8-ex-step s8-ex-step2" data-ex2-delay="1000">Cache invalidated</span>
+            <span class="s8-ex-arrow s8-ex-arrow2" data-ex2-delay="1200">&rarr;</span>
+            <span class="s8-ex-step s8-ex-step2 s8-ex-step--teal" data-ex2-delay="1400">Re-fetches metadata</span>
+          </div>
+        </div>
+        <p class="s8-caption seq-step" data-seq-delay="6200">Zero-downtime catalog updates. The Gateway watches the CR &mdash; Asset Hub never pushes to the Gateway.</p>
       </div>
     </section>
 
     <section class="slide slide-dark" data-slide="8" aria-label="Slide 8">
       <div class="slide-inner s9" data-stagger>
         <div class="slide-eyebrow anim-fade-up">Under the Hood</div>
-        <h2 class="h2 anim-fade-up">Built for Enterprise</h2>
+        <h2 class="h2 anim-fade-up">Built for OpenShift</h2>
         <div class="s9-grid anim-fade-up">
           <div class="s9-stat">
             <div class="stat-value">Go / Echo</div>
@@ -1165,8 +1537,8 @@
             <div class="stat-label">Relational + EAV</div>
           </div>
           <div class="s9-stat">
-            <div class="stat-value">K8s</div>
-            <div class="stat-label">Operator managed</div>
+            <div class="stat-value">OCP</div>
+            <div class="stat-label">Target Platform</div>
           </div>
           <div class="s9-stat">
             <div class="stat-value" style="color:var(--rh-red);">2,700+</div>
@@ -1176,6 +1548,21 @@
             <div class="stat-value">Schema-agnostic</div>
             <div class="stat-label">No code changes</div>
           </div>
+        </div>
+        <div class="s9-rbac anim-fade-up">
+          <div class="s9-rbac-title">Role-Based Access Control</div>
+          <div class="s9-rbac-roles">
+            <span class="s9-role s9-role--ro">Read-Only</span>
+            <span class="s9-role s9-role--rw">Read-Write</span>
+            <span class="s9-role s9-role--admin">Admin</span>
+            <span class="s9-role s9-role--super">Super-Admin</span>
+          </div>
+          <p class="s9-rbac-note">Role-based up to API level &bull; Super-Admin required for destructive operations (e.g. removing catalog from production)</p>
+        </div>
+        <div class="s9-upcoming anim-fade-up">
+          <div class="s9-upcoming-label">Next Up</div>
+          <div class="s9-upcoming-title">Import / Export</div>
+          <p class="s9-upcoming-desc">Export catalogs to client-native formats (CRs, YAML) &mdash; clients don&rsquo;t need to change.</p>
         </div>
         <p class="s9-tagline anim-fade-up">Catalog MCP tools today. Models and prompts tomorrow.</p>
         <div style="font-family:var(--font-display);font-size:2.5rem;font-weight:900;color:var(--rh-red);" class="anim-fade-up">Red&thinsp;Hat</div>
@@ -1233,7 +1620,6 @@
           } else {
             s.classList.remove('current');
             s.setAttribute('aria-hidden', 'true');
-            // Cleanup on slide exit
             cleanupSlide(s);
           }
         });
@@ -1245,21 +1631,21 @@
       }
 
       function cleanupSlide(slide) {
-        // Reset sequential steps
         Array.from(slide.querySelectorAll('.seq-step.visible')).forEach(function (el) {
           el.classList.remove('visible');
         });
-        // Reset highlights
         Array.from(slide.querySelectorAll('.highlight.active')).forEach(function (el) {
           el.classList.remove('active');
         });
-        // Slide 5: reset tool chip highlights
         Array.from(slide.querySelectorAll('.s5-tool-chip')).forEach(function (el) {
           el.classList.remove('highlight-teal', 'highlight-purple');
         });
-        // Slide 6: reset state highlights
         Array.from(slide.querySelectorAll('.s7-state')).forEach(function (el) {
           el.classList.remove('active-teal', 'active-orange');
+        });
+        // Cleanup slide 7 example flow
+        Array.from(slide.querySelectorAll('.s8-ex-step, .s8-ex-arrow')).forEach(function (el) {
+          el.classList.remove('visible');
         });
       }
 
@@ -1385,34 +1771,14 @@
         setupSVGDraw(cur);
         runSequentialSteps(cur);
 
-        // Trigger highlights
         Array.from(cur.querySelectorAll('.highlight')).forEach(function (el) {
           el.classList.remove('active');
           setTimeout(function () { el.classList.add('active'); }, 100);
         });
 
-        // Slide 5: highlight tool chips in virtual server boxes
         var slideNum = parseInt(cur.getAttribute('data-slide'), 10);
-        if (slideNum === 5) {
-          setTimeout(function () {
-            var chips = cur.querySelectorAll('.s5-vs-chips .s5-tool-chip');
-            chips.forEach(function (chip) {
-              var tool = chip.getAttribute('data-tool');
-              if (tool === 'get-story' || tool === 'get-issue') {
-                chip.classList.add('highlight-teal');
-              }
-            });
-          }, 1800);
-          setTimeout(function () {
-            var chips = cur.querySelectorAll('.s5-vs-chips .s5-tool-chip');
-            chips.forEach(function (chip) {
-              var tool = chip.getAttribute('data-tool');
-              if (tool === 'create-pr' || tool === 'add-watcher') {
-                chip.classList.add('highlight-purple');
-              }
-            });
-          }, 2200);
-        }
+
+        // Slide 5: tools in virtual servers keep their source-server colors (no override)
 
         // Slide 6: light up promotion and update states
         if (slideNum === 6) {
@@ -1423,12 +1789,30 @@
               if (el) el.classList.add('active-teal');
             }, 800 + i * 400);
           });
-          var updateStates = ['copy', 'edit', 'validate2', 'replace'];
+          var updateStates = ['copy', 'edit', 'validate2', 'testing2', 'replace'];
           updateStates.forEach(function (state, i) {
             setTimeout(function () {
               var el = cur.querySelector('.s7-state[data-state="' + state + '"]');
               if (el) el.classList.add('active-orange');
-            }, 3200 + i * 400);
+            }, 3400 + i * 400);
+          });
+        }
+
+        // Slide 7: animate example flow steps (first flow, then second)
+        if (slideNum === 7) {
+          var exSteps = cur.querySelectorAll('.s8-ex-step:not(.s8-ex-step2), .s8-ex-arrow:not(.s8-ex-arrow2)');
+          exSteps.forEach(function (el) {
+            var delay = parseInt(el.getAttribute('data-ex-delay') || '0', 10);
+            setTimeout(function () {
+              el.classList.add('visible');
+            }, 2000 + delay);
+          });
+          var ex2Steps = cur.querySelectorAll('.s8-ex-step2, .s8-ex-arrow2');
+          ex2Steps.forEach(function (el) {
+            var delay = parseInt(el.getAttribute('data-ex2-delay') || '0', 10);
+            setTimeout(function () {
+              el.classList.add('visible');
+            }, 4800 + delay);
           });
         }
       }
