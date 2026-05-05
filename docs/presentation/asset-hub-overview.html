@@ -1,0 +1,1834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PC Asset Hub — Overview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@400;700;900&family=Red+Hat+Text:wght@400;500&family=Red+Hat+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* === TOKENS === */
+    :root {
+      /* Surface */
+      --bg-dark: #151515;
+      --bg-light: #ffffff;
+      --bg-light-alt: #f9f9f9;
+
+      /* Text on light */
+      --text-dark-primary: #151515;
+      --text-dark-secondary: #4d4d4d;
+      --text-dark-muted: #707070;
+
+      /* Text on dark */
+      --text-light-primary: #ffffff;
+      --text-light-secondary: #c7c7c7;
+      --text-light-muted: #8c8c8c;
+
+      /* Brand */
+      --rh-red: #ee0000;
+      --rh-red-dark: #a60000;
+      --rh-red-light: #fce3e3;
+
+      /* Accents */
+      --teal-50: #37a3a3;
+      --teal-40: #63bdbd;
+      --teal-70: #004d4d;
+      --teal-10: #daf2f2;
+      --orange-40: #f5921b;
+      --orange-20: #fccb8f;
+      --orange-10: #ffe8cc;
+      --purple-50: #5e40be;
+      --purple-40: #876fd4;
+      --purple-10: #ece6ff;
+
+      /* Server-source colors */
+      --jira-bg: #e6f4ff;
+      --jira-border: #1a7fbd;
+      --jira-text: #0a5a8a;
+      --github-bg: #f0f0f0;
+      --github-border: #555555;
+      --github-text: #333333;
+      --slack-bg: var(--orange-10);
+      --slack-border: var(--orange-40);
+      --slack-text: #8a4b00;
+
+      /* Diagram */
+      --border-diagram: #e0e0e0;
+      --border-subtle-dark: #383838;
+
+      /* Type */
+      --font-display: "Red Hat Display", sans-serif;
+      --font-text: "Red Hat Text", sans-serif;
+      --font-mono: "Red Hat Mono", monospace;
+
+      /* Scale */
+      --fs-display: 3.5rem;
+      --fs-h2: 2rem;
+      --fs-h3: 1.4rem;
+      --fs-body: 1.1rem;
+      --fs-body-lead: 1.25rem;
+      --fs-label: 0.75rem;
+      --fs-small: 0.85rem;
+
+      /* Spacing */
+      --space-xs: 0.5rem;
+      --space-sm: 0.75rem;
+      --space-md: 1rem;
+      --space-lg: 1.5rem;
+      --space-xl: 2rem;
+      --space-2xl: 3rem;
+      --space-3xl: 4.5rem;
+
+      /* Layout */
+      --content-max: 1100px;
+      --slide-padding: 5rem;
+
+      /* Animation */
+      --stagger-delay: 100ms;
+      --transition-exit: 220ms;
+      --transition-enter: 350ms;
+      --bg-cross: 600ms;
+      --ease-pop: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    /* === BASE === */
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: var(--font-text);
+      font-size: var(--fs-body);
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      overflow: hidden;
+    }
+    main.deck {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      transition: background var(--bg-cross) ease-in-out;
+    }
+
+    /* === LAYOUT === */
+    .slide {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      min-height: 100vh;
+      padding: var(--space-3xl) var(--slide-padding);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      overflow: hidden;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: scale(0.96);
+      transition:
+        opacity var(--transition-exit) ease-in,
+        transform var(--transition-exit) ease-in,
+        visibility 0s linear var(--transition-exit);
+    }
+    main.deck[data-slide-current="1"] .slide[data-slide="1"],
+    main.deck[data-slide-current="2"] .slide[data-slide="2"],
+    main.deck[data-slide-current="3"] .slide[data-slide="3"],
+    main.deck[data-slide-current="4"] .slide[data-slide="4"],
+    main.deck[data-slide-current="5"] .slide[data-slide="5"],
+    main.deck[data-slide-current="6"] .slide[data-slide="6"],
+    main.deck[data-slide-current="7"] .slide[data-slide="7"],
+    main.deck[data-slide-current="8"] .slide[data-slide="8"] {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transform: scale(1);
+      transition:
+        opacity var(--transition-enter) var(--ease-pop),
+        transform var(--transition-enter) var(--ease-pop),
+        visibility 0s linear 0s;
+    }
+    .slide-inner {
+      max-width: var(--content-max);
+      width: 100%;
+      margin: 0 auto;
+    }
+    .slide-eyebrow {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      color: var(--rh-red);
+      margin-bottom: var(--space-lg);
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    /* === TYPOGRAPHY === */
+    .display {
+      font-family: var(--font-display);
+      font-size: var(--fs-display);
+      line-height: 1.02;
+      letter-spacing: -0.03em;
+      font-weight: 900;
+      margin: 0;
+    }
+    .h2 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      line-height: 1.2;
+      letter-spacing: -0.01em;
+      font-weight: 700;
+      margin: 0 0 var(--space-md);
+    }
+    .h3 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h3);
+      line-height: 1.3;
+      letter-spacing: -0.005em;
+      font-weight: 700;
+      margin: 0 0 var(--space-sm);
+    }
+    .lead {
+      font-size: var(--fs-body-lead);
+      line-height: 1.5;
+      margin: var(--space-md) 0 0;
+      max-width: 75ch;
+    }
+    .label {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+    }
+    .mono {
+      font-family: var(--font-mono);
+      font-size: var(--fs-small);
+    }
+
+    /* === SLIDE THEMES === */
+    .slide-dark {
+      background: var(--bg-dark);
+      color: var(--text-light-primary);
+    }
+    .slide-dark .lead { color: var(--text-light-secondary); }
+    .slide-dark .display { color: var(--text-light-primary); }
+    .slide-dark .h2, .slide-dark .h3 { color: var(--text-light-primary); }
+
+    .slide-light {
+      background: var(--bg-light);
+      color: var(--text-dark-primary);
+    }
+    .slide-light .lead { color: var(--text-dark-secondary); }
+    .slide-light .display { color: var(--text-dark-primary); }
+    .slide-light .h2, .slide-light .h3 { color: var(--text-dark-primary); }
+
+    /* === ACT TINTS === */
+    main.deck[data-slide-current="1"] { background: var(--bg-dark); }
+    main.deck[data-slide-current="2"],
+    main.deck[data-slide-current="3"],
+    main.deck[data-slide-current="4"],
+    main.deck[data-slide-current="5"],
+    main.deck[data-slide-current="6"],
+    main.deck[data-slide-current="7"] { background: var(--bg-light); }
+    main.deck[data-slide-current="8"] { background: var(--bg-dark); }
+
+    /* === MOTION LIBRARY === */
+    @keyframes fade-up { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slide-right { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: translateX(0); } }
+    @keyframes slide-left { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
+    @keyframes scale-in { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
+    @keyframes draw-line {
+      from { stroke-dashoffset: 1000; }
+      to { stroke-dashoffset: 0; }
+    }
+    @keyframes highlight-bg {
+      0% { background-size: 0% 100%; opacity: 0; }
+      25% { opacity: 1; }
+      60% { background-size: 100% 100%; }
+      100% { background-size: 100% 100%; opacity: 1; }
+    }
+
+    main.deck .slide.current .anim-fade-up { animation: fade-up 400ms var(--ease-pop) both; animation-delay: calc(var(--index, 0) * var(--stagger-delay)); }
+    main.deck .slide.current .anim-fade-in { animation: fade-in 400ms ease-out both; animation-delay: calc(var(--index, 0) * var(--stagger-delay)); }
+    main.deck .slide.current .anim-slide-right { animation: slide-right 500ms var(--ease-pop) both; animation-delay: calc(var(--index, 0) * var(--stagger-delay)); }
+    main.deck .slide.current .anim-slide-left { animation: slide-left 500ms var(--ease-pop) both; animation-delay: calc(var(--index, 0) * var(--stagger-delay)); }
+    main.deck .slide.current .anim-scale-in { animation: scale-in 450ms var(--ease-pop) both; animation-delay: calc(var(--index, 0) * var(--stagger-delay)); }
+
+    /* Sequential animation system */
+    .seq-step {
+      opacity: 0;
+      transform: translateY(12px);
+      transition: opacity 350ms var(--ease-pop), transform 350ms var(--ease-pop);
+    }
+    .seq-step.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .highlight {
+      background-image: linear-gradient(90deg, rgba(238, 0, 0, 0.15), rgba(238, 0, 0, 0.08));
+      background-repeat: no-repeat;
+      background-size: 0% 100%;
+      transition: background-size 700ms var(--ease-pop);
+    }
+    main.deck .slide.current .highlight.active {
+      background-size: 100% 100%;
+    }
+
+    /* === CONTROLS === */
+    .deck-controls {
+      position: fixed;
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: var(--space-md);
+      background: rgba(21, 21, 21, 0.92);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border-subtle-dark);
+      border-radius: 999px;
+      padding: 0.5rem 1.1rem;
+      z-index: 50;
+    }
+    .deck-controls button {
+      width: 38px;
+      height: 38px;
+      background: transparent;
+      border: none;
+      color: var(--rh-red);
+      font-size: 1.3rem;
+      cursor: pointer;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 180ms ease-out, color 180ms ease-out;
+    }
+    .deck-controls button:hover:not(:disabled) { background: rgba(238, 0, 0, 0.15); color: var(--rh-red); }
+    .deck-controls button:disabled { opacity: 0.3; cursor: not-allowed; }
+    .deck-dots {
+      display: flex;
+      gap: 0.35rem;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .deck-dots button {
+      width: 10px;
+      height: 10px;
+      padding: 0;
+      border-radius: 50%;
+      background: var(--text-light-muted);
+      transition: background 180ms ease-out, transform 180ms ease-out;
+      color: transparent;
+      font-size: 0;
+    }
+    .deck-dots button[aria-current="true"] {
+      background: var(--rh-red);
+      transform: scale(1.4);
+      box-shadow: 0 0 16px rgba(238, 0, 0, 0.5);
+    }
+    .deck-dots button:hover {
+      background: var(--rh-red);
+    }
+    .deck-counter {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--text-light-muted);
+      letter-spacing: 0.06em;
+      padding: 0 var(--space-sm);
+      border-left: 1px solid var(--border-subtle-dark);
+    }
+    .deck-controls button:focus-visible,
+    .deck-dots button:focus-visible {
+      outline: 2px solid var(--rh-red);
+      outline-offset: 2px;
+    }
+
+    /* === SLIDE 1 — Title === */
+    .s1 {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: var(--space-lg);
+    }
+    .s1 .tagline {
+      font-family: var(--font-display);
+      font-size: var(--fs-h3);
+      font-weight: 700;
+      color: var(--rh-red);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .s1 .subtitle {
+      font-size: var(--fs-body-lead);
+      color: var(--text-light-secondary);
+      max-width: 42ch;
+      margin: 0 auto;
+    }
+    .s1 .byline {
+      font-size: var(--fs-small);
+      color: var(--text-light-muted);
+      margin-top: var(--space-md);
+    }
+
+    /* === SLIDE 2 — The Gap === */
+    .s2 .gap-cards { display: flex; flex-direction: column; gap: var(--space-md); margin-top: var(--space-xl); }
+    .s2 .gap-card {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-md);
+      padding: var(--space-md) var(--space-lg);
+      background: var(--rh-red-light);
+      border-left: 4px solid var(--rh-red);
+      border-radius: 0 8px 8px 0;
+    }
+    .s2 .gap-icon {
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 2px solid var(--rh-red);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--rh-red);
+      font-weight: 700;
+      font-size: 1.1rem;
+    }
+    .s2 .gap-card .h3 { margin-bottom: 0.25rem; }
+    .s2 .gap-card p { margin: 0; color: var(--text-dark-secondary); font-size: var(--fs-small); }
+
+    /* Slide 2 — Definitions */
+    .s2-definitions {
+      display: flex;
+      gap: var(--space-lg);
+      margin-top: var(--space-lg);
+      padding: var(--space-md) var(--space-lg);
+      background: var(--bg-light-alt);
+      border: 1px solid var(--border-diagram);
+      border-radius: 8px;
+    }
+    .s2-def {
+      flex: 1;
+      padding: var(--space-sm) 0;
+    }
+    .s2-def strong {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-small);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .s2-def--registry strong { color: var(--teal-70); }
+    .s2-def--catalog strong { color: var(--orange-40); }
+    .s2-def p {
+      margin: 0.25rem 0 0;
+      font-size: var(--fs-small);
+      color: var(--text-dark-secondary);
+    }
+    .s2-scope {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      margin-top: var(--space-md);
+      padding: var(--space-sm) var(--space-lg);
+      background: var(--teal-10);
+      border-radius: 6px;
+      border: 1px solid var(--teal-40);
+    }
+    .s2-scope-label {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-label);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--teal-70);
+      margin-right: var(--space-xs);
+    }
+    .s2-scope-chip {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      background: #fff;
+      border: 1px solid var(--teal-40);
+      color: var(--teal-70);
+    }
+
+    /* === SLIDE 3 — Schema + Catalog === */
+    .s3-panels {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: var(--space-xl);
+      align-items: start;
+      margin-top: var(--space-xl);
+    }
+    .s3-panel {
+      padding: var(--space-lg);
+      border-radius: 8px;
+      background: var(--bg-light-alt);
+      border: 1px solid var(--border-diagram);
+    }
+    .s3-panel--schema { border-top: 4px solid var(--teal-50); }
+    .s3-panel--catalog { border-top: 4px solid var(--orange-40); }
+    .s3-panel ul {
+      list-style: none;
+      padding: 0;
+      margin: var(--space-sm) 0 0;
+    }
+    .s3-panel li {
+      padding: 0.35rem 0;
+      font-size: var(--fs-small);
+      color: var(--text-dark-secondary);
+    }
+    .s3-panel li::before {
+      content: "\2022";
+      color: var(--teal-50);
+      font-weight: 700;
+      margin-right: 0.5rem;
+    }
+    .s3-panel--catalog li::before { color: var(--orange-40); }
+    .s3-arrow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.5rem;
+      color: var(--teal-50);
+      padding-top: 3rem;
+    }
+
+    /* === SLIDE 4 — Data Model === */
+    .s4-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-xl);
+      margin-top: var(--space-lg);
+      align-items: start;
+    }
+    .s4-diagram { display: flex; flex-direction: column; align-items: center; }
+    .s4-entity {
+      border: 2px solid var(--border-diagram);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+      width: 100%;
+      max-width: 280px;
+    }
+    .s4-entity--server, .s4-entity--tool { border-color: var(--teal-50); }
+    .s4-entity--virtual { border-color: var(--purple-50); }
+    .s4-entity-header {
+      padding: 0.4rem var(--space-md);
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-small);
+    }
+    .s4-entity--server .s4-entity-header,
+    .s4-entity--tool .s4-entity-header { background: var(--teal-10); color: var(--teal-70); }
+    .s4-entity--virtual .s4-entity-header { background: var(--purple-10); color: var(--purple-50); }
+    .s4-entity-body {
+      padding: 0.3rem var(--space-md) 0.4rem;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      line-height: 1.5;
+      color: var(--text-dark-secondary);
+    }
+    .s4-arrow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 4px 0;
+    }
+    .s4-arrow-line {
+      width: 2px;
+      height: 20px;
+      position: relative;
+    }
+    .s4-arrow-line--solid { background: var(--teal-50); }
+    .s4-arrow-line--dashed { border-left: 2px dashed var(--purple-50); }
+    .s4-arrow-line--solid::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 10px;
+      height: 10px;
+      background: var(--teal-50);
+      clip-path: polygon(50% 100%, 0% 0%, 100% 0%);
+    }
+    .s4-arrow-line--dashed::after {
+      content: '';
+      position: absolute;
+      top: -1px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 10px;
+      height: 10px;
+      background: var(--purple-50);
+      clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+    }
+    .s4-arrow-label {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      white-space: nowrap;
+      margin-top: 4px;
+    }
+    .s4-arrow-label--teal { color: var(--teal-70); }
+    .s4-arrow-label--purple { color: var(--purple-50); }
+    .s4-arrow-type {
+      font-family: var(--font-text);
+      font-size: 0.65rem;
+      color: var(--text-dark-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .s4-explainer {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-sm);
+    }
+    .s4-explainer-card {
+      border-left: 3px solid var(--border-diagram);
+      padding: 0.6rem 1rem;
+      border-radius: 0 6px 6px 0;
+      background: #fafafa;
+    }
+    .s4-explainer-card--contain { border-left-color: var(--teal-50); }
+    .s4-explainer-card--ref { border-left-color: var(--purple-50); }
+    .s4-explainer-card--question { border-left-color: var(--orange-40); background: var(--orange-10); }
+    .s4-explainer-card h4 {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 0.82rem;
+      margin: 0 0 0.25rem 0;
+    }
+    .s4-explainer-card--contain h4 { color: var(--teal-70); }
+    .s4-explainer-card--ref h4 { color: var(--purple-50); }
+    .s4-explainer-card--question h4 { color: var(--orange-40); }
+    .s4-explainer-card p {
+      font-size: 0.78rem;
+      line-height: 1.45;
+      color: var(--text-dark-secondary);
+      margin: 0;
+    }
+    .s4-caption {
+      margin-top: var(--space-md);
+      margin-bottom: 3.5rem;
+      font-style: italic;
+      color: var(--text-dark-muted);
+      font-size: var(--fs-small);
+      text-align: center;
+      grid-column: 1 / -1;
+    }
+
+    /* === SLIDE 5 — Catalog in Action (merged) === */
+    .s5-catalog-container {
+      border: 2px solid var(--orange-40);
+      border-radius: 12px;
+      padding: 1.5rem;
+      background: #fff;
+      margin-top: var(--space-xl);
+    }
+    .s5-catalog-label {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-small);
+      color: var(--orange-40);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: var(--space-md);
+    }
+    .s5-servers-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: var(--space-lg);
+    }
+    .s5-server-box {
+      border: 1px solid var(--teal-40);
+      border-radius: 8px;
+      padding: var(--space-md);
+      background: var(--teal-10);
+    }
+    .s5-server-box .h3 {
+      font-size: var(--fs-small);
+      margin-bottom: var(--space-xs);
+      color: var(--teal-70);
+    }
+    .s5-tool-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .s5-tool-chip {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      border: 1px solid #ddd;
+      background: #fff;
+      transition: all 350ms var(--ease-pop);
+    }
+    .s5-tool-chip--jira {
+      background: var(--jira-bg);
+      border-color: var(--jira-border);
+      color: var(--jira-text);
+    }
+    .s5-tool-chip--github {
+      background: var(--github-bg);
+      border-color: var(--github-border);
+      color: var(--github-text);
+    }
+    .s5-tool-chip--slack {
+      background: var(--slack-bg);
+      border-color: var(--slack-border);
+      color: var(--slack-text);
+    }
+    .s5-contains-label {
+      text-align: center;
+      font-size: var(--fs-small);
+      color: var(--teal-70);
+      font-weight: 700;
+      margin-top: var(--space-sm);
+      font-family: var(--font-mono);
+    }
+    .s5-separator {
+      border-top: 2px dashed var(--purple-40);
+      margin-top: var(--space-lg);
+      padding-top: var(--space-sm);
+      position: relative;
+    }
+    .s5-separator-label {
+      position: absolute;
+      top: -0.7rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-light);
+      padding: 0 0.8rem;
+      font-size: var(--fs-small);
+      color: var(--purple-50);
+      font-weight: 700;
+      font-family: var(--font-mono);
+      white-space: nowrap;
+    }
+    .s5-vs-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-lg);
+      margin-top: var(--space-md);
+    }
+    .s5-vs-box {
+      border: 2px solid var(--purple-40);
+      border-radius: 8px;
+      padding: var(--space-md);
+      background: var(--purple-10);
+    }
+    .s5-vs-box .h3 {
+      font-size: var(--fs-small);
+      margin-bottom: var(--space-xs);
+      color: var(--purple-50);
+    }
+    .s5-vs-badge {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--purple-50);
+      background: rgba(94, 64, 190, 0.12);
+      padding: 2px 8px;
+      border-radius: 3px;
+      margin-bottom: 0.35rem;
+    }
+    .s5-vs-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .s5-tool-chip.highlight-teal {
+      background: var(--teal-10);
+      border-color: var(--teal-40);
+      color: var(--teal-70);
+      box-shadow: 0 0 12px rgba(55, 163, 163, 0.25);
+    }
+    .s5-tool-chip.highlight-purple {
+      background: var(--purple-10);
+      border-color: var(--purple-40);
+      color: var(--purple-50);
+      box-shadow: 0 0 12px rgba(94, 64, 190, 0.25);
+    }
+    .s5-value-blurb {
+      margin-top: var(--space-md);
+      padding: var(--space-sm) var(--space-lg);
+      background: var(--bg-light-alt);
+      border: 1px solid var(--border-diagram);
+      border-radius: 6px;
+      font-size: var(--fs-small);
+      color: var(--text-dark-secondary);
+      text-align: center;
+      line-height: 1.5;
+    }
+    .s5-legend {
+      display: flex;
+      justify-content: center;
+      gap: var(--space-lg);
+      margin-top: var(--space-sm);
+    }
+    .s5-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.75rem;
+      color: var(--text-dark-muted);
+    }
+    .s5-legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      border: 1px solid;
+    }
+    .s5-legend-swatch--jira { background: var(--jira-bg); border-color: var(--jira-border) !important; }
+    .s5-legend-swatch--github { background: var(--github-bg); border-color: var(--github-border) !important; }
+    .s5-legend-swatch--slack { background: var(--slack-bg); border-color: var(--slack-border) !important; }
+    .s5-caption {
+      margin-top: var(--space-lg);
+      font-style: italic;
+      color: var(--text-dark-muted);
+      font-size: var(--fs-small);
+      text-align: center;
+    }
+
+    /* === SLIDE 6 — Catalog Lifecycle === */
+    .s7-promo-flow {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      flex-wrap: wrap;
+      margin-top: var(--space-xl);
+    }
+    .s7-state {
+      padding: 0.5rem 1rem;
+      border: 2px solid var(--border-diagram);
+      border-radius: 6px;
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-small);
+      color: var(--text-dark-secondary);
+      background: #fff;
+      transition: all 350ms var(--ease-pop);
+      position: relative;
+      cursor: default;
+    }
+    .s7-arrow { color: var(--text-dark-muted); font-size: 1.3rem; }
+    .s7-state.active-teal {
+      border-color: var(--teal-50);
+      background: var(--teal-10);
+      color: var(--teal-70);
+      box-shadow: 0 0 12px rgba(55, 163, 163, 0.25);
+    }
+    .s7-state.active-orange {
+      border-color: var(--orange-40);
+      background: var(--orange-10);
+      color: #8a4b00;
+      box-shadow: 0 0 12px rgba(245, 146, 27, 0.25);
+    }
+    /* Tooltip system for lifecycle states */
+    .s7-state[data-tooltip]::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: calc(100% + 10px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-dark);
+      color: var(--text-light-primary);
+      font-family: var(--font-text);
+      font-size: 0.72rem;
+      font-weight: 400;
+      padding: 6px 12px;
+      border-radius: 6px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 180ms ease-out;
+      z-index: 10;
+    }
+    .s7-state[data-tooltip]::before {
+      content: '';
+      position: absolute;
+      bottom: calc(100% + 4px);
+      left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: var(--bg-dark);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 180ms ease-out;
+      z-index: 10;
+    }
+    .s7-state[data-tooltip]:hover::after,
+    .s7-state[data-tooltip]:hover::before {
+      opacity: 1;
+    }
+    .s7-update-flow {
+      margin-top: var(--space-xl);
+      padding: var(--space-lg);
+      background: var(--bg-light-alt);
+      border-radius: 8px;
+      border: 1px solid var(--border-diagram);
+    }
+    .s7-update-label {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-small);
+      color: var(--orange-40);
+      margin-bottom: var(--space-md);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .s7-update-states {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      flex-wrap: wrap;
+    }
+    .s7-update-states .s7-state--replace { border-width: 3px; }
+    .s7-update-note {
+      margin-top: var(--space-sm);
+      font-size: var(--fs-small);
+      color: var(--text-dark-muted);
+      font-style: italic;
+    }
+    .s7-atomic-note {
+      margin-top: var(--space-md);
+      padding: var(--space-sm) var(--space-md);
+      background: var(--orange-10);
+      border: 1px solid var(--orange-40);
+      border-radius: 6px;
+      font-size: var(--fs-small);
+      color: #8a4b00;
+    }
+    .s7-atomic-note strong {
+      font-weight: 700;
+    }
+
+    /* === SLIDE 7 — Gateway Registration === */
+    .s8-arch {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-lg);
+      margin-top: var(--space-xl);
+    }
+    .s8-box {
+      flex: 1;
+      padding: var(--space-md);
+      border: 1px solid var(--border-diagram);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .s8-box--hub { border-top: 4px solid var(--teal-50); }
+    .s8-box--cr { border-top: 4px solid var(--orange-40); }
+    .s8-box--gw { border-top: 4px solid var(--purple-50); }
+    .s8-box .h3 { font-size: var(--fs-small); margin-bottom: var(--space-xs); }
+    .s8-cr-fields {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      line-height: 1.8;
+      color: var(--text-dark-secondary);
+    }
+    .s8-arrow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--fs-small);
+      color: var(--text-dark-muted);
+      padding-top: 1.5rem;
+      white-space: nowrap;
+    }
+    .s8-arrow .arrow { font-size: 1.8rem; color: var(--teal-50); }
+    .s8-update-flow {
+      margin-top: var(--space-xl);
+      padding: var(--space-md) var(--space-lg);
+      background: var(--bg-light-alt);
+      border: 1px solid var(--border-diagram);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: var(--space-md);
+      flex-wrap: wrap;
+    }
+    .s8-update-title {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-small);
+      color: var(--orange-40);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      width: 100%;
+      margin-bottom: 0;
+    }
+    .s8-update-item {
+      font-size: var(--fs-small);
+      color: var(--text-dark-secondary);
+      padding: 0.4rem 0.8rem;
+      border-radius: 4px;
+      border: 1px solid var(--border-diagram);
+      background: #fff;
+    }
+    .s8-update-item--orange { border-color: var(--orange-40); color: var(--orange-40); font-family: var(--font-mono); font-weight: 500; }
+    .s8-update-item--teal { border-color: var(--teal-50); color: var(--teal-70); }
+    .s8-update-arrow { color: var(--text-dark-muted); font-size: 1.2rem; }
+    .s8-caption {
+      margin-top: var(--space-lg);
+      font-style: italic;
+      color: var(--text-dark-muted);
+      font-size: var(--fs-small);
+      text-align: center;
+    }
+    /* Slide 7 — Example flow */
+    .s8-example-flow {
+      margin-top: var(--space-lg);
+      padding: var(--space-md) var(--space-lg);
+      background: var(--bg-light-alt);
+      border: 1px solid var(--border-diagram);
+      border-radius: 8px;
+    }
+    .s8-example-title {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-small);
+      color: var(--teal-70);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: var(--space-sm);
+    }
+    .s8-example-steps {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      flex-wrap: wrap;
+    }
+    .s8-ex-step {
+      font-size: var(--fs-small);
+      padding: 0.35rem 0.7rem;
+      border-radius: 4px;
+      border: 1px solid var(--border-diagram);
+      background: #fff;
+      color: var(--text-dark-secondary);
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 350ms var(--ease-pop), transform 350ms var(--ease-pop);
+    }
+    .s8-ex-step.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .s8-ex-step--teal { border-color: var(--teal-50); color: var(--teal-70); font-weight: 500; }
+    .s8-ex-step--orange { border-color: var(--orange-40); color: #8a4b00; font-family: var(--font-mono); font-weight: 500; }
+    .s8-ex-step--purple { border-color: var(--purple-50); color: var(--purple-50); font-weight: 500; }
+    .s8-ex-arrow {
+      color: var(--text-dark-muted);
+      font-size: 1.1rem;
+      opacity: 0;
+      transition: opacity 350ms var(--ease-pop);
+    }
+    .s8-ex-arrow.visible { opacity: 1; }
+
+    /* === SLIDE 8 — Under the Hood === */
+    .s9 {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: var(--space-lg);
+    }
+    .s9-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: var(--space-md);
+      margin-top: var(--space-md);
+      width: 100%;
+    }
+    .s9-stat {
+      padding: var(--space-md);
+      border: 1px solid var(--border-subtle-dark);
+      border-radius: 8px;
+      text-align: center;
+    }
+    .s9-stat .stat-value {
+      font-family: var(--font-display);
+      font-weight: 900;
+      font-size: var(--fs-h3);
+      color: var(--text-light-primary);
+    }
+    .s9-stat .stat-label {
+      font-size: var(--fs-small);
+      color: var(--text-light-muted);
+      margin-top: 0.25rem;
+    }
+    .s9-tagline {
+      font-style: italic;
+      color: var(--text-light-secondary);
+      font-size: var(--fs-body-lead);
+      margin-top: var(--space-md);
+    }
+    /* RBAC section */
+    .s9-rbac {
+      width: 100%;
+      margin-top: var(--space-sm);
+      padding: var(--space-md);
+      border: 1px solid var(--border-subtle-dark);
+      border-radius: 8px;
+      text-align: center;
+    }
+    .s9-rbac-title {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-small);
+      color: var(--text-light-primary);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: var(--space-sm);
+    }
+    .s9-rbac-roles {
+      display: flex;
+      justify-content: center;
+      gap: var(--space-sm);
+      flex-wrap: wrap;
+    }
+    .s9-role {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      font-weight: 500;
+    }
+    .s9-role--ro { background: var(--teal-10); color: var(--teal-70); border: 1px solid var(--teal-50); }
+    .s9-role--rw { background: var(--purple-10); color: var(--purple-50); border: 1px solid var(--purple-40); }
+    .s9-role--admin { background: var(--orange-10); color: #8a4b00; border: 1px solid var(--orange-40); }
+    .s9-role--super { background: var(--rh-red-light); color: var(--rh-red-dark); border: 1px solid var(--rh-red); }
+    .s9-rbac-note {
+      font-size: 0.72rem;
+      color: var(--text-light-muted);
+      margin-top: var(--space-xs);
+      font-style: italic;
+    }
+    /* Upcoming feature */
+    .s9-upcoming {
+      width: 100%;
+      padding: var(--space-md);
+      border: 2px dashed var(--border-subtle-dark);
+      border-radius: 8px;
+      text-align: center;
+    }
+    .s9-upcoming-label {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-label);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-light-muted);
+      margin-bottom: 0.35rem;
+    }
+    .s9-upcoming-title {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-small);
+      color: var(--text-light-primary);
+    }
+    .s9-upcoming-desc {
+      font-size: 0.75rem;
+      color: var(--text-light-muted);
+      margin-top: 0.25rem;
+    }
+
+    /* === REDUCED MOTION === */
+    @media (prefers-reduced-motion: reduce) {
+      * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 180ms !important; }
+      main.deck .slide.current .anim-fade-up,
+      main.deck .slide.current .anim-slide-right,
+      main.deck .slide.current .anim-slide-left,
+      main.deck .slide.current .anim-scale-in,
+      main.deck .slide.current .anim-fade-in { animation: fade-in 180ms ease-out both; }
+      .seq-step { opacity: 1; transform: translateY(0); transition: none; }
+      .highlight { transition: none; background-size: 100% 100%; }
+    }
+
+    /* === PRINT === */
+    @media print {
+      html, body, main.deck { overflow: visible; height: auto; }
+      main.deck { background: #fff !important; }
+      .deck-controls { display: none !important; }
+      .slide {
+        position: relative;
+        opacity: 1 !important;
+        visibility: visible !important;
+        transform: none !important;
+        pointer-events: auto;
+        page-break-after: always;
+        break-after: page;
+        background: #fff;
+        color: #1a1a1a;
+        padding: 0.5in;
+        min-height: auto;
+      }
+      .slide-dark { background: #fff !important; color: #1a1a1a !important; }
+      .display, .h2, .h3, .lead { color: #1a1a1a !important; }
+      .slide-eyebrow { color: #a60000 !important; }
+    }
+
+    /* === RESPONSIVE === */
+    @media (max-width: 768px) {
+      :root {
+        --fs-display: 2.2rem;
+        --fs-h2: 1.5rem;
+        --fs-h3: 1.15rem;
+        --fs-body-lead: 1.05rem;
+        --slide-padding: 2rem;
+      }
+      .slide { padding: 2rem 1.25rem; }
+      .deck-controls { padding: 0.3rem 0.6rem; gap: 0.5rem; }
+      .deck-controls button { width: 32px; height: 32px; font-size: 1.05rem; }
+      .deck-dots button { width: 8px; height: 8px; }
+      .s3-panels { grid-template-columns: 1fr; }
+      .s3-arrow { padding-top: 0; transform: rotate(90deg); }
+      .s4-layout { grid-template-columns: 1fr; }
+      .s4-caption { grid-column: 1; }
+      .s5-servers-row { grid-template-columns: 1fr; }
+      .s5-vs-row { grid-template-columns: 1fr; }
+      .s8-arch { flex-direction: column; }
+      .s9-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" id="deck" data-slide-current="1">
+    <section class="slide slide-dark" data-slide="1" aria-label="Slide 1">
+      <div class="slide-inner s1" data-stagger>
+        <div style="font-family:var(--font-display);font-size:2.5rem;font-weight:900;color:var(--rh-red);" class="anim-fade-up">Red&thinsp;Hat</div>
+        <h1 class="display anim-fade-up">PC Asset Hub</h1>
+        <p class="tagline anim-fade-up">Project Catalyst</p>
+        <p class="subtitle anim-fade-up">A metadata-driven management system for AI assets on OpenShift</p>
+        <p class="byline anim-fade-up">Josh Salomon</p>
+      </div>
+    </section>
+
+    <section class="slide slide-light" data-slide="2" aria-label="Slide 2">
+      <div class="slide-inner s2" data-stagger>
+        <div class="slide-eyebrow anim-fade-up">The Problem</div>
+        <h2 class="h2 anim-fade-up">MCP gives us servers and tools.<br>But the ecosystem has <span style="color:var(--rh-red);">gaps</span>.</h2>
+        <p class="lead anim-fade-up">MCP defines how tools communicate. But who tracks what&rsquo;s available, decides what&rsquo;s exposed, and governs changes? Nobody &mdash; yet.</p>
+        <div class="s2-definitions anim-fade-up">
+          <div class="s2-def s2-def--registry">
+            <strong>Registry</strong>
+            <p>Curation &mdash; tracking and managing what exists in your deployment.</p>
+          </div>
+          <div class="s2-def s2-def--catalog">
+            <strong>Catalog</strong>
+            <p>Discoverability &mdash; finding and accessing only what you are allowed to use.</p>
+          </div>
+        </div>
+        <div class="s2-scope anim-fade-up">
+          <span class="s2-scope-label">Scope</span>
+          <span class="s2-scope-chip">Guardrails</span>
+          <span class="s2-scope-chip">Virtual Servers</span>
+          <span class="s2-scope-chip">Tool Catalog / Selection</span>
+          <span class="s2-scope-chip">MCP Gateway Support</span>
+        </div>
+        <div class="gap-cards" data-stagger>
+          <div class="gap-card anim-slide-right">
+            <div class="gap-icon">&times;</div>
+            <div>
+              <div class="h3">No Registry</div>
+              <p>No standard way to track which MCP servers and tools exist in a deployment.</p>
+            </div>
+          </div>
+          <div class="gap-card anim-slide-right">
+            <div class="gap-icon">&times;</div>
+            <div>
+              <div class="h3">No Curation</div>
+              <p>No mechanism to select, group, or scope tools for specific agents or use cases.</p>
+            </div>
+          </div>
+          <div class="gap-card anim-slide-right">
+            <div class="gap-icon">&times;</div>
+            <div>
+              <div class="h3">No Lifecycle</div>
+              <p>No governance model for versioning, validating, or promoting tool configurations.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide slide-light" data-slide="3" aria-label="Slide 3">
+      <div class="slide-inner s3" data-stagger>
+        <div class="slide-eyebrow anim-fade-up" style="color:var(--teal-50);">The Solution</div>
+        <h2 class="h2 anim-fade-up">Two parts. One system.</h2>
+        <p class="lead anim-fade-up">Define your asset model once &mdash; no code changes needed. Populate it with real data. Publish to the cluster.</p>
+        <div class="s3-panels">
+          <div class="s3-panel s3-panel--schema anim-slide-right">
+            <div class="h3" style="color:var(--teal-70);">Schema Management</div>
+            <ul>
+              <li>Entity types (MCP Server, Tool, Virtual Server, &hellip;)</li>
+              <li>Attributes &amp; constraints</li>
+              <li>Associations &amp; cardinality</li>
+              <li>Reusable type definitions</li>
+            </ul>
+          </div>
+          <div class="s3-arrow anim-fade-in">&rarr;</div>
+          <div class="s3-panel s3-panel--catalog anim-slide-left">
+            <div class="h3" style="color:var(--orange-40);">Catalog Management</div>
+            <ul>
+              <li>Create catalogs from schema</li>
+              <li>Add entity instances and associations</li>
+              <li>Validate completeness</li>
+              <li>Publish to Kubernetes</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide slide-light" data-slide="4" aria-label="Slide 4">
+      <div class="slide-inner s4" data-stagger>
+        <div class="slide-eyebrow anim-fade-up" style="color:var(--teal-50);">Data Model</div>
+        <h2 class="h2 anim-fade-up">Three entity types, two relationship kinds</h2>
+        <div class="s4-layout">
+          <div class="s4-diagram">
+            <div class="s4-entity s4-entity--server seq-step" data-seq-delay="400">
+              <div class="s4-entity-header">MCP Server</div>
+              <div class="s4-entity-body">
+                endpoint <span style="color:var(--text-dark-muted);">(url, required)</span><br>
+                containerized <span style="color:var(--text-dark-muted);">(boolean)</span><br>
+                image URL <span style="color:var(--text-dark-muted);">(url)</span><br>
+                exec command <span style="color:var(--text-dark-muted);">(string)</span>
+              </div>
+            </div>
+            <div class="s4-arrow seq-step" data-seq-delay="600">
+              <div class="s4-arrow-line s4-arrow-line--solid"></div>
+              <div class="s4-arrow-label s4-arrow-label--teal">1 &mdash; 1..n</div>
+              <div class="s4-arrow-type">containment</div>
+            </div>
+            <div class="s4-entity s4-entity--tool seq-step" data-seq-delay="800">
+              <div class="s4-entity-header">MCP Tool</div>
+              <div class="s4-entity-body">
+                type <span style="color:var(--text-dark-muted);">(enum [read, write, readwrite])</span><br>
+                idempotent <span style="color:var(--text-dark-muted);">(boolean)</span>
+              </div>
+            </div>
+            <div class="s4-arrow seq-step" data-seq-delay="1000">
+              <div class="s4-arrow-line s4-arrow-line--dashed"></div>
+              <div class="s4-arrow-label s4-arrow-label--purple">1..n &mdash; 0..n</div>
+              <div class="s4-arrow-type">directional reference</div>
+            </div>
+            <div class="s4-entity s4-entity--virtual seq-step" data-seq-delay="1200">
+              <div class="s4-entity-header">Virtual Server</div>
+              <div class="s4-entity-body"><em>name + description only</em></div>
+            </div>
+          </div>
+          <div class="s4-explainer">
+            <div class="s4-explainer-card s4-explainer-card--contain seq-step" data-seq-delay="700">
+              <h4>Containment &mdash; shared lifecycle</h4>
+              <p>Tools live inside their server. Delete the server and all its tools are deleted with it. The server owns the tools it implements.</p>
+            </div>
+            <div class="s4-explainer-card s4-explainer-card--ref seq-step" data-seq-delay="1100">
+              <h4>Reference &mdash; independent lifecycle</h4>
+              <p>A Virtual Server picks tools from <em>any</em> server in the catalog. It doesn't own them &mdash; it just exposes a curated subset as a single endpoint for a specific use case.</p>
+            </div>
+            <div class="s4-explainer-card s4-explainer-card--question seq-step" data-seq-delay="1400">
+              <h4>UX Decision Point</h4>
+              <p>Should a Virtual Server reference only tools, or also its source servers? The data model supports indirect resolution (tool &rarr; server), but a direct reference may improve the UX. To be validated.</p>
+            </div>
+            <div class="s4-explainer-card seq-step" data-seq-delay="1600" style="border-left-color:var(--text-dark-muted);">
+              <h4 style="color:var(--text-dark-secondary);">Why it matters</h4>
+              <p>These entity types and relationships aren't hardcoded. They're defined at runtime through the schema manager &mdash; so the same system can catalog MCP tools today, and models or prompts tomorrow.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide slide-light" data-slide="5" aria-label="Slide 5">
+      <div class="slide-inner s5">
+        <div data-stagger>
+          <div class="slide-eyebrow anim-fade-up" style="color:var(--orange-40);">Catalog in Action</div>
+          <h2 class="h2 anim-fade-up">From servers to virtual views</h2>
+        </div>
+        <div class="s5-catalog-container seq-step" data-seq-delay="200">
+          <div class="s5-catalog-label">Catalog</div>
+          <div class="s5-servers-row">
+            <div class="s5-server-box seq-step" data-seq-delay="400">
+              <div class="h3">Jira Server</div>
+              <div class="s5-tool-chips">
+                <span class="s5-tool-chip s5-tool-chip--jira">get-story</span>
+                <span class="s5-tool-chip s5-tool-chip--jira">add-watcher</span>
+              </div>
+            </div>
+            <div class="s5-server-box seq-step" data-seq-delay="600">
+              <div class="h3">GitHub Server</div>
+              <div class="s5-tool-chips">
+                <span class="s5-tool-chip s5-tool-chip--github">get-issue</span>
+                <span class="s5-tool-chip s5-tool-chip--github">create-PR</span>
+              </div>
+            </div>
+            <div class="s5-server-box seq-step" data-seq-delay="800">
+              <div class="h3">Slack Server</div>
+              <div class="s5-tool-chips">
+                <span class="s5-tool-chip s5-tool-chip--slack">send-msg</span>
+                <span class="s5-tool-chip s5-tool-chip--slack">list-channels</span>
+              </div>
+            </div>
+          </div>
+          <div class="s5-contains-label seq-step" data-seq-delay="1000">contains &rarr;</div>
+        </div>
+        <div class="s5-separator seq-step" data-seq-delay="1200">
+          <span class="s5-separator-label">references &uarr;</span>
+        </div>
+        <div class="s5-vs-row">
+          <div class="s5-vs-box seq-step" data-seq-delay="1400">
+            <div class="s5-vs-badge">Virtual Server</div>
+            <div class="h3">Read-Only Reporting</div>
+            <div class="s5-vs-chips">
+              <span class="s5-tool-chip s5-tool-chip--github" data-tool="get-issue">get-issue</span>
+              <span class="s5-tool-chip s5-tool-chip--jira" data-tool="get-story">get-story</span>
+              <span class="s5-tool-chip s5-tool-chip--slack" data-tool="list-channels">list-channels</span>
+            </div>
+          </div>
+          <div class="s5-vs-box seq-step" data-seq-delay="1600">
+            <div class="s5-vs-badge">Virtual Server</div>
+            <div class="h3">DevOps Actions</div>
+            <div class="s5-vs-chips">
+              <span class="s5-tool-chip s5-tool-chip--github" data-tool="create-pr">create-PR</span>
+              <span class="s5-tool-chip s5-tool-chip--jira" data-tool="add-watcher">add-watcher</span>
+              <span class="s5-tool-chip s5-tool-chip--slack" data-tool="send-msg">send-msg</span>
+            </div>
+          </div>
+        </div>
+        <div class="s5-value-blurb seq-step" data-seq-delay="1800">
+          Virtual servers let you compose cross-server tool sets tailored to specific workloads &mdash; a read-only reporting agent never sees write operations, while a DevOps agent gets exactly the actions it needs from multiple sources.
+        </div>
+        <div class="s5-legend seq-step" data-seq-delay="2000">
+          <div class="s5-legend-item"><span class="s5-legend-swatch s5-legend-swatch--jira"></span> Jira</div>
+          <div class="s5-legend-item"><span class="s5-legend-swatch s5-legend-swatch--github"></span> GitHub</div>
+          <div class="s5-legend-item"><span class="s5-legend-swatch s5-legend-swatch--slack"></span> Slack</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide slide-light" data-slide="6" aria-label="Slide 6">
+      <div class="slide-inner s7">
+        <div data-stagger>
+          <div class="slide-eyebrow anim-fade-up" style="color:var(--teal-50);">Lifecycle</div>
+          <h2 class="h2 anim-fade-up">From draft to production</h2>
+          <p class="lead anim-fade-up" style="margin-top:var(--space-xs);">Catalogs are validated against their schema before publishing. Published catalogs are write-protected.</p>
+        </div>
+        <div class="s7-promo-flow seq-step" data-seq-delay="400">
+          <span class="s7-state" data-state="draft" data-tooltip="Create a new catalog from schema">Draft</span>
+          <span class="s7-arrow">&rarr;</span>
+          <span class="s7-state" data-state="validate" data-tooltip="Check completeness against schema rules">Validate</span>
+          <span class="s7-arrow">&rarr;</span>
+          <span class="s7-state" data-state="testing" data-tooltip="Run integration tests before promotion">Testing</span>
+          <span class="s7-arrow">&rarr;</span>
+          <span class="s7-state" data-state="production" data-tooltip="Active catalog serving workloads">Production</span>
+          <span class="s7-arrow">&rarr;</span>
+          <span class="s7-state" data-state="publish" data-tooltip="Generate Kubernetes CR for gateway discovery">Publish</span>
+        </div>
+        <div class="s7-update-flow seq-step" data-seq-delay="2800">
+          <div class="s7-update-label">Safe Update Path</div>
+          <div class="s7-update-states">
+            <span class="s7-state" data-state="copy" data-tooltip="Clone the production catalog to a working copy">Copy</span>
+            <span class="s7-arrow">&rarr;</span>
+            <span class="s7-state" data-state="edit" data-tooltip="Modify entities and associations in the copy">Edit</span>
+            <span class="s7-arrow">&rarr;</span>
+            <span class="s7-state" data-state="validate2" data-tooltip="Re-validate the edited copy against schema">Validate</span>
+            <span class="s7-arrow">&rarr;</span>
+            <span class="s7-state" data-state="testing2" data-tooltip="Test updated catalog before replacing production">Testing</span>
+            <span class="s7-arrow">&rarr;</span>
+            <span class="s7-state s7-state--replace" data-state="replace" data-tooltip="Swap production with the validated copy in one operation">Atomic Replace</span>
+          </div>
+          <p class="s7-update-note">Data version increments &bull; Old catalog archived for rollback</p>
+        </div>
+        <div class="s7-atomic-note seq-step" data-seq-delay="5400">
+          <strong>Why atomic?</strong> A catalog is a single versioned entity. You cannot add or change entities individually &mdash; the entire catalog must be validated and promoted together.
+        </div>
+      </div>
+    </section>
+
+    <section class="slide slide-light" data-slide="7" aria-label="Slide 7">
+      <div class="slide-inner s8">
+        <div data-stagger>
+          <div class="slide-eyebrow anim-fade-up" style="color:var(--teal-70);">Gateway Registration</div>
+          <h2 class="h2 anim-fade-up">Publish once. Gateway watches.</h2>
+          <p class="lead anim-fade-up" style="margin-top:var(--space-xs);">Publishing a catalog creates a Kubernetes Custom Resource. The MCP Gateway controller watches for changes and auto-discovers new catalogs.</p>
+        </div>
+        <div class="s8-arch">
+          <div class="s8-box s8-box--hub seq-step" data-seq-delay="400">
+            <div class="h3" style="color:var(--teal-70);">Asset Hub</div>
+          </div>
+          <div class="s8-arrow seq-step" data-seq-delay="600">
+            <span>creates</span>
+            <span class="arrow">&rarr;</span>
+          </div>
+          <div class="s8-box s8-box--cr seq-step" data-seq-delay="800">
+            <div class="h3" style="color:var(--orange-40);">Catalog CR</div>
+            <div class="s8-cr-fields">
+              endpoint<br>
+              catalog name<br>
+              dataVersion
+            </div>
+          </div>
+          <div class="s8-arrow seq-step" data-seq-delay="1000">
+            <span>watches</span>
+            <span class="arrow">&larr;</span>
+          </div>
+          <div class="s8-box s8-box--gw seq-step" data-seq-delay="1200">
+            <div class="h3" style="color:var(--purple-50);">MCP Gateway</div>
+          </div>
+        </div>
+        <div class="s8-example-flow seq-step" data-seq-delay="1600">
+          <div class="s8-example-title">Example: Publishing dev-tools Catalog</div>
+          <div class="s8-example-steps">
+            <span class="s8-ex-step s8-ex-step--teal" data-ex-delay="200">Validated</span>
+            <span class="s8-ex-arrow" data-ex-delay="400">&rarr;</span>
+            <span class="s8-ex-step s8-ex-step--orange" data-ex-delay="600">CR: dev-tools v1</span>
+            <span class="s8-ex-arrow" data-ex-delay="800">&rarr;</span>
+            <span class="s8-ex-step s8-ex-step--purple" data-ex-delay="1000">Gateway detects</span>
+            <span class="s8-ex-arrow" data-ex-delay="1200">&rarr;</span>
+            <span class="s8-ex-step" data-ex-delay="1400">Fetch metadata</span>
+            <span class="s8-ex-arrow" data-ex-delay="1600">&rarr;</span>
+            <span class="s8-ex-step s8-ex-step--teal" data-ex-delay="1800">Tools available</span>
+          </div>
+        </div>
+        <div class="s8-example-flow seq-step" data-seq-delay="4200">
+          <div class="s8-example-title" style="color:var(--orange-40);">Subsequent Update</div>
+          <div class="s8-example-steps">
+            <span class="s8-ex-step s8-ex-step2" data-ex2-delay="200">Catalog updated</span>
+            <span class="s8-ex-arrow s8-ex-arrow2" data-ex2-delay="400">&rarr;</span>
+            <span class="s8-ex-step s8-ex-step2 s8-ex-step--orange" data-ex2-delay="600">dataVersion: 2</span>
+            <span class="s8-ex-arrow s8-ex-arrow2" data-ex2-delay="800">&rarr;</span>
+            <span class="s8-ex-step s8-ex-step2" data-ex2-delay="1000">Cache invalidated</span>
+            <span class="s8-ex-arrow s8-ex-arrow2" data-ex2-delay="1200">&rarr;</span>
+            <span class="s8-ex-step s8-ex-step2 s8-ex-step--teal" data-ex2-delay="1400">Re-fetches metadata</span>
+          </div>
+        </div>
+        <p class="s8-caption seq-step" data-seq-delay="6200">Zero-downtime catalog updates. The Gateway watches the CR &mdash; Asset Hub never pushes to the Gateway.</p>
+      </div>
+    </section>
+
+    <section class="slide slide-dark" data-slide="8" aria-label="Slide 8">
+      <div class="slide-inner s9" data-stagger>
+        <div class="slide-eyebrow anim-fade-up">Under the Hood</div>
+        <h2 class="h2 anim-fade-up">Built for OpenShift</h2>
+        <div class="s9-grid anim-fade-up">
+          <div class="s9-stat">
+            <div class="stat-value">Go / Echo</div>
+            <div class="stat-label">backend</div>
+          </div>
+          <div class="s9-stat">
+            <div class="stat-value">React / PatternFly 6</div>
+            <div class="stat-label">UI</div>
+          </div>
+          <div class="s9-stat">
+            <div class="stat-value">PostgreSQL</div>
+            <div class="stat-label">Relational + EAV</div>
+          </div>
+          <div class="s9-stat">
+            <div class="stat-value">OCP</div>
+            <div class="stat-label">Target Platform</div>
+          </div>
+          <div class="s9-stat">
+            <div class="stat-value" style="color:var(--rh-red);">2,700+</div>
+            <div class="stat-label">Tests + 97%+ coverage</div>
+          </div>
+          <div class="s9-stat">
+            <div class="stat-value">Schema-agnostic</div>
+            <div class="stat-label">No code changes</div>
+          </div>
+        </div>
+        <div class="s9-rbac anim-fade-up">
+          <div class="s9-rbac-title">Role-Based Access Control</div>
+          <div class="s9-rbac-roles">
+            <span class="s9-role s9-role--ro">Read-Only</span>
+            <span class="s9-role s9-role--rw">Read-Write</span>
+            <span class="s9-role s9-role--admin">Admin</span>
+            <span class="s9-role s9-role--super">Super-Admin</span>
+          </div>
+          <p class="s9-rbac-note">Role-based up to API level &bull; Super-Admin required for destructive operations (e.g. removing catalog from production)</p>
+        </div>
+        <div class="s9-upcoming anim-fade-up">
+          <div class="s9-upcoming-label">Next Up</div>
+          <div class="s9-upcoming-title">Import / Export</div>
+          <p class="s9-upcoming-desc">Export catalogs to client-native formats (CRs, YAML) &mdash; clients don&rsquo;t need to change.</p>
+        </div>
+        <p class="s9-tagline anim-fade-up">Catalog MCP tools today. Models and prompts tomorrow.</p>
+        <div style="font-family:var(--font-display);font-size:2.5rem;font-weight:900;color:var(--rh-red);" class="anim-fade-up">Red&thinsp;Hat</div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="deck-controls" aria-label="Deck navigation">
+    <button class="btn-prev" type="button" aria-label="Previous slide" data-action="prev">&larr;</button>
+    <ol class="deck-dots" role="tablist" aria-label="Slide progress">
+      <li><button type="button" role="tab" aria-label="Go to slide 1" data-goto="1"></button></li>
+      <li><button type="button" role="tab" aria-label="Go to slide 2" data-goto="2"></button></li>
+      <li><button type="button" role="tab" aria-label="Go to slide 3" data-goto="3"></button></li>
+      <li><button type="button" role="tab" aria-label="Go to slide 4" data-goto="4"></button></li>
+      <li><button type="button" role="tab" aria-label="Go to slide 5" data-goto="5"></button></li>
+      <li><button type="button" role="tab" aria-label="Go to slide 6" data-goto="6"></button></li>
+      <li><button type="button" role="tab" aria-label="Go to slide 7" data-goto="7"></button></li>
+      <li><button type="button" role="tab" aria-label="Go to slide 8" data-goto="8"></button></li>
+    </ol>
+    <button class="btn-next" type="button" aria-label="Next slide" data-action="next">&rarr;</button>
+    <span class="deck-counter" aria-live="polite">01 / 08</span>
+  </nav>
+
+  <script>
+    (function () {
+      'use strict';
+
+      const TOTAL = 8;
+      const deck = document.getElementById('deck');
+      const slides = Array.from(deck.querySelectorAll('.slide'));
+      const dots = Array.from(document.querySelectorAll('.deck-dots button'));
+      const btnPrev = document.querySelector('.btn-prev');
+      const btnNext = document.querySelector('.btn-next');
+      const counter = document.querySelector('.deck-counter');
+      const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      const state = { current: 1 };
+
+      function clamp(n) { return Math.max(1, Math.min(TOTAL, n)); }
+
+      function render() {
+        deck.setAttribute('data-slide-current', String(state.current));
+        counter.textContent = String(state.current).padStart(2, '0') + ' / ' + String(TOTAL).padStart(2, '0');
+
+        dots.forEach(function (d, i) {
+          if (i + 1 === state.current) d.setAttribute('aria-current', 'true');
+          else d.removeAttribute('aria-current');
+        });
+
+        slides.forEach(function (s) {
+          const n = parseInt(s.getAttribute('data-slide'), 10);
+          if (n === state.current) {
+            s.classList.add('current');
+            s.removeAttribute('aria-hidden');
+          } else {
+            s.classList.remove('current');
+            s.setAttribute('aria-hidden', 'true');
+            cleanupSlide(s);
+          }
+        });
+
+        btnPrev.disabled = state.current === 1;
+        btnNext.disabled = state.current === TOTAL;
+
+        requestAnimationFrame(fireSlideAnimations);
+      }
+
+      function cleanupSlide(slide) {
+        Array.from(slide.querySelectorAll('.seq-step.visible')).forEach(function (el) {
+          el.classList.remove('visible');
+        });
+        Array.from(slide.querySelectorAll('.highlight.active')).forEach(function (el) {
+          el.classList.remove('active');
+        });
+        Array.from(slide.querySelectorAll('.s5-tool-chip')).forEach(function (el) {
+          el.classList.remove('highlight-teal', 'highlight-purple');
+        });
+        Array.from(slide.querySelectorAll('.s7-state')).forEach(function (el) {
+          el.classList.remove('active-teal', 'active-orange');
+        });
+        // Cleanup slide 7 example flow
+        Array.from(slide.querySelectorAll('.s8-ex-step, .s8-ex-arrow')).forEach(function (el) {
+          el.classList.remove('visible');
+        });
+      }
+
+      function goTo(n) {
+        const next = clamp(n);
+        if (next === state.current) return;
+        state.current = next;
+        render();
+        syncHash();
+      }
+
+      function next() { goTo(state.current + 1); }
+      function prev() { goTo(state.current - 1); }
+
+      function syncHash() {
+        const h = '#s=' + state.current;
+        if (location.hash !== h) history.replaceState(null, '', h);
+      }
+
+      function readHash() {
+        const m = /^#s=(\d{1,2})$/.exec(location.hash || '');
+        if (m) return clamp(parseInt(m[1], 10));
+        return 1;
+      }
+
+      let digitBuffer = '';
+      let digitTimer = null;
+
+      function clearBuffer() {
+        digitBuffer = '';
+        if (digitTimer) {
+          clearTimeout(digitTimer);
+          digitTimer = null;
+        }
+      }
+
+      function onKey(e) {
+        const k = e.key;
+        if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === ' ') {
+          e.preventDefault();
+          next();
+          clearBuffer();
+          return;
+        }
+        if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp' || k === 'Backspace') {
+          e.preventDefault();
+          prev();
+          clearBuffer();
+          return;
+        }
+        if (k === 'Home') {
+          e.preventDefault();
+          goTo(1);
+          clearBuffer();
+          return;
+        }
+        if (k === 'End') {
+          e.preventDefault();
+          goTo(TOTAL);
+          clearBuffer();
+          return;
+        }
+        if (/^[0-9]$/.test(k)) {
+          e.preventDefault();
+          digitBuffer += k;
+          if (digitTimer) clearTimeout(digitTimer);
+
+          if (digitBuffer.length === 2) {
+            const two = parseInt(digitBuffer, 10);
+            if (two >= 1 && two <= TOTAL) goTo(two);
+            clearBuffer();
+            return;
+          }
+
+          digitTimer = setTimeout(function () {
+            const n = parseInt(digitBuffer, 10);
+            if (n >= 1 && n <= 9) goTo(n);
+            clearBuffer();
+          }, 600);
+        }
+      }
+
+      btnPrev.addEventListener('click', prev);
+      btnNext.addEventListener('click', next);
+      dots.forEach(function (d) {
+        d.addEventListener('click', function () {
+          goTo(parseInt(d.getAttribute('data-goto'), 10));
+        });
+      });
+      window.addEventListener('keydown', onKey);
+
+      function applyStaggerIndices(slide) {
+        Array.from(slide.querySelectorAll('[data-stagger] > *')).forEach(function (el, i) {
+          el.style.setProperty('--index', String(i));
+        });
+      }
+
+      function setupSVGDraw(slide) {
+        Array.from(slide.querySelectorAll('[data-draw]')).forEach(function (path) {
+          const len = path.getTotalLength();
+          path.style.strokeDasharray = len;
+          path.style.strokeDashoffset = len;
+        });
+      }
+
+      function runSequentialSteps(slide) {
+        const steps = Array.from(slide.querySelectorAll('.seq-step'));
+        if (steps.length === 0) return;
+
+        steps.forEach(function (step, i) {
+          const delay = parseInt(step.getAttribute('data-seq-delay') || String((i + 1) * 400), 10);
+          setTimeout(function () {
+            step.classList.add('visible');
+          }, delay);
+        });
+      }
+
+      function fireSlideAnimations() {
+        const cur = deck.querySelector('.slide.current');
+        if (!cur) return;
+
+        applyStaggerIndices(cur);
+        setupSVGDraw(cur);
+        runSequentialSteps(cur);
+
+        Array.from(cur.querySelectorAll('.highlight')).forEach(function (el) {
+          el.classList.remove('active');
+          setTimeout(function () { el.classList.add('active'); }, 100);
+        });
+
+        var slideNum = parseInt(cur.getAttribute('data-slide'), 10);
+
+        // Slide 5: tools in virtual servers keep their source-server colors (no override)
+
+        // Slide 6: light up promotion and update states
+        if (slideNum === 6) {
+          var promoStates = ['draft', 'validate', 'testing', 'production', 'publish'];
+          promoStates.forEach(function (state, i) {
+            setTimeout(function () {
+              var el = cur.querySelector('.s7-state[data-state="' + state + '"]');
+              if (el) el.classList.add('active-teal');
+            }, 800 + i * 400);
+          });
+          var updateStates = ['copy', 'edit', 'validate2', 'testing2', 'replace'];
+          updateStates.forEach(function (state, i) {
+            setTimeout(function () {
+              var el = cur.querySelector('.s7-state[data-state="' + state + '"]');
+              if (el) el.classList.add('active-orange');
+            }, 3400 + i * 400);
+          });
+        }
+
+        // Slide 7: animate example flow steps (first flow, then second)
+        if (slideNum === 7) {
+          var exSteps = cur.querySelectorAll('.s8-ex-step:not(.s8-ex-step2), .s8-ex-arrow:not(.s8-ex-arrow2)');
+          exSteps.forEach(function (el) {
+            var delay = parseInt(el.getAttribute('data-ex-delay') || '0', 10);
+            setTimeout(function () {
+              el.classList.add('visible');
+            }, 2000 + delay);
+          });
+          var ex2Steps = cur.querySelectorAll('.s8-ex-step2, .s8-ex-arrow2');
+          ex2Steps.forEach(function (el) {
+            var delay = parseInt(el.getAttribute('data-ex2-delay') || '0', 10);
+            setTimeout(function () {
+              el.classList.add('visible');
+            }, 4800 + delay);
+          });
+        }
+      }
+
+      document.addEventListener('DOMContentLoaded', function () {
+        state.current = readHash();
+        render();
+        window.addEventListener('hashchange', function () {
+          state.current = readHash();
+          render();
+        });
+        if (deck.tabIndex < 0) deck.tabIndex = -1;
+      });
+
+      window.__deck = { goTo: goTo, next: next, prev: prev, state: state };
+    }());
+  </script>
+</body>
+</html>
