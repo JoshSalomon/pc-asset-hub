@@ -1319,7 +1319,7 @@ As an operator or consumer, I want a dedicated read-only UI for browsing catalog
 
 Acceptance Criteria:
 - The operational UI is a separate web application served at `/operational` (path-based routing on the same port as the meta UI), built from the same codebase with its own Vite entry point.
-- The operational UI is read-only — no create, edit, or delete actions are available. All data modification is performed through the meta UI (see FF-6 for future editing support).
+- The operational UI supports full instance editing (FF-6): create, edit, delete instances, manage containment, and create/delete association links. Role-aware controls hide write operations for RO users and non-SuperAdmin on published catalogs.
 - The operational UI provides a catalog list page showing catalog name, pinned CV label, validation status, and instance counts.
 - The operational UI provides a catalog detail page with an entity type overview (types with instance counts) and a containment tree browser.
 - The containment tree browser uses a two-pane layout: the left pane shows the containment tree grouped by entity type with expandable headers; the right pane shows the selected instance's detail. No separate instance list table — the tree is the primary navigation for browsing instances.
@@ -1811,7 +1811,7 @@ The entity type diagram currently uses a hardcoded Dagre (hierarchical top-to-bo
 
 **Decision:** Deferred. Current Dagre layout works well for the UML class diagram use case.
 
-### FF-6: Operational UI Editing — IMPLEMENTING (see US-57, US-58, US-59)
+### FF-6: Operational UI Editing — IMPLEMENTED (see US-57, US-58, US-59)
 
 Add write capabilities to the operational data viewer: create, edit, delete instances, manage containment, and create/delete association links. Reuses existing modals from the meta CatalogDetailPage, adapted for the operational app shell. Role-aware rendering based on user role and catalog publish status.
 
