@@ -79,6 +79,7 @@ function renderDetail(role: 'Admin' | 'RW' | 'RO' | 'SuperAdmin' = 'Admin') {
       <Routes>
         <Route path="/schema/catalogs/:name" element={<CatalogDetailPage role={role} />} />
         <Route path="/schema/catalogs" element={<div>Catalog List</div>} />
+        <Route path="/catalogs/:name" element={<div>Data Viewer</div>} />
       </Routes>
     </MemoryRouter>
   )

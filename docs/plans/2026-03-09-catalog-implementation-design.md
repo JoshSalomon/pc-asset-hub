@@ -383,4 +383,4 @@ Phase 8 (Copy & Replace)     -- needs Phase 7 for publish/unpublish context
 - Entity type CRDs (full schema as K8s resources) — PRD future scope
 - Hub-and-spoke topology — PRD section 8.4, future enhancement
 - Multi-namespace catalog publishing — FF-9, future enhancement
-- Operational UI editing — the operational UI (Phase 4) is read-only; adding instance CRUD, link management, and containment editing to the operational UI is a future enhancement once the read-only viewer is validated with users
+- ~~Operational UI editing~~ — implemented in FF-6 (branch `018-operational-ui-editing`): instance CRUD, containment management, link management, role-aware controls. Known limitation: multiple containment associations to the same child type are indistinguishable (see PRD FF-6 section, TD-143).

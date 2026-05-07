@@ -135,6 +135,30 @@ func TestCVList(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "v1.0")
 }
 
+func TestCVList_IncludesDescription(t *testing.T) {
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	ltRepo := new(mocks.MockLifecycleTransitionRepo)
+	svc := svcmeta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, nil, "", nil, nil, nil, nil)
+	handler := apimeta.NewCatalogVersionHandler(svc)
+
+	e := echo.New()
+	g := e.Group("/api/meta/v1")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	requireRW := apimw.RequireRole(apimw.RoleRW)
+	apimeta.RegisterCatalogVersionRoutes(g, handler, requireRW)
+
+	cvRepo.On("List", mock.Anything, mock.Anything).Return([]*models.CatalogVersion{
+		{ID: "cv1", VersionLabel: "v1.0", Description: "Test CV description", LifecycleStage: models.LifecycleStageDevelopment},
+	}, 1, nil)
+
+	rec := doRequest(e, http.MethodGet, "/api/meta/v1/catalog-versions", "", apimw.RoleRW)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"description":"Test CV description"`)
+}
+
+
 // Coverage: GET /catalog-versions/:id returns single
 func TestCVGetByID(t *testing.T) {
 	e := setupCVServer()

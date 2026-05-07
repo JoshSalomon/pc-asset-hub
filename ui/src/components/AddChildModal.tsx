@@ -18,6 +18,7 @@ import {
 import type { EntityInstance, SnapshotAssociation, SnapshotAttribute, CatalogVersionPin } from '../types'
 import { api } from '../api/client'
 import { buildTypedAttrs } from '../utils/buildTypedAttrs'
+import { loadSchemaSnapshot } from '../utils/loadSchemaSnapshot'
 import AttributeFormFields from './AttributeFormFields'
 
 export interface AddChildCreateData {
@@ -73,24 +74,12 @@ export default function AddChildModal({
     } catch { setAvailableInstances([]) }
   }
 
-  // Load child type schema attributes and enum values
   const loadChildSchema = async (typeName: string) => {
     if (!typeName || !pins.length) { setChildSchemaAttrs([]); return }
-    const pin = pins.find(p => p.entity_type_name === typeName)
-    if (!pin) { setChildSchemaAttrs([]); return }
     try {
-      const snapshot = await api.versions.snapshot(pin.entity_type_id, pin.version)
-      setChildSchemaAttrs(snapshot.attributes || [])
-      const cache: Record<string, string[]> = {}
-      for (const attr of snapshot.attributes || []) {
-        if (attr.base_type === 'enum' && attr.type_definition_version_id) {
-          const constraintValues = (attr.constraints?.values as string[]) || []
-          if (constraintValues.length > 0) {
-            cache[attr.type_definition_version_id] = constraintValues
-          }
-        }
-      }
-      setChildEnumValues(cache)
+      const { attrs, enums } = await loadSchemaSnapshot(pins, typeName)
+      setChildSchemaAttrs(attrs)
+      setChildEnumValues(enums)
     } catch { setChildSchemaAttrs([]) }
   }
 

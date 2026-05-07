@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +16,21 @@ import (
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/repository"
 )
+
+var instanceNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9 ._-]*$`)
+
+func ValidateInstanceName(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return domainerrors.NewValidation("instance name is required")
+	}
+	if len(name) > 255 {
+		return domainerrors.NewValidation("instance name must not exceed 255 characters")
+	}
+	if !instanceNameRegex.MatchString(name) {
+		return domainerrors.NewValidation("instance name must start with a letter, digit, or underscore, and contain only letters, digits, spaces, dots, hyphens, and underscores")
+	}
+	return nil
+}
 
 // InstanceService manages entity instances within catalogs.
 type InstanceService struct {
@@ -29,6 +46,12 @@ type InstanceService struct {
 	tdRepo      repository.TypeDefinitionRepository
 	assocRepo   repository.AssociationRepository
 	linkRepo    repository.AssociationLinkRepository
+	txManager   repository.TransactionManager
+}
+
+// SetTransactionManager adds transaction support for atomic operations.
+func (s *InstanceService) SetTransactionManager(txm repository.TransactionManager) {
+	s.txManager = txm
 }
 
 func NewInstanceService(
@@ -287,8 +310,8 @@ func (s *InstanceService) validateAndBuildAttributeValues(ctx context.Context, e
 }
 
 func (s *InstanceService) CreateInstance(ctx context.Context, catalogName, entityTypeName, name, description string, attrInput map[string]any) (*InstanceDetail, error) {
-	if strings.TrimSpace(name) == "" {
-		return nil, domainerrors.NewValidation("instance name is required")
+	if err := ValidateInstanceName(name); err != nil {
+		return nil, err
 	}
 
 	catalog, etv, err := s.resolveEntityType(ctx, catalogName, entityTypeName)
@@ -482,6 +505,9 @@ func (s *InstanceService) UpdateInstance(ctx context.Context, catalogName, entit
 
 	// Now safe to update — validation passed
 	if name != nil {
+		if err := ValidateInstanceName(*name); err != nil {
+			return nil, err
+		}
 		inst.Name = *name
 	}
 	if description != nil {
@@ -538,8 +564,8 @@ func (s *InstanceService) DeleteInstance(ctx context.Context, catalogName, entit
 }
 
 func (s *InstanceService) CreateContainedInstance(ctx context.Context, catalogName, parentType, parentID, childType, name, description string, attrInput map[string]any) (*InstanceDetail, error) {
-	if strings.TrimSpace(name) == "" {
-		return nil, domainerrors.NewValidation("instance name is required")
+	if err := ValidateInstanceName(name); err != nil {
+		return nil, err
 	}
 
 	// Resolve parent entity type
@@ -605,6 +631,9 @@ func (s *InstanceService) CreateContainedInstance(ctx context.Context, catalogNa
 			return nil, err
 		}
 	}
+
+	// Bump parent version (best-effort, ignore errors)
+	_ = s.BumpInstanceVersion(ctx, parentInst)
 
 	_ = s.catalogRepo.UpdateValidationStatus(ctx, catalog.ID, models.ValidationStatusDraft)
 
@@ -784,6 +813,14 @@ func (s *InstanceService) CreateAssociationLink(ctx context.Context, catalogName
 		return nil, err
 	}
 
+	// Bump source instance version (always)
+	_ = s.BumpInstanceVersion(ctx, sourceInst)
+
+	// Bump target instance version (bidirectional only)
+	if assoc.Type == models.AssociationTypeBidirectional {
+		_ = s.BumpInstanceVersion(ctx, targetInst)
+	}
+
 	_ = s.catalogRepo.UpdateValidationStatus(ctx, catalog.ID, models.ValidationStatusDraft)
 
 	return link, nil
@@ -808,8 +845,28 @@ func (s *InstanceService) DeleteAssociationLink(ctx context.Context, catalogName
 		return domainerrors.NewValidation("link does not belong to this catalog")
 	}
 
+	// Get association definition to check if bidirectional
+	assoc, err := s.assocRepo.GetByID(ctx, link.AssociationID)
+	if err != nil {
+		return err
+	}
+
+	// Get target instance
+	targetInst, err := s.instRepo.GetByID(ctx, link.TargetInstanceID)
+	if err != nil {
+		return err
+	}
+
 	if err := s.linkRepo.Delete(ctx, linkID); err != nil {
 		return err
+	}
+
+	// Bump source instance version (always)
+	_ = s.BumpInstanceVersion(ctx, sourceInst)
+
+	// Bump target instance version (bidirectional only)
+	if assoc.Type == models.AssociationTypeBidirectional {
+		_ = s.BumpInstanceVersion(ctx, targetInst)
 	}
 
 	_ = s.catalogRepo.UpdateValidationStatus(ctx, catalog.ID, models.ValidationStatusDraft)
@@ -906,11 +963,22 @@ func (s *InstanceService) SetParent(ctx context.Context, catalogName, childTypeN
 	}
 
 	if parentID == "" {
-		// Clear parent
+		// Clear parent — check for name collision at top level first
+		existing, _ := s.instRepo.GetByNameAndParent(ctx, childInst.EntityTypeID, catalog.ID, "", childInst.Name)
+		if existing != nil && existing.ID != childInst.ID {
+			return domainerrors.NewConflict("EntityInstance", "name already exists in this scope: "+childInst.Name)
+		}
+		oldParentID := childInst.ParentInstanceID
 		childInst.ParentInstanceID = ""
-		childInst.UpdatedAt = time.Now()
-		if err := s.instRepo.Update(ctx, childInst); err != nil {
+		// Bump child version (primary mutation - must propagate errors)
+		if err := s.BumpInstanceVersion(ctx, childInst); err != nil {
 			return err
+		}
+		// Bump old parent version if it existed (best-effort - ignore errors)
+		if oldParentID != "" {
+			if oldParent, err := s.instRepo.GetByID(ctx, oldParentID); err == nil {
+				_ = s.BumpInstanceVersion(ctx, oldParent)
+			}
 		}
 		_ = s.catalogRepo.UpdateValidationStatus(ctx, catalog.ID, models.ValidationStatusDraft)
 		return nil
@@ -947,11 +1015,20 @@ func (s *InstanceService) SetParent(ctx context.Context, catalogName, childTypeN
 		return domainerrors.NewValidation(fmt.Sprintf("no containment association from %s to %s", parentTypeName, childTypeName))
 	}
 
+	// Check for name collision at the new parent scope
+	existing, _ := s.instRepo.GetByNameAndParent(ctx, childInst.EntityTypeID, catalog.ID, parentID, childInst.Name)
+	if existing != nil && existing.ID != childInst.ID {
+		return domainerrors.NewConflict("EntityInstance", "name already exists in this scope: "+childInst.Name)
+	}
+
 	childInst.ParentInstanceID = parentID
-	childInst.UpdatedAt = time.Now()
-	if err := s.instRepo.Update(ctx, childInst); err != nil {
+	// Bump child version (primary mutation - must propagate errors)
+	if err := s.BumpInstanceVersion(ctx, childInst); err != nil {
 		return err
 	}
+
+	// Bump new parent version (best-effort - ignore errors)
+	_ = s.BumpInstanceVersion(ctx, parentInst)
 
 	_ = s.catalogRepo.UpdateValidationStatus(ctx, catalog.ID, models.ValidationStatusDraft)
 	return nil
@@ -1007,6 +1084,12 @@ func (s *InstanceService) GetContainmentTree(ctx context.Context, catalogName st
 				Children:       buildNodes(child.ID),
 			}
 		}
+		sort.Slice(nodes, func(i, j int) bool {
+			if nodes[i].EntityTypeName != nodes[j].EntityTypeName {
+				return nodes[i].EntityTypeName < nodes[j].EntityTypeName
+			}
+			return nodes[i].Instance.Name < nodes[j].Instance.Name
+		})
 		return nodes
 	}
 
@@ -1074,4 +1157,49 @@ func (s *InstanceService) cascadeDelete(ctx context.Context, id string) error {
 		return err
 	}
 	return s.instRepo.Delete(ctx, id)
+}
+
+// BumpInstanceVersion increments the instance version and carries forward IAV rows.
+// This is used by structural mutations (SetParent, CreateContainedInstance, CreateAssociationLink, DeleteAssociationLink).
+// When a TransactionManager is set, IAV writes and instance update are atomic.
+func (s *InstanceService) BumpInstanceVersion(ctx context.Context, inst *models.EntityInstance) error {
+	currentVersion := inst.Version
+	newVersion := currentVersion + 1
+	inst.Version = newVersion
+	inst.UpdatedAt = time.Now()
+
+	doBump := func(txCtx context.Context) error {
+		// Clean up any stale IAVs at the new version from a previously failed attempt
+		_ = s.iavRepo.DeleteByInstanceVersion(txCtx, inst.ID, newVersion)
+
+		prevValues, err := s.iavRepo.GetValuesForVersion(txCtx, inst.ID, currentVersion)
+		if err != nil {
+			return err
+		}
+
+		if len(prevValues) > 0 {
+			newValues := make([]*models.InstanceAttributeValue, 0, len(prevValues))
+			for _, prev := range prevValues {
+				newValues = append(newValues, &models.InstanceAttributeValue{
+					ID:              uuid.Must(uuid.NewV7()).String(),
+					InstanceID:      inst.ID,
+					InstanceVersion: newVersion,
+					AttributeID:     prev.AttributeID,
+					ValueString:     prev.ValueString,
+					ValueNumber:     prev.ValueNumber,
+					ValueJSON:       prev.ValueJSON,
+				})
+			}
+			if err := s.iavRepo.SetValues(txCtx, newValues); err != nil {
+				return err
+			}
+		}
+
+		return s.instRepo.Update(txCtx, inst)
+	}
+
+	if s.txManager != nil {
+		return s.txManager.RunInTransaction(ctx, doBump)
+	}
+	return doBump(ctx)
 }

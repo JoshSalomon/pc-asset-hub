@@ -2,6 +2,15 @@ import { FormGroup, TextInput, TextArea, Checkbox, HelperText, HelperTextItem, D
 import type { SnapshotAttribute } from '../types'
 import { validateAttributeValue } from '../utils/validateAttributeValue'
 
+const instanceNameRegex = /^[a-zA-Z0-9_][a-zA-Z0-9 ._-]*$/
+
+export function validateInstanceName(name: string): string | null {
+  if (!name.trim()) return null
+  if (name.length > 255) return 'Name must not exceed 255 characters'
+  if (!instanceNameRegex.test(name)) return 'Name must start with a letter, digit, or underscore, and contain only letters, digits, spaces, dots, hyphens, and underscores'
+  return null
+}
+
 interface Props {
   schemaAttrs: SnapshotAttribute[]
   values: Record<string, string>
@@ -24,9 +33,11 @@ export default function AttributeFormFields({
       {schemaAttrs.map(attr => {
         if (attr.system && attr.name === 'name') {
           if (!includeSystem) return null
+          const nameError = validateInstanceName(systemName || '')
           return (
             <FormGroup key={attr.name} label="Name" isRequired fieldId={`${idPrefix}-name`}>
-              <TextInput id={`${idPrefix}-name`} value={systemName || ''} onChange={(_e, v) => setSystemName?.(v)} isRequired />
+              <TextInput id={`${idPrefix}-name`} value={systemName || ''} onChange={(_e, v) => setSystemName?.(v)} isRequired validated={nameError ? 'error' : 'default'} />
+              {nameError && <HelperText><HelperTextItem variant="error">{nameError}</HelperTextItem></HelperText>}
             </FormGroup>
           )
         }

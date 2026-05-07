@@ -754,9 +754,9 @@ test('T-E.127: Model Diagram tab exists on main page', async () => {
 test('T-E.128: Diagram renders entity type nodes with names', async () => {
   renderApp()
   await page.getByRole('tab', { name: 'Model Diagram' }).click()
-  // Entity type names should appear as node labels
-  await expect.element(page.getByText('MLModel')).toBeVisible()
-  await expect.element(page.getByText('Dataset')).toBeVisible()
+  // Entity type names should appear as node labels (with version suffix)
+  await expect.element(page.getByText('MLModel (V1)')).toBeVisible()
+  await expect.element(page.getByText('Dataset (V1)')).toBeVisible()
 })
 
 // T-E.129: Diagram nodes show attributes with types

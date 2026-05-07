@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -52,6 +53,8 @@ func setupInstanceService() *instanceTestSetup {
 		s.pinRepo, s.attrRepo, s.etvRepo, s.etRepo, s.tdvRepo,
 		s.tdRepo, s.assocRepo, s.linkRepo,
 	)
+	// BumpInstanceVersion always calls DeleteByInstanceVersion (best-effort cleanup)
+	s.iavRepo.On("DeleteByInstanceVersion", mock.Anything, mock.Anything, mock.Anything).Maybe().Return(nil)
 	return s
 }
 
@@ -1005,8 +1008,10 @@ func TestT12_05_CreateContainedInstance(t *testing.T) {
 	}, nil)
 	// Attributes for child type
 	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
-	// Instance creation
+	// Instance creation + parent version bump
 	s.instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("DeleteByInstanceVersion", ctx, mock.Anything, mock.Anything).Return(nil)
 	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
@@ -1119,6 +1124,8 @@ func TestT12_09_ContainedInstance_SameNameDiffParents(t *testing.T) {
 	}, nil)
 	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
 	s.instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("DeleteByInstanceVersion", ctx, mock.Anything, mock.Anything).Return(nil)
 	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
@@ -1229,6 +1236,8 @@ func TestT12_12_ContainedInstance_ResetsDraft(t *testing.T) {
 	}, nil)
 	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
 	s.instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("DeleteByInstanceVersion", ctx, mock.Anything, mock.Anything).Return(nil)
 	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat2", models.ValidationStatusDraft).Return(nil)
 
@@ -1266,9 +1275,11 @@ func TestT12_13_ContainedInstance_WithAttributes(t *testing.T) {
 	s.tdvRepo.On("GetByID", ctx, "tdv-string").Return(&models.TypeDefinitionVersion{ID: "tdv-string", TypeDefinitionID: "td-string"}, nil)
 	s.tdRepo.On("GetByID", ctx, "td-string").Return(&models.TypeDefinition{ID: "td-string", BaseType: models.BaseTypeString}, nil)
 	s.instRepo.On("Create", ctx, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
 	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
 		return len(vals) == 1 && vals[0].ValueString == "a useful tool"
 	})).Return(nil)
+	s.iavRepo.On("DeleteByInstanceVersion", ctx, mock.Anything, mock.Anything).Return(nil)
 	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{
 		{AttributeID: "a1", ValueString: "a useful tool", InstanceVersion: 1},
 	}, nil)
@@ -1315,6 +1326,8 @@ func TestT12_19_CreateAssociationLink(t *testing.T) {
 	}, nil)
 	s.linkRepo.On("GetForwardRefs", ctx, "inst1").Return([]*models.AssociationLink{}, nil)
 	s.linkRepo.On("Create", ctx, mock.AnythingOfType("*models.AssociationLink")).Return(nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return(nil, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	link, err := s.svc.CreateAssociationLink(ctx, "my-catalog", "server", "inst1", "inst2", "uses-model")
@@ -1358,6 +1371,8 @@ func TestT12_19b_CreateBidirectionalLinkFromReverseSide(t *testing.T) {
 	}, nil)
 	s.linkRepo.On("GetForwardRefs", ctx, "guard-inst").Return([]*models.AssociationLink{}, nil)
 	s.linkRepo.On("Create", ctx, mock.AnythingOfType("*models.AssociationLink")).Return(nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return(nil, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	link, err := s.svc.CreateAssociationLink(ctx, "my-catalog", "guard", "guard-inst", "server-inst", "guardrails")
@@ -1460,12 +1475,19 @@ func TestT12_25_DeleteAssociationLink(t *testing.T) {
 	}, nil)
 	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
 	s.linkRepo.On("GetByID", ctx, "link1").Return(&models.AssociationLink{
-		ID: "link1", SourceInstanceID: "inst1",
+		ID: "link1", SourceInstanceID: "inst1", TargetInstanceID: "inst2", AssociationID: "a1",
 	}, nil)
 	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
-		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1",
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Version: 2,
 	}, nil)
+	s.instRepo.On("GetByID", ctx, "inst2").Return(&models.EntityInstance{
+		ID: "inst2", EntityTypeID: "et1", CatalogID: "cat1", Version: 3,
+	}, nil)
+	s.assocRepo.On("GetByID", ctx, "a1").Return(&models.Association{ID: "a1", Type: models.AssociationTypeDirectional}, nil)
 	s.linkRepo.On("Delete", ctx, "link1").Return(nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return(nil, nil)
+	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	err := s.svc.DeleteAssociationLink(ctx, "my-catalog", "server", "link1")
@@ -1521,6 +1543,8 @@ func TestT12_27_LinkResetsDraft(t *testing.T) {
 	}, nil)
 	s.linkRepo.On("GetForwardRefs", ctx, "inst1").Return([]*models.AssociationLink{}, nil)
 	s.linkRepo.On("Create", ctx, mock.AnythingOfType("*models.AssociationLink")).Return(nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return(nil, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat2", models.ValidationStatusDraft).Return(nil)
 
 	_, err := s.svc.CreateAssociationLink(ctx, "valid-cat", "server", "inst1", "inst2", "uses-model")
@@ -1543,12 +1567,19 @@ func TestT12_28_DeleteLinkResetsDraft(t *testing.T) {
 	}, nil)
 	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
 	s.linkRepo.On("GetByID", ctx, "link1").Return(&models.AssociationLink{
-		ID: "link1", SourceInstanceID: "inst1",
+		ID: "link1", SourceInstanceID: "inst1", TargetInstanceID: "inst2", AssociationID: "a1",
 	}, nil)
 	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
-		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat2",
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat2", Version: 2,
 	}, nil)
+	s.instRepo.On("GetByID", ctx, "inst2").Return(&models.EntityInstance{
+		ID: "inst2", EntityTypeID: "et1", CatalogID: "cat2", Version: 3,
+	}, nil)
+	s.assocRepo.On("GetByID", ctx, "a1").Return(&models.Association{ID: "a1", Type: models.AssociationTypeDirectional}, nil)
 	s.linkRepo.On("Delete", ctx, "link1").Return(nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return(nil, nil)
+	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat2", models.ValidationStatusDraft).Return(nil)
 
 	err := s.svc.DeleteAssociationLink(ctx, "valid-cat", "server", "link1")
@@ -2022,6 +2053,8 @@ func TestCov_CreateContained_ResolveAttrsError(t *testing.T) {
 	// First ListByVersion call succeeds (for validateAndBuild), second fails (for resolveAttrs)
 	s.attrRepo.On("ListByVersion", ctx, "etv2").Return(([]*models.Attribute)(nil), domainerrors.NewValidation("db error")).Once()
 	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return(nil, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusDraft).Return(nil)
 	_, err := s.svc.CreateContainedInstance(ctx, "cat", "server", "p1", "tool", "child", "", nil)
 	assert.Error(t, err)
@@ -2271,7 +2304,9 @@ func TestSetParent_Valid(t *testing.T) {
 		{ID: "assoc1", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2",
 			Type: models.AssociationTypeContainment, Name: "tools"},
 	}, nil)
+	s.instRepo.On("GetByNameAndParent", ctx, "et2", "cat1", "parent1", "my-tool").Return(nil, nil)
 	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return(nil, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	err := s.svc.SetParent(ctx, "my-catalog", "tool", "child1", "server", "parent1")
@@ -2328,7 +2363,12 @@ func TestSetParent_ClearParent(t *testing.T) {
 	s.instRepo.On("GetByID", ctx, "child1").Return(&models.EntityInstance{
 		ID: "child1", EntityTypeID: "et2", CatalogID: "cat1", ParentInstanceID: "old-parent", Version: 1,
 	}, nil)
+	s.instRepo.On("GetByNameAndParent", ctx, "et2", "cat1", "", "").Return(nil, nil)
+	s.instRepo.On("GetByID", ctx, "old-parent").Return(&models.EntityInstance{
+		ID: "old-parent", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
 	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return(nil, nil)
 	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	err := s.svc.SetParent(ctx, "my-catalog", "tool", "child1", "", "")
@@ -2336,6 +2376,34 @@ func TestSetParent_ClearParent(t *testing.T) {
 	s.instRepo.AssertCalled(t, "Update", ctx, mock.MatchedBy(func(inst *models.EntityInstance) bool {
 		return inst.ID == "child1" && inst.ParentInstanceID == ""
 	}))
+}
+
+func TestSetParent_ClearParent_NameConflictWithOrphan(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusDraft,
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2", Name: "tool"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin2", CatalogVersionID: "cv1", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	// Child instance has a parent and name "my-tool"
+	s.instRepo.On("GetByID", ctx, "child1").Return(&models.EntityInstance{
+		ID: "child1", EntityTypeID: "et2", CatalogID: "cat1", ParentInstanceID: "old-parent",
+		Name: "my-tool", Version: 1,
+	}, nil)
+	// An orphan with the same name already exists at the top level
+	s.instRepo.On("GetByNameAndParent", ctx, "et2", "cat1", "", "my-tool").Return(&models.EntityInstance{
+		ID: "orphan1", EntityTypeID: "et2", CatalogID: "cat1", Name: "my-tool",
+	}, nil)
+
+	err := s.svc.SetParent(ctx, "my-catalog", "tool", "child1", "", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "name already exists")
 }
 
 // SetParent error paths
@@ -2380,7 +2448,10 @@ func TestSetParent_ClearUpdateError(t *testing.T) {
 		{ID: "p2", EntityTypeVersionID: "etv2"},
 	}, nil)
 	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
-	s.instRepo.On("GetByID", ctx, "c1").Return(&models.EntityInstance{ID: "c1", CatalogID: "c1", ParentInstanceID: "old"}, nil)
+	s.instRepo.On("GetByID", ctx, "c1").Return(&models.EntityInstance{ID: "c1", EntityTypeID: "et2", CatalogID: "c1", ParentInstanceID: "old", Version: 3}, nil)
+	s.instRepo.On("GetByNameAndParent", ctx, "et2", "c1", "", "").Return(nil, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "c1", 3).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(nil)
 	s.instRepo.On("Update", ctx, mock.Anything).Return(domainerrors.NewValidation("db error"))
 	err := s.svc.SetParent(ctx, "cat", "tool", "c1", "", "")
 	assert.Error(t, err)
@@ -2454,6 +2525,39 @@ func TestSetParent_AssocRepoError(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestSetParent_NameConflictWithNewParent(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	// Child tool named "wrench" currently under parent "old-parent"
+	s.instRepo.On("GetByID", ctx, "child1").Return(&models.EntityInstance{
+		ID: "child1", EntityTypeID: "et2", CatalogID: "c1", ParentInstanceID: "old-parent",
+		Name: "wrench", Version: 1,
+	}, nil)
+	// New parent server exists
+	s.instRepo.On("GetByID", ctx, "new-parent").Return(&models.EntityInstance{
+		ID: "new-parent", EntityTypeID: "et1", CatalogID: "c1", Version: 1,
+	}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "a1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment},
+	}, nil)
+	// New parent already has a tool named "wrench"
+	s.instRepo.On("GetByNameAndParent", ctx, "et2", "c1", "new-parent", "wrench").Return(&models.EntityInstance{
+		ID: "existing-wrench", EntityTypeID: "et2", CatalogID: "c1", ParentInstanceID: "new-parent", Name: "wrench",
+	}, nil)
+
+	err := s.svc.SetParent(ctx, "cat", "tool", "child1", "server", "new-parent")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "name already exists")
+}
+
 func TestSetParent_UpdateError(t *testing.T) {
 	s := setupInstanceService()
 	ctx := context.Background()
@@ -2465,15 +2569,19 @@ func TestSetParent_UpdateError(t *testing.T) {
 	}, nil)
 	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
 	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
-	s.instRepo.On("GetByID", ctx, "c1").Return(&models.EntityInstance{ID: "c1", EntityTypeID: "et2", CatalogID: "c1"}, nil)
-	s.instRepo.On("GetByID", ctx, "p1").Return(&models.EntityInstance{ID: "p1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.instRepo.On("GetByID", ctx, "c1").Return(&models.EntityInstance{ID: "c1", EntityTypeID: "et2", CatalogID: "c1", Version: 2}, nil)
+	s.instRepo.On("GetByID", ctx, "p1").Return(&models.EntityInstance{ID: "p1", EntityTypeID: "et1", CatalogID: "c1", Version: 3}, nil)
 	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
 		{ID: "a1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment},
 	}, nil)
+	s.instRepo.On("GetByNameAndParent", ctx, "et2", "c1", "p1", "").Return(nil, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "c1", 2).Return([]*models.InstanceAttributeValue{}, nil)
+	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(nil)
 	s.instRepo.On("Update", ctx, mock.Anything).Return(domainerrors.NewValidation("db error"))
 	err := s.svc.SetParent(ctx, "cat", "tool", "c1", "server", "p1")
 	assert.Error(t, err)
 }
+
 
 // Coverage: string parsed as number (success case, line 186)
 func TestCov_ValidateAttrs_StringAsNumber(t *testing.T) {
@@ -2525,8 +2633,10 @@ func TestCov_DeleteLink_DeleteError(t *testing.T) {
 		{ID: "p1", EntityTypeVersionID: "etv1"},
 	}, nil)
 	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
-	s.linkRepo.On("GetByID", ctx, "l1").Return(&models.AssociationLink{ID: "l1", SourceInstanceID: "i1"}, nil)
-	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.linkRepo.On("GetByID", ctx, "l1").Return(&models.AssociationLink{ID: "l1", SourceInstanceID: "i1", TargetInstanceID: "i2", AssociationID: "a1"}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "c1", Version: 2}, nil)
+	s.instRepo.On("GetByID", ctx, "i2").Return(&models.EntityInstance{ID: "i2", EntityTypeID: "et1", CatalogID: "c1", Version: 3}, nil)
+	s.assocRepo.On("GetByID", ctx, "a1").Return(&models.Association{ID: "a1", Type: models.AssociationTypeDirectional}, nil)
 	s.linkRepo.On("Delete", ctx, "l1").Return(domainerrors.NewValidation("db error"))
 
 	err := s.svc.DeleteAssociationLink(ctx, "cat", "server", "l1")
@@ -2955,6 +3065,39 @@ func TestGetContainmentTree_MultipleRootsOrdered(t *testing.T) {
 	assert.Len(t, tree[1].Children, 0)
 }
 
+func TestGetContainmentTree_SortedByTypeNameThenInstanceName(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+
+	// DB returns instances in non-alphabetical order
+	instances := []*models.EntityInstance{
+		{ID: "i3", EntityTypeID: "et2", CatalogID: "cat1", Name: "zebra"},
+		{ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", Name: "beta"},
+		{ID: "i2", EntityTypeID: "et1", CatalogID: "cat1", Name: "alpha"},
+		{ID: "i4", EntityTypeID: "et2", CatalogID: "cat1", Name: "aardvark"},
+	}
+	s.instRepo.On("ListByCatalog", ctx, "cat1").Return(instances, nil)
+	s.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "Server"}, nil)
+	s.etRepo.On("GetByID", ctx, "et2").Return(&models.EntityType{ID: "et2", Name: "Tool"}, nil)
+
+	tree, err := s.svc.GetContainmentTree(ctx, "my-catalog")
+	require.NoError(t, err)
+	require.Len(t, tree, 4)
+	// Sorted by entity type name first (Server before Tool), then by instance name
+	assert.Equal(t, "alpha", tree[0].Instance.Name)
+	assert.Equal(t, "Server", tree[0].EntityTypeName)
+	assert.Equal(t, "beta", tree[1].Instance.Name)
+	assert.Equal(t, "Server", tree[1].EntityTypeName)
+	assert.Equal(t, "aardvark", tree[2].Instance.Name)
+	assert.Equal(t, "Tool", tree[2].EntityTypeName)
+	assert.Equal(t, "zebra", tree[3].Instance.Name)
+	assert.Equal(t, "Tool", tree[3].EntityTypeName)
+}
+
 func TestGetContainmentTree_EntityTypeNameCaching(t *testing.T) {
 	s := setupInstanceService()
 	ctx := context.Background()
@@ -3107,6 +3250,40 @@ func TestCreateContainedInstance_EmptyNameRejected(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, domainerrors.IsValidation(err))
 	assert.Contains(t, err.Error(), "name is required")
+}
+
+func TestCreateInstance_InvalidNameCharsRejected(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	invalidNames := []string{"we)(?", "name<script>", "foo\tbar", "a/b", "hello!", "@start", "name;drop"}
+	for _, name := range invalidNames {
+		_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", name, "", nil)
+		require.Error(t, err, "name %q should be rejected", name)
+		assert.True(t, domainerrors.IsValidation(err), "name %q should be a validation error", name)
+		assert.Contains(t, err.Error(), "instance name", "name %q error should mention instance name", name)
+	}
+}
+
+func TestCreateInstance_NameTooLongRejected(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	longName := strings.Repeat("a", 256)
+	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", longName, "", nil)
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "255")
+}
+
+func TestCreateContainedInstance_InvalidNameCharsRejected(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	_, err := s.svc.CreateContainedInstance(ctx, "my-catalog", "server", "p1", "tool", "bad)(name", "", nil)
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "instance name")
 }
 
 // TD-30: Catalog ownership check on instance read/update/delete
@@ -3612,4 +3789,367 @@ func TestListContainedInstances_ResolveBaseTypesError(t *testing.T) {
 	_, _, err := s.svc.ListContainedInstances(ctx, "cat", "Parent", "parent1", "Child", models.ListParams{Limit: 10})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "tdv not found")
+}
+// TD-145: Version bumps on structural mutations
+
+// Test helper function that bumps instance version and carries forward IAV rows
+func TestBumpInstanceVersion_CarriesForwardIAVs(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	// Existing instance at version 2 with some attribute values
+	inst := &models.EntityInstance{
+		ID:           "inst1",
+		EntityTypeID: "et1",
+		CatalogID:    "cat1",
+		Name:         "my-instance",
+		Version:      2,
+	}
+
+	// Previous version's IAV rows
+	prevIAVs := []*models.InstanceAttributeValue{
+		{ID: "iav1", InstanceID: "inst1", InstanceVersion: 2, AttributeID: "attr1", ValueString: "value1"},
+		{ID: "iav2", InstanceID: "inst1", InstanceVersion: 2, AttributeID: "attr2", ValueNumber: ptrFloat64(42.5)},
+	}
+
+	s.iavRepo.On("GetValuesForVersion", ctx, "inst1", 2).Return(prevIAVs, nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		if len(vals) != 2 {
+			return false
+		}
+		// Check that IAVs were carried forward to version 3
+		for _, v := range vals {
+			if v.InstanceVersion != 3 {
+				return false
+			}
+			if v.InstanceID != "inst1" {
+				return false
+			}
+		}
+		// Check that values were copied
+		hasAttr1 := false
+		hasAttr2 := false
+		for _, v := range vals {
+			if v.AttributeID == "attr1" && v.ValueString == "value1" {
+				hasAttr1 = true
+			}
+			if v.AttributeID == "attr2" && v.ValueNumber != nil && *v.ValueNumber == 42.5 {
+				hasAttr2 = true
+			}
+		}
+		return hasAttr1 && hasAttr2
+	})).Return(nil)
+	s.instRepo.On("Update", ctx, mock.MatchedBy(func(i *models.EntityInstance) bool {
+		return i.ID == "inst1" && i.Version == 3
+	})).Return(nil)
+
+	err := s.svc.BumpInstanceVersion(ctx, inst)
+	require.NoError(t, err)
+	assert.Equal(t, 3, inst.Version)
+}
+
+func TestBumpInstanceVersion_CleansStaleIAVsBeforeCreating(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	inst := &models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Name: "my-tool", Version: 1,
+	}
+
+	prevIAVs := []*models.InstanceAttributeValue{
+		{ID: "iav1", InstanceID: "inst1", InstanceVersion: 1, AttributeID: "attr1", ValueString: "val1"},
+	}
+
+	// Stale IAVs from a previous failed attempt exist at version 2
+	s.iavRepo.On("DeleteByInstanceVersion", ctx, "inst1", 2).Return(nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "inst1", 1).Return(prevIAVs, nil)
+	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+
+	err := s.svc.BumpInstanceVersion(ctx, inst)
+	require.NoError(t, err)
+	s.iavRepo.AssertCalled(t, "DeleteByInstanceVersion", ctx, "inst1", 2)
+}
+
+func ptrFloat64(f float64) *float64 {
+	return &f
+}
+
+// TD-145: CreateContainedInstance should bump parent version
+func TestCreateContainedInstance_BumpsParentVersion(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+
+	parent := &models.EntityInstance{ID: "parent1", EntityTypeID: "et1", CatalogID: "c1", Name: "my-server", Version: 5}
+	s.instRepo.On("GetByID", ctx, "parent1").Return(parent, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "a1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment},
+	}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(nil)
+	// Child instance (newly created at version 1) has no previous IAV values for resolveAttributeValues
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, 1).Return([]*models.InstanceAttributeValue{}, nil)
+
+	// Parent has attribute values at version 5
+	s.iavRepo.On("GetValuesForVersion", ctx, "parent1", 5).Return([]*models.InstanceAttributeValue{
+		{ID: "iav1", InstanceID: "parent1", InstanceVersion: 5, AttributeID: "attr1", ValueString: "hostname"},
+	}, nil)
+	// Expect parent version to be bumped to 6 with IAVs carried forward
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		for _, v := range vals {
+			if v.InstanceID == "parent1" && v.InstanceVersion == 6 && v.AttributeID == "attr1" {
+				return true
+			}
+		}
+		return false
+	})).Return(nil)
+	s.instRepo.On("Update", ctx, mock.MatchedBy(func(inst *models.EntityInstance) bool {
+		return inst.ID == "parent1" && inst.Version == 6
+	})).Return(nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusDraft).Return(nil)
+
+	_, err := s.svc.CreateContainedInstance(ctx, "cat", "server", "parent1", "tool", "new-tool", "", nil)
+	require.NoError(t, err)
+	assert.Equal(t, 6, parent.Version, "parent version should be bumped from 5 to 6")
+}
+
+// TD-145: SetParent should bump child and new parent versions
+func TestSetParent_BumpsChildAndNewParentVersions(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+
+	child := &models.EntityInstance{ID: "child1", EntityTypeID: "et2", CatalogID: "c1", Name: "my-tool", Version: 3}
+	newParent := &models.EntityInstance{ID: "parent1", EntityTypeID: "et1", CatalogID: "c1", Name: "my-server", Version: 5}
+	s.instRepo.On("GetByID", ctx, "child1").Return(child, nil)
+	s.instRepo.On("GetByID", ctx, "parent1").Return(newParent, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "a1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment},
+	}, nil)
+	s.instRepo.On("GetByNameAndParent", ctx, "et2", "c1", "parent1", "my-tool").Return(nil, nil)
+
+	// Mock IAV carryforward for child (v3 → v4)
+	s.iavRepo.On("GetValuesForVersion", ctx, "child1", 3).Return([]*models.InstanceAttributeValue{
+		{ID: "iav1", InstanceID: "child1", InstanceVersion: 3, AttributeID: "attr1", ValueString: "tool-value"},
+	}, nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		for _, v := range vals {
+			if v.InstanceID == "child1" && v.InstanceVersion == 4 {
+				return true
+			}
+		}
+		return false
+	})).Return(nil)
+	s.instRepo.On("Update", ctx, mock.MatchedBy(func(inst *models.EntityInstance) bool {
+		return inst.ID == "child1" && inst.Version == 4
+	})).Return(nil)
+
+	// Mock IAV carryforward for new parent (v5 → v6)
+	s.iavRepo.On("GetValuesForVersion", ctx, "parent1", 5).Return([]*models.InstanceAttributeValue{
+		{ID: "iav2", InstanceID: "parent1", InstanceVersion: 5, AttributeID: "attr2", ValueString: "parent-value"},
+	}, nil)
+	s.iavRepo.On("SetValues", ctx, mock.MatchedBy(func(vals []*models.InstanceAttributeValue) bool {
+		for _, v := range vals {
+			if v.InstanceID == "parent1" && v.InstanceVersion == 6 {
+				return true
+			}
+		}
+		return false
+	})).Return(nil)
+	s.instRepo.On("Update", ctx, mock.MatchedBy(func(inst *models.EntityInstance) bool {
+		return inst.ID == "parent1" && inst.Version == 6
+	})).Return(nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusDraft).Return(nil)
+
+	err := s.svc.SetParent(ctx, "cat", "tool", "child1", "server", "parent1")
+	require.NoError(t, err)
+	assert.Equal(t, 4, child.Version, "child version should be bumped from 3 to 4")
+	assert.Equal(t, 6, newParent.Version, "parent version should be bumped from 5 to 6")
+}
+
+// Coverage: UpdateInstance with invalid name (L501-503) — exercises ValidateInstanceName error return in UpdateInstance
+func TestCov_UpdateInstance_InvalidName(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.mockPinResolution(ctx)
+	s.mockAttributes(ctx)
+
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Name: "old-name", Version: 1,
+	}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "inst1", 1).Return([]*models.InstanceAttributeValue{}, nil)
+
+	invalidName := "invalid@name!"
+	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "inst1", 1, &invalidName, nil, nil)
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "instance name must start with")
+}
+
+// Coverage: DeleteAssociationLink — assocRepo.GetByID error (L843-845)
+func TestCov_DeleteAssociationLink_AssocGetError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.linkRepo.On("GetByID", ctx, "link1").Return(&models.AssociationLink{
+		ID: "link1", SourceInstanceID: "inst1", TargetInstanceID: "inst2", AssociationID: "a1",
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Version: 2,
+	}, nil)
+	s.assocRepo.On("GetByID", ctx, "a1").Return(nil, errors.New("assoc db error"))
+
+	err := s.svc.DeleteAssociationLink(ctx, "my-catalog", "server", "link1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "assoc db error")
+}
+
+// Coverage: DeleteAssociationLink — instRepo.GetByID error for target instance (L849-851)
+func TestCov_DeleteAssociationLink_TargetGetError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.linkRepo.On("GetByID", ctx, "link1").Return(&models.AssociationLink{
+		ID: "link1", SourceInstanceID: "inst1", TargetInstanceID: "inst2", AssociationID: "a1",
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Version: 2,
+	}, nil)
+	s.assocRepo.On("GetByID", ctx, "a1").Return(&models.Association{ID: "a1", Type: models.AssociationTypeDirectional}, nil)
+	s.instRepo.On("GetByID", ctx, "inst2").Return(nil, errors.New("target db error"))
+
+	err := s.svc.DeleteAssociationLink(ctx, "my-catalog", "server", "link1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "target db error")
+}
+
+// Coverage: DeleteAssociationLink — BumpInstanceVersion for bidirectional target (L861-863)
+func TestCov_DeleteAssociationLink_BidirectionalBumpsTarget(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", CatalogVersionID: "cv1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.linkRepo.On("GetByID", ctx, "link1").Return(&models.AssociationLink{
+		ID: "link1", SourceInstanceID: "inst1", TargetInstanceID: "inst2", AssociationID: "a1",
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Version: 2,
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "inst2").Return(&models.EntityInstance{
+		ID: "inst2", EntityTypeID: "et1", CatalogID: "cat1", Version: 3,
+	}, nil)
+	// Bidirectional association — should bump both source and target
+	s.assocRepo.On("GetByID", ctx, "a1").Return(&models.Association{
+		ID: "a1", Type: models.AssociationTypeBidirectional,
+	}, nil)
+	s.linkRepo.On("Delete", ctx, "link1").Return(nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return(nil, nil)
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	err := s.svc.DeleteAssociationLink(ctx, "my-catalog", "server", "link1")
+	require.NoError(t, err)
+	// Verify both source and target were bumped
+	s.instRepo.AssertCalled(t, "Update", ctx, mock.MatchedBy(func(i *models.EntityInstance) bool {
+		return i.ID == "inst1" && i.Version == 3
+	}))
+	s.instRepo.AssertCalled(t, "Update", ctx, mock.MatchedBy(func(i *models.EntityInstance) bool {
+		return i.ID == "inst2" && i.Version == 4
+	}))
+}
+
+func TestBumpInstanceVersion_UsesTransaction(t *testing.T) {
+	s := setupInstanceService()
+	s.svc.SetTransactionManager(&mocks.MockTransactionManager{})
+	ctx := context.Background()
+
+	inst := &models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Name: "my-instance", Version: 1,
+	}
+
+	s.iavRepo.On("GetValuesForVersion", ctx, "inst1", 1).Return([]*models.InstanceAttributeValue{
+		{ID: "iav1", InstanceID: "inst1", InstanceVersion: 1, AttributeID: "attr1", ValueString: "v1"},
+	}, nil)
+	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(nil)
+	s.instRepo.On("Update", ctx, mock.Anything).Return(nil)
+
+	err := s.svc.BumpInstanceVersion(ctx, inst)
+	require.NoError(t, err)
+	assert.Equal(t, 2, inst.Version)
+}
+
+// Coverage: BumpInstanceVersion — GetValuesForVersion error (L1149-1151)
+func TestCov_BumpInstanceVersion_GetValuesError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	inst := &models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Name: "my-instance", Version: 2,
+	}
+
+	s.iavRepo.On("GetValuesForVersion", ctx, "inst1", 2).Return(nil, errors.New("iav db error"))
+
+	err := s.svc.BumpInstanceVersion(ctx, inst)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "iav db error")
+}
+
+// Coverage: BumpInstanceVersion — SetValues error (L1166-1168)
+func TestCov_BumpInstanceVersion_SetValuesError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	inst := &models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Name: "my-instance", Version: 2,
+	}
+
+	s.iavRepo.On("GetValuesForVersion", ctx, "inst1", 2).Return([]*models.InstanceAttributeValue{
+		{ID: "iav1", InstanceID: "inst1", InstanceVersion: 2, AttributeID: "attr1", ValueString: "v1"},
+	}, nil)
+	s.iavRepo.On("SetValues", ctx, mock.Anything).Return(errors.New("set values db error"))
+
+	err := s.svc.BumpInstanceVersion(ctx, inst)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "set values db error")
 }

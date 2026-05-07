@@ -55,6 +55,10 @@ func (r *InstanceAttributeValueGormRepo) DeleteByInstanceID(ctx context.Context,
 	return getDB(ctx, r.db).Where("instance_id = ?", instanceID).Delete(&gormmodels.InstanceAttributeValue{}).Error
 }
 
+func (r *InstanceAttributeValueGormRepo) DeleteByInstanceVersion(ctx context.Context, instanceID string, version int) error {
+	return getDB(ctx, r.db).Where("instance_id = ? AND instance_version = ?", instanceID, version).Delete(&gormmodels.InstanceAttributeValue{}).Error
+}
+
 func (r *InstanceAttributeValueGormRepo) RemapAttributeIDs(ctx context.Context, instanceIDs []string, mapping map[string]string) (int64, error) {
 	if len(instanceIDs) == 0 || len(mapping) == 0 {
 		return 0, nil

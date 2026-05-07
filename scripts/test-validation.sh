@@ -48,6 +48,23 @@ get_body() {
   echo "$1" | sed '$d'
 }
 
+cleanup() {
+  echo ""
+  echo "=== Cleanup ==="
+  api DELETE "$DATA_API/catalogs/${CATALOG_NAME:-__none__}" Admin > /dev/null 2>&1 || true
+  if [ -n "${CV_ID:-}" ]; then
+    api DELETE "$META_API/catalog-versions/$CV_ID" Admin > /dev/null 2>&1 || true
+  fi
+  if [ -n "${SERVER_ET_ID:-}" ]; then
+    api DELETE "$META_API/entity-types/$SERVER_ET_ID" Admin > /dev/null 2>&1 || true
+  fi
+  if [ -n "${CTYPE_TD_ID:-}" ]; then
+    api DELETE "$META_API/type-definitions/$CTYPE_TD_ID" Admin > /dev/null 2>&1 || true
+  fi
+  echo "  Done."
+}
+trap cleanup EXIT
+
 header "Setup: Use existing catalog (test1) or create test data"
 
 # Use the existing catalog if available, otherwise create test data
@@ -286,6 +303,7 @@ CTYPE_RESP=$(api POST "$META_API/type-definitions" Admin \
 CTYPE_STATUS=$(get_status "$CTYPE_RESP")
 CTYPE_BODY=$(get_body "$CTYPE_RESP")
 CTYPE_TDV_ID=$(echo "$CTYPE_BODY" | jq -r '.latest_version_id')
+CTYPE_TD_ID=$(echo "$CTYPE_BODY" | jq -r '.id')
 echo "  Created type definition with max_length=5 (TDV: $CTYPE_TDV_ID, status=$CTYPE_STATUS)"
 
 # Add an attribute using the constrained type definition to the server entity type
@@ -339,22 +357,6 @@ else
   fail "Constraint violation" "status=$STATUS val_status=$VAL_STATUS errors=$ERROR_COUNT body=$BODY"
 fi
 
-# Clean up the type definition
-CTYPE_TD_ID=$(echo "$CTYPE_BODY" | jq -r '.id')
-api DELETE "$META_API/type-definitions/$CTYPE_TD_ID" Admin > /dev/null 2>&1 || true
-
-header "Cleanup (only removing test data created by this script)"
-
-api DELETE "$DATA_API/catalogs/$CATALOG_NAME" Admin > /dev/null 2>&1 || true
-echo "  Deleted test catalog: $CATALOG_NAME"
-
-# Delete CV (must happen before entity type deletion since CV pins reference ETVs)
-api DELETE "$META_API/catalog-versions/$CV_ID" Admin > /dev/null 2>&1 || true
-echo "  Deleted test CV: $CV_ID"
-
-# Delete entity type
-api DELETE "$META_API/entity-types/$SERVER_ET_ID" Admin > /dev/null 2>&1 || true
-echo "  Deleted test entity type: $SERVER_ET_ID"
 
 header "Results"
 

@@ -91,6 +91,7 @@ func main() {
 	cvSvc := svcmeta.NewCatalogVersionService(cvRepo, pinRepo, ltRepo, crManager, watchNamespace, cfg.AllowedStages(), etRepo, etvRepo, catalogRepo, svcmeta.WithMigrationRepos(attrRepo, instRepo, iavRepo), svcmeta.WithTransactionManager(txManager))
 	catalogSvc := svcop.NewCatalogService(catalogRepo, cvRepo, instRepo, catalogCRManager, watchNamespace, svcop.WithCopyDeps(iavRepo, linkRepo), svcop.WithTransactionManager(txManager))
 	instanceSvc := svcop.NewInstanceService(instRepo, iavRepo, catalogRepo, cvRepo, pinRepo, attrRepo, etvRepo, etRepo, tdvRepo, tdRepo, assocRepo, linkRepo)
+	instanceSvc.SetTransactionManager(txManager)
 
 	// Type Definition Service
 	typeDefSvc := svcmeta.NewTypeDefinitionService(tdRepo, tdvRepo, attrRepo, svcmeta.WithPinRepo(pinRepo), svcmeta.WithETVRepo(etvRepo))

@@ -1815,6 +1815,18 @@ The entity type diagram currently uses a hardcoded Dagre (hierarchical top-to-bo
 
 Add write capabilities to the operational data viewer: create, edit, delete instances, manage containment, and create/delete association links. Reuses existing modals from the meta CatalogDetailPage, adapted for the operational app shell. Role-aware rendering based on user role and catalog publish status.
 
+**Instance version bump rules (TD-145):** All structural mutations bump the version of affected instances, ensuring optimistic locking covers relationship changes:
+
+| Operation | Instances bumped |
+|-----------|-----------------|
+| SetParent(child, newParent) | child + new parent |
+| RemoveFromContainer (clear parent) | child + old parent |
+| CreateContainedInstance(parent, child) | parent (child starts at v1) |
+| CreateAssociationLink (directional) | source only |
+| CreateAssociationLink (bidirectional) | source + target |
+| DeleteAssociationLink (directional) | source only |
+| DeleteAssociationLink (bidirectional) | source + target |
+
 **Design decisions (resolved):**
 
 | Decision | Choice |
@@ -1827,6 +1839,10 @@ Add write capabilities to the operational data viewer: create, edit, delete inst
 | Post-mutation tree behavior | Refresh tree and re-select affected node (or parent on delete) |
 | Meta page scope | Keep both UIs — meta keeps instance editing, operational gets it too |
 | Backend changes | None — all APIs already exist |
+
+**Known limitation — multiple containment associations to the same child type (TD-143):**
+
+When a parent entity type has multiple containment associations targeting the same child entity type (e.g., mcp-server → mcp-tool via "read-only-tools" AND "read-write-tools"), the system cannot distinguish between them. The `EntityInstance` data model stores `parent_instance_id` but not which containment association was used. The tree groups children by entity type name (not association), and the Add Child dropdown shows duplicate entries. This only affects schemas with multiple containment associations between the same pair of types — the common single-containment case works correctly. See TD-143 for the phased fix plan.
 
 ### FF-7: Catalog Versioning (Snapshots)
 
@@ -2127,4 +2143,41 @@ Returns the instance and its connected instances up to depth N, with all attribu
 - Could integrate with FF-16 (Catalog Views) — the instance diagram respects view boundaries.
 
 **Decision:** Deferred. Design alongside operational UI improvements (FF-6).
+
+### FF-18: Chaos Monkey Testing
+
+Introduce chaos engineering tests to verify system resilience under adverse conditions. The system currently has unit tests, browser tests, system tests, and live API scripts, but no tests that simulate infrastructure failures, partial outages, or degraded conditions.
+
+**Scope:**
+
+| Area | Chaos scenario | Expected behavior |
+|------|---------------|-------------------|
+| Database | Kill Postgres pod mid-operation | API returns 503, no data corruption, recovers when pod restarts |
+| Database | Simulate slow queries (pg_sleep or network delay) | Requests timeout gracefully, no connection pool exhaustion |
+| API server | Kill API pod during write operation | In-flight transaction rolls back, K8s restarts pod, subsequent requests succeed |
+| API server | Multiple concurrent writers to same catalog | Optimistic locking (version conflict) rejects stale writes cleanly |
+| Operator | Kill operator pod during reconciliation | CR status converges on restart, no duplicate CRs or orphaned resources |
+| K8s API | Simulate K8s API unavailability | Publish/unpublish fails gracefully, DB state consistent (rollback on CR failure) |
+| UI | API returns 500 on every Nth request | UI shows error alerts, retryable operations recoverable without page reload |
+| Import | Kill pod mid-import of large catalog | Transaction rolls back, no partial import data left behind |
+| Cascade delete | Kill pod during cascade delete of deep hierarchy | No orphaned children or dangling links |
+
+**Implementation approach:**
+
+1. **Kind cluster chaos**: Use `kubectl delete pod` and `kubectl exec` to inject failures into the kind development cluster
+2. **Test scripts**: Bash scripts (pattern: `scripts/test-chaos-*.sh`) that orchestrate failure injection + verification
+3. **Database fault injection**: Use Postgres `pg_terminate_backend()` or connection proxies to simulate DB failures
+4. **Concurrent stress**: Use `parallel` or background curl jobs to simulate concurrent access
+5. **CI integration**: Run chaos tests as a separate test stage (not on every PR — too slow and disruptive)
+
+**Prerequisites:**
+- All existing tests pass (chaos tests should only reveal resilience gaps, not existing bugs)
+- Transaction support on all write paths (already implemented for copy/replace/import)
+- Health check endpoints (already implemented: `/healthz`, `/readyz`)
+
+**Success criteria:**
+- No data corruption after any simulated failure
+- No orphaned resources (instances, links, CRs) after recovery
+- All services recover automatically after transient failures
+- Graceful error messages (no stack traces or 500s that should be 503s)
 

@@ -88,7 +88,7 @@ export default function SetParentModal({
               )}
             >
               {parentInstances.map(inst => (
-                <SelectOption key={inst.id} value={inst.id}>{inst.name}</SelectOption>
+                <SelectOption key={inst.id} value={inst.id} data-testid={`parent-inst-${inst.id}`}>{inst.name}</SelectOption>
               ))}
             </Select>
           </FormGroup>
