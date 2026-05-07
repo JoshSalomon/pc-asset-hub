@@ -4153,3 +4153,154 @@ func TestCov_BumpInstanceVersion_SetValuesError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "set values db error")
 }
+
+// === Copilot PR#21 review fixes: error propagation tests ===
+
+func TestCreateContainedInstance_ParentBumpError_Propagates(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+
+	parent := &models.EntityInstance{ID: "parent1", EntityTypeID: "et1", CatalogID: "c1", Name: "my-server", Version: 5}
+	s.instRepo.On("GetByID", ctx, "parent1").Return(parent, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "a1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment},
+	}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Attribute{}, nil)
+	s.instRepo.On("Create", ctx, mock.Anything).Return(nil)
+
+	// Parent bump fails — currently swallowed, should propagate after fix
+	s.iavRepo.On("DeleteByInstanceVersion", ctx, "parent1", 6).Return(nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "parent1", 5).Return(nil, errors.New("bump db error"))
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusDraft).Return(nil)
+	s.tdvRepo.On("GetByID", ctx, mock.Anything).Return(&models.TypeDefinitionVersion{ID: "tdv1", TypeDefinitionID: "td1"}, nil).Maybe()
+	s.tdRepo.On("GetByID", ctx, mock.Anything).Return(&models.TypeDefinition{ID: "td1", BaseType: models.BaseTypeString}, nil).Maybe()
+	s.iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil).Maybe()
+
+	_, err := s.svc.CreateContainedInstance(ctx, "cat", "server", "parent1", "tool", "my-tool", "", nil)
+	require.Error(t, err, "should propagate parent bump error, not swallow it")
+	assert.Contains(t, err.Error(), "bump db error")
+}
+
+func TestCreateAssociationLink_SourceBumpError_Propagates(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+
+	srcInst := &models.EntityInstance{ID: "src1", EntityTypeID: "et1", CatalogID: "c1", Name: "s1", Version: 1}
+	tgtInst := &models.EntityInstance{ID: "tgt1", EntityTypeID: "et1", CatalogID: "c1", Name: "t1", Version: 1}
+
+	s.instRepo.On("GetByID", ctx, "src1").Return(srcInst, nil)
+	s.instRepo.On("GetByID", ctx, "tgt1").Return(tgtInst, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "a1", Name: "refs", Type: models.AssociationTypeDirectional, TargetEntityTypeID: "et1"},
+	}, nil)
+	s.linkRepo.On("GetForwardRefs", ctx, "src1").Return([]*models.AssociationLink{}, nil)
+	s.linkRepo.On("Create", ctx, mock.Anything).Return(nil)
+
+	// Source bump fails
+	s.iavRepo.On("DeleteByInstanceVersion", ctx, "src1", 2).Return(nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "src1", 1).Return(nil, errors.New("source bump failed"))
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusDraft).Return(nil)
+
+	_, err := s.svc.CreateAssociationLink(ctx, "cat", "server", "src1", "tgt1", "refs")
+	require.Error(t, err, "should propagate source bump error, not swallow it")
+	assert.Contains(t, err.Error(), "source bump failed")
+}
+
+func TestDeleteAssociationLink_SourceBumpError_Propagates(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+
+	srcInst := &models.EntityInstance{ID: "src1", EntityTypeID: "et1", CatalogID: "c1", Name: "s1", Version: 1}
+	tgtInst := &models.EntityInstance{ID: "tgt1", EntityTypeID: "et1", CatalogID: "c1", Name: "t1", Version: 1}
+	link := &models.AssociationLink{ID: "link1", AssociationID: "a1", SourceInstanceID: "src1", TargetInstanceID: "tgt1"}
+
+	s.linkRepo.On("GetByID", ctx, "link1").Return(link, nil)
+	s.instRepo.On("GetByID", ctx, "src1").Return(srcInst, nil)
+	s.instRepo.On("GetByID", ctx, "tgt1").Return(tgtInst, nil)
+	s.assocRepo.On("GetByID", ctx, "a1").Return(&models.Association{ID: "a1", Type: models.AssociationTypeDirectional}, nil)
+	s.linkRepo.On("Delete", ctx, "link1").Return(nil)
+
+	// Source bump fails — currently swallowed, should propagate after fix
+	s.iavRepo.On("DeleteByInstanceVersion", ctx, "src1", 2).Return(nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "src1", 1).Return(nil, errors.New("delete bump failed"))
+	s.catalogRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusDraft).Return(nil)
+
+	err := s.svc.DeleteAssociationLink(ctx, "cat", "server", "link1")
+	require.Error(t, err, "should propagate source bump error, not swallow it")
+	assert.Contains(t, err.Error(), "delete bump failed")
+}
+
+func TestSetParent_ClearParent_CollisionCheckDBError_Propagates(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+
+	childInst := &models.EntityInstance{ID: "child1", EntityTypeID: "et1", CatalogID: "c1", Name: "c1", Version: 1, ParentInstanceID: "parent1"}
+	s.instRepo.On("GetByID", ctx, "child1").Return(childInst, nil)
+
+	// Collision check DB error
+	s.instRepo.On("GetByNameAndParent", ctx, "et1", "c1", "", "c1").Return(nil, errors.New("db connection lost"))
+
+	err := s.svc.SetParent(ctx, "cat", "tool", "child1", "", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "db connection lost")
+}
+
+func TestSetParent_NewParent_CollisionCheckDBError_Propagates(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et2"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"}, {ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+
+	childInst := &models.EntityInstance{ID: "child1", EntityTypeID: "et1", CatalogID: "c1", Name: "c1", Version: 1}
+	parentInst := &models.EntityInstance{ID: "parent1", EntityTypeID: "et2", CatalogID: "c1", Name: "p1", Version: 1}
+
+	s.instRepo.On("GetByID", ctx, "child1").Return(childInst, nil)
+	s.instRepo.On("GetByID", ctx, "parent1").Return(parentInst, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Association{
+		{ID: "a1", Type: models.AssociationTypeContainment, TargetEntityTypeID: "et1"},
+	}, nil)
+
+	// Collision check DB error
+	s.instRepo.On("GetByNameAndParent", ctx, "et1", "c1", "parent1", "c1").Return(nil, errors.New("db timeout"))
+
+	err := s.svc.SetParent(ctx, "cat", "tool", "child1", "server", "parent1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "db timeout")
+}

@@ -632,8 +632,9 @@ func (s *InstanceService) CreateContainedInstance(ctx context.Context, catalogNa
 		}
 	}
 
-	// Bump parent version (best-effort, ignore errors)
-	_ = s.BumpInstanceVersion(ctx, parentInst)
+	if err := s.BumpInstanceVersion(ctx, parentInst); err != nil {
+		return nil, err
+	}
 
 	_ = s.catalogRepo.UpdateValidationStatus(ctx, catalog.ID, models.ValidationStatusDraft)
 
@@ -813,12 +814,14 @@ func (s *InstanceService) CreateAssociationLink(ctx context.Context, catalogName
 		return nil, err
 	}
 
-	// Bump source instance version (always)
-	_ = s.BumpInstanceVersion(ctx, sourceInst)
+	if err := s.BumpInstanceVersion(ctx, sourceInst); err != nil {
+		return nil, err
+	}
 
-	// Bump target instance version (bidirectional only)
 	if assoc.Type == models.AssociationTypeBidirectional {
-		_ = s.BumpInstanceVersion(ctx, targetInst)
+		if err := s.BumpInstanceVersion(ctx, targetInst); err != nil {
+			return nil, err
+		}
 	}
 
 	_ = s.catalogRepo.UpdateValidationStatus(ctx, catalog.ID, models.ValidationStatusDraft)
@@ -861,12 +864,14 @@ func (s *InstanceService) DeleteAssociationLink(ctx context.Context, catalogName
 		return err
 	}
 
-	// Bump source instance version (always)
-	_ = s.BumpInstanceVersion(ctx, sourceInst)
+	if err := s.BumpInstanceVersion(ctx, sourceInst); err != nil {
+		return err
+	}
 
-	// Bump target instance version (bidirectional only)
 	if assoc.Type == models.AssociationTypeBidirectional {
-		_ = s.BumpInstanceVersion(ctx, targetInst)
+		if err := s.BumpInstanceVersion(ctx, targetInst); err != nil {
+			return err
+		}
 	}
 
 	_ = s.catalogRepo.UpdateValidationStatus(ctx, catalog.ID, models.ValidationStatusDraft)
@@ -964,7 +969,10 @@ func (s *InstanceService) SetParent(ctx context.Context, catalogName, childTypeN
 
 	if parentID == "" {
 		// Clear parent — check for name collision at top level first
-		existing, _ := s.instRepo.GetByNameAndParent(ctx, childInst.EntityTypeID, catalog.ID, "", childInst.Name)
+		existing, err := s.instRepo.GetByNameAndParent(ctx, childInst.EntityTypeID, catalog.ID, "", childInst.Name)
+		if err != nil && !domainerrors.IsNotFound(err) {
+			return err
+		}
 		if existing != nil && existing.ID != childInst.ID {
 			return domainerrors.NewConflict("EntityInstance", "name already exists in this scope: "+childInst.Name)
 		}
@@ -974,10 +982,11 @@ func (s *InstanceService) SetParent(ctx context.Context, catalogName, childTypeN
 		if err := s.BumpInstanceVersion(ctx, childInst); err != nil {
 			return err
 		}
-		// Bump old parent version if it existed (best-effort - ignore errors)
 		if oldParentID != "" {
 			if oldParent, err := s.instRepo.GetByID(ctx, oldParentID); err == nil {
-				_ = s.BumpInstanceVersion(ctx, oldParent)
+				if err := s.BumpInstanceVersion(ctx, oldParent); err != nil {
+					return err
+				}
 			}
 		}
 		_ = s.catalogRepo.UpdateValidationStatus(ctx, catalog.ID, models.ValidationStatusDraft)
@@ -1016,7 +1025,10 @@ func (s *InstanceService) SetParent(ctx context.Context, catalogName, childTypeN
 	}
 
 	// Check for name collision at the new parent scope
-	existing, _ := s.instRepo.GetByNameAndParent(ctx, childInst.EntityTypeID, catalog.ID, parentID, childInst.Name)
+	existing, err := s.instRepo.GetByNameAndParent(ctx, childInst.EntityTypeID, catalog.ID, parentID, childInst.Name)
+	if err != nil && !domainerrors.IsNotFound(err) {
+		return err
+	}
 	if existing != nil && existing.ID != childInst.ID {
 		return domainerrors.NewConflict("EntityInstance", "name already exists in this scope: "+childInst.Name)
 	}
@@ -1027,8 +1039,9 @@ func (s *InstanceService) SetParent(ctx context.Context, catalogName, childTypeN
 		return err
 	}
 
-	// Bump new parent version (best-effort - ignore errors)
-	_ = s.BumpInstanceVersion(ctx, parentInst)
+	if err := s.BumpInstanceVersion(ctx, parentInst); err != nil {
+		return err
+	}
 
 	_ = s.catalogRepo.UpdateValidationStatus(ctx, catalog.ID, models.ValidationStatusDraft)
 	return nil

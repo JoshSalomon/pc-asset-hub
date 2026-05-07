@@ -132,7 +132,7 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
 
   useEffect(() => {
     if (!ct.selectedTypeName) { setSelectedSchemaAssocs([]); return }
-    loadSchemaSnapshot(pins, ct.selectedTypeName).then(({ assocs }) => setSelectedSchemaAssocs(assocs))
+    loadSchemaSnapshot(pins, ct.selectedTypeName).then(({ assocs }) => setSelectedSchemaAssocs(assocs)).catch(() => setSelectedSchemaAssocs([]))
   }, [ct.selectedTypeName, pins])
 
   const handleCreateTypeChange = useCallback(async (typeName: string) => {
