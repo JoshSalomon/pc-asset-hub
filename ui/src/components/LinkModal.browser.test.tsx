@@ -23,11 +23,18 @@ const schemaAssocs: SnapshotAssociation[] = [
     target_entity_type_id: 'et3', target_entity_type_name: 'config',
     source_role: '', target_role: '', source_cardinality: '', target_cardinality: '',
   },
+  {
+    id: 'assoc3', name: 'peers-with', type: 'bidirectional', direction: 'incoming',
+    target_entity_type_id: 'et1', target_entity_type_name: 'current-type',
+    source_entity_type_id: 'et4', source_entity_type_name: 'server',
+    source_role: '', target_role: '', source_cardinality: '', target_cardinality: '',
+  },
 ]
 
 const mockPins: CatalogVersionPin[] = [
   { pin_id: 'pin-1', entity_type_name: 'tool', entity_type_id: 'et2', entity_type_version_id: 'etv2', version: 1 },
   { pin_id: 'pin-2', entity_type_name: 'config', entity_type_id: 'et3', entity_type_version_id: 'etv3', version: 1 },
+  { pin_id: 'pin-3', entity_type_name: 'server', entity_type_id: 'et4', entity_type_version_id: 'etv4', version: 1 },
 ]
 
 beforeEach(() => {
@@ -127,12 +134,43 @@ test('LinkModal guard: loadLinkTargetInstances with undefined catalogName return
   expect(api.instances.list).not.toHaveBeenCalled()
 })
 
-// Line 48: loadLinkTargetInstances guard — assoc not found (no matching outgoing assoc)
-// UNREACHABLE: The Select dropdown on line 91 filters to outgoing non-containment
-// assocs: `schemaAssocs.filter(a => a.type !== 'containment' && a.direction === 'outgoing')`.
-// The find() on line 47 searches by the same criteria (name + outgoing direction).
-// Since the user can only select from the filtered list, find() always succeeds.
-// This guard cannot be triggered through the component's UI.
+// Bidirectional incoming associations should show the OTHER entity type name and load its instances
+test('LinkModal incoming bidirectional shows source type name and loads correct instances', async () => {
+  ;(api.instances.list as Mock).mockResolvedValue({
+    items: [{ id: 'srv1', entity_type_id: 'et4', catalog_id: 'cat1', name: 'server-1', description: '', version: 1, attributes: [], created_at: '', updated_at: '' }],
+    total: 1,
+  })
+  renderModal()
+  await page.getByText('Select association...').click()
+  // Should show "peers-with → server" (source_entity_type_name, not target_entity_type_name)
+  await expect.element(page.getByText(/peers-with → server/)).toBeVisible()
+  await page.getByText(/peers-with/).click()
+  // Should load instances of the source entity type (server), not the current type
+  expect(api.instances.list).toHaveBeenCalledWith('my-catalog', 'server')
+})
+
+// Contained target instances should show parent name for disambiguation
+test('LinkModal shows parent name for contained target instances', async () => {
+  ;(api.instances.list as Mock).mockResolvedValue({
+    items: [
+      { id: 't1', entity_type_id: 'et2', catalog_id: 'cat1', name: 'mcp-tool', parent_instance_id: 'p1', description: '', version: 1, attributes: [], created_at: '', updated_at: '' },
+      { id: 't2', entity_type_id: 'et2', catalog_id: 'cat1', name: 'mcp-tool', parent_instance_id: 'p2', description: '', version: 1, attributes: [], created_at: '', updated_at: '' },
+      { id: 't3', entity_type_id: 'et2', catalog_id: 'cat1', name: 'orphan-tool', description: '', version: 1, attributes: [], created_at: '', updated_at: '' },
+    ],
+    total: 3,
+  })
+  renderModal({ instanceNames: { p1: 'server-1', p2: 'server-2' } })
+  // Select association
+  await page.getByText('Select association...').click()
+  await page.getByText(/^uses/).click()
+  // Open target dropdown
+  await page.getByText('Select target instance...').click()
+  // Contained instances should show parent: "mcp-tool (server-1)"
+  await expect.element(page.getByText('mcp-tool (server-1)')).toBeVisible()
+  await expect.element(page.getByText('mcp-tool (server-2)')).toBeVisible()
+  // Orphan instance shows just the name
+  await expect.element(page.getByText('orphan-tool')).toBeVisible()
+})
 
 // Line 50: loadLinkTargetInstances guard — targetPin not found
 test('LinkModal guard: loadLinkTargetInstances with no matching pin returns early', async () => {

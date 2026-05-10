@@ -4,6 +4,7 @@ import {
   Breadcrumb,
   BreadcrumbItem,
   Button,
+  Alert,
 } from '@patternfly/react-core'
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
 import type { EntityInstance, ReferenceDetail } from '../types'
@@ -16,6 +17,9 @@ interface InstanceDetailPanelProps {
   reverseRefs: ReferenceDetail[]
   refsLoading: boolean
   onNavigateToRef: (instanceId: string) => void
+  onUnlink?: (linkId: string) => void
+  unlinkDisabled?: boolean
+  actionError?: string | null
 }
 
 export default function InstanceDetailPanel({
@@ -25,6 +29,9 @@ export default function InstanceDetailPanel({
   reverseRefs,
   refsLoading,
   onNavigateToRef,
+  onUnlink,
+  unlinkDisabled,
+  actionError,
 }: InstanceDetailPanelProps) {
   return (
     <div>
@@ -67,6 +74,10 @@ export default function InstanceDetailPanel({
         </div>
       )}
 
+      {actionError && (
+        <Alert variant="danger" title={actionError} isInline style={{ marginTop: '0.5rem' }} />
+      )}
+
       {/* References */}
       <div style={{ marginTop: '1rem' }}>
         <Title headingLevel="h4">References</Title>
@@ -78,7 +89,7 @@ export default function InstanceDetailPanel({
               <>
                 <p style={{ fontWeight: 600, marginTop: '0.5rem' }}>Forward References</p>
                 <Table aria-label="Forward references" variant="compact">
-                  <Thead><Tr><Th>Target</Th><Th>Association</Th><Th>Type</Th></Tr></Thead>
+                  <Thead><Tr><Th>Target</Th><Th>Association</Th><Th>Type</Th>{onUnlink && <Th screenReaderText="Actions" />}</Tr></Thead>
                   <Tbody>
                     {forwardRefs.map(ref => (
                       <Tr key={ref.link_id}>
@@ -89,6 +100,9 @@ export default function InstanceDetailPanel({
                         </Td>
                         <Td>{ref.association_name}</Td>
                         <Td>{ref.association_type}</Td>
+                        {onUnlink && (
+                          <Td><Button variant="link" size="sm" onClick={() => onUnlink(ref.link_id)} isDisabled={unlinkDisabled}>Delete</Button></Td>
+                        )}
                       </Tr>
                     ))}
                   </Tbody>

@@ -49,8 +49,8 @@ cleanup() {
       [ -n "$etid" ] && curl -s -o /dev/null -X DELETE "$META/entity-types/$etid" -H 'X-User-Role: Admin' 2>/dev/null || true
     done
   done
-  # Clean custom type definitions
-  for tdname in "${P}-severity" "${P}-multiline"; do
+  # Clean custom type definitions (original and imported)
+  for tdname in "${P}-severity" "${P}-multiline" "${PREFIX}${P}-severity" "${PREFIX}${P}-multiline"; do
     tdid=$(jget "$META/type-definitions" | jq -r ".items[] | select(.name==\"$tdname\") | .id // empty")
     [ -n "$tdid" ] && curl -s -o /dev/null -X DELETE "$META/type-definitions/$tdid" -H 'X-User-Role: Admin' 2>/dev/null || true
   done

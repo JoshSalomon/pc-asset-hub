@@ -22,6 +22,7 @@ type InstanceAttributeValueRepository interface {
 	SetValues(ctx context.Context, values []*models.InstanceAttributeValue) error
 	GetValuesForVersion(ctx context.Context, instanceID string, version int) ([]*models.InstanceAttributeValue, error)
 	DeleteByInstanceID(ctx context.Context, instanceID string) error
+	DeleteByInstanceVersion(ctx context.Context, instanceID string, version int) error
 	RemapAttributeIDs(ctx context.Context, instanceIDs []string, mapping map[string]string) (int64, error)
 }
 

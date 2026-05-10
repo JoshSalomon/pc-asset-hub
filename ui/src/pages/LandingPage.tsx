@@ -62,10 +62,14 @@ export default function LandingPage({ role }: { role: Role }) {
           <GalleryItem>
             <Card
               isClickable
-              onClick={() => navigate('/schema')}
               style={{ cursor: 'pointer' }}
             >
-              <CardHeader>
+              <CardHeader
+                selectableActions={{
+                  onClickAction: () => navigate('/schema'),
+                  selectableActionAriaLabel: 'Navigate to Schema Management',
+                }}
+              >
                 <CardTitle>Entity Types &amp; Model</CardTitle>
               </CardHeader>
               <CardBody>
@@ -101,10 +105,14 @@ export default function LandingPage({ role }: { role: Role }) {
               <GalleryItem key={catalog.id}>
                 <Card
                   isClickable
-                  onClick={() => navigate(`/catalogs/${catalog.name}`)}
                   style={{ cursor: 'pointer' }}
                 >
-                  <CardHeader>
+                  <CardHeader
+                    selectableActions={{
+                      onClickAction: () => navigate(`/catalogs/${catalog.name}`),
+                      selectableActionAriaLabel: `Navigate to catalog ${catalog.name}`,
+                    }}
+                  >
                     <CardTitle>
                       <Icon style={{ marginRight: '0.5rem', verticalAlign: '-0.125em' }}><DatabaseIcon /></Icon>
                       {catalog.name}

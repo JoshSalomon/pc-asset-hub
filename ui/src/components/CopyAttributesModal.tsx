@@ -103,7 +103,7 @@ export default function CopyAttributesModal({
           <Table aria-label="Source attributes" style={{ marginTop: '1rem' }}>
             <Thead>
               <Tr>
-                <Th />
+                <Th screenReaderText="Select attribute" />
                 <Th>Name</Th>
                 <Th>Type</Th>
                 <Th>Description</Th>

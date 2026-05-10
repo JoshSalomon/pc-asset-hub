@@ -26,8 +26,8 @@ cleanup() {
     curl -s -o /dev/null "$API/api/meta/v1/entity-types/$etid" -X DELETE -H 'X-User-Role: Admin' 2>/dev/null || true
   done
   # Clean up imported CVs (created by import with suffixed labels)
-  for prefix in "${P}-imported-v1" "${P}-renamed-v1" "${P}-test-v1" "${P}-contain-v1" "${P}-assoc-v1"; do
-    cvid=$(curl -s "$API/api/meta/v1/catalog-versions" -H 'X-User-Role: Admin' | jq -r ".items[] | select(.version_label | startswith(\"$prefix\")) | .id" 2>/dev/null | head -5)
+  for prefix in "${P}-imported-v1" "${P}-renamed-v1" "${P}-test-v1" "${P}-contain-v1" "${P}-assoc-v1" "${P}-reimport-v1"; do
+    cvid=$(curl -s "$API/api/meta/v1/catalog-versions?limit=100" -H 'X-User-Role: Admin' | jq -r ".items[] | select(.version_label | startswith(\"$prefix\")) | .id" 2>/dev/null | head -5)
     for id in $cvid; do
       curl -s -o /dev/null "$API/api/meta/v1/catalog-versions/$id" -X DELETE -H 'X-User-Role: Admin' 2>/dev/null || true
     done
@@ -38,6 +38,10 @@ cleanup() {
     if [ -n "$etid" ]; then
       curl -s -o /dev/null "$API/api/meta/v1/entity-types/$etid" -X DELETE -H 'X-User-Role: Admin' 2>/dev/null || true
     fi
+  done
+  # Clean up imported type definitions (non-system, prefixed with imp-${P})
+  for tdid in $(curl -s "$API/api/meta/v1/type-definitions?limit=100" -H 'X-User-Role: Admin' | jq -r ".items[] | select(.system == false and (.name | startswith(\"imp-${P}\"))) | .id" 2>/dev/null); do
+    curl -s -o /dev/null "$API/api/meta/v1/type-definitions/$tdid" -X DELETE -H 'X-User-Role: Admin' 2>/dev/null || true
   done
   echo "  Cleaned up test data"
 }

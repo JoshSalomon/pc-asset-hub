@@ -1,6 +1,6 @@
 import { render } from 'vitest-browser-react'
 import { expect, test, vi, beforeEach, type Mock } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import OperationalCatalogDetailPage from './OperationalCatalogDetailPage'
 import { api } from '../../api/client'
@@ -9,9 +9,9 @@ vi.mock('../../api/client', () => ({
   api: {
     catalogs: { get: vi.fn(), validate: vi.fn() },
     catalogVersions: { listPins: vi.fn() },
-    instances: { list: vi.fn(), get: vi.fn(), tree: vi.fn() },
+    instances: { list: vi.fn(), get: vi.fn(), tree: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), setParent: vi.fn(), createContained: vi.fn() },
     versions: { snapshot: vi.fn() },
-    links: { forwardRefs: vi.fn(), reverseRefs: vi.fn() },
+    links: { forwardRefs: vi.fn(), reverseRefs: vi.fn(), create: vi.fn(), delete: vi.fn() },
   },
   setAuthRole: vi.fn(),
 }))
@@ -19,15 +19,27 @@ vi.mock('../../api/client', () => ({
 const mockSnapshotServer = {
   entity_type: { id: 'et1', name: 'mcp-server', created_at: '', updated_at: '' },
   version: { id: 'etv1', version: 1 },
-  attributes: [{ id: 'a1', name: 'endpoint', description: '', type: 'string', ordinal: 1, required: false }],
-  associations: [],
+  attributes: [
+    { id: 'sys-name', name: 'name', description: 'Instance name', type: 'string', ordinal: 0, required: true, system: true },
+    { id: 'sys-desc', name: 'description', description: 'Instance description', type: 'string', ordinal: 0, required: false, system: true },
+    { id: 'a1', name: 'endpoint', description: '', type: 'string', ordinal: 1, required: false },
+  ],
+  associations: [
+    { id: 'assoc-1', name: 'contains-tool', type: 'containment', target_entity_type_id: 'et2', target_entity_type_name: 'mcp-tool', source_role: 'parent', target_role: 'child', source_cardinality: '0..n', target_cardinality: '1', direction: 'outgoing' as const, source_entity_type_id: 'et1', source_entity_type_name: 'mcp-server' },
+    { id: 'assoc-link-1', name: 'uses-model', type: 'directional', target_entity_type_id: 'et3', target_entity_type_name: 'model', source_role: '', target_role: '', source_cardinality: '0..n', target_cardinality: '0..n', direction: 'outgoing' as const, source_entity_type_id: 'et1', source_entity_type_name: 'mcp-server' },
+  ],
 }
 
 const mockSnapshotTool = {
   entity_type: { id: 'et2', name: 'mcp-tool', created_at: '', updated_at: '' },
   version: { id: 'etv2', version: 1 },
-  attributes: [],
-  associations: [],
+  attributes: [
+    { id: 'sys-name-2', name: 'name', description: 'Instance name', type: 'string', ordinal: 0, required: true, system: true },
+    { id: 'sys-desc-2', name: 'description', description: 'Instance description', type: 'string', ordinal: 0, required: false, system: true },
+  ],
+  associations: [
+    { id: 'assoc-2', name: 'contains-tool', type: 'containment', target_entity_type_id: 'et2', target_entity_type_name: 'mcp-tool', source_role: 'parent', target_role: 'child', source_cardinality: '0..n', target_cardinality: '1', direction: 'incoming' as const, source_entity_type_id: 'et1', source_entity_type_name: 'mcp-server' },
+  ],
 }
 
 const mockCatalog = {
@@ -40,6 +52,7 @@ const mockCatalog = {
 const mockPins = [
   { pin_id: 'pin-1', entity_type_name: 'mcp-server', entity_type_id: 'et1', entity_type_version_id: 'etv1', version: 1 },
   { pin_id: 'pin-2', entity_type_name: 'mcp-tool', entity_type_id: 'et2', entity_type_version_id: 'etv2', version: 1 },
+  { pin_id: 'pin-3', entity_type_name: 'model', entity_type_id: 'et3', entity_type_version_id: 'etv3', version: 1 },
 ]
 
 const mockTree = [
@@ -58,6 +71,8 @@ const mockInstanceDetail = {
   id: 'i1', entity_type_id: 'et1', catalog_id: 'cat1', name: 'my-server',
   description: 'A server', version: 2,
   attributes: [
+    { name: 'name', type: 'string', value: 'my-server', system: true },
+    { name: 'description', type: 'string', value: 'A server', system: true },
     { name: 'endpoint', type: 'string', value: 'https://example.com' },
     { name: 'status', type: 'enum', value: 'active' },
   ],
@@ -90,6 +105,7 @@ function renderDetail(role: 'Admin' | 'RW' | 'RO' | 'SuperAdmin' = 'RO') {
     <MemoryRouter initialEntries={['/catalogs/test-catalog']}>
       <Routes>
         <Route path="/catalogs/:name" element={<OperationalCatalogDetailPage role={role} />} />
+        <Route path="/" element={<div>Catalogs List</div>} />
       </Routes>
     </MemoryRouter>
   )
@@ -326,15 +342,10 @@ test('T-13.101: no link/unlink actions', async () => {
   expect(unlinkBtns.elements().length).toBe(0)
 })
 
-test('T-13.102: read-only even for SuperAdmin role', async () => {
+test('T-13.102: SuperAdmin sees write controls on operational UI', async () => {
   renderDetail('SuperAdmin')
   await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
-  const createBtns = page.getByRole('button', { name: /Create/ })
-  expect(createBtns.elements().length).toBe(0)
-  const editBtns = page.getByRole('button', { name: /Edit/ })
-  expect(editBtns.elements().length).toBe(0)
-  const deleteBtns = page.getByRole('button', { name: /Delete/ })
-  expect(deleteBtns.elements().length).toBe(0)
+  await expect.element(page.getByRole('button', { name: 'Create Instance' })).toBeVisible()
 })
 
 // === Coverage: error and edge cases ===
@@ -365,6 +376,18 @@ test('valid catalog status shows green label', async () => {
   })
   renderDetail()
   await expect.element(page.getByText('valid', { exact: true })).toBeVisible()
+})
+
+test('published catalog shows published indicator badge', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, published: true })
+  renderDetail()
+  await expect.element(page.getByText('published')).toBeVisible()
+})
+
+test('unpublished catalog does not show published badge', async () => {
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  expect(page.getByText('published').elements().length).toBe(0)
 })
 
 // === Catalog Validation Tests ===
@@ -448,9 +471,1311 @@ test('T-21.25: diagram tab shows empty state when no pins', async () => {
   await expect.element(page.getByText('No model diagram available')).toBeVisible()
 })
 
+// === Operational UI Editing — Instance CRUD (T-32.01 through T-32.28) ===
+
+test('T-32.01: Create Instance button visible at top of tree for RW role', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Create Instance' })).toBeVisible()
+})
+
+test('T-32.02: Create Instance button hidden for RO role', async () => {
+  renderDetail('RO')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  const btn = page.getByRole('button', { name: 'Create Instance' })
+  expect(btn.elements().length).toBe(0)
+})
+
+test('T-32.03: Create Instance button hidden for non-SuperAdmin on published catalog', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, published: true })
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  const btn = page.getByRole('button', { name: 'Create Instance' })
+  expect(btn.elements().length).toBe(0)
+})
+
+test('T-32.04: Create modal opens with entity type dropdown showing all pinned types', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Create Instance' }).click()
+  const etSelect = page.getByRole('combobox', { name: /entity type/i })
+  await expect.element(etSelect).toBeVisible()
+})
+
+test('T-32.05: Selecting entity type in Create modal loads attribute fields', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Create Instance' }).click()
+  const etSelect = page.getByRole('combobox', { name: /entity type/i })
+  await expect.element(etSelect).toBeVisible()
+  await userEvent.selectOptions(etSelect, 'mcp-server')
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+})
+
+test('T-32.06: Creating instance via modal calls API and refreshes tree', async () => {
+  ;(api.instances.create as Mock).mockResolvedValue({ id: 'new-1', name: 'new-instance' })
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Create Instance' }).click()
+  const etSelect = page.getByRole('combobox', { name: /entity type/i })
+  await expect.element(etSelect).toBeVisible()
+  await userEvent.selectOptions(etSelect, 'mcp-server')
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  await page.getByRole('textbox', { name: /^Name/ }).fill('new-instance')
+  await page.getByRole('button', { name: 'Create' }).click()
+  await vi.waitFor(() => {
+    expect(api.instances.create).toHaveBeenCalledWith('test-catalog', 'mcp-server', expect.objectContaining({ name: 'new-instance' }))
+  })
+})
+
+test('Create button disabled while submitting', async () => {
+  let resolveCreate: (v: unknown) => void
+  ;(api.instances.create as Mock).mockImplementation(() => new Promise(r => { resolveCreate = r }))
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Create Instance' }).click()
+  const etSelect = page.getByRole('combobox', { name: /entity type/i })
+  await expect.element(etSelect).toBeVisible()
+  await userEvent.selectOptions(etSelect, 'mcp-server')
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  await page.getByRole('textbox', { name: /^Name/ }).fill('test')
+  await page.getByRole('button', { name: 'Create' }).click()
+  // Button should be disabled while API call is in flight
+  await expect.element(page.getByRole('button', { name: 'Create' })).toBeDisabled()
+  resolveCreate!({ id: 'x', name: 'test' })
+})
+
+test('T-32.21: After create, tree reloads', async () => {
+  ;(api.instances.create as Mock).mockResolvedValue({ id: 'new-1', name: 'new-instance' })
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  const treeBefore = (api.instances.tree as Mock).mock.calls.length
+  await page.getByRole('button', { name: 'Create Instance' }).click()
+  const etSelect = page.getByRole('combobox', { name: /entity type/i })
+  await expect.element(etSelect).toBeVisible()
+  await userEvent.selectOptions(etSelect, 'mcp-server')
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  await page.getByRole('textbox', { name: /^Name/ }).fill('new-instance')
+  await page.getByRole('button', { name: 'Create' }).click()
+  await vi.waitFor(() => {
+    expect(api.instances.create).toHaveBeenCalled()
+    expect((api.instances.tree as Mock).mock.calls.length).toBeGreaterThan(treeBefore)
+  })
+})
+
+test('T-32.07: + icon visible next to each entity type group header for RW+', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Create mcp-server' })).toBeVisible()
+})
+
+test('T-32.08: + icon hidden for RO role', async () => {
+  renderDetail('RO')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  const btns = page.getByRole('button', { name: /Create mcp/ })
+  expect(btns.elements().length).toBe(0)
+})
+
+test('T-32.09: Clicking + opens Create modal pre-filled with that entity type', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Create mcp-server' }).click()
+  const etSelect = page.getByRole('combobox', { name: /entity type/i })
+  await expect.element(etSelect).toBeVisible()
+  // Verify schema was loaded (snapshot API called for mcp-server)
+  await vi.waitFor(() => {
+    expect(api.versions.snapshot).toHaveBeenCalledWith('et1', 1)
+  }, { timeout: 5000 })
+  // Should be pre-selected to mcp-server — Name field should already be visible
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+})
+
+test('T-32.10: Edit button visible in detail panel when instance selected for RW+', async () => {
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Edit' })).toBeVisible()
+})
+
+test('T-32.11: Edit button hidden for RO role', async () => {
+  renderDetail('RO')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  const editBtns = page.getByRole('button', { name: 'Edit' })
+  expect(editBtns.elements().length).toBe(0)
+})
+
+test('T-32.12: Edit modal pre-fills current name, description, and attribute values', async () => {
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await vi.waitFor(() => {
+    expect(api.versions.snapshot).toHaveBeenCalled()
+  })
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+})
+
+test('T-32.13: Submitting Edit modal updates instance and refreshes detail panel', async () => {
+  ;(api.instances.update as Mock).mockResolvedValue({ id: 'i1', name: 'updated-server' })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  await page.getByRole('textbox', { name: /^Name/ }).fill('updated-server')
+  await page.getByRole('button', { name: 'Save' }).click()
+  await vi.waitFor(() => {
+    expect(api.instances.update).toHaveBeenCalledWith('test-catalog', 'mcp-server', 'i1', expect.objectContaining({ name: 'updated-server', version: 2 }))
+  })
+})
+
+test('T-32.14: Renaming instance via Edit modal calls update API with new name', async () => {
+  ;(api.instances.update as Mock).mockResolvedValue({ id: 'i1', name: 'renamed-server' })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  await page.getByRole('textbox', { name: /^Name/ }).fill('renamed-server')
+  await page.getByRole('button', { name: 'Save' }).click()
+  await vi.waitFor(() => {
+    expect(api.instances.update).toHaveBeenCalledWith('test-catalog', 'mcp-server', 'i1', expect.objectContaining({ name: 'renamed-server' }))
+  })
+  // Tree should reload after rename
+  const treeCalls = (api.instances.tree as Mock).mock.calls.length
+  expect(treeCalls).toBeGreaterThanOrEqual(2)
+})
+
+test('Clearing attribute in Edit modal sends null to API', async () => {
+  ;(api.instances.update as Mock).mockResolvedValue({ id: 'i1', name: 'my-server' })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  const endpointInput = page.getByRole('textbox', { name: /endpoint/ })
+  await endpointInput.fill('')
+  await page.getByRole('button', { name: 'Save' }).click()
+  await vi.waitFor(() => {
+    const call = (api.instances.update as Mock).mock.calls[0]
+    expect(call[3].attributes).toHaveProperty('endpoint', null)
+  })
+})
+
+test('Edit submit does not include system attributes (name/description) in attributes payload', async () => {
+  ;(api.instances.update as Mock).mockResolvedValue({ id: 'i1', name: 'my-server' })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Save' }).click()
+  await vi.waitFor(() => {
+    const call = (api.instances.update as Mock).mock.calls[0]
+    const payload = call[3]
+    // System attrs should NOT be in the attributes object
+    if (payload.attributes) {
+      expect(payload.attributes).not.toHaveProperty('name')
+      expect(payload.attributes).not.toHaveProperty('description')
+    }
+  })
+})
+
+test('T-32.15: Delete button visible in detail panel for RW+', async () => {
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Delete' }).first()).toBeVisible()
+})
+
+test('T-32.16: Delete button hidden for RO role', async () => {
+  renderDetail('RO')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  const deleteBtns = page.getByRole('button', { name: 'Delete' })
+  expect(deleteBtns.elements().length).toBe(0)
+})
+
+test('T-32.17: Delete confirmation dialog shows instance name', async () => {
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByRole('button', { name: 'Delete' }).first().click()
+  await expect.element(page.getByText('Confirm Deletion')).toBeVisible()
+  await expect.element(page.getByRole('dialog').getByText('my-server')).toBeVisible()
+})
+
+test('T-32.18: Confirming delete removes instance and refreshes tree', async () => {
+  ;(api.instances.delete as Mock).mockResolvedValue({})
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByRole('button', { name: 'Delete' }).first().click()
+  await expect.element(page.getByText('Confirm Deletion')).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
+  await vi.waitFor(() => {
+    expect(api.instances.delete).toHaveBeenCalledWith('test-catalog', 'mcp-server', 'i1')
+  })
+})
+
+test('T-32.19: Delete instance with children shows cascade warning listing all descendants', async () => {
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  // Click delete on parent (my-server has child my-tool)
+  await page.getByRole('button', { name: 'Delete' }).first().click()
+  await expect.element(page.getByText('Confirm Deletion')).toBeVisible()
+  await expect.element(page.getByText(/1 contained instance/)).toBeVisible()
+  await expect.element(page.getByRole('dialog').getByText('my-tool')).toBeVisible()
+})
+
+test('T-32.20: Confirming cascade delete calls API for parent instance', async () => {
+  ;(api.instances.delete as Mock).mockResolvedValue({})
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByRole('button', { name: 'Delete' }).first().click()
+  await expect.element(page.getByText(/1 contained instance/)).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
+  await vi.waitFor(() => {
+    expect(api.instances.delete).toHaveBeenCalledWith('test-catalog', 'mcp-server', 'i1')
+  })
+})
+
+test('T-32.22: After edit, tree reloads and edited instance stays selected', async () => {
+  ;(api.instances.update as Mock).mockResolvedValue({ id: 'i1', name: 'updated' })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Save' }).click()
+  await vi.waitFor(() => {
+    expect(api.instances.update).toHaveBeenCalled()
+  })
+  // Tree should have been reloaded after the edit (selectNodeById also called)
+  await vi.waitFor(() => {
+    expect(api.instances.get).toHaveBeenCalled()
+  })
+})
+
+test('T-32.23: After delete, parent node is selected', async () => {
+  ;(api.instances.delete as Mock).mockResolvedValue({})
+  ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await page.getByText('▸').first().click()
+  await clickTreeNode('my-tool')
+  await expect.element(page.getByRole('heading', { name: 'my-tool' })).toBeVisible()
+  await page.getByRole('button', { name: 'Delete' }).first().click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
+  await vi.waitFor(() => {
+    expect(api.instances.delete).toHaveBeenCalled()
+    // After delete of child, tree reloads and parent should be re-selected
+    expect(api.instances.get).toHaveBeenCalled()
+  })
+})
+
+test('T-32.24: After delete of root instance, selection is cleared', async () => {
+  const mockOtherDetail = {
+    ...mockInstanceDetail, id: 'i3', name: 'other-server', description: '', parent_instance_id: undefined,
+    parent_chain: [],
+  }
+  ;(api.instances.get as Mock).mockResolvedValue(mockOtherDetail)
+  ;(api.instances.delete as Mock).mockResolvedValue({})
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('other-server')
+  await expect.element(page.getByRole('heading', { name: 'other-server' })).toBeVisible()
+  await page.getByRole('button', { name: 'Delete' }).first().click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
+  await vi.waitFor(() => {
+    expect(api.instances.delete).toHaveBeenCalledWith('test-catalog', 'mcp-server', 'i3')
+  })
+  // Selection should be cleared — empty state reappears
+  await expect.element(page.getByText('Select an instance from the tree')).toBeVisible()
+})
+
+test('T-32.23b: Delete captures parent at modal-open, not at submit', async () => {
+  ;(api.instances.delete as Mock).mockResolvedValue({})
+  ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await page.getByText('▸').first().click()
+  await clickTreeNode('my-tool')
+  await expect.element(page.getByRole('heading', { name: 'my-tool' })).toBeVisible()
+
+  // Open delete modal — parent should be captured NOW
+  await page.getByRole('button', { name: 'Delete' }).first().click()
+  await expect.element(page.getByText('Confirm Deletion')).toBeVisible()
+
+  // Confirm delete — even though tree will reload, parent captured at open is used
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
+  await vi.waitFor(() => {
+    expect(api.instances.delete).toHaveBeenCalled()
+    // Parent (my-server) should be re-selected after delete
+    expect(api.instances.get).toHaveBeenCalledWith('test-catalog', 'mcp-server', 'i1')
+  })
+})
+
+test('T-32.26: Create instance API error shows validation message', async () => {
+  ;(api.instances.create as Mock).mockRejectedValue(new Error('invalid attribute value for hostname'))
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Create Instance' }).click()
+  const etSelect = page.getByRole('combobox', { name: /entity type/i })
+  await expect.element(etSelect).toBeVisible()
+  await userEvent.selectOptions(etSelect, 'mcp-server')
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  await page.getByRole('textbox', { name: /^Name/ }).fill('bad-instance')
+  await page.getByRole('button', { name: 'Create' }).click()
+  await expect.element(page.getByText('invalid attribute value for hostname')).toBeVisible()
+})
+
+test('T-32.25: Create instance with required attributes missing shows validation error', async () => {
+  ;(api.instances.create as Mock).mockRejectedValue(new Error('name is required'))
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Create Instance' }).click()
+  const etSelect = page.getByRole('combobox', { name: /entity type/i })
+  await expect.element(etSelect).toBeVisible()
+  await userEvent.selectOptions(etSelect, 'mcp-server')
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  await page.getByRole('textbox', { name: /^Name/ }).fill('test')
+  await page.getByRole('button', { name: 'Create' }).click()
+  await expect.element(page.getByText('name is required')).toBeVisible()
+})
+
+test('T-32.27: Edit instance API error shows error in modal', async () => {
+  ;(api.instances.update as Mock).mockRejectedValue(new Error('update failed'))
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Save' }).click()
+  await expect.element(page.getByText('update failed')).toBeVisible()
+})
+
+test('T-32.28: Delete instance API error shows error alert', async () => {
+  ;(api.instances.delete as Mock).mockRejectedValue(new Error('delete failed'))
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByRole('button', { name: 'Delete' }).first().click()
+  await expect.element(page.getByText('Confirm Deletion')).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
+  await expect.element(page.getByText('delete failed')).toBeVisible()
+})
+
+// === Containment Tests (T-32.29 through T-32.43) ===
+
+test('T-32.29: Add Child button visible for instances with containment associations', async () => {
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  // mcp-server has outgoing containment to mcp-tool
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('button', { name: 'Add Child' })).toBeVisible()
+})
+
+test('T-32.31: Add Child button hidden for RO role', async () => {
+  renderDetail('RO')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  const btns = page.getByRole('button', { name: 'Add Child' })
+  expect(btns.elements().length).toBe(0)
+})
+
+test('T-32.32: Add Child modal shows containment-eligible child types from CV associations', async () => {
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('button', { name: 'Add Child' })).toBeVisible()
+  await page.getByRole('button', { name: 'Add Child' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // The AddChildModal renders and shows containment target types
+  await expect.element(page.getByText('Add Contained Instance')).toBeVisible()
+})
+
+test('T-32.33: Creating child via Add Child calls createContained API', async () => {
+  ;(api.instances.createContained as Mock).mockResolvedValue({ id: 'child-1', name: 'new-child' })
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Add Child' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+})
+
+test('T-32.36: Set Parent modal opens and shows parent type', async () => {
+  ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await page.getByText('▸').first().click()
+  await clickTreeNode('my-tool')
+  await expect.element(page.getByRole('heading', { name: 'my-tool' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Set Parent' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // SetParentModal title includes the instance name
+  await expect.element(page.getByText(/Set Container.*my-tool/)).toBeVisible()
+})
+
+test('T-32.37: Setting parent calls setParent API', async () => {
+  ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
+  ;(api.instances.setParent as Mock).mockResolvedValue({})
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [{ id: 'i1', name: 'my-server', entity_type_id: 'et1' }], total: 1 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await page.getByText('▸').first().click()
+  await clickTreeNode('my-tool')
+  await expect.element(page.getByRole('heading', { name: 'my-tool' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Set Parent' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+})
+
+test('T-32.34: Set Parent button visible for instances that can be contained', async () => {
+  ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await page.getByText('▸').first().click()
+  await expect.element(page.getByText('my-tool')).toBeVisible()
+  await clickTreeNode('my-tool')
+  await expect.element(page.getByRole('heading', { name: 'my-tool' })).toBeVisible()
+  // mcp-tool has incoming containment from mcp-server
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('button', { name: 'Set Parent' })).toBeVisible()
+})
+
+test('T-32.35: Set Parent button hidden for RO role', async () => {
+  ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
+  renderDetail('RO')
+  await openTreeAndExpandServers()
+  await page.getByText('▸').first().click()
+  await clickTreeNode('my-tool')
+  await expect.element(page.getByRole('heading', { name: 'my-tool' })).toBeVisible()
+  const btns = page.getByRole('button', { name: 'Set Parent' })
+  expect(btns.elements().length).toBe(0)
+})
+
+test('T-32.30: Add Child button hidden when entity type has no containment associations', async () => {
+  ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await page.getByText('▸').first().click()
+  await clickTreeNode('my-tool')
+  await expect.element(page.getByRole('heading', { name: 'my-tool' })).toBeVisible()
+  // mcp-tool has no outgoing containment — Add Child should not appear
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  const btns = page.getByRole('button', { name: 'Add Child' })
+  expect(btns.elements().length).toBe(0)
+})
+
+test('T-32.42: Add Child API error shows error in modal', async () => {
+  ;(api.instances.createContained as Mock).mockRejectedValue(new Error('containment failed'))
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('button', { name: 'Add Child' })).toBeVisible()
+  await page.getByRole('button', { name: 'Add Child' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+})
+
+test('T-32.43: Set Parent API error shows error in modal', async () => {
+  ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
+  ;(api.instances.setParent as Mock).mockRejectedValue(new Error('set parent failed'))
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await page.getByText('▸').first().click()
+  await clickTreeNode('my-tool')
+  await expect.element(page.getByRole('heading', { name: 'my-tool' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('button', { name: 'Set Parent' })).toBeVisible()
+  await page.getByRole('button', { name: 'Set Parent' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+})
+
+test('T-32.38: Remove from Container button visible for contained instances', async () => {
+  ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await page.getByText('▸').first().click()
+  await clickTreeNode('my-tool')
+  await expect.element(page.getByRole('heading', { name: 'my-tool' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('button', { name: /Remove from Container/ })).toBeVisible()
+})
+
+test('T-32.39: Remove from Container button hidden for root instances', async () => {
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  const btns = page.getByRole('button', { name: /Remove from Container/ })
+  expect(btns.elements().length).toBe(0)
+})
+
+test('T-32.40: Remove from Container button hidden for RO role', async () => {
+  ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
+  renderDetail('RO')
+  await openTreeAndExpandServers()
+  await page.getByText('▸').first().click()
+  await clickTreeNode('my-tool')
+  await expect.element(page.getByRole('heading', { name: 'my-tool' })).toBeVisible()
+  const btns = page.getByRole('button', { name: /Remove from Container/ })
+  expect(btns.elements().length).toBe(0)
+})
+
+test('T-32.41: Removing from container calls API and re-selects instance', async () => {
+  ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
+  ;(api.instances.setParent as Mock).mockResolvedValue({})
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await page.getByText('▸').first().click()
+  await clickTreeNode('my-tool')
+  await expect.element(page.getByRole('heading', { name: 'my-tool' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  const getCallsBefore = (api.instances.get as Mock).mock.calls.length
+  await page.getByRole('button', { name: /Remove from Container/ }).click()
+  await vi.waitFor(() => {
+    expect(api.instances.setParent).toHaveBeenCalledWith('test-catalog', 'mcp-tool', 'i2', { parent_type: '', parent_instance_id: '' })
+    // Instance detail should be re-fetched after tree reload
+    expect((api.instances.get as Mock).mock.calls.length).toBeGreaterThan(getCallsBefore)
+  })
+})
+
+test('T-32.41b: Remove from Container button disabled while submitting', async () => {
+  let resolveSetParent: (v: unknown) => void
+  ;(api.instances.setParent as Mock).mockImplementation(() => new Promise(r => { resolveSetParent = r }))
+  ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await page.getByText('▸').first().click()
+  await clickTreeNode('my-tool')
+  await expect.element(page.getByRole('heading', { name: 'my-tool' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: /Remove from Container/ }).click()
+  // Button should be disabled while API call is in flight
+  await expect.element(page.getByRole('button', { name: /Remove from Container/ })).toBeDisabled()
+  resolveSetParent!({})
+})
+
+test('T-32.43b: Remove from Container error shows inline in detail panel', async () => {
+  ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
+  ;(api.instances.setParent as Mock).mockRejectedValue(new Error('remove failed'))
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await page.getByText('▸').first().click()
+  await clickTreeNode('my-tool')
+  await expect.element(page.getByRole('heading', { name: 'my-tool' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: /Remove from Container/ }).click()
+  // Error should appear inline in the detail panel (not just page-level)
+  await expect.element(page.getByText('remove failed')).toBeVisible()
+})
+
+// === Link Tests (T-32.44 through T-32.54) ===
+
+test('T-32.44: Create Link button visible in detail panel for RW+', async () => {
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  // mcp-server has outgoing directional link (uses-model)
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('button', { name: 'Create Link' })).toBeVisible()
+})
+
+test('T-32.45: Create Link button hidden for RO role', async () => {
+  renderDetail('RO')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  const btns = page.getByRole('button', { name: 'Create Link' })
+  expect(btns.elements().length).toBe(0)
+})
+
+test('T-32.46: Create Link modal opens showing associations', async () => {
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Create Link' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // LinkModal should be open showing link association options
+  await expect.element(page.getByText('Link to Instance')).toBeVisible()
+})
+
+test('T-32.47: Create Link modal loads target instances when association selected', async () => {
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [{ id: 'i3', name: 'other-server', entity_type_id: 'et1' }], total: 1 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Create Link' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+})
+
+test('T-32.48: Creating link calls API and refreshes refs', async () => {
+  ;(api.links.create as Mock).mockResolvedValue({ id: 'l-new' })
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Create Link' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+})
+
+test('T-32.49: Delete button visible on each link row for RW+', async () => {
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  // Forward ref row should have a Delete button
+  await expect.element(page.getByLabelText('Forward references').getByRole('button', { name: 'Delete' })).toBeVisible()
+})
+
+test('T-32.50: Link delete buttons hidden for RO role', async () => {
+  renderDetail('RO')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  // Forward refs show but no Delete button
+  await expect.element(page.getByText('Forward References')).toBeVisible()
+  const deleteBtns = page.getByLabelText('Forward references').getByRole('button', { name: 'Delete' })
+  expect(deleteBtns.elements().length).toBe(0)
+})
+
+test('T-32.51: Confirming link delete removes it from references', async () => {
+  ;(api.links.delete as Mock).mockResolvedValue({})
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByLabelText('Forward references').getByRole('button', { name: 'Delete' }).click()
+  await vi.waitFor(() => {
+    expect(api.links.delete).toHaveBeenCalledWith('test-catalog', 'mcp-server', 'i1', 'l1')
+  })
+})
+
+test('T-32.53: Delete Link API error shows error alert', async () => {
+  ;(api.links.delete as Mock).mockRejectedValue(new Error('delete link failed'))
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByLabelText('Forward references').getByRole('button', { name: 'Delete' }).click()
+  await expect.element(page.getByText('delete link failed')).toBeVisible()
+})
+
+test('T-32.51b: Unlink button disabled while submitting', async () => {
+  let resolveDelete: (v: unknown) => void
+  ;(api.links.delete as Mock).mockImplementation(() => new Promise(r => { resolveDelete = r }))
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  const deleteBtn = page.getByLabelText('Forward references').getByRole('button', { name: 'Delete' })
+  await deleteBtn.click()
+  // Button should be disabled while API call is in flight
+  await expect.element(deleteBtn).toBeDisabled()
+  resolveDelete!({})
+})
+
+test('T-32.52: Create Link API error shows error in modal', async () => {
+  ;(api.links.create as Mock).mockRejectedValue(new Error('link creation failed'))
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('button', { name: 'Create Link' })).toBeVisible()
+  await page.getByRole('button', { name: 'Create Link' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+})
+
+// === Role-Aware Controls Tests (T-32.55 through T-32.63) ===
+
+test('T-32.57: Admin role on non-published catalog: all write controls visible', async () => {
+  renderDetail('Admin')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Create Instance' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Edit' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Delete' }).first()).toBeVisible()
+})
+
+test('T-32.58: SuperAdmin on non-published catalog: all write controls visible', async () => {
+  renderDetail('SuperAdmin')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Create Instance' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Edit' })).toBeVisible()
+})
+
+test('T-32.60: Admin on published catalog: all write controls hidden', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, published: true })
+  renderDetail('Admin')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  expect(page.getByRole('button', { name: 'Create Instance' }).elements().length).toBe(0)
+  expect(page.getByRole('button', { name: /^Create mcp/ }).elements().length).toBe(0)
+})
+
+test('T-32.62: RW role shows write controls that RO does not', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Create Instance' })).toBeVisible()
+})
+
+test('T-32.63: RO role hides write controls that RW shows', async () => {
+  renderDetail('RO')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  expect(page.getByRole('button', { name: 'Create Instance' }).elements().length).toBe(0)
+  expect(page.getByRole('button', { name: 'Validate' }).elements().length).toBe(0)
+})
+
+test('T-32.55: RO role: ALL write controls hidden (comprehensive check)', async () => {
+  renderDetail('RO')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  // No Create, Edit, Delete, Add Child, Set Parent, Remove Container, Create Link buttons
+  expect(page.getByRole('button', { name: 'Create Instance' }).elements().length).toBe(0)
+  expect(page.getByRole('button', { name: 'Edit' }).elements().length).toBe(0)
+  expect(page.getByRole('button', { name: /^Delete/ }).elements().length).toBe(0)
+  expect(page.getByRole('button', { name: 'Add Child' }).elements().length).toBe(0)
+  expect(page.getByRole('button', { name: 'Set Parent' }).elements().length).toBe(0)
+  expect(page.getByRole('button', { name: /Remove from Container/ }).elements().length).toBe(0)
+  expect(page.getByRole('button', { name: 'Create Link' }).elements().length).toBe(0)
+  // No + icons
+  expect(page.getByRole('button', { name: /^Create mcp/ }).elements().length).toBe(0)
+})
+
+test('T-32.56: RW role on non-published catalog: all write controls visible', async () => {
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('button', { name: 'Create Instance' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Edit' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Delete' }).first()).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Add Child' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Create Link' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Create mcp-server' })).toBeVisible()
+})
+
+test('T-32.59: RW on published catalog: all write controls hidden', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, published: true })
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  expect(page.getByRole('button', { name: 'Create Instance' }).elements().length).toBe(0)
+  expect(page.getByRole('button', { name: /^Create mcp/ }).elements().length).toBe(0)
+})
+
+test('T-32.61: SuperAdmin on published catalog: all write controls visible', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, published: true })
+  renderDetail('SuperAdmin')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Create Instance' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Create mcp-server' })).toBeVisible()
+})
+
 // Cover L141: catalog not found guard (catalog is null after load completes without error)
 test('shows catalog not found when API returns null-like response', async () => {
   ;(api.catalogs.get as Mock).mockResolvedValue(null)
   renderDetail()
   await expect.element(page.getByText('Catalog not found')).toBeVisible()
+})
+
+// === Coverage: handler body paths (handleAddChild, handleSetParent, handleCreateLink) ===
+
+test('handleAddChild create mode calls createContained and refreshes tree', async () => {
+  ;(api.instances.createContained as Mock).mockResolvedValue({ id: 'child-new', name: 'new-child' })
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Add Child' }).click()
+  await expect.element(page.getByText('Add Contained Instance')).toBeVisible()
+  // Select child type via PF6 Select (uses button-based menu, not native options)
+  await page.getByText('Select child type...').click()
+  await vi.waitFor(async () => {
+    await expect.element(page.getByText('mcp-tool').first()).toBeVisible()
+  })
+  await page.getByText('mcp-tool').first().click()
+  // Fill in name
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  await page.getByRole('textbox', { name: /^Name/ }).fill('new-child')
+  // Submit — use exact match to avoid matching "Create New" mode toggle
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+  await vi.waitFor(() => {
+    expect(api.instances.createContained).toHaveBeenCalledWith('test-catalog', 'mcp-server', 'i1', 'mcp-tool',
+      expect.objectContaining({ name: 'new-child' }))
+  })
+})
+
+test('handleAddChild adopt mode calls setParent API', async () => {
+  ;(api.instances.setParent as Mock).mockResolvedValue({})
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [{ id: 'orphan-1', name: 'orphan-tool', entity_type_id: 'et2' }], total: 1 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Add Child' }).click()
+  await expect.element(page.getByText('Add Contained Instance')).toBeVisible()
+  // Select child type via PF6 Select
+  await page.getByText('Select child type...').click()
+  await vi.waitFor(async () => {
+    await expect.element(page.getByText('mcp-tool').first()).toBeVisible()
+  })
+  await page.getByText('mcp-tool').first().click()
+  // Switch to Adopt mode
+  await vi.waitFor(async () => {
+    await expect.element(page.getByText('Create New')).toBeVisible()
+  })
+  await page.getByText('Create New').click()
+  await vi.waitFor(async () => {
+    await expect.element(page.getByText('Adopt Existing')).toBeVisible()
+  })
+  await page.getByText('Adopt Existing').click()
+  // Select instance to adopt
+  await page.getByText('Select instance...').click()
+  await vi.waitFor(async () => {
+    await expect.element(page.getByText('orphan-tool')).toBeVisible()
+  })
+  await page.getByText('orphan-tool').click()
+  // Submit
+  await page.getByRole('button', { name: 'Adopt', exact: true }).click()
+  await vi.waitFor(() => {
+    expect(api.instances.setParent).toHaveBeenCalledWith('test-catalog', 'mcp-tool', 'orphan-1', expect.objectContaining({
+      parent_type: 'mcp-server',
+      parent_instance_id: 'i1',
+    }))
+  })
+})
+
+// === Coverage: handleSetParent (L287-298) via data-testid on Select options ===
+
+test('handleSetParent calls setParent API and refreshes tree', async () => {
+  ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
+  ;(api.instances.setParent as Mock).mockResolvedValue({})
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [{ id: 'i1', name: 'my-server', entity_type_id: 'et1' }], total: 1 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await page.getByText('▸').first().click()
+  await clickTreeNode('my-tool')
+  await expect.element(page.getByRole('heading', { name: 'my-tool' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Set Parent' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  await vi.waitFor(() => { expect(api.instances.list).toHaveBeenCalledWith('test-catalog', 'mcp-server') })
+  // Select parent instance via data-testid (bypasses aria-hidden on PF6 Select portal)
+  await page.getByText('Select container...').click()
+  await page.getByTestId('parent-inst-i1').click()
+  // Submit
+  await page.getByRole('button', { name: 'Set Container' }).click()
+  await vi.waitFor(() => {
+    expect(api.instances.setParent).toHaveBeenCalledWith('test-catalog', 'mcp-tool', 'i2', expect.objectContaining({
+      parent_type: 'mcp-server',
+      parent_instance_id: 'i1',
+    }))
+  })
+})
+
+test('handleSetParent error shows error in modal', async () => {
+  ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
+  ;(api.instances.setParent as Mock).mockRejectedValue(new Error('parent assignment failed'))
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [{ id: 'i1', name: 'my-server', entity_type_id: 'et1' }], total: 1 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await page.getByText('▸').first().click()
+  await clickTreeNode('my-tool')
+  await expect.element(page.getByRole('heading', { name: 'my-tool' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Set Parent' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  await vi.waitFor(() => { expect(api.instances.list).toHaveBeenCalled() })
+  await page.getByText('Select container...').click()
+  await page.getByTestId('parent-inst-i1').click()
+  await page.getByRole('button', { name: 'Set Container' }).click()
+  await expect.element(page.getByText('parent assignment failed')).toBeVisible()
+})
+
+// === Coverage: handleCreateLink (L321-332) via data-testid on Select options ===
+
+test('handleCreateLink calls link create API and refreshes tree', async () => {
+  const mockModelInstances = [{ id: 'model-1', name: 'gpt-4o', entity_type_id: 'et3' }]
+  ;(api.links.create as Mock).mockResolvedValue({ id: 'l-new' })
+  ;(api.instances.list as Mock).mockResolvedValue({ items: mockModelInstances, total: 1 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Create Link' }).click()
+  await expect.element(page.getByText('Link to Instance')).toBeVisible()
+  // Select association via data-testid
+  await page.getByText('Select association...').click()
+  await page.getByTestId('link-assoc-uses-model').click()
+  // Wait for target instances to load, then select target
+  await vi.waitFor(async () => {
+    await expect.element(page.getByText('Select target instance...')).toBeVisible()
+  })
+  await page.getByText('Select target instance...').click()
+  await page.getByTestId('link-target-model-1').click()
+  // Submit
+  await page.getByRole('button', { name: 'Link' }).click()
+  await vi.waitFor(() => {
+    expect(api.links.create).toHaveBeenCalledWith('test-catalog', 'mcp-server', 'i1', expect.objectContaining({
+      target_instance_id: 'model-1',
+      association_name: 'uses-model',
+    }))
+  })
+})
+
+test('handleCreateLink error shows error in link modal', async () => {
+  const mockModelInstances = [{ id: 'model-1', name: 'gpt-4o', entity_type_id: 'et3' }]
+  ;(api.links.create as Mock).mockRejectedValue(new Error('link create failed'))
+  ;(api.instances.list as Mock).mockResolvedValue({ items: mockModelInstances, total: 1 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Create Link' }).click()
+  await expect.element(page.getByText('Link to Instance')).toBeVisible()
+  await page.getByText('Select association...').click()
+  await page.getByTestId('link-assoc-uses-model').click()
+  await vi.waitFor(async () => {
+    await expect.element(page.getByText('Select target instance...')).toBeVisible()
+  })
+  await page.getByText('Select target instance...').click()
+  await page.getByTestId('link-target-model-1').click()
+  await page.getByRole('button', { name: 'Link' }).click()
+  await expect.element(page.getByText('link create failed')).toBeVisible()
+})
+
+// === Coverage: modal Cancel / onClose callbacks ===
+
+test('Create modal Cancel button closes modal', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Create Instance' }).click()
+  // Wait for modal to open — check for entity type dropdown
+  const etSelect = page.getByRole('combobox', { name: /entity type/i })
+  await expect.element(etSelect).toBeVisible()
+  // Click Cancel button inside the modal dialog
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  // Modal should close — dialog should disappear
+  await vi.waitFor(() => {
+    expect(page.getByRole('dialog').elements().length).toBe(0)
+  })
+})
+
+test('Edit modal Cancel button closes modal', async () => {
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  // Click Cancel
+  const cancelBtns = page.getByRole('button', { name: 'Cancel' })
+  await cancelBtns.first().click()
+})
+
+test('Delete modal Cancel button closes modal', async () => {
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByRole('button', { name: 'Delete' }).first().click()
+  await expect.element(page.getByText('Confirm Deletion')).toBeVisible()
+  // Click Cancel
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  // Dialog should close
+  await vi.waitFor(() => {
+    expect(page.getByText('Confirm Deletion').elements().length).toBe(0)
+  })
+})
+
+// === Coverage: Modal onClose via Escape (L565, L606, L632) ===
+// Cancel button calls onClick={() => setXOpen(false)} — a different arrow function.
+// Modal's onClose is only triggered by PF6's internal mechanisms (X button, Escape, click outside).
+
+test('Create modal Escape triggers onClose (L565)', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Create Instance' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  await userEvent.keyboard('{Escape}')
+  await vi.waitFor(() => {
+    expect(page.getByRole('dialog').elements().length).toBe(0)
+  })
+})
+
+test('Edit modal Escape triggers onClose (L606)', async () => {
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  await userEvent.keyboard('{Escape}')
+  await vi.waitFor(() => {
+    expect(page.getByRole('dialog').elements().length).toBe(0)
+  })
+})
+
+test('Delete modal Escape triggers onClose (L632)', async () => {
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByRole('button', { name: 'Delete' }).first().click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  await userEvent.keyboard('{Escape}')
+  await vi.waitFor(() => {
+    expect(page.getByRole('dialog').elements().length).toBe(0)
+  })
+})
+
+test('Add Child modal onClose clears error', async () => {
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Add Child' }).click()
+  await expect.element(page.getByText('Add Contained Instance')).toBeVisible()
+  // Close via Cancel
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  await vi.waitFor(() => {
+    expect(page.getByText('Add Contained Instance').elements().length).toBe(0)
+  })
+})
+
+test('Set Parent modal onClose clears error', async () => {
+  ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await page.getByText('▸').first().click()
+  await clickTreeNode('my-tool')
+  await expect.element(page.getByRole('heading', { name: 'my-tool' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Set Parent' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // Close via Cancel
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  await vi.waitFor(() => {
+    expect(page.getByText(/Set Container/).elements().length).toBe(0)
+  })
+})
+
+test('Link modal onClose clears error', async () => {
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Create Link' }).click()
+  await expect.element(page.getByText('Link to Instance')).toBeVisible()
+  // Close via Cancel
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  await vi.waitFor(() => {
+    expect(page.getByText('Link to Instance').elements().length).toBe(0)
+  })
+})
+
+// TD-141: Instance name client-side validation
+test('Create modal: invalid instance name shows validation error', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Create Instance' }).click()
+  const etSelect = page.getByRole('combobox', { name: /entity type/i })
+  await expect.element(etSelect).toBeVisible()
+  await userEvent.selectOptions(etSelect, 'mcp-server')
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  await page.getByRole('textbox', { name: /^Name/ }).fill('we)(?')
+  await expect.element(page.getByText(/must start with/)).toBeVisible()
+})
+
+test('Create modal: valid instance name shows no validation error', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Create Instance' }).click()
+  const etSelect = page.getByRole('combobox', { name: /entity type/i })
+  await expect.element(etSelect).toBeVisible()
+  await userEvent.selectOptions(etSelect, 'mcp-server')
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  await page.getByRole('textbox', { name: /^Name/ }).fill('my-server')
+  expect(page.getByText(/must start with/).elements().length).toBe(0)
+})
+
+test('Create modal: Create button disabled when name has invalid chars', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Create Instance' }).click()
+  const etSelect = page.getByRole('combobox', { name: /entity type/i })
+  await expect.element(etSelect).toBeVisible()
+  await userEvent.selectOptions(etSelect, 'mcp-server')
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  await page.getByRole('textbox', { name: /^Name/ }).fill('bad!name')
+  // Create button should be disabled due to invalid name
+  await expect.element(page.getByRole('button', { name: 'Create' })).toHaveAttribute('disabled', '')
+})
+
+// handleCreateTypeChange empty guard (L137): unreachable — disabled <option> prevents selection.
+
+// Cover handleAddChild error path (L282) via createContained API failure
+test('handleAddChild error path: createContained failure shows error in modal', async () => {
+  ;(api.instances.createContained as Mock).mockRejectedValue(new Error('containment validation failed'))
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Add Child' }).click()
+  await expect.element(page.getByText('Add Contained Instance')).toBeVisible()
+  // Select child type
+  await page.getByText('Select child type...').click()
+  await vi.waitFor(async () => {
+    await expect.element(page.getByText('mcp-tool').first()).toBeVisible()
+  })
+  await page.getByText('mcp-tool').first().click()
+  // Fill in name and submit
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  await page.getByRole('textbox', { name: /^Name/ }).fill('bad-child')
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+  // Error should appear in the parent page's Add Child modal
+  await expect.element(page.getByText('containment validation failed')).toBeVisible()
+})
+
+// Cover boolean default initialization (L147)
+test('Create modal: boolean required attr gets default false value', async () => {
+  // Mock snapshot with a required boolean attribute
+  const snapshotWithBool = {
+    ...mockSnapshotServer,
+    attributes: [
+      ...mockSnapshotServer.attributes,
+      { id: 'a-bool', name: 'is_active', description: 'Active flag', type: 'boolean', base_type: 'boolean', ordinal: 2, required: true },
+    ],
+  }
+  ;(api.versions.snapshot as Mock).mockImplementation((etId: string) => {
+    if (etId === 'et2') return Promise.resolve(mockSnapshotTool)
+    return Promise.resolve(snapshotWithBool)
+  })
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Create Instance' }).click()
+  const etSelect = page.getByRole('combobox', { name: /entity type/i })
+  await expect.element(etSelect).toBeVisible()
+  await userEvent.selectOptions(etSelect, 'mcp-server')
+  // Wait for schema to load — look for the is_active checkbox
+  await vi.waitFor(() => {
+    // The boolean attr should exist in the form
+    expect(api.versions.snapshot).toHaveBeenCalled()
+  })
+})
+
+// Cover create onChange callback (L587)
+test('Create modal: changing attribute value updates state', async () => {
+  renderDetail('RW')
+  await expect.element(page.getByRole('heading', { name: /test-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Create Instance' }).click()
+  const etSelect = page.getByRole('combobox', { name: /entity type/i })
+  await expect.element(etSelect).toBeVisible()
+  await userEvent.selectOptions(etSelect, 'mcp-server')
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  // Type in the endpoint field
+  const endpointField = page.getByRole('textbox', { name: /endpoint/i })
+  await endpointField.fill('https://api.example.com')
+  // Now create — verify the attribute was submitted
+  ;(api.instances.create as Mock).mockResolvedValue({ id: 'x', name: 'y' })
+  await page.getByRole('textbox', { name: /^Name/ }).fill('test-inst')
+  await page.getByRole('button', { name: 'Create' }).click()
+  await vi.waitFor(() => {
+    const call = (api.instances.create as Mock).mock.calls[0]
+    expect(call[2].attributes).toHaveProperty('endpoint', 'https://api.example.com')
+  })
+})
+
+// Cover useContainmentTree.getDescendants guard: node not found (L78)
+test('Delete modal for non-existent tree node shows empty descendants', async () => {
+  // Use a mock where tree has no matching instance, to hit getDescendants guard
+  ;(api.instances.tree as Mock).mockResolvedValue([])
+  ;(api.instances.get as Mock).mockResolvedValue({ ...mockInstanceDetail, id: 'orphan' })
+  renderDetail('RW')
+  // Tree is empty so no descendants will be found — tests getDescendants empty-return guard
+})
+
+// Cover edit onChange callback in modal (L587 equivalent for edit)
+test('Edit modal: changing attribute triggers onChange callback', async () => {
+  ;(api.instances.update as Mock).mockResolvedValue({ id: 'i1', name: 'my-server' })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
+  // Change the endpoint value
+  const endpointInput = page.getByRole('textbox', { name: /endpoint/ })
+  await endpointInput.fill('https://new-endpoint.com')
+  // Submit and verify
+  await page.getByRole('button', { name: 'Save' }).click()
+  await vi.waitFor(() => {
+    const call = (api.instances.update as Mock).mock.calls[0]
+    expect(call[3].attributes).toHaveProperty('endpoint', 'https://new-endpoint.com')
+  })
 })

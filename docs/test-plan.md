@@ -671,7 +671,7 @@ The operational UI is a separate read-only web application for browsing catalog 
 - **UI tests (browser — containment tree)**: Verify tree browser tab shows two-pane layout: tree on left, detail on right. Verify tree groups root instances under entity type headers with counts. Verify clicking a tree node loads instance detail in the right panel. Verify multi-level tree expands correctly. Verify empty state when no instance selected.
 - **UI tests (browser — instance detail)**: Verify instance detail panel shows attributes table with name, type, and value. Verify enum values show resolved names. Verify description, version, and timestamps displayed. Verify breadcrumb shows containment path.
 - **UI tests (browser — reference navigation)**: Verify references tab shows forward references with association name, type, target instance, and entity type. Verify referenced-by tab shows reverse references. Verify clicking a referenced instance navigates to it in the tree.
-- **UI tests (browser — read-only)**: Verify no create, edit, or delete buttons are visible in the operational UI regardless of role. Verify no write-action modals exist.
+- **UI tests (browser — read-only baseline)**: Verify no write controls visible when role is RO. Verify no write-action modals accessible for RO users. (Write controls for RW+ are tested in section 5.49.)
 
 ### 5.27 Catalog-Level RBAC (US-23, US-39)
 
@@ -1004,3 +1004,32 @@ note1: CV metadata edit depends on lifecycle stage — see section 5.41.
 
 note2: Validate on unpublished catalog = 200 for RW+. On published catalog = 403 for RW/Admin, 200 for SuperAdmin.
 note3: On unpublished catalog = 200 for RW+. On published catalog = 403 for RW/Admin, 200 for SuperAdmin.
+
+### 5.49 Operational UI Editing (US-57, US-58, US-59)
+
+Add write capabilities (instance CRUD, containment, links) to the operational data viewer. Reuses existing modals from the meta CatalogDetailPage. No backend changes — all APIs already exist. Role-aware rendering hides write controls from RO users and non-SuperAdmin on published catalogs.
+
+**Instance CRUD (US-57):**
+- **Browser tests (create instance — detail panel)**: Verify "Create Instance" button visible at top of tree section for RW+. Verify Create modal opens with entity type dropdown showing all pinned types. Verify selecting entity type loads attribute fields. Verify submitting creates instance and refreshes tree. Verify new instance is selected in tree after creation.
+- **Browser tests (create instance — tree "+" icon)**: Verify "+" icon appears next to each entity type group header for RW+. Verify "+" icon hidden for RO. Verify clicking "+" opens Create modal pre-filled with that entity type. Verify entity type dropdown is pre-selected and not changeable.
+- **Browser tests (edit instance)**: Verify "Edit" button visible in detail panel when instance selected for RW+. Verify Edit modal pre-fills current name, description, and attribute values. Verify submitting updates instance and refreshes detail panel. Verify tree node name updates after rename.
+- **Browser tests (delete instance — no children)**: Verify "Delete" button visible in detail panel for RW+. Verify confirmation dialog shows instance name. Verify confirming deletes instance, refreshes tree, and selects parent node (or clears selection if root).
+- **Browser tests (delete instance — with children)**: Verify confirmation dialog lists all children that will be cascade-deleted. Verify child count is accurate. Verify confirming deletes instance and all descendants. Verify tree refreshes with all deleted nodes removed.
+- **Browser tests (post-mutation refresh)**: Verify tree reloads after create/edit/delete. Verify correct node is selected after each operation.
+- **System tests (live)**: Create instance via operational UI, verify it appears in tree. Edit instance name, verify tree updates. Delete instance, verify removal. Delete instance with children, verify cascade.
+
+**Containment & Links (US-58):**
+- **Browser tests (add child)**: Verify "Add Child" button visible for instances with containment associations. Verify modal shows only eligible child types (from CV associations). Verify creating child instance adds it under parent in tree.
+- **Browser tests (set parent)**: Verify "Set Parent" button visible for instances that can be contained. Verify modal shows valid parent instances. Verify setting parent moves instance in tree.
+- **Browser tests (remove from container)**: Verify "Remove from Container" button visible for contained instances. Verify clicking removes parent, instance becomes root. Verify tree updates.
+- **Browser tests (create link)**: Verify "Create Link" button visible in detail panel. Verify modal shows link-eligible associations (non-containment only). Verify modal shows valid target instances. Verify creating link adds it to references section.
+- **Browser tests (delete link)**: Verify each link in references section has "Delete" button for RW+. Verify confirming deletes the link. Verify references section refreshes.
+- **System tests (live)**: Add child via operational UI, verify in tree. Create link, verify in references. Delete link, verify removal. Set parent, verify tree structure changes.
+
+**Role-Aware Controls (US-59):**
+- **Browser tests (RO role)**: Verify ALL write controls hidden: Create Instance button, "+" icons on tree groups, Edit/Delete/Add Child/Set Parent/Remove Container/Create Link/Delete Link buttons. Verify tree and detail panel render correctly (read-only).
+- **Browser tests (RW on non-published)**: Verify ALL write controls visible. Verify all operations succeed.
+- **Browser tests (Admin on non-published)**: Verify all write controls visible + Validate button.
+- **Browser tests (non-SuperAdmin on published)**: Verify ALL write controls hidden. Verify published badge displayed. Verify Validate button still visible (read-only validation).
+- **Browser tests (SuperAdmin on published)**: Verify ALL write controls visible. Verify published warning badge displayed.
+- **System tests (live RBAC)**: Switch roles in live system, verify controls appear/disappear correctly. Attempt write operations as RO via API, verify 403.

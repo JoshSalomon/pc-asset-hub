@@ -51,9 +51,11 @@ cleanup() {
   for name in "${CLEANUP_IDS[@]}"; do
     json_delete "${DATA_URL}/catalogs/${name}" "RW" > /dev/null 2>&1 || true
   done
-  if [ -n "${CV:-}" ] && [ "${CV}" != "null" ]; then
-    json_delete "${META_URL}/catalog-versions/${CV}" "SuperAdmin" > /dev/null 2>&1 || true
-  fi
+  for cvid in "${CV:-}" "${DEEP_CV:-}"; do
+    if [ -n "$cvid" ] && [ "$cvid" != "null" ]; then
+      json_delete "${META_URL}/catalog-versions/${cvid}" "SuperAdmin" > /dev/null 2>&1 || true
+    fi
+  done
   # Entity types must be deleted after CV (CV pins reference them).
   # Delete in reverse order: model first (no associations), then tool, then server.
   for et in "${MODEL_ET:-}" "${TOOL_ET:-}" "${SERVER_ET:-}"; do
@@ -79,6 +81,13 @@ SERVER_ET=$(json_post "${META_URL}/entity-types" Admin "{\"name\":\"${SERVER_NAM
 TOOL_ET=$(json_post "${META_URL}/entity-types" Admin "{\"name\":\"${TOOL_NAME}\",\"description\":\"tool\"}" | jq -r '.entity_type.id')
 MODEL_ET=$(json_post "${META_URL}/entity-types" Admin "{\"name\":\"${MODEL_NAME}\",\"description\":\"model\"}" | jq -r '.entity_type.id')
 echo "  Entity types: server=${SERVER_ET}, tool=${TOOL_ET}, model=${MODEL_ET}"
+
+# Get the built-in string type definition version ID for hostname attribute (TD-145 test)
+STRING_TDV=$(json_get "${META_URL}/type-definitions" Admin | jq -r '.items[] | select(.name=="string") | .latest_version_id')
+
+# Add hostname attribute to Server entity type (for TD-145 attribute preservation test)
+json_post "${META_URL}/entity-types/${SERVER_ET}/attributes" Admin \
+  "{\"name\":\"hostname\",\"type_definition_version_id\":\"${STRING_TDV}\",\"description\":\"Server hostname\"}" > /dev/null
 
 # Add containment: server contains tool
 json_post "${META_URL}/entity-types/${SERVER_ET}/associations" Admin \
@@ -408,6 +417,161 @@ fi
 
 # Clean up the extra CV (catalog cleanup handled by trap)
 json_delete "${META_URL}/catalog-versions/${DEEP_CV}" "SuperAdmin" > /dev/null 2>&1 || true
+
+# === TD-145: Version bumps on structural mutations ===
+echo ""
+echo "=== Test: Version bumps on structural mutations ==="
+
+# Create a server and verify it starts at version 1
+VB_SRV=$(json_post "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}" "RW" \
+  '{"name":"vb-server","description":"version bump test"}')
+VB_SRV_ID=$(echo "$VB_SRV" | jq -r '.id')
+VB_SRV_VER=$(echo "$VB_SRV" | jq -r '.version')
+if [ "$VB_SRV_VER" = "1" ]; then
+  pass "Server created at version 1"
+else
+  fail "Server initial version" "expected 1, got $VB_SRV_VER"
+fi
+
+# CreateContainedInstance — parent version bumps
+json_post "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}/${VB_SRV_ID}/${TOOL_NAME}" "RW" \
+  '{"name":"vb-tool","description":"child"}' > /dev/null
+VB_SRV_VER2=$(json_get "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}/${VB_SRV_ID}" "RO" | jq -r '.version')
+if [ "$VB_SRV_VER2" = "2" ]; then
+  pass "CreateContainedInstance bumps parent version (1 → 2)"
+else
+  fail "Parent version after CreateContained" "expected 2, got $VB_SRV_VER2"
+fi
+
+# CreateAssociationLink — source version bumps
+VB_MDL=$(json_post "${DATA_URL}/catalogs/${CATALOG_NAME}/${MODEL_NAME}" "RW" \
+  '{"name":"vb-model","description":"link target"}')
+VB_MDL_ID=$(echo "$VB_MDL" | jq -r '.id')
+json_post "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}/${VB_SRV_ID}/links" "RW" \
+  "{\"target_instance_id\":\"${VB_MDL_ID}\",\"association_name\":\"uses-model\"}" > /dev/null
+VB_SRV_VER3=$(json_get "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}/${VB_SRV_ID}" "RO" | jq -r '.version')
+if [ "$VB_SRV_VER3" = "3" ]; then
+  pass "CreateAssociationLink bumps source version (2 → 3)"
+else
+  fail "Source version after CreateLink" "expected 3, got $VB_SRV_VER3"
+fi
+
+# DeleteAssociationLink — source version bumps again
+VB_LINK_ID=$(json_get "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}/${VB_SRV_ID}/references" "RO" | jq -r '.[0].link_id')
+json_delete "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}/${VB_SRV_ID}/links/${VB_LINK_ID}" "RW" > /dev/null
+VB_SRV_VER4=$(json_get "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}/${VB_SRV_ID}" "RO" | jq -r '.version')
+if [ "$VB_SRV_VER4" = "4" ]; then
+  pass "DeleteAssociationLink bumps source version (3 → 4)"
+else
+  fail "Source version after DeleteLink" "expected 4, got $VB_SRV_VER4"
+fi
+
+# SetParent — bumps child and new parent versions
+VB_TOOL_ID=$(json_get "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}/${VB_SRV_ID}/${TOOL_NAME}" "RO" | jq -r '.items[0].id')
+VB_TOOL_VER=$(json_get "${DATA_URL}/catalogs/${CATALOG_NAME}/${TOOL_NAME}/${VB_TOOL_ID}" "RO" | jq -r '.version')
+# Create a second server to reparent to
+VB_SRV2=$(json_post "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}" "RW" \
+  '{"name":"vb-server-2","description":"new parent"}')
+VB_SRV2_ID=$(echo "$VB_SRV2" | jq -r '.id')
+VB_SRV2_VER=$(echo "$VB_SRV2" | jq -r '.version')
+curl -s -X PUT "${DATA_URL}/catalogs/${CATALOG_NAME}/${TOOL_NAME}/${VB_TOOL_ID}/parent" \
+  -H "X-User-Role: RW" -H "Content-Type: application/json" \
+  -d "{\"parent_type\":\"${SERVER_NAME}\",\"parent_instance_id\":\"${VB_SRV2_ID}\"}" > /dev/null
+VB_TOOL_VER2=$(json_get "${DATA_URL}/catalogs/${CATALOG_NAME}/${TOOL_NAME}/${VB_TOOL_ID}" "RO" | jq -r '.version')
+VB_SRV2_VER2=$(json_get "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}/${VB_SRV2_ID}" "RO" | jq -r '.version')
+if [ "$VB_TOOL_VER2" = "$((VB_TOOL_VER + 1))" ]; then
+  pass "SetParent bumps child version (${VB_TOOL_VER} → ${VB_TOOL_VER2})"
+else
+  fail "Child version after SetParent" "expected $((VB_TOOL_VER + 1)), got $VB_TOOL_VER2"
+fi
+if [ "$VB_SRV2_VER2" = "$((VB_SRV2_VER + 1))" ]; then
+  pass "SetParent bumps new parent version (${VB_SRV2_VER} → ${VB_SRV2_VER2})"
+else
+  fail "New parent version after SetParent" "expected $((VB_SRV2_VER + 1)), got $VB_SRV2_VER2"
+fi
+
+# Test attribute preservation after version bump (bug fix verification)
+# Create a server with attributes, add a child, verify parent attributes still visible
+ATTR_SRV=$(json_post "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}" "RW" \
+  '{"name":"attr-test-server","attributes":{"hostname":"web1.example.com"}}')
+ATTR_SRV_ID=$(echo "$ATTR_SRV" | jq -r '.id')
+# Verify attribute is set at version 1
+ATTR_SRV_DATA=$(json_get "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}/${ATTR_SRV_ID}" "RO")
+ATTR_HOSTNAME=$(echo "$ATTR_SRV_DATA" | jq -r '.attributes[] | select(.name=="hostname") | .value')
+if [ "$ATTR_HOSTNAME" = "web1.example.com" ]; then
+  pass "Server attribute set at version 1"
+else
+  fail "Initial attribute value" "expected web1.example.com, got $ATTR_HOSTNAME"
+fi
+# Add a child (bumps parent version 1 → 2)
+json_post "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}/${ATTR_SRV_ID}/${TOOL_NAME}" "RW" \
+  '{"name":"attr-tool","description":"triggers parent version bump"}' > /dev/null
+# Verify parent is now at version 2
+ATTR_SRV_VER=$(json_get "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}/${ATTR_SRV_ID}" "RO" | jq -r '.version')
+if [ "$ATTR_SRV_VER" = "2" ]; then
+  pass "Parent bumped to version 2 after CreateContainedInstance"
+else
+  fail "Parent version after child creation" "expected 2, got $ATTR_SRV_VER"
+fi
+# CRITICAL: Verify attribute still visible at version 2 (bug fix)
+ATTR_SRV_DATA2=$(json_get "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}/${ATTR_SRV_ID}" "RO")
+ATTR_HOSTNAME2=$(echo "$ATTR_SRV_DATA2" | jq -r '.attributes[] | select(.name=="hostname") | .value')
+if [ "$ATTR_HOSTNAME2" = "web1.example.com" ]; then
+  pass "Attribute preserved after version bump (bug fix verified)"
+else
+  fail "Attribute after version bump" "expected web1.example.com, got $ATTR_HOSTNAME2 (attribute disappeared)"
+fi
+
+# === Optimistic locking (version conflict) ===
+echo ""
+echo "=== Test: Optimistic locking (version conflict) ==="
+
+# Create an instance
+OL_INST=$(json_post "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}" "RW" \
+  "{\"name\":\"ol-test\",\"description\":\"optimistic locking test\"}")
+OL_ID=$(echo "$OL_INST" | jq -r '.id')
+OL_VER=$(echo "$OL_INST" | jq -r '.version')
+pass "Create instance for locking test (id=$OL_ID, version=$OL_VER)"
+
+# First update succeeds (correct version)
+OL_UPD1=$(curl -s -w "\n%{http_code}" -X PUT \
+  "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}/${OL_ID}" \
+  -H "X-User-Role: RW" -H "Content-Type: application/json" \
+  -d "{\"version\":${OL_VER},\"description\":\"updated once\"}")
+OL_UPD1_CODE=$(echo "$OL_UPD1" | tail -1)
+OL_UPD1_BODY=$(echo "$OL_UPD1" | sed '$d')
+if [ "$OL_UPD1_CODE" = "200" ]; then
+  pass "First update succeeds (200)"
+else
+  fail "First update" "expected 200, got $OL_UPD1_CODE"
+fi
+
+# Second update with ORIGINAL (stale) version → 409 conflict
+OL_UPD2=$(curl -s -w "\n%{http_code}" -X PUT \
+  "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}/${OL_ID}" \
+  -H "X-User-Role: RW" -H "Content-Type: application/json" \
+  -d "{\"version\":${OL_VER},\"description\":\"should conflict\"}")
+OL_UPD2_CODE=$(echo "$OL_UPD2" | tail -1)
+if [ "$OL_UPD2_CODE" = "409" ]; then
+  pass "Stale version update rejected (409)"
+else
+  fail "Stale version update" "expected 409, got $OL_UPD2_CODE"
+fi
+
+# Verify instance has the first update's data, not the stale one
+OL_GET=$(json_get "${DATA_URL}/catalogs/${CATALOG_NAME}/${SERVER_NAME}/${OL_ID}" "RO")
+OL_DESC=$(echo "$OL_GET" | jq -r '.description')
+OL_FINAL_VER=$(echo "$OL_GET" | jq -r '.version')
+if [ "$OL_DESC" = "updated once" ]; then
+  pass "Instance has correct data after conflict (description='updated once')"
+else
+  fail "Instance data after conflict" "expected 'updated once', got '$OL_DESC'"
+fi
+if [ "$OL_FINAL_VER" = "2" ]; then
+  pass "Version incremented only once (version=2)"
+else
+  fail "Version after conflict" "expected 2, got $OL_FINAL_VER"
+fi
 
 # --- Summary ---
 

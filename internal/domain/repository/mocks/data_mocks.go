@@ -135,6 +135,10 @@ func (m *MockInstanceAttributeValueRepo) DeleteByInstanceID(ctx context.Context,
 	return m.Called(ctx, instanceID).Error(0)
 }
 
+func (m *MockInstanceAttributeValueRepo) DeleteByInstanceVersion(ctx context.Context, instanceID string, version int) error {
+	return m.Called(ctx, instanceID, version).Error(0)
+}
+
 func (m *MockInstanceAttributeValueRepo) RemapAttributeIDs(ctx context.Context, instanceIDs []string, mapping map[string]string) (int64, error) {
 	args := m.Called(ctx, instanceIDs, mapping)
 	return int64(args.Int(0)), args.Error(1)

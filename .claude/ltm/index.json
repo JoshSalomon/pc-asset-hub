@@ -505,6 +505,20 @@
       "phase": 0,
       "difficulty": 0.7,
       "created_at": "2026-04-30T15:42:58.266341+00:00"
+    },
+    "mem_db88bc9f": {
+      "topic": "FF-6 Operational UI Editing — implementation patterns and gotchas",
+      "tags": [
+        "FF-6",
+        "operational-ui",
+        "editing",
+        "containment",
+        "links",
+        "gotchas"
+      ],
+      "phase": 0,
+      "difficulty": 0.7,
+      "created_at": "2026-05-07T17:06:40.113917+00:00"
     }
   }
 }

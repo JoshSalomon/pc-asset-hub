@@ -30,7 +30,7 @@ Development proceeds through three environment phases, each with increasing infr
 
 **Milestones completed**: 1–12 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired), T-14.01 through T-14.22, T-15.01 through T-15.81, T-16.01 through T-16.69, T-17.01 through T-17.88, T-24.01 through T-24.28, T-25.01 through T-25.39, T-26.01 through T-26.18, and T-27.01 through T-27.27 (914 test cases), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired; T-13.102 changed by FF-6), T-14.01 through T-14.22, T-15.01 through T-15.81, T-16.01 through T-16.69, T-17.01 through T-17.88, T-24.01 through T-24.28, T-25.01 through T-25.39, T-26.01 through T-26.18, T-27.01 through T-27.27, and T-32.01 through T-32.78 (992 test cases), using SQLite and mocked/simulated infrastructure.
 
 **Human checkpoint**: After all 802 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
@@ -1754,7 +1754,7 @@ Test cases T-13.78 through T-13.85 are retired.
 | T-13.99 | No edit buttons visible in operational UI | Browser | No "Edit" buttons anywhere |
 | T-13.100 | No delete buttons visible in operational UI | Browser | No "Delete" buttons anywhere |
 | T-13.101 | No link/unlink actions in reference tabs | Browser | No write actions on references |
-| T-13.102 | Read-only enforcement applies regardless of role (even SuperAdmin) | Browser | SuperAdmin sees same read-only view |
+| T-13.102 | ~~Read-only enforcement applies regardless of role~~ **CHANGED by FF-6**: SuperAdmin sees write controls on operational UI | Browser | SuperAdmin sees Create/Edit/Delete/Link buttons (was: read-only view) |
 | T-13.103 | GetContainmentTree where entity type deleted after instance creation → entity type ID used as fallback name in tree nodes | Unit | Error path |
 | T-13.104 | GetContainmentTree where ListByCatalog fails with DB error → error propagated | Unit | Error path |
 | T-13.105 | Resolve parent chain with instance nesting >50 levels → chain stops at 50, no error | Unit | Boundary |
@@ -4298,6 +4298,122 @@ Export a catalog (schema + data) to a JSON file and import it into another Asset
 - OpenShift Route / OAuth setup covered
 - **Target: 100% coverage** across all code
 - Any remaining uncoverable lines (expected: 0-5, e.g., panic recovery catch-all) must be individually documented
+
+## Milestone 21: Operational UI Editing (US-57, US-58, US-59)
+
+**Scope**: Add write capabilities to the operational data viewer. Instance CRUD, containment management, link management, role-aware controls. No backend changes — all APIs exist. Frontend only.
+
+**Changed existing tests**: T-13.102 (was "read-only even for SuperAdmin", now "SuperAdmin sees write controls").
+
+### Instance CRUD — Browser Tests (US-57)
+
+| ID | Description | Layer | Expected |
+|----|-------------|-------|----------|
+| T-32.01 | "Create Instance" button visible at top of tree for RW role | Browser | Button rendered |
+| T-32.02 | "Create Instance" button hidden for RO role | Browser | Button not rendered |
+| T-32.03 | "Create Instance" button hidden for non-SuperAdmin on published catalog | Browser | Button not rendered |
+| T-32.04 | Create modal opens with entity type dropdown showing all pinned types | Browser | Dropdown lists all CV-pinned entity types |
+| T-32.05 | Selecting entity type in Create modal loads attribute fields | Browser | Attribute inputs rendered matching type schema |
+| T-32.06 | Creating instance via modal calls API and refreshes tree | Browser | Instance appears in tree, selected after creation |
+| T-32.07 | "+" icon visible next to each entity type group header for RW+ | Browser | Icon rendered per group |
+| T-32.08 | "+" icon hidden for RO role | Browser | No icons on group headers |
+| T-32.09 | Clicking "+" opens Create modal pre-filled with that entity type | Browser | Entity type dropdown pre-selected, not changeable |
+| T-32.10 | "Edit" button visible in detail panel when instance selected for RW+ | Browser | Button rendered |
+| T-32.11 | "Edit" button hidden for RO role | Browser | Button not rendered |
+| T-32.12 | Edit modal pre-fills current name, description, and attribute values | Browser | All fields match current instance data |
+| T-32.13 | Submitting Edit modal updates instance and refreshes detail panel | Browser | Updated values shown in panel |
+| T-32.14 | Renaming instance via Edit modal updates tree node text | Browser | Tree node shows new name |
+| T-32.15 | "Delete" button visible in detail panel for RW+ | Browser | Button rendered |
+| T-32.16 | "Delete" button hidden for RO role | Browser | Button not rendered |
+| T-32.17 | Delete confirmation dialog shows instance name | Browser | Dialog text includes instance name |
+| T-32.18 | Confirming delete removes instance and refreshes tree | Browser | Instance gone from tree, parent selected |
+| T-32.19 | Delete instance with children shows cascade warning listing all descendants | Browser | Dialog lists child count and names |
+| T-32.20 | Confirming cascade delete removes instance and all descendants | Browser | All deleted nodes removed from tree |
+| T-32.21 | After create, tree reloads and new instance is selected | Browser | Correct selection |
+| T-32.22 | After edit, tree reloads and edited instance stays selected | Browser | Same node still selected |
+| T-32.23 | After delete, tree reloads and parent node is selected | Browser | Parent node selected |
+| T-32.24 | After delete of root instance, selection is cleared | Browser | No instance selected, empty detail panel |
+| T-32.25 | Create instance with required attributes missing shows validation error | Browser | Error message in modal, not submitted |
+| T-32.26 | Create instance with invalid attribute value shows error | Browser | Type-specific validation error |
+| T-32.27 | Edit instance API error shows error in modal | Browser | Error alert displayed |
+| T-32.28 | Delete instance API error shows error alert | Browser | Error alert, instance not removed |
+
+### Containment — Browser Tests (US-58)
+
+| ID | Description | Layer | Expected |
+|----|-------------|-------|----------|
+| T-32.29 | "Add Child" button visible for instances with containment associations | Browser | Button rendered |
+| T-32.30 | "Add Child" button hidden when entity type has no containment associations | Browser | Button not rendered |
+| T-32.31 | "Add Child" button hidden for RO role | Browser | Button not rendered |
+| T-32.32 | Add Child modal shows only eligible child types from CV associations | Browser | Dropdown lists containment target types only |
+| T-32.33 | Creating child instance via Add Child adds it under parent in tree | Browser | Child node appears under parent |
+| T-32.34 | "Set Parent" button visible for instances that can be contained | Browser | Button rendered |
+| T-32.35 | "Set Parent" button hidden for RO role | Browser | Button not rendered |
+| T-32.36 | Set Parent modal shows valid parent instances | Browser | Dropdown lists instances of correct parent types |
+| T-32.37 | Setting parent moves instance in tree | Browser | Instance moves under new parent node |
+| T-32.38 | "Remove from Container" button visible for contained instances | Browser | Button rendered |
+| T-32.39 | "Remove from Container" button hidden for root instances | Browser | Button not rendered |
+| T-32.40 | "Remove from Container" button hidden for RO role | Browser | Button not rendered |
+| T-32.41 | Removing from container makes instance root, tree updates | Browser | Instance moves to root level |
+| T-32.42 | Add Child API error shows error in modal | Browser | Error alert, child not created |
+| T-32.43 | Set Parent API error shows error in modal | Browser | Error alert, parent not changed |
+
+### Links — Browser Tests (US-58)
+
+| ID | Description | Layer | Expected |
+|----|-------------|-------|----------|
+| T-32.44 | "Create Link" button visible in detail panel for RW+ | Browser | Button rendered |
+| T-32.45 | "Create Link" button hidden for RO role | Browser | Button not rendered |
+| T-32.46 | Create Link modal shows non-containment associations only | Browser | No containment associations in dropdown |
+| T-32.47 | Create Link modal shows valid target instances for selected association | Browser | Target dropdown lists matching instances |
+| T-32.48 | Creating link adds it to forward references section | Browser | New link row appears |
+| T-32.49 | "Delete" button visible on each link row for RW+ | Browser | Delete icon/button per link |
+| T-32.50 | Link delete buttons hidden for RO role | Browser | No delete buttons on links |
+| T-32.51 | Confirming link delete removes it from references | Browser | Link row removed |
+| T-32.52 | Create Link API error shows error in modal | Browser | Error alert, link not created |
+| T-32.53 | Delete Link API error shows error alert | Browser | Error alert, link not removed |
+| T-32.54 | Bidirectional link appears in both forward and reverse references | Browser | Link visible from both instances |
+
+### Role-Aware Controls — Browser Tests (US-59)
+
+| ID | Description | Layer | Expected |
+|----|-------------|-------|----------|
+| T-32.55 | RO role: ALL write controls hidden (comprehensive check) | Browser | No Create/Edit/Delete/AddChild/SetParent/RemoveContainer/Link buttons, no "+" icons |
+| T-32.56 | RW role on non-published catalog: all write controls visible | Browser | All mutation buttons rendered |
+| T-32.57 | Admin role on non-published catalog: all write controls + Validate visible | Browser | All buttons rendered |
+| T-32.58 | SuperAdmin on non-published catalog: all write controls + Validate visible | Browser | All buttons rendered |
+| T-32.59 | RW on published catalog: all write controls hidden | Browser | No mutation buttons, published badge shown |
+| T-32.60 | Admin on published catalog: all write controls hidden | Browser | No mutation buttons, published badge shown |
+| T-32.61 | SuperAdmin on published catalog: all write controls visible + warning badge | Browser | All mutation buttons rendered, published warning |
+| T-32.62 | Role change from RW to RO hides write controls without page reload | Browser | Controls disappear on role switch |
+| T-32.63 | Role change from RO to RW shows write controls without page reload | Browser | Controls appear on role switch |
+
+### System Tests — Live Browser (Playwright against deployed system)
+
+| ID | Description | Layer | Expected |
+|----|-------------|-------|----------|
+| T-32.64 | Create instance via operational UI: navigate to data viewer, click Create, fill form, verify instance in tree | System | Instance created and visible |
+| T-32.65 | Edit instance via operational UI: select instance, click Edit, change name, verify tree updates | System | Name updated in tree and detail |
+| T-32.66 | Delete instance via operational UI: select instance, click Delete, confirm, verify removed | System | Instance removed from tree |
+| T-32.67 | Cascade delete via operational UI: delete parent with children, verify all removed | System | Parent and all descendants gone |
+| T-32.68 | Add child via operational UI: select parent, Add Child, fill form, verify tree hierarchy | System | Child appears under parent |
+| T-32.69 | Create link via operational UI: select instance, Create Link, choose target, verify in references | System | Link visible in forward refs |
+| T-32.70 | Delete link via operational UI: click delete on link row, confirm, verify removed | System | Link removed from references |
+| T-32.71 | Set parent via operational UI: select orphan instance, Set Parent, verify tree moves | System | Instance appears under parent |
+| T-32.72 | Remove from container via operational UI: click Remove, verify instance moves to root | System | Instance at root level |
+| T-32.73 | RO role hides write controls in live deployment | System | No mutation buttons visible |
+| T-32.74 | RW on published catalog hides write controls in live deployment | System | No mutation buttons, published badge shown |
+| T-32.75 | SuperAdmin on published catalog shows write controls in live deployment | System | All mutation buttons visible, warning badge |
+| T-32.76 | Create instance via "+" icon on entity type group in tree | System | Modal opens pre-filled, instance created |
+| T-32.77 | Full workflow: create instance, add child, create link, edit, delete link, remove from container, delete | System | All operations succeed sequentially |
+
+### Live API Script Tests
+
+| ID | Description | Layer | Expected |
+|----|-------------|-------|----------|
+| T-32.78 | Operational UI editing does not require new API endpoints (verify all used endpoints already tested) | Live | No new endpoints — all instance/link/containment endpoints already covered by existing scripts |
+
+**Note on backend tests:** No new backend tests needed for Milestone 21. All instance CRUD, containment, and link APIs are already tested in Milestones 11-13. FF-6 is purely frontend. The round-trip/seam category does not apply — no new serialization boundaries are crossed.
 
 ---
 

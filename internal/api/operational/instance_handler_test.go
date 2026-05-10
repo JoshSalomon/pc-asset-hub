@@ -55,7 +55,7 @@ type instanceMocks struct {
 }
 
 func newInstanceMocks() *instanceMocks {
-	return &instanceMocks{
+	m := &instanceMocks{
 		instRepo:    new(mocks.MockEntityInstanceRepo),
 		iavRepo:     new(mocks.MockInstanceAttributeValueRepo),
 		catalogRepo: new(mocks.MockCatalogRepo),
@@ -69,6 +69,8 @@ func newInstanceMocks() *instanceMocks {
 		assocRepo:   new(mocks.MockAssociationRepo),
 		linkRepo:    new(mocks.MockAssociationLinkRepo),
 	}
+	m.iavRepo.On("DeleteByInstanceVersion", mock.Anything, mock.Anything, mock.Anything).Maybe().Return(nil)
+	return m
 }
 
 func (m *instanceMocks) mockPinResolution() {
@@ -363,7 +365,10 @@ func TestSetParent_Handler_Success(t *testing.T) {
 	m.assocRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Association{
 		{ID: "a1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment},
 	}, nil)
+	m.instRepo.On("GetByNameAndParent", mock.Anything, "et2", "cat1", "p1", "").Return(nil, nil)
 	m.instRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
+	m.iavRepo.On("DeleteByInstanceVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
 	m.catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	rec := doInstanceRequest(e, http.MethodPut, "/api/data/v1/catalogs/my-catalog/tool/c1/parent",
@@ -479,6 +484,8 @@ func TestT12_37_CreateContainedInstance(t *testing.T) {
 		{ID: "assoc1", EntityTypeVersionID: "etv1", TargetEntityTypeID: "et2", Type: models.AssociationTypeContainment, Name: "tools"},
 	}, nil)
 	m.instRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
+	m.instRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
+	m.iavRepo.On("DeleteByInstanceVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	m.iavRepo.On("GetValuesForVersion", mock.Anything, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
 	m.catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
 
@@ -590,6 +597,9 @@ func TestT12_43_CreateLink(t *testing.T) {
 	}, nil)
 	m.linkRepo.On("GetForwardRefs", mock.Anything, "inst1").Return([]*models.AssociationLink{}, nil)
 	m.linkRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.AssociationLink")).Return(nil)
+	m.instRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
+	m.iavRepo.On("DeleteByInstanceVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
 	m.catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	rec := doInstanceRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/server/inst1/links",
@@ -614,12 +624,22 @@ func TestT12_48_DeleteLink(t *testing.T) {
 	mockTwoTypePinResolution(m)
 
 	m.linkRepo.On("GetByID", mock.Anything, "link1").Return(&models.AssociationLink{
-		ID: "link1", SourceInstanceID: "inst1",
+		ID: "link1", SourceInstanceID: "inst1", TargetInstanceID: "inst2", AssociationID: "a1",
 	}, nil)
 	m.instRepo.On("GetByID", mock.Anything, "inst1").Return(&models.EntityInstance{
-		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1",
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Version: 2,
+	}, nil)
+	m.instRepo.On("GetByID", mock.Anything, "inst2").Return(&models.EntityInstance{
+		ID: "inst2", EntityTypeID: "et1", CatalogID: "cat1", Version: 3,
+	}, nil)
+	m.assocRepo.On("GetByID", mock.Anything, "a1").Return(&models.Association{
+		ID: "a1", Type: models.AssociationTypeDirectional,
 	}, nil)
 	m.linkRepo.On("Delete", mock.Anything, "link1").Return(nil)
+	m.instRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
+	m.iavRepo.On("DeleteByInstanceVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
+	m.iavRepo.On("SetValues", mock.Anything, mock.Anything).Return(nil)
 	m.catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	rec := doInstanceRequest(e, http.MethodDelete, "/api/data/v1/catalogs/my-catalog/server/inst1/links/link1", "", apimw.RoleRW)
@@ -970,9 +990,12 @@ func TestSetParent_RemoveParent_EmptyBoth(t *testing.T) {
 	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
 		ID: "i1", EntityTypeID: "et1", CatalogID: "cat1", ParentInstanceID: "p1",
 	}, nil)
-	m.instRepo.On("Update", mock.Anything, mock.MatchedBy(func(inst *models.EntityInstance) bool {
-		return inst.ID == "i1" && inst.ParentInstanceID == ""
-	})).Return(nil)
+	m.instRepo.On("GetByNameAndParent", mock.Anything, "et1", "cat1", "", "").Return(nil, nil)
+	m.instRepo.On("GetByID", mock.Anything, "p1").Return(&models.EntityInstance{
+		ID: "p1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1,
+	}, nil)
+	m.instRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
 	m.catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
 
 	body := `{"parent_type":"","parent_instance_id":""}`

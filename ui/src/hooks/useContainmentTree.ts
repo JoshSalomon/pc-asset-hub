@@ -1,12 +1,17 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { api } from '../api/client'
 import type { TreeNodeResponse, EntityInstance, ReferenceDetail } from '../types'
+
+function flattenNodes(nodes: TreeNodeResponse[]): TreeNodeResponse[] {
+  return nodes.flatMap(n => [n, ...flattenNodes(n.children || [])])
+}
 
 export function useContainmentTree(catalogName: string | undefined) {
   const [tree, setTree] = useState<TreeNodeResponse[]>([])
   const [treeLoading, setTreeLoading] = useState(false)
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [selectedTypeName, setSelectedTypeName] = useState<string | null>(null)
 
   const [selectedInstance, setSelectedInstance] = useState<EntityInstance | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -14,14 +19,17 @@ export function useContainmentTree(catalogName: string | undefined) {
   const [reverseRefs, setReverseRefs] = useState<ReferenceDetail[]>([])
   const [refsLoading, setRefsLoading] = useState(false)
 
-  const loadTree = useCallback(async () => {
-    if (!catalogName) return
+  const loadTree = useCallback(async (): Promise<TreeNodeResponse[]> => {
+    if (!catalogName) return []
     setTreeLoading(true)
     try {
       const t = await api.instances.tree(catalogName)
-      setTree(t || [])
+      const result = t || []
+      setTree(result)
+      return result
     } catch {
       setTree([])
+      return []
     } finally {
       setTreeLoading(false)
     }
@@ -29,6 +37,7 @@ export function useContainmentTree(catalogName: string | undefined) {
 
   const selectTreeNode = useCallback(async (node: TreeNodeResponse) => {
     setSelectedNodeId(node.instance_id)
+    setSelectedTypeName(node.entity_type_name)
     setDetailLoading(true)
     try {
       const inst = await api.instances.get(catalogName!, node.entity_type_name, node.instance_id)
@@ -39,7 +48,6 @@ export function useContainmentTree(catalogName: string | undefined) {
       setDetailLoading(false)
     }
 
-    // Load references
     setRefsLoading(true)
     try {
       const [fwd, rev] = await Promise.all([
@@ -55,6 +63,21 @@ export function useContainmentTree(catalogName: string | undefined) {
       setRefsLoading(false)
     }
   }, [catalogName])
+
+  const selectNodeById = useCallback(async (instanceId: string, freshTree: TreeNodeResponse[]) => {
+    const node = flattenNodes(freshTree).find(n => n.instance_id === instanceId)
+    if (node) await selectTreeNode(node)
+  }, [selectTreeNode])
+
+  const findParentNode = useCallback((instanceId: string, nodes: TreeNodeResponse[]): TreeNodeResponse | undefined => {
+    return flattenNodes(nodes).find(n => n.children.some(c => c.instance_id === instanceId))
+  }, [])
+
+  const getDescendants = useCallback((instanceId: string, nodes: TreeNodeResponse[]): TreeNodeResponse[] => {
+    const node = flattenNodes(nodes).find(n => n.instance_id === instanceId)
+    if (!node) return []
+    return flattenNodes(node.children || [])
+  }, [])
 
   const toggleNode = useCallback((nodeId: string) => {
     setExpandedNodes(prev => {
@@ -75,7 +98,16 @@ export function useContainmentTree(catalogName: string | undefined) {
     })
   }, [])
 
-  const navigateToTreeNode = useCallback((instanceId: string) => {
+  const clearSelection = useCallback(() => {
+    setSelectedNodeId(null)
+    setSelectedTypeName(null)
+    setSelectedInstance(null)
+    setForwardRefs([])
+    setReverseRefs([])
+  }, [])
+
+  const navigateToTreeNode = useCallback(async (instanceId: string) => {
+    const currentTree = await loadTree()
     const findAndSelect = (nodes: TreeNodeResponse[]): boolean => {
       for (const n of nodes) {
         if (n.instance_id === instanceId) {
@@ -89,14 +121,24 @@ export function useContainmentTree(catalogName: string | undefined) {
       }
       return false
     }
-    findAndSelect(tree)
-  }, [tree, selectTreeNode])
+    findAndSelect(currentTree)
+  }, [loadTree, selectTreeNode])
+
+  const instanceNames = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const n of flattenNodes(tree)) {
+      map[n.instance_id] = n.instance_name
+    }
+    return map
+  }, [tree])
 
   return {
     tree,
+    instanceNames,
     treeLoading,
     expandedNodes,
     selectedNodeId,
+    selectedTypeName,
     selectedInstance,
     detailLoading,
     forwardRefs,
@@ -104,8 +146,12 @@ export function useContainmentTree(catalogName: string | undefined) {
     refsLoading,
     loadTree,
     selectTreeNode,
+    selectNodeById,
+    findParentNode,
+    getDescendants,
     toggleNode,
     expandNode,
+    clearSelection,
     navigateToTreeNode,
   }
 }

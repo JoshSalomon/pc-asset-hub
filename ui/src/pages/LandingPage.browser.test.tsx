@@ -107,7 +107,7 @@ test('T-22.06: card with no description renders cleanly', async () => {
 // T-22.09: Schema Management card links to /schema
 test('T-22.09: clicking Schema Management card navigates to /schema', async () => {
   renderLanding()
-  await page.getByText('Entity Types & Model').click()
+  await page.getByRole('button', { name: 'Navigate to Schema Management' }).click()
   await expect.element(page.getByText('Schema Page')).toBeVisible()
 })
 
@@ -115,7 +115,7 @@ test('T-22.09: clicking Schema Management card navigates to /schema', async () =
 test('T-22.12: clicking catalog card navigates to catalog viewer', async () => {
   renderLanding()
   await expect.element(page.getByText('prod-catalog')).toBeVisible()
-  await page.getByText('prod-catalog').click()
+  await page.getByRole('button', { name: 'Navigate to catalog prod-catalog' }).click()
   await expect.element(page.getByText('Catalog Viewer')).toBeVisible()
 })
 

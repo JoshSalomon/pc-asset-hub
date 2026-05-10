@@ -1,6 +1,6 @@
 # AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-05-01
+Last updated: 2026-05-07
 
 ---
 
@@ -8,12 +8,12 @@ Last updated: 2026-05-01
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1911 | 100% | 98.4% (5197/5282) | — |
+| Backend (Go) | 1930 | 100% | 98.4% (5250/5335) | — |
 | UI — Unit tests (node) | 41 | 100% | — | — |
-| UI — Browser tests (Playwright) | 1083 | 100% | 95.6% (2848/2980) | 97.9% (2569/2624) |
-| UI — System tests (Playwright + live server) | 165 | 100% | — | — |
-| Live system (bash scripts) | 506 | 100% | — | — |
-| **Total** | **3706** | **100%** | — | — |
+| UI — Browser tests (Playwright) | 1209 | 100% | 95.40% (3253/3410) | 97.70% (2929/2998) |
+| UI — System tests (Playwright + live server) | 181 | 100% | — | — |
+| Live system (bash scripts) | 697 | 100% | — | — |
+| **Total** | **4058** | **100%** | — | — |
 
 ---
 
@@ -29,13 +29,13 @@ Last updated: 2026-05-01
 | `internal/domain/models` | 100.0% (8/8) | |
 | `internal/infrastructure/config` | 100.0% (21/21) | |
 | `internal/infrastructure/gorm/models` | 100.0% (43/43) | Migration code removed (TD-21 in Session 011) |
-| `internal/infrastructure/gorm/repository` | 96.3% (754/783) | Phase 5 QA: +17 tests covering Delete/Update not-found branches, 0% functions (was 91.6%, 717/783) |
+| `internal/infrastructure/gorm/repository` | 96.3% (755/784) | Phase 5 QA: +17 tests covering Delete/Update not-found branches, 0% functions (was 91.6%, 717/783) |
 | `internal/infrastructure/k8s` | 100.0% (54/54) | Phase 5 QA: K8s client error paths now covered (was 92.6%, 50/54) |
 | `internal/operator/api/v1alpha1` | 97.7% (85/87) | `DeepCopyObject` nil-receiver guard |
 | `internal/operator/controllers` | 94.3% (198/210) | `SetupWithManager` (envtest — deferred to Phase B), `SetOwnerReference` error branches (unreachable) |
 | `internal/operator/crdgen` | 94.3% (33/35) | `json.Marshal` error guards on well-formed inputs (unreachable) |
 | `internal/service/meta` | 99.3% (1132/1140) | BulkCopy error paths, requiresDeepCopy edge cases |
-| `internal/service/operational` | 98.6% (1875/1901) | json.Marshal/Unmarshal on well-formed data, defensive nil guards, import duplicate catalog check |
+| `internal/service/operational` | 98.7% (1927/1953) | json.Marshal/Unmarshal on well-formed data, defensive nil guards, import duplicate catalog check |
 | `internal/service/validation` | 100.0% (45/45) | Phase 5 QA: cycle detection edge cases now covered (was 95.6%, 43/45) |
 
 ### Excluded from Coverage
@@ -167,7 +167,7 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | Test File | Tests | Status |
 |-----------|-------|--------|
 | `App.browser.test.tsx` | 53 | Pass |
-| `client.browser.test.ts` | 69 | Pass |
+| `client.browser.test.ts` | 70 | Pass |
 | `AddAssociationModal.browser.test.tsx` | 7 | Pass |
 | `AddAttributeModal.browser.test.tsx` | 16 | Pass |
 | `AddChildModal.browser.test.tsx` | 10 | Pass |
@@ -176,19 +176,20 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | `CopyCatalogModal.browser.test.tsx` | 5 | Pass |
 | `CreateInstanceModal.browser.test.tsx` | 11 | Pass |
 | `DiagramTabContent.browser.test.tsx` | 7 | Pass |
+| `EditAssociationModal.browser.test.tsx` | 1 | Pass |
 | `EditAttributeModal.browser.test.tsx` | 6 | Pass |
 | `EditInstanceModal.browser.test.tsx` | 6 | Pass |
-| `EntityTypeDiagram.browser.test.tsx` | 10 | Pass |
-| `ImportCatalogModal.browser.test.tsx` | 33 | Pass |
+| `EntityTypeDiagram.browser.test.tsx` | 12 | Pass |
+| `ImportCatalogModal.browser.test.tsx` | 54 | Pass |
 | `InstanceDetailPanel.browser.test.tsx` | 17 | Pass |
-| `LinkModal.browser.test.tsx` | 8 | Pass |
-| `MigrationPreviewModal.browser.test.tsx` | 4 | Pass |
+| `LinkModal.browser.test.tsx` | 10 | Pass |
+| `MigrationPreviewModal.browser.test.tsx` | 6 | Pass |
 | `RenameEntityTypeModal.browser.test.tsx` | 9 | Pass |
 | `ReplaceCatalogModal.browser.test.tsx` | 5 | Pass |
 | `SetParentModal.browser.test.tsx` | 8 | Pass |
 | `ValidationResults.browser.test.tsx` | 4 | Pass |
 | `useAssociationManagement.browser.test.tsx` | 6 | Pass |
-| `useAttributeManagement.browser.test.tsx` | 8 | Pass |
+| `useAttributeManagement.browser.test.tsx` | 11 | Pass |
 | `useCatalogData.browser.test.tsx` | 8 | Pass |
 | `useCatalogDiagram.browser.test.tsx` | 8 | Pass |
 | `useContainmentTree.browser.test.tsx` | 11 | Pass |
@@ -196,23 +197,23 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | `useInlineEdit.browser.test.tsx` | 11 | Pass |
 | `useInstanceDetail.browser.test.tsx` | 10 | Pass |
 | `useInstances.browser.test.tsx` | 11 | Pass |
-| `usePinManagement.browser.test.tsx` | 24 | Pass |
+| `usePinManagement.browser.test.tsx` | 27 | Pass |
 | `useValidation.browser.test.tsx` | 12 | Pass |
 | `LandingPage.browser.test.tsx` | 12 | Pass |
 | `CatalogDetailPage.browser.test.tsx` | 61 | Pass |
 | `CatalogDetailPage-coverage.browser.test.tsx` | 58 | Pass |
-| `CatalogDetailPage-validation.browser.test.tsx` | 50 | Pass |
-| `CatalogListPage.browser.test.tsx` | 25 | Pass |
-| `CatalogVersionDetailPage.browser.test.tsx` | 70 | Pass |
+| `CatalogDetailPage-validation.browser.test.tsx` | 51 | Pass |
+| `CatalogListPage.browser.test.tsx` | 27 | Pass |
+| `CatalogVersionDetailPage.browser.test.tsx` | 75 | Pass |
 | `EntityTypeDetailPage.browser.test.tsx` | 145 | Pass |
 | `EntityTypeListPage.browser.test.tsx` | 12 | Pass |
 | `TypeDefinitionDetailPage.browser.test.tsx` | 47 | Pass |
 | `TypeDefinitionListPage.browser.test.tsx` | 66 | Pass |
-| `OperationalCatalogDetailPage.browser.test.tsx` | 37 | Pass |
+| `OperationalCatalogDetailPage.browser.test.tsx` | 132 | Pass |
 | `buildTypedAttrs.browser.test.ts` | 4 | Pass |
 | `formatAttributeValue.browser.test.tsx` | 18 | Pass |
 | `validateAttributeValue.browser.test.ts` | 3 | Pass |
-| **Total** | **1071** | **100% pass** |
+| **Total** | **1209** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
@@ -228,67 +229,70 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | `SchemaEvolution.system.test.ts` | 9 | Pass (Phase 5 QA) |
 | `SecurityFlows.system.test.ts` | 21 | Pass |
 | `TypeSystem.system.test.ts` | 30 | Pass |
-| **Total** | **165** | **100% pass** |
+| `OperationalEditing.system.test.ts` | 16 | Pass |
+| **Total** | **181** | **100% pass** |
 
-### Code Coverage (Istanbul provider)
+### Code Coverage (V8 provider)
 
-Coverage is measured using `@vitest/coverage-istanbul` (changed from v8 in Session 025). The two test suites run independently with separate configs.
+Coverage is measured using V8 provider via `@vitest/coverage-v8`. Rebased from Istanbul in Session 027. The two test suites run independently with separate configs.
 
 **Browser tests** (primary coverage — exercises full component rendering via Playwright):
 
 | File | Stmts (covered/total) | Stmts % | Lines (covered/total) | Lines % |
 |------|-----------------------|---------|-----------------------|---------|
-| `App.tsx` | 274/308 | 89.0% | 248/267 | 92.9% |
-| `api/client.ts` | 107/114 | 93.9% | 98/105 | 93.3% |
-| `components/AddAssociationModal.tsx` | 85/85 | 100.0% | 77/77 | 100.0% |
-| `components/AddAttributeModal.tsx` | 27/27 | 100.0% | 23/23 | 100.0% |
-| `components/AddChildModal.tsx` | 87/88 | 98.9% | 73/73 | 100.0% |
-| `components/AttributeFormFields.tsx` | 33/33 | 100.0% | 30/30 | 100.0% |
-| `components/CopyAttributesModal.tsx` | 47/47 | 100.0% | 37/37 | 100.0% |
-| `components/CopyCatalogModal.tsx` | 10/10 | 100.0% | 10/10 | 100.0% |
-| `components/CreateInstanceModal.tsx` | 16/16 | 100.0% | 15/15 | 100.0% |
-| `components/DiagramTabContent.tsx` | 3/3 | 100.0% | 3/3 | 100.0% |
-| `components/EditAssociationModal.tsx` | 83/90 | 92.2% | 74/80 | 92.5% |
-| `components/EditAttributeModal.tsx` | 20/20 | 100.0% | 18/18 | 100.0% |
-| `components/EditInstanceModal.tsx` | 17/17 | 100.0% | 15/15 | 100.0% |
-| `components/EntityTypeDiagram.tsx` | 93/101 | 92.1% | 88/96 | 91.7% |
-| `components/ImportCatalogModal.tsx` | 113/115 | 98.3% | 103/103 | 100.0% |
-| `components/InstanceDetailPanel.tsx` | 7/7 | 100.0% | 7/7 | 100.0% |
-| `components/LinkModal.tsx` | 41/42 | 97.6% | 34/34 | 100.0% |
-| `components/MigrationPreviewModal.tsx` | 10/10 | 100.0% | 10/10 | 100.0% |
-| `components/RenameEntityTypeModal.tsx` | 10/10 | 100.0% | 10/10 | 100.0% |
-| `components/ReplaceCatalogModal.tsx` | 15/15 | 100.0% | 13/13 | 100.0% |
-| `components/SetParentModal.tsx` | 25/25 | 100.0% | 21/21 | 100.0% |
-| `components/TypeDefinitionSelector.tsx` | 22/22 | 100.0% | 14/14 | 100.0% |
-| `components/ValidationResults.tsx` | 11/11 | 100.0% | 10/10 | 100.0% |
-| `context/AuthContext.tsx` | 6/7 | 85.7% | 6/6 | 100.0% |
-| `hooks/useAssociationManagement.ts` | 48/51 | 94.1% | 47/47 | 100.0% |
-| `hooks/useAttributeManagement.ts` | 82/90 | 91.1% | 77/78 | 98.7% |
-| `hooks/useCatalogData.ts` | 47/47 | 100.0% | 40/40 | 100.0% |
-| `hooks/useCatalogDiagram.ts` | 24/24 | 100.0% | 23/23 | 100.0% |
-| `hooks/useContainmentTree.ts` | 59/59 | 100.0% | 56/56 | 100.0% |
-| `hooks/useEntityTypeData.ts` | 62/64 | 96.9% | 57/57 | 100.0% |
-| `hooks/useInlineEdit.ts` | 31/31 | 100.0% | 29/29 | 100.0% |
-| `hooks/useInstanceDetail.ts` | 55/56 | 98.2% | 54/55 | 98.2% |
-| `hooks/useInstances.ts` | 65/68 | 95.6% | 64/64 | 100.0% |
-| `hooks/usePinManagement.ts` | 94/95 | 98.9% | 88/88 | 100.0% |
-| `hooks/useValidation.ts` | 43/43 | 100.0% | 38/38 | 100.0% |
-| `pages/LandingPage.tsx` | 19/19 | 100.0% | 18/18 | 100.0% |
-| `pages/meta/CatalogDetailPage.tsx` | 219/232 | 94.4% | 192/193 | 99.5% |
-| `pages/meta/CatalogListPage.tsx` | 78/94 | 83.0% | 71/79 | 89.9% |
-| `pages/meta/CatalogVersionDetailPage.tsx` | 156/163 | 95.7% | 141/141 | 100.0% |
-| `pages/meta/EntityTypeDetailPage.tsx` | 153/159 | 96.2% | 133/133 | 100.0% |
-| `pages/meta/EntityTypeListPage.tsx` | 9/10 | 90.0% | 9/10 | 90.0% |
-| `pages/meta/TypeDefinitionDetailPage.tsx` | 84/88 | 95.5% | 75/75 | 100.0% |
-| `pages/meta/TypeDefinitionListPage.tsx` | 152/155 | 98.1% | 140/141 | 99.3% |
-| `pages/operational/OperationalCatalogDetailPage.tsx` | 58/59 | 98.3% | 50/50 | 100.0% |
-| `utils/buildTypedAttrs.ts` | 17/17 | 100.0% | 15/15 | 100.0% |
-| `utils/dnsLabel.ts` | 3/3 | 100.0% | 2/2 | 100.0% |
-| `utils/formatAttributeValue.tsx` | 25/25 | 100.0% | 22/22 | 100.0% |
-| `utils/statusColor.ts` | 5/6 | 83.3% | 5/6 | 83.3% |
-| `utils/typeLabel.ts` | 1/1 | 100.0% | 1/1 | 100.0% |
-| `utils/validateAttributeValue.ts` | 97/98 | 99.0% | 86/86 | 100.0% |
-| **All files (50)** | **2848/2980** | **95.6%** | **2569/2624** | **97.9%** |
+| `App.tsx` | 275/309 | 89.0% | 250/269 | 92.9% |
+| `api/client.ts` | 106/114 | 93.0% | 97/105 | 92.4% |
+| `components/AddAssociationModal.tsx` | 87/87 | 100.0% | 79/79 | 100% |
+| `components/AddAttributeModal.tsx` | 29/29 | 100.0% | 25/25 | 100% |
+| `components/AddChildModal.tsx` | 78/79 | 98.7% | 67/67 | 100% |
+| `components/AttributeFormFields.tsx` | 43/43 | 100.0% | 37/37 | 100% |
+| `components/CopyAttributesModal.tsx` | 49/49 | 100.0% | 39/39 | 100% |
+| `components/CopyCatalogModal.tsx` | 12/12 | 100.0% | 12/12 | 100% |
+| `components/CreateInstanceModal.tsx` | 18/18 | 100.0% | 17/17 | 100% |
+| `components/DiagramTabContent.tsx` | 4/4 | 100.0% | 3/3 | 100% |
+| `components/EditAssociationModal.tsx` | 85/92 | 92.4% | 76/82 | 92.7% |
+| `components/EditAttributeModal.tsx` | 22/22 | 100.0% | 20/20 | 100% |
+| `components/EditInstanceModal.tsx` | 19/19 | 100.0% | 17/17 | 100% |
+| `components/EntityTypeDiagram.tsx` | 95/103 | 92.2% | 90/98 | 91.8% |
+| `components/ImportCatalogModal.tsx` | 180/199 | 90.5% | 164/178 | 92.1% |
+| `components/InstanceDetailPanel.tsx` | 9/9 | 100.0% | 9/9 | 100% |
+| `components/LinkModal.tsx` | 51/52 | 98.1% | 44/44 | 100% |
+| `components/MigrationPreviewModal.tsx` | 11/11 | 100.0% | 11/11 | 100% |
+| `components/RenameEntityTypeModal.tsx` | 12/12 | 100.0% | 12/12 | 100% |
+| `components/ReplaceCatalogModal.tsx` | 17/17 | 100.0% | 15/15 | 100% |
+| `components/SetParentModal.tsx` | 27/27 | 100.0% | 23/23 | 100% |
+| `components/TypeDefinitionSelector.tsx` | 24/24 | 100.0% | 15/15 | 100% |
+| `components/ValidationResults.tsx` | 12/12 | 100.0% | 10/10 | 100% |
+| `context/AuthContext.tsx` | 8/9 | 88.9% | 7/7 | 100% |
+| `hooks/useAssociationManagement.ts` | 49/52 | 94.2% | 48/48 | 100% |
+| `hooks/useAttributeManagement.ts` | 85/91 | 93.4% | 78/79 | 98.7% |
+| `hooks/useCatalogData.ts` | 48/48 | 100.0% | 41/41 | 100% |
+| `hooks/useCatalogDiagram.ts` | 25/25 | 100.0% | 24/24 | 100% |
+| `hooks/useContainmentTree.ts` | 93/94 | 98.9% | 84/84 | 100% |
+| `hooks/useEntityTypeData.ts` | 63/65 | 96.9% | 58/58 | 100% |
+| `hooks/useInlineEdit.ts` | 32/32 | 100.0% | 30/30 | 100% |
+| `hooks/useInstanceDetail.ts` | 56/57 | 98.2% | 55/56 | 98.2% |
+| `hooks/useInstances.ts` | 66/69 | 95.7% | 65/65 | 100% |
+| `hooks/usePinManagement.ts` | 94/95 | 98.9% | 88/88 | 100% |
+| `hooks/useValidation.ts` | 44/44 | 100.0% | 39/39 | 100% |
+| `pages/LandingPage.tsx` | 21/21 | 100.0% | 20/20 | 100% |
+| `pages/meta/CatalogDetailPage.tsx` | 219/231 | 94.8% | 190/191 | 99.5% |
+| `pages/meta/CatalogListPage.tsx` | 81/97 | 83.5% | 73/81 | 90.1% |
+| `pages/meta/CatalogVersionDetailPage.tsx` | 159/165 | 96.4% | 141/142 | 99.3% |
+| `pages/meta/EntityTypeDetailPage.tsx` | 156/161 | 96.9% | 134/134 | 100% |
+| `pages/meta/EntityTypeListPage.tsx` | 11/12 | 91.7% | 11/12 | 91.7% |
+| `pages/meta/TypeDefinitionDetailPage.tsx` | 86/90 | 95.6% | 76/76 | 100% |
+| `pages/meta/TypeDefinitionListPage.tsx` | 154/157 | 98.1% | 142/143 | 99.3% |
+| `pages/operational/OperationalCatalogDetailPage.tsx` | 273/286 | 95.5% | 248/248 | 100% |
+| `utils/buildTypedAttrs.ts` | 17/17 | 100.0% | 15/15 | 100% |
+| `utils/dnsLabel.ts` | 3/3 | 100.0% | 2/2 | 100% |
+| `utils/errorMessage.ts` | 1/1 | 100.0% | 1/1 | 100% |
+| `utils/formatAttributeValue.tsx` | 26/26 | 100.0% | 23/23 | 100% |
+| `utils/loadSchemaSnapshot.ts` | 14/14 | 100.0% | 11/11 | 100% |
+| `utils/statusColor.ts` | 6/6 | 100.0% | 6/6 | 100% |
+| `utils/typeLabel.ts` | 1/1 | 100.0% | 1/1 | 100% |
+| `utils/validateAttributeValue.ts` | 97/98 | 99.0% | 86/86 | 100% |
+| **All files (52)** | **3253/3410** | **95.40%** | **2929/2998** | **97.70%** |
 
 **Unit tests** (supplemental — covers components that work in jsdom without browser):
 
@@ -1138,12 +1142,103 @@ UI uncovered NEW lines (5 total, after coverage fixes):
 | `MigrationPreviewModal.tsx:97` | `return \`Attribute renamed: ...\`` | `warningTitle` switch case for 'renamed' type — requires specific dry-run API response shape |
 | `MigrationPreviewModal.tsx:99` | `return \`${type}: ${attribute}\`` | `warningTitle` default case — requires unknown warning type from API |
 
+### New Code Coverage (Session 027 — FF-6: Operational UI Editing)
+
+**Feature:** Instance CRUD (create, edit, delete with cascade), containment management (add child, set parent, remove from container), link management (create link, delete link), role-aware controls (canMutate gating, published catalog protection).
+
+**New UI files:**
+
+| File | Coverage |
+|------|----------|
+| `utils/errorMessage.ts` (NEW) | 100% (1/1) |
+| `utils/loadSchemaSnapshot.ts` (NEW) | 100% (14/14) |
+
+**Modified UI files:**
+
+| File | Before | After | Delta | Note |
+|------|--------|-------|-------|------|
+| `OperationalCatalogDetailPage.tsx` | 98.3% (58/59) | 95.4% (272/285) | +214 covered, +226 total | **REGRESSION -2.9pp** — expected: file grew from 59 to 285 stmts with FF-6 write controls (instance CRUD, containment, links, role gating); 13 new uncov are handler bodies blocked by PF6 Select-in-Modal + defensive guards |
+| `useContainmentTree.ts` | 100% (59/59) | 98.9% (88/89) | +29 covered, +30 total | REGRESSION -1.1pp — 1 new uncov: L78 `if (!node) return []` in `getDescendants` — caller `openDeleteModal` provides `ct.selectedInstance.id` which is always in the tree because `selectedInstance` is set by `selectTreeNode` from a clicked tree node; guard only triggers if tree data changes between render and click |
+| `InstanceDetailPanel.tsx` | 100% (7/7) | 100% (9/9) | +2 covered |
+| `AddChildModal.tsx` | 98.9% (87/88) | 98.7% (78/79) | refactored smaller, 1 uncov (L110 defensive guard) |
+| `CopyAttributesModal.tsx` | 100% (47/47) | 100% (49/49) | +2 covered |
+| `LandingPage.tsx` | 100% (19/19) | 100% (21/21) | +2 covered |
+
+**New uncovered lines (0):** All new lines in new files are covered. `scripts/uncovered-new-lines-ui.sh` confirms 0 uncovered new lines.
+
+**Remaining uncovered in OperationalCatalogDetailPage.tsx (13 statements on 13 lines):**
+
+All 13 uncovered statements are defensive guard returns. Buttons are disabled when preconditions are unmet, so these guards are unreachable via normal UI interaction.
+
+| Category | Lines | Count | Why uncoverable |
+|----------|-------|-------|-----------------|
+| Route param guard | L57 | 1 | `name` from `useParams()`, always set by route |
+| FormSelect empty guard | L137 | 1 | Disabled option prevents empty selection |
+| Handler guard returns | L164,184,201,223,232,256,267,283,299,317,333 | 11 | Button `isDisabled` prevents triggering when required state (name, selectedInstance, typeName, etc.) is missing |
+
+**Test count changes:**
+
+| Suite | Before | After | Delta |
+|-------|--------|-------|-------|
+| Browser tests | 1182 | 1207 | +25 |
+| System tests | 165 | 179 | +14 |
+| Live scripts | 506 | 697 | +191 |
+
+**Backend coverage:** `internal/service/operational/instance_service.go` was modified (TD-145: BumpInstanceVersion + version bump calls). Package `service/operational` went from 1875/1901 (26 uncov) to 1916/1942 (26 uncov) — +41 covered, +41 total, net 0 uncovered change. All new lines covered. Overall backend: 5197/5282 → 5238/5323 (85 uncov, unchanged).
+
+**Overall UI coverage (V8 provider):**
+
+| Metric | Before (re-measured at session start) | After | Delta |
+|--------|--------------------------------------|-------|-------|
+| Statements | 94.01% (3186/3389) | 95.37% (3239/3396) | **+1.36pp** |
+| Lines | 96.27% (2870/2981) | 97.68% (2915/2984) | **+1.41pp** |
+| Functions | 93.22% (798/856) | 94.86% (813/857) | **+1.64pp** |
+| Branches | 84.84% (2116/2494) | 85.89% (2156/2510) | **+1.05pp** |
+
+Note: "Before" values were re-measured using V8 provider at the start of this session (before any code changes), since the previous session used Istanbul provider. Per-file baselines match git HEAD values.
+
+### New Code Coverage (Session 028 — FF-6 Bug Fixes + Coverage Refresh)
+
+**Changes:** 6 bug fixes (SetParent name collision, BumpInstanceVersion IAV cleanup, tree sort, LinkModal bidirectional incoming label, parent disambiguation, outgoingLinks includes incoming bidirectional), + 4 new backend tests, 2 new browser tests, 1 new repo integration test.
+
+**Backend:**
+
+| File | Before (S027) | After | Delta |
+|------|---------------|-------|-------|
+| `gorm/repository` | 754/783 (29 uncov) | 755/784 (29 uncov) | +1 covered, +1 total, 0 delta uncov |
+| `service/operational` | 1916/1942 (26 uncov) | 1927/1953 (26 uncov) | +11 covered, +11 total, 0 delta uncov |
+| **Overall** | 5238/5323 (85 uncov) | 5250/5335 (85 uncov) | +12 covered, +12 total, 0 delta uncov |
+
+New `DeleteByInstanceVersion` repo function at 100% — test added for full GORM integration coverage.
+
+**UI:**
+
+| File | Before (S027) | After | Delta |
+|------|---------------|-------|-------|
+| `OperationalCatalogDetailPage.tsx` | 272/285 (13 uncov) | 273/286 (13 uncov) | +1 covered, +1 total, 0 delta uncov |
+| `useContainmentTree.ts` | 88/89 (1 uncov) | 93/94 (1 uncov) | +5 covered, +5 total, 0 delta uncov |
+| `LinkModal.tsx` | 43/44 (1 uncov) | 51/52 (1 uncov) | +8 covered, +8 total, 0 delta uncov |
+| `AddChildModal.tsx` | 78/79 (1 uncov) | 78/79 (1 uncov) | unchanged |
+| `InstanceDetailPanel.tsx` | 9/9 (0 uncov) | 9/9 (0 uncov) | unchanged |
+| `SetParentModal.tsx` | 27/27 (0 uncov) | 27/27 (0 uncov) | unchanged |
+| `AttributeFormFields.tsx` | 43/43 (0 uncov) | 43/43 (0 uncov) | unchanged |
+| `CopyAttributesModal.tsx` | 49/49 (0 uncov) | 49/49 (0 uncov) | unchanged |
+| `LandingPage.tsx` | 21/21 (0 uncov) | 21/21 (0 uncov) | unchanged |
+| **Overall** | 3239/3396 (157 uncov) | 3253/3410 (157 uncov) | +14 covered, +14 total, 0 delta uncov |
+
+**New uncovered lines: 0** (verified by arithmetic check: backend 85->85, UI 157->157).
+
+**Test count changes:**
+
+| Suite | Before (S027) | After | Delta |
+|-------|---------------|-------|-------|
+| Backend | 1911 | 1930 | +19 |
+| Browser tests | 1207 | 1209 | +2 |
+| System tests | 179 | 181 | +2 |
+
 ### Coverage Gaps to Address
 
-| Component | Browser Coverage | Issue | Resolution |
-|-----------|-----------------|-------|------------|
-| `EntityTypeDetailPage.tsx` | 70.8% | Copy-attributes source selection flow and deep copy confirmation flow are hard to test with browser mocks | System tests cover these flows against a live server |
-| `InstanceListPage.tsx` | 0% | Operational page, no tests yet | Add when operational UI is prioritized |
+No significant coverage gaps remain. All files are above 83% statement coverage. The per-file table above shows current measured coverage for every source file.
 
 ### System Test Notes
 

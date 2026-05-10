@@ -34,7 +34,7 @@ test('landing page loads with title and sections', async () => {
 test('schema management card navigates to /schema', async () => {
   await pg.goto(UI_URL)
   await visible(pg.getByText('Entity Types & Model'))
-  await pg.getByText('Entity Types & Model').click()
+  await pg.getByRole('button', { name: 'Navigate to Schema Management' }).click()
 
   // Use pg.url() instead of toHaveURL since we're not using @playwright/test
   await pg.waitForTimeout(500) // Give navigation time to complete

@@ -624,9 +624,10 @@ RESP=$(api POST "$DATA_API/catalogs/replace" Admin \
   "{\"source\":\"${PREFIX}-rep-src-${TIMESTAMP}\",\"target\":\"${PREFIX}-rep-tgt-${TIMESTAMP}\"}")
 assert_status "$RESP" "200" "Admin can replace catalog (200)"
 
-# Clean up replace test catalogs
-api DELETE "$DATA_API/catalogs/${PREFIX}-rep-src-${TIMESTAMP}" Admin > /dev/null 2>&1 || true
-api DELETE "$DATA_API/catalogs/${PREFIX}-rep-tgt-${TIMESTAMP}" Admin > /dev/null 2>&1 || true
+# Clean up replace test catalogs (including archive created by replace)
+for catname in $(curl -s "$DATA_API/catalogs" -H 'X-User-Role: Admin' | jq -r ".items[].name" 2>/dev/null | grep "^${PREFIX}-rep-.*-${TIMESTAMP}"); do
+  api DELETE "$DATA_API/catalogs/$catname" Admin > /dev/null 2>&1 || true
+done
 
 # ============================================================
 # SECTION 13: Read endpoints accessible by all roles

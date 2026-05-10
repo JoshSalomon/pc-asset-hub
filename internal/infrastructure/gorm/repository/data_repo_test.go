@@ -1103,6 +1103,37 @@ func TestTD16_DeleteByInstanceID(t *testing.T) {
 	assert.Empty(t, vals)
 }
 
+// DeleteByInstanceVersion removes IAVs for a specific instance+version combo
+func TestDeleteByInstanceVersion(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	instID := id()
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: instID, EntityTypeID: tc.etID, CatalogID: tc.cvID,
+		Name: "test-inst", Version: 2, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	// Create IAVs for version 1 and version 2
+	require.NoError(t, tc.iavRepo.SetValues(ctx, []*models.InstanceAttributeValue{
+		{ID: id(), InstanceID: instID, AttributeID: "a1", ValueString: "v1-old", InstanceVersion: 1},
+		{ID: id(), InstanceID: instID, AttributeID: "a1", ValueString: "v2-current", InstanceVersion: 2},
+	}))
+
+	// Delete only version 1
+	require.NoError(t, tc.iavRepo.DeleteByInstanceVersion(ctx, instID, 1))
+
+	// Version 1 should be gone
+	vals, err := tc.iavRepo.GetValuesForVersion(ctx, instID, 1)
+	require.NoError(t, err)
+	assert.Empty(t, vals)
+
+	// Version 2 should remain
+	vals, err = tc.iavRepo.GetValuesForVersion(ctx, instID, 2)
+	require.NoError(t, err)
+	assert.Len(t, vals, 1)
+	assert.Equal(t, "v2-current", vals[0].ValueString)
+}
+
 // T-29.45b: RemapAttributeIDs updates attribute_id for matched instances
 func TestT29_45b_RemapAttributeIDs(t *testing.T) {
 	tc, ctx := setupTestContext(t)
