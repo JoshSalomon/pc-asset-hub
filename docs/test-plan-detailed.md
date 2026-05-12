@@ -30,7 +30,7 @@ Development proceeds through three environment phases, each with increasing infr
 
 **Milestones completed**: 1–12 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired; T-13.102 changed by FF-6), T-14.01 through T-14.22, T-15.01 through T-15.81, T-16.01 through T-16.69, T-17.01 through T-17.88, T-24.01 through T-24.28, T-25.01 through T-25.39, T-26.01 through T-26.18, T-27.01 through T-27.27, and T-32.01 through T-32.78 (992 test cases), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired; T-13.102 changed by FF-6), T-14.01 through T-14.22, T-15.01 through T-15.81, T-16.01 through T-16.69, T-17.01 through T-17.88, T-24.01 through T-24.28, T-25.01 through T-25.39, T-26.01 through T-26.18, T-27.01 through T-27.27, T-32.01 through T-32.78, T-33.01 through T-33.12, and T-34.01 through T-34.117 (1121 test cases), using SQLite and mocked/simulated infrastructure.
 
 **Human checkpoint**: After all 802 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
@@ -4414,6 +4414,206 @@ Export a catalog (schema + data) to a JSON file and import it into another Asset
 | T-32.78 | Operational UI editing does not require new API endpoints (verify all used endpoints already tested) | Live | No new endpoints — all instance/link/containment endpoints already covered by existing scripts |
 
 **Note on backend tests:** No new backend tests needed for Milestone 21. All instance CRUD, containment, and link APIs are already tested in Milestones 11-13. FF-6 is purely frontend. The round-trip/seam category does not apply — no new serialization boundaries are crossed.
+
+## Milestone 22: Instance Name DNS-1123 Validation (FF-15 prerequisite)
+
+**Scope**: Tighten instance name validation from permissive regex to DNS-1123 subdomain format. Prerequisite for FF-15 — all instance names must be valid K8s resource names.
+
+### Backend — Unit + API Tests
+
+| ID | Description | Layer | Expected |
+|----|-------------|-------|----------|
+| T-33.01 | ValidateInstanceName accepts lowercase alphanumeric with hyphens | Unit | No error |
+| T-33.02 | ValidateInstanceName rejects uppercase characters | Unit | Error: "must be a valid Kubernetes resource name" |
+| T-33.03 | ValidateInstanceName rejects underscores | Unit | Error: "must be a valid Kubernetes resource name" |
+| T-33.04 | ValidateInstanceName rejects spaces | Unit | Error: "must be a valid Kubernetes resource name" |
+| T-33.05 | ValidateInstanceName rejects dots | Unit | Error: "must be a valid Kubernetes resource name" |
+| T-33.06 | ValidateInstanceName rejects leading hyphen | Unit | Error: "must be a valid Kubernetes resource name" |
+| T-33.07 | ValidateInstanceName rejects trailing hyphen | Unit | Error: "must be a valid Kubernetes resource name" |
+| T-33.08 | ValidateInstanceName rejects name > 63 characters | Unit | Error: "must be a valid Kubernetes resource name" |
+| T-33.09 | ValidateInstanceName accepts exactly 63 characters | Unit | No error |
+| T-33.10 | CreateInstance with invalid name returns 400 with descriptive error | API | 400, message includes "Kubernetes resource name" |
+| T-33.11 | CreateContainedInstance with invalid name returns 400 | API | 400 |
+| T-33.12 | UpdateInstance rename to invalid name returns 400 | API | 400 |
+
+### Browser Tests
+
+Covered by existing CreateInstanceModal/EditInstanceModal tests — update existing tests to verify DNS-1123 inline validation.
+
+**Justification for skipped categories:**
+- **Integration tests**: Validation is in the service layer before any DB call. Unit tests are sufficient.
+- **Round-trip/seam tests**: No serialization boundary. Validation is input-only.
+- **Live tests**: Covered by T-33.10–T-33.12 via API.
+
+## Milestone 23: Export Plugin Framework (US-60, US-61, US-62, FF-15)
+
+**Scope**: Export plugin framework with exporter registry, export bindings as catalog sub-resource, publish preview flow with PreviewCache, and MCP Gateway CR exporter.
+
+### Exporter Registry — Unit Tests
+
+| ID | Description | Layer | Expected |
+|----|-------------|-------|----------|
+| T-34.01 | Register exporter and retrieve by name | Unit | Exporter returned |
+| T-34.02 | Get non-existent exporter returns not found | Unit | Error |
+| T-34.03 | List empty registry returns empty slice | Unit | Empty slice |
+| T-34.04 | List registry with 2 exporters returns both with name, description, parameter schema | Unit | 2 items |
+| T-34.05 | GET /exporters returns registered exporters as JSON | API | 200, items array |
+| T-34.06 | GET /exporters with no auth still succeeds (any authenticated user) | API | 200 |
+
+### Export Binding CRUD — Unit + Integration + API Tests (US-60)
+
+| ID | Description | Layer | Expected |
+|----|-------------|-------|----------|
+| T-34.07 | Create binding with valid exporter and parameters | Unit | Binding created with ID |
+| T-34.08 | Create binding with non-existent exporter returns error | Unit | Error: "exporter not found" |
+| T-34.09 | Create binding with missing required parameter returns error | Unit | Error listing missing params |
+| T-34.10 | Create binding — ValidateSchema checks entity type exists in CV | Unit | Error if type not pinned |
+| T-34.11 | Create binding — ValidateSchema checks required attribute exists on entity type | Unit | Error: "missing attribute 'route_name'" |
+| T-34.12 | Create binding — ValidateSchema checks containment association exists | Unit | Error if no containment from server to tool type |
+| T-34.13 | Create multiple bindings to same exporter with different params | Unit | Both created |
+| T-34.14 | Update binding parameters | Unit | Parameters updated |
+| T-34.15 | Update binding enabled/disabled toggle | Unit | Enabled flag updated |
+| T-34.16 | Delete binding | Unit | Binding removed |
+| T-34.17 | List bindings by catalog returns only that catalog's bindings | Unit | Correct filtered list |
+| T-34.18 | Create binding — integration test against real DB with CV pins | Integration | Binding persisted |
+| T-34.19 | ValidateSchema — integration test against real DB with actual attributes and associations | Integration | Correct validation result |
+| T-34.20 | POST /export-bindings with valid data returns 201 | API | 201 with binding |
+| T-34.21 | POST /export-bindings with invalid exporter returns 400 | API | 400, error message |
+| T-34.22 | POST /export-bindings with missing required params returns 400 | API | 400, lists missing params |
+| T-34.23 | POST /export-bindings with entity type not in CV returns 400 | API | 400, "entity type not pinned" |
+| T-34.24 | GET /export-bindings returns all bindings for catalog | API | 200, items array |
+| T-34.25 | PUT /export-bindings/{id} updates parameters | API | 200 |
+| T-34.26 | DELETE /export-bindings/{id} removes binding | API | 204 |
+| T-34.27 | RBAC: RO can list bindings | API | 200 |
+| T-34.28 | RBAC: RW cannot create binding (Admin+ required) | API | 403 |
+| T-34.29 | RBAC: Admin can create/update/delete bindings | API | 201/200/204 |
+
+### Export Binding CRUD — Browser Tests (US-60)
+
+| ID | Description | Layer | Expected |
+|----|-------------|-------|----------|
+| T-34.30 | Export Plugins tab visible on CatalogDetailPage | Browser | Tab rendered |
+| T-34.31 | Binding list shows exporter name, status, last run, enabled toggle | Browser | All columns rendered |
+| T-34.32 | Add Binding modal shows exporter dropdown populated from GET /exporters | Browser | Dropdown with options |
+| T-34.33 | Add Binding modal shows parameter form matching exporter's ParameterSchema | Browser | Input fields match schema |
+| T-34.34 | Add Binding modal validates required parameters before submit | Browser | Error shown for missing params |
+| T-34.35 | Edit Binding modal pre-fills current parameters | Browser | Fields match current values |
+| T-34.36 | Delete Binding shows confirmation dialog | Browser | Confirmation rendered |
+| T-34.37 | Enable/disable toggle updates binding | Browser | Toggle changes state |
+| T-34.38 | RO role: no Add/Edit/Delete controls, binding list visible | Browser | Read-only view |
+| T-34.39 | Admin role: all CRUD controls visible | Browser | All buttons rendered |
+
+### Export Run — Unit + API + Browser Tests (US-61)
+
+| ID | Description | Layer | Expected |
+|----|-------------|-------|----------|
+| T-34.40 | Run binding produces K8sArtifact list | Unit | Artifacts returned |
+| T-34.41 | Run on empty catalog returns success with empty artifacts list | Unit | ExportOutput with 0 artifacts, no error |
+| T-34.42 | Run with missing required attributes fails with descriptive error | Unit | Error listing incomplete instances |
+| T-34.43 | Run re-validates schema (catches drift since binding creation) | Unit | Error if schema changed |
+| T-34.44 | POST /export-bindings/{id}/run returns YAML with Content-Disposition header | API | 200, attachment header, YAML body |
+| T-34.45 | POST /run as RO returns 403 | API | 403 |
+| T-34.46 | POST /run as RW returns 200 (any catalog state) | API | 200 |
+| T-34.47 | POST /run on draft catalog succeeds (download works on any state) | API | 200 |
+| T-34.47b | POST /run on empty catalog returns YAML file with comment "No instances found" | API | 200, Content-Disposition, body contains comment |
+| T-34.48 | "Export Now" button triggers YAML download | Browser | File downloaded |
+| T-34.49 | Export error shows error message in UI | Browser | Error alert displayed |
+
+### MCP Gateway CR Exporter — Unit + Integration Tests (US-62)
+
+| ID | Description | Layer | Expected |
+|----|-------------|-------|----------|
+| T-34.50 | Exporter produces MCPServerRegistration per server instance | Unit | One CR per server |
+| T-34.51 | MCPServerRegistration has correct apiVersion (mcp.kuadrant.io/v1alpha1) | Unit | Correct apiVersion |
+| T-34.52 | MCPServerRegistration has correct kind (MCPServerRegistration) | Unit | Correct kind |
+| T-34.53 | MCPServerRegistration metadata.name matches server instance name | Unit | Names match |
+| T-34.54 | MCPServerRegistration metadata.namespace from target_namespace parameter | Unit | Namespace set |
+| T-34.55 | MCPServerRegistration spec.prefix = server_name + "_" | Unit | Prefix correct |
+| T-34.56 | MCPServerRegistration spec.targetRef.name from route_name attribute | Unit | Route name mapped |
+| T-34.57 | MCPServerRegistration spec.path from mcp_path attribute, defaults to /mcp | Unit | Path correct |
+| T-34.58 | MCPServerRegistration spec.credentialRef from credential_secret attribute (optional) | Unit | CredentialRef set when present, omitted when absent |
+| T-34.59 | Labels: assethub.io/catalog, assethub.io/exporter, assethub.io/binding-id set | Unit | All labels present |
+| T-34.60 | Annotations: assethub.io/exported-at, assethub.io/source-system set | Unit | All annotations present |
+| T-34.61 | MCPVirtualServer produced once per catalog | Unit | Exactly one VS CR |
+| T-34.62 | MCPVirtualServer metadata.name matches catalog name | Unit | Names match |
+| T-34.63 | MCPVirtualServer spec.description matches catalog description | Unit | Descriptions match |
+| T-34.64 | MCPVirtualServer spec.tools contains all tool names prefixed by parent server name | Unit | All tools present, correctly prefixed |
+| T-34.65 | Tool name format: {server_name}_{tool_name} | Unit | Correct format |
+| T-34.66 | Tools from multiple servers are all included in one VirtualServer | Unit | Tools from server A and B combined |
+| T-34.67 | Deterministic ordering: servers sorted by name | Unit | Alphabetical |
+| T-34.68 | Deterministic ordering: tools sorted alphabetically within VirtualServer | Unit | Alphabetical |
+| T-34.69 | VirtualServer CR appears last in output (after all server registrations) | Unit | Correct order |
+| T-34.70 | Missing route_name attribute fails entire export with instance name in error | Unit | Error with instance name |
+| T-34.71 | Server with no contained tools: server CR produced, no tools in VirtualServer for that prefix | Unit | Valid but empty prefix in VS |
+| T-34.72 | ValidateSchema integration: validates against real DB schema | Integration | Correct result |
+| T-34.73 | Round-trip: output YAML parseable by yaml.Unmarshal into unstructured objects | Unit | Parse succeeds |
+| T-34.74 | Round-trip: parsed objects have correct apiVersion, kind, metadata.name | Unit | Fields match |
+| T-34.75 | Deterministic: same input produces identical output on two runs (excluding timestamp annotations like exported-at) | Unit | Outputs equal after stripping timestamps |
+
+### Publish Integration — Unit + API + Browser Tests (US-61)
+
+| ID | Description | Layer | Expected |
+|----|-------------|-------|----------|
+| T-34.76 | PublishPreview re-validates bindings via ValidateSchema | Unit | Schema drift caught |
+| T-34.77 | PublishPreview caches artifacts via PreviewCache with session token | Unit | Token returned, artifacts cached |
+| T-34.78 | PublishPreview returns per-binding results (success/failure/artifact count) | Unit | Structured response |
+| T-34.79 | Publish with valid token retrieves cached artifacts | Unit | Artifacts returned |
+| T-34.80 | Publish with expired token returns 410 Gone | Unit | 410 |
+| T-34.81 | Publish with modified catalog returns 409 (optimistic lock) | Unit | 409, "catalog modified since preview" |
+| T-34.82 | Publish without token runs exports as fire-and-forget (backward compat) | Unit | Publish succeeds, binding status updated async |
+| T-34.83 | PreviewCache Store/Retrieve lifecycle | Unit | Store then retrieve succeeds |
+| T-34.84 | PreviewCache TTL expiry | Unit | Retrieve after TTL returns error |
+| T-34.85 | PreviewCache stores CatalogUpdatedAt for optimistic lock | Unit | Timestamp stored and retrievable |
+| T-34.86 | POST /publish/preview returns session token and binding results | API | 200, token + bindings array |
+| T-34.87 | POST /publish with token commits and returns download token | API | 200, download_token |
+| T-34.88 | GET /export-bindings/download?token=X&binding=Y returns YAML | API | 200, Content-Disposition, YAML body |
+| T-34.89 | GET /download with expired token returns 410 | API | 410 |
+| T-34.90 | RBAC: publish/preview requires Admin+ | API | 403 for RW |
+| T-34.91 | RBAC: download requires RW+ | API | 403 for RO |
+| T-34.92 | Publish flow in UI: preview called first, results shown | Browser | Preview response rendered |
+| T-34.93 | Publish with failures: confirmation dialog with per-binding results | Browser | Dialog shows success/failure per binding |
+| T-34.94 | Publish Anyway button commits despite failures | Browser | Catalog published |
+| T-34.95 | Abort button cancels — catalog stays unpublished | Browser | No state change |
+| T-34.96 | Successful publish auto-downloads files per binding | Browser | Files downloaded automatically |
+
+### Catalog Delete with Bindings — Unit + Integration + API + Browser Tests
+
+| ID | Description | Layer | Expected |
+|----|-------------|-------|----------|
+| T-34.97 | Catalog delete cascades to bindings (DB FK ON DELETE CASCADE) | Integration | Bindings gone |
+| T-34.98 | Catalog delete response includes deleted_bindings_count | API | Count in response |
+| T-34.99 | Catalog delete with bindings shows warning in UI | Browser | Warning lists affected bindings |
+
+### Live Test Scripts (curl against deployed system)
+
+| ID | Description | Layer | Expected |
+|----|-------------|-------|----------|
+| T-34.100 | Binding CRUD lifecycle: create, list, get, update, delete | Live | All operations succeed |
+| T-34.101 | Binding create with invalid exporter returns 400 | Live | 400 |
+| T-34.102 | Binding create with missing entity type returns 400 | Live | 400 |
+| T-34.103 | Run export on live catalog with real MCP server/tool instances | Live | Valid YAML downloaded |
+| T-34.104 | Run export twice — output is identical after stripping timestamp annotations | Live | diff returns empty (excluding exported-at) |
+| T-34.105 | Run export YAML round-trip — parseable, correct apiVersion/kind | Live | Parse succeeds |
+| T-34.106 | Run export verifies all server attributes mapped (route_name, mcp_path) | Live | Fields present in CR |
+| T-34.107 | Run export verifies all tools from all servers present in VirtualServer | Live | Complete tool list |
+| T-34.108 | Run export on empty catalog returns comment-only YAML | Live | Non-zero file with comment |
+| T-34.109 | RBAC: RO cannot run export (403) | Live | 403 |
+| T-34.110 | RBAC: RW can run export | Live | 200 |
+| T-34.111 | RBAC: RW cannot create binding (403) | Live | 403 |
+| T-34.112 | Publish preview + commit + download flow end-to-end | Live | Full flow succeeds |
+
+### System Tests — Playwright (against deployed system)
+
+| ID | Description | Layer | Expected |
+|----|-------------|-------|----------|
+| T-34.113 | Export Plugins tab visible on catalog detail page | System | Tab rendered |
+| T-34.114 | Add export binding via UI wizard | System | Binding created |
+| T-34.115 | Export Now button downloads YAML file | System | File downloaded |
+| T-34.116 | Delete binding via UI | System | Binding removed |
+| T-34.117 | Publish with bindings: preview shown, confirm, files downloaded | System | Full publish flow |
+
+**Justification for skipped categories:**
+- **Operator tests**: FF-15 Phase 1 does not create CRs in K8s (download only). No operator involvement.
 
 ---
 

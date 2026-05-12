@@ -488,7 +488,7 @@ The exporter maps mcp-server instance attributes to `MCPServerRegistration` CR f
 
 **What changes:**
 - **Backend:** `ValidateInstanceName()` in `instance_service.go` switches to the DNS-1123 regex
-- `CreateInstance`, `CreateContainedInstance`, and `UpdateInstance` reject names with uppercase, underscores, spaces, or dots with a clear error message: `"instance name must be a valid DNS label: lowercase alphanumeric and hyphens only, must start and end with alphanumeric, max 63 characters"`
+- `CreateInstance`, `CreateContainedInstance`, and `UpdateInstance` reject names with uppercase, underscores, spaces, or dots with a clear error message: `"instance name must be a valid Kubernetes resource name: lowercase letters, numbers, and hyphens only, must start and end with a letter or number, max 63 characters"`
 - **UI:** `AttributeFormFields.tsx` (or wherever instance name input validation lives) must apply the same DNS-1123 regex client-side, showing inline validation feedback before submission. Both `CreateInstanceModal` and `EditInstanceModal` in the meta and operational UIs.
 - Existing instances with non-conforming names are not migrated automatically — the user renames them manually if needed
 - Implement as Stage 0 (before the plugin framework), since it affects the core instance service and UI
@@ -693,7 +693,7 @@ Export bindings reference exporters by name. When a catalog is exported (FF-12),
 ### Stage 0: DNS-1123 Instance Name Validation (prerequisite)
 - Tighten `ValidateInstanceName()` in `instance_service.go` to DNS-1123 regex
 - Update UI client-side validation in `CreateInstanceModal` and `EditInstanceModal`
-- Clear error message: "instance name must be a valid DNS label: lowercase alphanumeric and hyphens only, must start and end with alphanumeric, max 63 characters"
+- Clear error message: "instance name must be a valid Kubernetes resource name: lowercase letters, numbers, and hyphens only, must start and end with a letter or number, max 63 characters"
 - Update existing tests that use non-DNS-1123 instance names
 
 ### Stage 1: Plugin Framework (backend)
