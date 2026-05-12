@@ -1686,6 +1686,62 @@ Acceptance Criteria:
 
 ---
 
+**US-60: Configure export bindings on catalogs**
+As a catalog Admin, I want to attach export plugins to my catalog with per-binding parameters, so that publishing the catalog automatically produces output in consumer-specific formats.
+
+**Why**: Catalog owners need to configure which exporters run for their catalog and with what parameters (e.g., target namespace, entity type mapping). Without bindings, export plugins have no connection to catalogs.
+
+Acceptance Criteria:
+- `GET /api/data/v1/exporters` lists all registered exporters with name, description, and parameter schema.
+- `POST /api/data/v1/catalogs/{name}/export-bindings` creates a binding with exporter name, parameters JSON, and enabled flag. Validates exporter exists and required parameters are provided.
+- `GET /api/data/v1/catalogs/{name}/export-bindings` lists all bindings for a catalog with status info (last run, last status).
+- `PUT /api/data/v1/catalogs/{name}/export-bindings/{id}` updates parameters or enabled flag.
+- `DELETE /api/data/v1/catalogs/{name}/export-bindings/{id}` removes a binding.
+- Parameter validation at binding creation: two levels — (1) entity types must exist in CV, (2) exporter's `ValidateSchema()` checks required attributes and associations.
+- Multiple bindings to the same exporter are allowed (e.g., different target namespaces).
+- Catalog deletion cascades to bindings with a warning. API delete response includes `deleted_bindings_count`.
+- Access: Admin+ for create/update/delete. Any role with catalog access for list/get (binding parameters may be filtered for non-Admin per TD-150).
+- UI: Export Plugins tab on CatalogDetailPage with binding list, add/edit/delete modals, enable/disable toggle.
+
+**US-61: Run export plugins manually and on publish**
+As a catalog operator, I want to trigger export plugins manually for testing and have them run automatically when I publish the catalog, so that consumer-specific output is always up to date.
+
+**Why**: Manual trigger lets operators test export output before publishing. Automatic trigger on publish ensures consumers get updated data without manual intervention.
+
+Acceptance Criteria:
+- `POST /api/data/v1/catalogs/{name}/export-bindings/{id}/run` triggers a single binding. Returns artifacts directly as downloadable multi-document YAML with `Content-Disposition` header (browser Save As). Works on any catalog state (draft, valid, published) for testing/debug.
+- On publish: all enabled bindings run automatically via a two-step flow:
+  1. `POST /catalogs/{name}/publish/preview` — re-validates each binding's schema against current CV (catches schema drift since binding creation), runs all exports, validates delivery permissions, returns results with pre-computed artifacts cached server-side via `PreviewCache` interface (configurable TTL, default 5 minutes).
+  2. `POST /catalogs/{name}/publish` — retrieves cached artifacts by session token, commits publish state and deploys/downloads pre-computed artifacts. If token expired, returns 410 Gone.
+  If any export fails in step 1, the UI shows results and lets the user choose "Publish Anyway" or "Abort" (no SuperAdmin needed for abort — publish hasn't been committed yet).
+  If called without a session token (API consumers), exports run as a fire-and-forget goroutine (30s timeout, errors logged on bindings, not returned to caller — fully backward compatible).
+  Step 2 validates catalog hasn't been modified since preview (optimistic locking via `updated_at` timestamp). Returns 409 if modified.
+- Downloads are per-binding (one file per exporter). `GET /catalogs/{name}/export-bindings/download?token={token}&binding={binding-id}` returns the artifacts for a single binding. On publish, the UI auto-downloads all binding files programmatically (no extra user clicks).
+- `PreviewCache` is an interface: Phase 1 uses `InMemoryPreviewCache` (sufficient for single-replica Kind/PoC). OCP deployment swaps to `RedisPreviewCache` or equivalent — no publish flow code changes needed.
+- Automatic deploy to K8s (future Phase 2+): restricted to published catalogs only.
+- Export failures do not automatically block publish — publish is for pull consumers (APIs), export is for push consumers (CRs). The user decides.
+- Each binding's last run timestamp, status, and error message are updated after execution.
+- Export bindings are NOT included in FF-12 catalog export (environment-specific data). See TD-149.
+- Access: RW+ for manual run. Admin+ for publish/preview (same as publish).
+
+**US-62: MCP Gateway CR exporter (first built-in plugin)**
+As a platform engineer, I want to export MCP server and tool instances from a catalog as MCP Gateway CRs (MCPServerRegistration + MCPVirtualServer), so that the MCP Gateway can discover and federate my MCP tools without manual CR authoring.
+
+**Why**: The MCP Gateway uses CRDs (`mcp.kuadrant.io/v1alpha1`) for server registration and tool federation. Manually authoring these CRs from catalog data is error-prone. An exporter automates the mapping.
+
+Acceptance Criteria:
+- The MCP Gateway exporter is registered as a built-in plugin with parameters: `server_type` (required), `tool_type` (required), `target_namespace` (optional, default "default").
+- For each instance of `server_type`: produces an `MCPServerRegistration` CR with name, prefix (derived from server instance name + `_`), targetRef (from `route_name` attribute), path (from `mcp_path` attribute, default `/mcp`), and labels.
+- For the catalog: produces an `MCPVirtualServer` CR with all tool names (`{server_name}_{tool_name}`).
+- Output is multi-document YAML, downloadable as a single file. Deterministic ordering: servers sorted by name, tools sorted alphabetically, virtual server CR last.
+- Labels on all generated CRs: `assethub.io/catalog`, `assethub.io/exporter`, `assethub.io/binding-id`.
+- Annotations: `assethub.io/exported-at`, `assethub.io/source-system`.
+- Instances with missing required attributes (e.g., server without `route_name`) cause the entire export to fail with an error listing the incomplete instances. Future phases may add skip-with-warning for flexibility.
+- Empty catalog (no instances of server/tool types) produces an empty YAML file (success, not error).
+- Prerequisite: instance names must conform to DNS-1123 format (see design spec Stage 0).
+
+---
+
 ## 10. Open Design Decisions
 
 The following items are acknowledged but not yet fully specified:
@@ -2003,7 +2059,7 @@ Extensible export system that allows users to attach **exporter plugins** to cat
 
 **Concept:**
 
-- An **exporter** is a named, versioned plugin registered with the Asset Hub. It defines:
+- An **exporter** is a named plugin registered with the Asset Hub (Phase 1: name-only identity, compiled-in; Phase 2+: versioned identity when dynamic plugins and CRD registration are added). It defines:
   - **Input**: which entity types and attributes it reads from a catalog
   - **Output format**: the format it produces (YAML, JSON, ConfigMap, Secret, custom CRD, file bundle, etc.)
   - **Trigger**: when the export runs — on publish, on validation success, on demand, or on a schedule
@@ -2034,7 +2090,7 @@ Extensible export system that allows users to attach **exporter plugins** to cat
 - FF-12 (Catalog Export/Import) covers a built-in generic export format for system portability. FF-15 is complementary — it's about producing consumer-specific output formats via a plugin system, not a generic interchange format.
 - Section 4.2 mentions entity type CRDs as future scope. A `custom-crd-exporter` would be one way to implement that feature without building it into the core.
 
-**Decision:** Deferred. Design the plugin interface and registration mechanism when the first concrete export use case is identified. Architecture options documented in `docs/p-next-phase-candidates.txt`.
+**Decision:** IMPLEMENTING. Design spec at `docs/superpowers/specs/2026-05-10-export-plugins-design.md`. MCP Gateway CRD reference at `docs/superpowers/specs/2026-05-10-mcp-gateway-crd-reference.md`. Architecture options at `docs/p-next-phase-candidates.txt`.
 
 ### FF-16: Catalog Views (Instance-Level Access Control)
 
