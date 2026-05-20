@@ -2090,7 +2090,7 @@ Extensible export system that allows users to attach **exporter plugins** to cat
 - FF-12 (Catalog Export/Import) covers a built-in generic export format for system portability. FF-15 is complementary — it's about producing consumer-specific output formats via a plugin system, not a generic interchange format.
 - Section 4.2 mentions entity type CRDs as future scope. A `custom-crd-exporter` would be one way to implement that feature without building it into the core.
 
-**Decision:** IMPLEMENTING. Design spec at `docs/superpowers/specs/2026-05-10-export-plugins-design.md`. MCP Gateway CRD reference at `docs/superpowers/specs/2026-05-10-mcp-gateway-crd-reference.md`. Architecture options at `docs/p-next-phase-candidates.txt`.
+**Decision:** IMPLEMENTED. Design spec at `docs/superpowers/specs/2026-05-10-export-plugins-design.md`. MCP Gateway CRD reference at `docs/superpowers/specs/2026-05-10-mcp-gateway-crd-reference.md`. Architecture options at `docs/p-next-phase-candidates.txt`.
 
 ### FF-16: Catalog Views (Instance-Level Access Control)
 
