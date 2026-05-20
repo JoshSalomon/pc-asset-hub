@@ -21,6 +21,7 @@ import (
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/repository/mocks"
 	svcop "github.com/project-catalyst/pc-asset-hub/internal/service/operational"
+	"github.com/project-catalyst/pc-asset-hub/internal/service/operational/export"
 )
 
 func setupCatalogServer() (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockCatalogVersionRepo, *mocks.MockEntityInstanceRepo) {
@@ -1025,6 +1026,52 @@ func TestDeleteCatalog_WithBindings_ReturnsCount(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	assert.Equal(t, "deleted", body["status"])
 	assert.Equal(t, float64(3), body["deleted_bindings_count"])
+}
+
+// Publish with stale session token → 409 (catalog modified since preview)
+func TestPublish_StaleSessionToken_Returns409(t *testing.T) {
+	catRepo := new(mocks.MockCatalogRepo)
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo, nil, "")
+	accessChecker := &apimw.HeaderCatalogAccessChecker{}
+
+	// Set up preview cache with an entry
+	cache := export.NewInMemoryPreviewCache()
+	defer cache.Stop()
+	previewTime := time.Date(2026, 5, 10, 14, 0, 0, 0, time.UTC)
+	cache.Store("tok-123", export.PreviewCacheEntry{
+		CatalogName:      "my-catalog",
+		CatalogUpdatedAt: previewTime,
+		Artifacts:        map[string][]export.K8sArtifact{},
+	}, 5*time.Minute)
+
+	handler := apiop.NewCatalogHandler(svc, nil, accessChecker, apiop.WithPreviewCache(cache))
+
+	e := echo.New()
+	g := e.Group("/api/data/v1/catalogs")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	requireRW := apimw.RequireRole(apimw.RoleRW)
+	apiop.RegisterCatalogRoutes(g, handler, requireRW, apimw.RequireRole(apimw.RoleAdmin))
+
+	// Catalog was modified AFTER the preview (UpdatedAt > previewTime)
+	modifiedTime := previewTime.Add(1 * time.Minute)
+	catRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+		UpdatedAt:        modifiedTime,
+	}, nil)
+	// These mocks let publish succeed if the optimistic lock check is missing
+	catRepo.On("UpdatePublished", mock.Anything, "c1", true, mock.AnythingOfType("*time.Time")).Return(nil)
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1"}, nil)
+
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/publish",
+		`{"session_token":"tok-123"}`, apimw.RoleAdmin)
+
+	// Should be 409 because catalog was modified since preview — NOT 200
+	assert.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "modified since preview")
 }
 
 func TestDeleteCatalog_CountBindingsError_StillDeletes(t *testing.T) {

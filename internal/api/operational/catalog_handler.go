@@ -13,6 +13,7 @@ import (
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/repository"
 	svcop "github.com/project-catalyst/pc-asset-hub/internal/service/operational"
+	"github.com/project-catalyst/pc-asset-hub/internal/service/operational/export"
 )
 
 type CatalogHandler struct {
@@ -20,6 +21,7 @@ type CatalogHandler struct {
 	validationSvc *svcop.CatalogValidationService
 	accessChecker apimw.CatalogAccessChecker
 	bindingRepo   repository.ExportBindingRepository
+	previewCache  export.PreviewCache
 }
 
 func NewCatalogHandler(svc *svcop.CatalogService, validationSvc *svcop.CatalogValidationService, accessChecker apimw.CatalogAccessChecker, opts ...CatalogHandlerOption) *CatalogHandler {
@@ -35,6 +37,12 @@ type CatalogHandlerOption func(*CatalogHandler)
 func WithBindingRepo(repo repository.ExportBindingRepository) CatalogHandlerOption {
 	return func(h *CatalogHandler) {
 		h.bindingRepo = repo
+	}
+}
+
+func WithPreviewCache(cache export.PreviewCache) CatalogHandlerOption {
+	return func(h *CatalogHandler) {
+		h.previewCache = cache
 	}
 }
 
@@ -186,6 +194,26 @@ func (h *CatalogHandler) ValidateCatalog(c echo.Context) error {
 
 func (h *CatalogHandler) PublishCatalog(c echo.Context) error {
 	name := c.Param("catalog-name")
+
+	// Check optimistic lock if session token provided (from publish preview)
+	var body struct {
+		SessionToken string `json:"session_token"`
+	}
+	_ = c.Bind(&body)
+	if body.SessionToken != "" && h.previewCache != nil {
+		entry, err := h.previewCache.Retrieve(body.SessionToken)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusGone, "preview session expired or not found")
+		}
+		catalog, err := h.svc.GetByName(c.Request().Context(), name)
+		if err != nil {
+			return mapError(err)
+		}
+		if !entry.CatalogUpdatedAt.Equal(catalog.UpdatedAt) {
+			return echo.NewHTTPError(http.StatusConflict, "catalog modified since preview — re-run preview")
+		}
+	}
+
 	if err := h.svc.Publish(c.Request().Context(), name); err != nil {
 		return mapError(err)
 	}

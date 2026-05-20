@@ -111,13 +111,13 @@ func main() {
 	exporterRegistry.Register(export.NewMCPGatewayExporter())
 	bindingRepo := gormrepo.NewExportBindingGormRepo(db)
 
-	catalogHandler := apiop.NewCatalogHandler(catalogSvc, validationSvc, catalogAccessChecker, apiop.WithBindingRepo(bindingRepo))
+	previewCache := export.NewInMemoryPreviewCache()
+	catalogHandler := apiop.NewCatalogHandler(catalogSvc, validationSvc, catalogAccessChecker, apiop.WithBindingRepo(bindingRepo), apiop.WithPreviewCache(previewCache))
 	instanceHandler := apiop.NewInstanceHandler(instanceSvc, catalogSvc)
 	exportSvc := svcop.NewExportService(catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, tdvRepo, instRepo, iavRepo, linkRepo)
 	exportHandler := apiop.NewExportHandler(exportSvc, catalogAccessChecker)
 	importSvc := svcop.NewImportService(catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, tdvRepo, instRepo, iavRepo, linkRepo, typePinRepo, svcop.WithImportTransactionManager(txManager))
 	importHandler := apiop.NewImportHandler(importSvc, catalogAccessChecker)
-	previewCache := export.NewInMemoryPreviewCache()
 	exportBindingSvc := export.NewExportBindingService(
 		bindingRepo, catalogRepo, exporterRegistry,
 		cvRepo, pinRepo, etvRepo, etRepo, attrRepo, assocRepo,
@@ -193,6 +193,7 @@ func main() {
 
 	<-ctx.Done()
 	log.Println("shutting down gracefully...")
+	previewCache.Stop()
 	if err := e.Shutdown(context.Background()); err != nil {
 		log.Fatalf("shutdown error: %v", err)
 	}
