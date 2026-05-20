@@ -6,6 +6,8 @@
 #
 
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/test-summary.sh"
 
 API_BASE="${1:-http://localhost:30080}"
 
@@ -228,19 +230,4 @@ else
   fail "TD-16: Orphaned data" "expected 0 instances, got $CLEAN_COUNT"
 fi
 
-# ─────────────────────────────────────────────────────────────────
-echo ""
-echo "=== Results ==="
-echo ""
-echo "  Total: $((PASSED + FAILED))"
-echo "  Passed: $PASSED"
-echo "  Failed: $FAILED"
-
-if [ "$FAILED" -gt 0 ]; then
-  echo ""
-  echo "  SOME TESTS FAILED"
-  exit 1
-else
-  echo ""
-  echo "  ALL TESTS PASSED"
-fi
+print_summary "test-phase1-fixes"

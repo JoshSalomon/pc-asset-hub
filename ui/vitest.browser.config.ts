@@ -14,6 +14,9 @@ export default defineConfig({
     },
     setupFiles: [],
     testTimeout: 30000,
+    onConsoleLog(log) {
+      if (log.includes('batchingForReactDom')) return false
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary', 'json-summary', 'json'],

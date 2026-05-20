@@ -21,6 +21,7 @@ import (
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/repository/mocks"
 	svcop "github.com/project-catalyst/pc-asset-hub/internal/service/operational"
+	"github.com/project-catalyst/pc-asset-hub/internal/service/operational/export"
 )
 
 func setupCatalogServer() (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockCatalogVersionRepo, *mocks.MockEntityInstanceRepo) {
@@ -949,4 +950,194 @@ func TestReplaceCatalog_CVLabelFallback(t *testing.T) {
 	var resp dto.CatalogResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, "", resp.CatalogVersionLabel) // fallback
+}
+
+// T-34.98: DeleteCatalog propagates DB errors from GetByName when binding cleanup runs.
+// When h.bindingRepo is set and GetByName returns a non-NotFound error, the handler
+// should return 500 BEFORE attempting to delete the catalog.
+func TestDeleteCatalog_PropagatesGetByNameDBError(t *testing.T) {
+	catRepo := new(mocks.MockCatalogRepo)
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	bindingRepo := new(mocks.MockExportBindingRepo)
+	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo, nil, "")
+	accessChecker := &apimw.HeaderCatalogAccessChecker{}
+	handler := apiop.NewCatalogHandler(svc, nil, accessChecker, apiop.WithBindingRepo(bindingRepo))
+
+	e := echo.New()
+	g := e.Group("/api/data/v1/catalogs")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	requireRW := apimw.RequireRole(apimw.RoleRW)
+	apiop.RegisterCatalogRoutes(g, handler, requireRW, apimw.RequireRole(apimw.RoleAdmin))
+
+	// First call to GetByName (by handler for binding cleanup) returns DB error.
+	// Second call (by svc.Delete) returns success — so if the handler ignores the
+	// first error and falls through to Delete, the catalog will be deleted WITHOUT
+	// binding cleanup. We want the handler to fail fast instead.
+	catRepo.On("GetByName", mock.Anything, "my-catalog").
+		Return((*models.Catalog)(nil), fmt.Errorf("database connection lost")).Once()
+	catRepo.On("GetByName", mock.Anything, "my-catalog").
+		Return(&models.Catalog{ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1"}, nil).Once()
+	// These should NOT be called if the handler fails fast
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1"}, nil)
+	instRepo.On("DeleteByCatalogID", mock.Anything, "c1").Return(nil)
+	catRepo.On("Delete", mock.Anything, "c1").Return(nil)
+
+	rec := doCatalogRequest(e, http.MethodDelete, "/api/data/v1/catalogs/my-catalog", "", apimw.RoleRW)
+
+	// With the bug: handler ignores the first GetByName error, falls through to
+	// svc.Delete which succeeds on the 2nd call → returns 204.
+	// Fixed: handler returns 500 on the first GetByName error.
+	assert.Equal(t, http.StatusInternalServerError, rec.Code,
+		"handler should propagate DB error from GetByName, not silently ignore it")
+}
+
+// Coverage: DeleteCatalog with bindings — exercises the binding cleanup + count response path
+func TestDeleteCatalog_WithBindings_ReturnsCount(t *testing.T) {
+	catRepo := new(mocks.MockCatalogRepo)
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	bindingRepo := new(mocks.MockExportBindingRepo)
+	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo, nil, "")
+	accessChecker := &apimw.HeaderCatalogAccessChecker{}
+	handler := apiop.NewCatalogHandler(svc, nil, accessChecker, apiop.WithBindingRepo(bindingRepo))
+
+	e := echo.New()
+	g := e.Group("/api/data/v1/catalogs")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	requireRW := apimw.RequireRole(apimw.RoleRW)
+	apiop.RegisterCatalogRoutes(g, handler, requireRW, apimw.RequireRole(apimw.RoleAdmin))
+
+	catRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	bindingRepo.On("CountByCatalog", mock.Anything, "c1").Return(3, nil)
+	bindingRepo.On("DeleteByCatalog", mock.Anything, "c1").Return(nil)
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1"}, nil)
+	instRepo.On("DeleteByCatalogID", mock.Anything, "c1").Return(nil)
+	catRepo.On("Delete", mock.Anything, "c1").Return(nil)
+
+	rec := doCatalogRequest(e, http.MethodDelete, "/api/data/v1/catalogs/my-catalog", "", apimw.RoleRW)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "deleted", body["status"])
+	assert.Equal(t, float64(3), body["deleted_bindings_count"])
+}
+
+// Publish with stale session token → 409 (catalog modified since preview)
+func TestPublish_StaleSessionToken_Returns409(t *testing.T) {
+	catRepo := new(mocks.MockCatalogRepo)
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo, nil, "")
+	accessChecker := &apimw.HeaderCatalogAccessChecker{}
+
+	// Set up preview cache with an entry
+	cache := export.NewInMemoryPreviewCache()
+	defer cache.Stop()
+	previewTime := time.Date(2026, 5, 10, 14, 0, 0, 0, time.UTC)
+	cache.Store("tok-123", export.PreviewCacheEntry{
+		CatalogName:      "my-catalog",
+		CatalogUpdatedAt: previewTime,
+		Artifacts:        map[string][]export.K8sArtifact{},
+	}, 5*time.Minute)
+
+	handler := apiop.NewCatalogHandler(svc, nil, accessChecker, apiop.WithPreviewCache(cache))
+
+	e := echo.New()
+	g := e.Group("/api/data/v1/catalogs")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	requireRW := apimw.RequireRole(apimw.RoleRW)
+	apiop.RegisterCatalogRoutes(g, handler, requireRW, apimw.RequireRole(apimw.RoleAdmin))
+
+	// Catalog was modified AFTER the preview (UpdatedAt > previewTime)
+	modifiedTime := previewTime.Add(1 * time.Minute)
+	catRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+		UpdatedAt:        modifiedTime,
+	}, nil)
+	// These mocks let publish succeed if the optimistic lock check is missing
+	catRepo.On("UpdatePublished", mock.Anything, "c1", true, mock.AnythingOfType("*time.Time")).Return(nil)
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1"}, nil)
+
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/publish",
+		`{"session_token":"tok-123"}`, apimw.RoleAdmin)
+
+	// Should be 409 because catalog was modified since preview — NOT 200
+	assert.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "modified since preview")
+}
+
+func TestDeleteCatalog_CountBindingsError_StillDeletes(t *testing.T) {
+	catRepo := new(mocks.MockCatalogRepo)
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	bindingRepo := new(mocks.MockExportBindingRepo)
+	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo, nil, "")
+	accessChecker := &apimw.HeaderCatalogAccessChecker{}
+	handler := apiop.NewCatalogHandler(svc, nil, accessChecker, apiop.WithBindingRepo(bindingRepo))
+
+	e := echo.New()
+	g := e.Group("/api/data/v1/catalogs")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	requireRW := apimw.RequireRole(apimw.RoleRW)
+	apiop.RegisterCatalogRoutes(g, handler, requireRW, apimw.RequireRole(apimw.RoleAdmin))
+
+	catRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	// CountByCatalog fails — DB error
+	bindingRepo.On("CountByCatalog", mock.Anything, "c1").Return(0, fmt.Errorf("db timeout"))
+	bindingRepo.On("DeleteByCatalog", mock.Anything, "c1").Return(nil)
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1"}, nil)
+	instRepo.On("DeleteByCatalogID", mock.Anything, "c1").Return(nil)
+	catRepo.On("Delete", mock.Anything, "c1").Return(nil)
+
+	rec := doCatalogRequest(e, http.MethodDelete, "/api/data/v1/catalogs/my-catalog", "", apimw.RoleRW)
+
+	// Catalog should still be deleted — count error is non-fatal
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+}
+
+func TestDeleteCatalog_DeleteBindingsError_StillDeletes(t *testing.T) {
+	catRepo := new(mocks.MockCatalogRepo)
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	bindingRepo := new(mocks.MockExportBindingRepo)
+	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo, nil, "")
+	accessChecker := &apimw.HeaderCatalogAccessChecker{}
+	handler := apiop.NewCatalogHandler(svc, nil, accessChecker, apiop.WithBindingRepo(bindingRepo))
+
+	e := echo.New()
+	g := e.Group("/api/data/v1/catalogs")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	requireRW := apimw.RequireRole(apimw.RoleRW)
+	apiop.RegisterCatalogRoutes(g, handler, requireRW, apimw.RequireRole(apimw.RoleAdmin))
+
+	catRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	bindingRepo.On("CountByCatalog", mock.Anything, "c1").Return(2, nil)
+	// DeleteByCatalog fails — DB error
+	bindingRepo.On("DeleteByCatalog", mock.Anything, "c1").Return(fmt.Errorf("connection refused"))
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1"}, nil)
+	instRepo.On("DeleteByCatalogID", mock.Anything, "c1").Return(nil)
+	catRepo.On("Delete", mock.Anything, "c1").Return(nil)
+
+	rec := doCatalogRequest(e, http.MethodDelete, "/api/data/v1/catalogs/my-catalog", "", apimw.RoleRW)
+
+	// Catalog should still be deleted — CASCADE handles binding cleanup
+	// Count was obtained before delete failed, so response includes it
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, float64(2), body["deleted_bindings_count"])
 }

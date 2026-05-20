@@ -3252,38 +3252,121 @@ func TestCreateContainedInstance_EmptyNameRejected(t *testing.T) {
 	assert.Contains(t, err.Error(), "name is required")
 }
 
-func TestCreateInstance_InvalidNameCharsRejected(t *testing.T) {
+// T-33.01: ValidateInstanceName accepts lowercase alphanumeric with hyphens
+func TestValidateInstanceName_DNS1123_ValidNames(t *testing.T) {
+	validNames := []string{"a", "abc", "my-server", "server-1", "a1b2c3", "x"}
+	for _, name := range validNames {
+		err := operational.ValidateInstanceName(name)
+		assert.NoError(t, err, "name %q should be accepted", name)
+	}
+}
+
+// T-33.02: ValidateInstanceName rejects uppercase characters
+func TestValidateInstanceName_DNS1123_RejectsUppercase(t *testing.T) {
+	err := operational.ValidateInstanceName("MyServer")
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "Kubernetes resource name")
+}
+
+// T-33.03: ValidateInstanceName rejects underscores
+func TestValidateInstanceName_DNS1123_RejectsUnderscores(t *testing.T) {
+	err := operational.ValidateInstanceName("my_server")
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "Kubernetes resource name")
+}
+
+// T-33.04: ValidateInstanceName rejects spaces
+func TestValidateInstanceName_DNS1123_RejectsSpaces(t *testing.T) {
+	err := operational.ValidateInstanceName("my server")
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "Kubernetes resource name")
+}
+
+// T-33.05: ValidateInstanceName rejects dots
+func TestValidateInstanceName_DNS1123_RejectsDots(t *testing.T) {
+	err := operational.ValidateInstanceName("my.server")
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "Kubernetes resource name")
+}
+
+// T-33.06: ValidateInstanceName rejects leading hyphen
+func TestValidateInstanceName_DNS1123_RejectsLeadingHyphen(t *testing.T) {
+	err := operational.ValidateInstanceName("-server")
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "Kubernetes resource name")
+}
+
+// T-33.07: ValidateInstanceName rejects trailing hyphen
+func TestValidateInstanceName_DNS1123_RejectsTrailingHyphen(t *testing.T) {
+	err := operational.ValidateInstanceName("server-")
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "Kubernetes resource name")
+}
+
+// T-33.08: ValidateInstanceName rejects name > 63 characters
+func TestValidateInstanceName_DNS1123_RejectsTooLong(t *testing.T) {
+	longName := strings.Repeat("a", 64)
+	err := operational.ValidateInstanceName(longName)
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "Kubernetes resource name")
+}
+
+// T-33.09: ValidateInstanceName accepts exactly 63 characters
+func TestValidateInstanceName_DNS1123_Accepts63Chars(t *testing.T) {
+	name63 := strings.Repeat("a", 63)
+	err := operational.ValidateInstanceName(name63)
+	assert.NoError(t, err)
+}
+
+// T-33.10: CreateInstance with invalid name returns validation error with descriptive message
+func TestCreateInstance_DNS1123_InvalidNameRejected(t *testing.T) {
 	s := setupInstanceService()
 	ctx := context.Background()
 
-	invalidNames := []string{"we)(?", "name<script>", "foo\tbar", "a/b", "hello!", "@start", "name;drop"}
+	invalidNames := []string{"MyServer", "my_server", "my server", "my.server", "-server", "server-", "we)(?", "name<script>"}
 	for _, name := range invalidNames {
 		_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", name, "", nil)
 		require.Error(t, err, "name %q should be rejected", name)
 		assert.True(t, domainerrors.IsValidation(err), "name %q should be a validation error", name)
-		assert.Contains(t, err.Error(), "instance name", "name %q error should mention instance name", name)
+		assert.Contains(t, err.Error(), "Kubernetes resource name", "name %q error should mention Kubernetes resource name", name)
 	}
 }
 
-func TestCreateInstance_NameTooLongRejected(t *testing.T) {
+// T-33.11: CreateContainedInstance with invalid name returns 400
+func TestCreateContainedInstance_DNS1123_InvalidNameRejected(t *testing.T) {
 	s := setupInstanceService()
 	ctx := context.Background()
 
-	longName := strings.Repeat("a", 256)
-	_, err := s.svc.CreateInstance(ctx, "my-catalog", "model", longName, "", nil)
+	_, err := s.svc.CreateContainedInstance(ctx, "my-catalog", "server", "p1", "tool", "Bad_Name", "", nil)
 	require.Error(t, err)
 	assert.True(t, domainerrors.IsValidation(err))
-	assert.Contains(t, err.Error(), "255")
+	assert.Contains(t, err.Error(), "Kubernetes resource name")
 }
 
-func TestCreateContainedInstance_InvalidNameCharsRejected(t *testing.T) {
+// T-33.12: UpdateInstance rename to invalid name returns 400
+func TestUpdateInstance_DNS1123_InvalidNameRejected(t *testing.T) {
 	s := setupInstanceService()
 	ctx := context.Background()
+	s.mockPinResolution(ctx)
+	s.mockAttributes(ctx)
 
-	_, err := s.svc.CreateContainedInstance(ctx, "my-catalog", "server", "p1", "tool", "bad)(name", "", nil)
+	s.instRepo.On("GetByID", ctx, "inst1").Return(&models.EntityInstance{
+		ID: "inst1", EntityTypeID: "et1", CatalogID: "cat1", Name: "old-name", Version: 1,
+	}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "inst1", 1).Return([]*models.InstanceAttributeValue{}, nil)
+
+	invalidName := "Invalid_Name"
+	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "inst1", 1, &invalidName, nil, nil)
 	require.Error(t, err)
 	assert.True(t, domainerrors.IsValidation(err))
-	assert.Contains(t, err.Error(), "instance name")
+	assert.Contains(t, err.Error(), "Kubernetes resource name")
 }
 
 // TD-30: Catalog ownership check on instance read/update/delete
@@ -4001,7 +4084,7 @@ func TestCov_UpdateInstance_InvalidName(t *testing.T) {
 	_, err := s.svc.UpdateInstance(ctx, "my-catalog", "model", "inst1", 1, &invalidName, nil, nil)
 	require.Error(t, err)
 	assert.True(t, domainerrors.IsValidation(err))
-	assert.Contains(t, err.Error(), "instance name must start with")
+	assert.Contains(t, err.Error(), "Kubernetes resource name")
 }
 
 // Coverage: DeleteAssociationLink — assocRepo.GetByID error (L843-845)
@@ -4303,4 +4386,231 @@ func TestSetParent_NewParent_CollisionCheckDBError_Propagates(t *testing.T) {
 	err := s.svc.SetParent(ctx, "cat", "tool", "child1", "server", "parent1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "db timeout")
+}
+
+// --- Coverage: CreateAssociationLink bidirectional reverse-lookup error paths ---
+
+func TestCov_CreateLink_BiDirLookup_PinRepoError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil).Once()
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.instRepo.On("GetByID", ctx, "i2").Return(&models.EntityInstance{ID: "i2", EntityTypeID: "et2", CatalogID: "c1"}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	// Second call to pinRepo for reverse lookup fails
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return(nil, errors.New("pin error")).Once()
+	_, err := s.svc.CreateAssociationLink(ctx, "cat", "server", "i1", "i2", "bidir-assoc")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "pin error")
+}
+
+func TestCov_CreateLink_BiDirLookup_EtvRepoError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+		{ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.instRepo.On("GetByID", ctx, "i2").Return(&models.EntityInstance{ID: "i2", EntityTypeID: "et2", CatalogID: "c1"}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	// etv2 lookup fails during reverse-side search — should continue (not error)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(nil, errors.New("etv error"))
+	_, err := s.svc.CreateAssociationLink(ctx, "cat", "server", "i1", "i2", "bidir-assoc")
+	// Should get "not found" since it skips the errored pin and finds nothing
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+func TestCov_CreateLink_BiDirLookup_TargetAssocRepoError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+		{ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.instRepo.On("GetByID", ctx, "i2").Return(&models.EntityInstance{ID: "i2", EntityTypeID: "et2", CatalogID: "c1"}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	// Target assoc lookup fails
+	s.assocRepo.On("ListByVersion", ctx, "etv2").Return(nil, errors.New("assoc error"))
+	_, err := s.svc.CreateAssociationLink(ctx, "cat", "server", "i1", "i2", "bidir-assoc")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "assoc error")
+}
+
+func TestCov_CreateLink_BiDirSourceTypeMismatch(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+		{ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "c1"}, nil)
+	s.instRepo.On("GetByID", ctx, "i2").Return(&models.EntityInstance{ID: "i2", EntityTypeID: "et2", CatalogID: "c1"}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	// Found bidirectional assoc on target side, but source type doesn't match target's TargetEntityTypeID
+	s.assocRepo.On("ListByVersion", ctx, "etv2").Return([]*models.Association{
+		{ID: "a1", Name: "bidir-assoc", Type: models.AssociationTypeBidirectional, TargetEntityTypeID: "et-wrong"},
+	}, nil)
+	s.linkRepo.On("GetForwardRefs", ctx, "i1").Return([]*models.AssociationLink{}, nil)
+	_, err := s.svc.CreateAssociationLink(ctx, "cat", "server", "i1", "i2", "bidir-assoc")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not match")
+}
+
+// --- Coverage: BumpInstanceVersion error on bidirectional link create/delete ---
+
+func TestCov_CreateLink_BiDirBumpTargetError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "c1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i2").Return(&models.EntityInstance{ID: "i2", EntityTypeID: "et2", CatalogID: "c1", Version: 1}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "a1", Name: "mutual", Type: models.AssociationTypeBidirectional, TargetEntityTypeID: "et2"},
+	}, nil)
+	s.linkRepo.On("GetForwardRefs", ctx, "i1").Return([]*models.AssociationLink{}, nil)
+	s.linkRepo.On("Create", ctx, mock.AnythingOfType("*models.AssociationLink")).Return(nil)
+	// BumpInstanceVersion for source succeeds
+	s.iavRepo.On("GetValuesForVersion", ctx, "i1", 1).Return([]*models.InstanceAttributeValue{}, nil)
+	s.instRepo.On("Update", ctx, mock.MatchedBy(func(inst *models.EntityInstance) bool { return inst.ID == "i1" })).Return(nil)
+	// BumpInstanceVersion for target fails
+	s.iavRepo.On("GetValuesForVersion", ctx, "i2", 1).Return(nil, errors.New("bump target error"))
+	_, err := s.svc.CreateAssociationLink(ctx, "cat", "server", "i1", "i2", "mutual")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bump target error")
+}
+
+func TestCov_DeleteLink_BiDirBumpTargetError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.linkRepo.On("GetByID", ctx, "link1").Return(&models.AssociationLink{
+		ID: "link1", SourceInstanceID: "i1", TargetInstanceID: "i2", AssociationID: "a1",
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{ID: "i1", EntityTypeID: "et1", CatalogID: "c1", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "i2").Return(&models.EntityInstance{ID: "i2", EntityTypeID: "et2", CatalogID: "c1", Version: 1}, nil)
+	s.assocRepo.On("GetByID", ctx, "a1").Return(&models.Association{
+		ID: "a1", Name: "mutual", Type: models.AssociationTypeBidirectional, TargetEntityTypeID: "et2",
+	}, nil)
+	s.linkRepo.On("Delete", ctx, "link1").Return(nil)
+	// BumpInstanceVersion for source succeeds
+	s.iavRepo.On("GetValuesForVersion", ctx, "i1", 1).Return([]*models.InstanceAttributeValue{}, nil)
+	s.instRepo.On("Update", ctx, mock.MatchedBy(func(inst *models.EntityInstance) bool { return inst.ID == "i1" })).Return(nil)
+	// BumpInstanceVersion for target fails
+	s.iavRepo.On("GetValuesForVersion", ctx, "i2", 1).Return(nil, errors.New("bump target error"))
+	err := s.svc.DeleteAssociationLink(ctx, "cat", "server", "link1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bump target error")
+}
+
+// --- Coverage: SetParent clear-parent path — BumpInstanceVersion error for old parent (L984) ---
+
+func TestCov_SetParent_ClearParent_BumpOldParentError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	// child has an old parent, we're clearing it (parentID="")
+	s.instRepo.On("GetByID", ctx, "child1").Return(&models.EntityInstance{ID: "child1", EntityTypeID: "et2", CatalogID: "c1", ParentInstanceID: "old-parent", Version: 1, Name: "my-tool"}, nil)
+	s.instRepo.On("GetByNameAndParent", ctx, "et2", "c1", "", "my-tool").Return(nil, nil)
+	// BumpInstanceVersion for child succeeds
+	s.iavRepo.On("GetValuesForVersion", ctx, "child1", 1).Return([]*models.InstanceAttributeValue{}, nil)
+	s.instRepo.On("Update", ctx, mock.MatchedBy(func(inst *models.EntityInstance) bool { return inst.ID == "child1" })).Return(nil)
+	// GetByID for old parent succeeds
+	s.instRepo.On("GetByID", ctx, "old-parent").Return(&models.EntityInstance{ID: "old-parent", EntityTypeID: "et1", CatalogID: "c1", Version: 1}, nil)
+	// BumpInstanceVersion for old parent fails
+	s.iavRepo.On("GetValuesForVersion", ctx, "old-parent", 1).Return(nil, errors.New("bump old parent error"))
+	err := s.svc.SetParent(ctx, "cat", "tool", "child1", "", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bump old parent error")
+}
+
+// --- Coverage: SetParent set-parent path — BumpInstanceVersion error for new parent (L1039) ---
+
+func TestCov_SetParent_BumpNewParentError(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "tool").Return(&models.EntityType{ID: "et2"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+		{ID: "p2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	s.instRepo.On("GetByID", ctx, "child1").Return(&models.EntityInstance{ID: "child1", EntityTypeID: "et2", CatalogID: "c1", Version: 1, Name: "my-tool"}, nil)
+	s.instRepo.On("GetByID", ctx, "new-parent").Return(&models.EntityInstance{ID: "new-parent", EntityTypeID: "et1", CatalogID: "c1", Version: 1}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{
+		{ID: "a1", Type: models.AssociationTypeContainment, TargetEntityTypeID: "et2"},
+	}, nil)
+	s.instRepo.On("GetByNameAndParent", ctx, "et2", "c1", "new-parent", "my-tool").Return(nil, nil)
+	// BumpInstanceVersion for child succeeds
+	s.iavRepo.On("GetValuesForVersion", ctx, "child1", 1).Return([]*models.InstanceAttributeValue{}, nil)
+	s.instRepo.On("Update", ctx, mock.MatchedBy(func(inst *models.EntityInstance) bool { return inst.ID == "child1" })).Return(nil)
+	// BumpInstanceVersion for new parent fails
+	s.iavRepo.On("GetValuesForVersion", ctx, "new-parent", 1).Return(nil, errors.New("bump new parent error"))
+	err := s.svc.SetParent(ctx, "cat", "tool", "child1", "server", "new-parent")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bump new parent error")
+}
+
+// --- Coverage: resolveParentChain cycle/depth guard (L1119) ---
+
+func TestCov_ResolveParentChain_CycleGuard(t *testing.T) {
+	s := setupInstanceService()
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "cat").Return(&models.Catalog{ID: "c1", CatalogVersionID: "cv1"}, nil)
+	s.etRepo.On("GetByName", ctx, "server").Return(&models.EntityType{ID: "et1"}, nil)
+	s.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "p1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	// i1 has parent i2, i2 has parent i1 (cycle)
+	s.instRepo.On("GetByID", ctx, "i1").Return(&models.EntityInstance{
+		ID: "i1", EntityTypeID: "et1", CatalogID: "c1", ParentInstanceID: "i2", Name: "inst1", Version: 1,
+	}, nil)
+	s.instRepo.On("GetByID", ctx, "i2").Return(&models.EntityInstance{
+		ID: "i2", EntityTypeID: "et1", CatalogID: "c1", ParentInstanceID: "i1", Name: "inst2", Version: 1,
+	}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	s.iavRepo.On("GetValuesForVersion", ctx, "i1", 1).Return([]*models.InstanceAttributeValue{}, nil)
+	det, err := s.svc.GetInstance(ctx, "cat", "server", "i1")
+	require.NoError(t, err)
+	assert.NotNil(t, det)
+	// Chain should have at most 2 entries (i2 then cycle-break), not infinite
+	assert.LessOrEqual(t, len(det.ParentChain), 2)
 }

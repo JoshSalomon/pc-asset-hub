@@ -4,6 +4,7 @@
 # Usage:
 #   ./scripts/test-schema-evolution.sh                          # defaults to localhost:30080
 #   ./scripts/test-schema-evolution.sh http://localhost:30080    # explicit
+#   DEBUG=1 ./scripts/test-schema-evolution.sh                  # verbose output with JSON responses
 #
 # Tests:
 #   1. Create entity type with attrs A, B (V1)
@@ -14,6 +15,8 @@
 #   6. GET instance → verify attribute values under V2 schema
 
 set -uo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/test-summary.sh"
 
 API_BASE="${1:-http://localhost:30080}"
 META_URL="${API_BASE}/api/meta/v1"
@@ -27,6 +30,7 @@ TIMESTAMP=$(date +%s)
 pass() { PASS=$((PASS+1)); TOTAL=$((TOTAL+1)); echo "  PASS: $1"; }
 fail() { FAIL=$((FAIL+1)); TOTAL=$((TOTAL+1)); echo "  FAIL: $1 — $2"; }
 header() { echo ""; echo "=== $1 ==="; }
+debug() { [ "${DEBUG:-}" = "1" ] && echo "$@" || true; }
 
 api() {
   local method="$1" path="$2" role="${3:-Admin}" body="${4:-}"
@@ -81,8 +85,8 @@ TD_LIST=$(api GET "${META_URL}/type-definitions" Admin)
 TD_BODY=$(get_body "$TD_LIST")
 STRING_TDV_ID=$(echo "$TD_BODY" | jq -r '.items[] | select(.base_type=="string" and .name=="string") | .latest_version_id')
 INT_TDV_ID=$(echo "$TD_BODY" | jq -r '.items[] | select(.base_type=="integer" and .name=="integer") | .latest_version_id')
-echo "  String TDV: $STRING_TDV_ID"
-echo "  Integer TDV: $INT_TDV_ID"
+debug "  String TDV: $STRING_TDV_ID"
+debug "  Integer TDV: $INT_TDV_ID"
 
 # ===================================================================
 # Step 1: Create entity type with attrs A, B
@@ -105,19 +109,19 @@ fi
 # Add attribute A (string, not required)
 api POST "${META_URL}/entity-types/${ET_ID}/attributes" Admin \
   "{\"name\":\"attr-a\",\"description\":\"Attribute A\",\"type_definition_version_id\":\"${STRING_TDV_ID}\",\"required\":false}" > /dev/null 2>&1
-echo "  Added attr-a (string)"
+debug "  Added attr-a (string)"
 
 # Add attribute B (string, not required)
 api POST "${META_URL}/entity-types/${ET_ID}/attributes" Admin \
   "{\"name\":\"attr-b\",\"description\":\"Attribute B\",\"type_definition_version_id\":\"${STRING_TDV_ID}\",\"required\":false}" > /dev/null 2>&1
-echo "  Added attr-b (string)"
+debug "  Added attr-b (string)"
 
 # Get entity type versions — find the latest (V1 for our purposes)
 VER_RESP=$(api GET "${META_URL}/entity-types/${ET_ID}/versions" Admin)
 VER_BODY=$(get_body "$VER_RESP")
 V1_ETV_ID=$(echo "$VER_BODY" | jq -r '.items[-1].id')
 V1_VERSION=$(echo "$VER_BODY" | jq -r '.items[-1].version')
-echo "  V1 ETV ID: $V1_ETV_ID (version $V1_VERSION)"
+debug "  V1 ETV ID: $V1_ETV_ID (version $V1_VERSION)"
 
 # ===================================================================
 # Step 2: Evolve schema — remove B, add C (required)
@@ -128,7 +132,7 @@ header "Step 2: Evolve schema — remove B, add C (required)"
 DEL_RESP=$(api DELETE "${META_URL}/entity-types/${ET_ID}/attributes/attr-b" Admin)
 DEL_STATUS=$(get_status "$DEL_RESP")
 if [ "$DEL_STATUS" = "204" ] || [ "$DEL_STATUS" = "200" ]; then
-  echo "  Removed attr-b"
+  debug "  Removed attr-b"
 else
   fail "Remove attr-b" "status=$DEL_STATUS"
 fi
@@ -138,7 +142,7 @@ ADD_C_BODY="{\"name\":\"attr-c\",\"description\":\"Attribute C\",\"type_definiti
 ADD_C_RESP=$(api POST "${META_URL}/entity-types/${ET_ID}/attributes" Admin "$ADD_C_BODY")
 ADD_C_STATUS=$(get_status "$ADD_C_RESP")
 if [ "$ADD_C_STATUS" = "201" ]; then
-  echo "  Added attr-c (integer, required)"
+  debug "  Added attr-c (integer, required)"
 else
   fail "Add attr-c" "status=$ADD_C_STATUS, body=$(get_body "$ADD_C_RESP")"
 fi
@@ -148,7 +152,7 @@ VER_RESP=$(api GET "${META_URL}/entity-types/${ET_ID}/versions" Admin)
 VER_BODY=$(get_body "$VER_RESP")
 V2_ETV_ID=$(echo "$VER_BODY" | jq -r '.items[-1].id')
 V2_VERSION=$(echo "$VER_BODY" | jq -r '.items[-1].version')
-echo "  V2 ETV ID: $V2_ETV_ID (version $V2_VERSION)"
+debug "  V2 ETV ID: $V2_ETV_ID (version $V2_VERSION)"
 
 if [ "$V1_ETV_ID" != "$V2_ETV_ID" ]; then
   pass "V1 and V2 are different ETVs"
@@ -167,14 +171,14 @@ CV_RESP=$(api POST "${META_URL}/catalog-versions" RW "{\"name\":\"se-cv-${TIMEST
 CV_BODY=$(get_body "$CV_RESP")
 CV_STATUS=$(get_status "$CV_RESP")
 CV_ID=$(echo "$CV_BODY" | jq -r '.id')
-echo "  Created CV: $CV_ID (status $CV_STATUS)"
+debug "  Created CV: $CV_ID (status $CV_STATUS)"
 
 # Pin to V1
 PIN_RESP=$(api POST "${META_URL}/catalog-versions/${CV_ID}/pins" RW "{\"entity_type_version_id\":\"${V1_ETV_ID}\"}")
 PIN_BODY=$(get_body "$PIN_RESP")
 PIN_STATUS=$(get_status "$PIN_RESP")
 PIN_ID=$(echo "$PIN_BODY" | jq -r '.pin_id')
-echo "  Added pin to V1: $PIN_ID (status $PIN_STATUS)"
+debug "  Added pin to V1: $PIN_ID (status $PIN_STATUS)"
 
 if [ "$PIN_STATUS" = "201" ] && [ "$PIN_ID" != "null" ]; then
   pass "CV pinned to V1"
@@ -187,7 +191,7 @@ fi
 CATALOG_NAME="se-cat-${TIMESTAMP}"
 CAT_RESP=$(api POST "${DATA_URL}/catalogs" RW "{\"name\":\"${CATALOG_NAME}\",\"catalog_version_id\":\"${CV_ID}\"}")
 CAT_STATUS=$(get_status "$CAT_RESP")
-echo "  Created catalog: ${CATALOG_NAME} (status $CAT_STATUS)"
+debug "  Created catalog: ${CATALOG_NAME} (status $CAT_STATUS)"
 
 # Create two instances with attributes
 INST1_RESP=$(api POST "${DATA_URL}/catalogs/${CATALOG_NAME}/${ET_NAME}" RW \
@@ -195,14 +199,14 @@ INST1_RESP=$(api POST "${DATA_URL}/catalogs/${CATALOG_NAME}/${ET_NAME}" RW \
 INST1_BODY=$(get_body "$INST1_RESP")
 INST1_STATUS=$(get_status "$INST1_RESP")
 INST1_ID=$(echo "$INST1_BODY" | jq -r '.id')
-echo "  Created inst-1: $INST1_ID (status $INST1_STATUS)"
+debug "  Created inst-1: $INST1_ID (status $INST1_STATUS)"
 
 INST2_RESP=$(api POST "${DATA_URL}/catalogs/${CATALOG_NAME}/${ET_NAME}" RW \
   "{\"name\":\"inst-2\",\"description\":\"Instance 2\",\"attributes\":{\"attr-a\":\"apple\",\"attr-b\":\"banana\"}}")
 INST2_BODY=$(get_body "$INST2_RESP")
 INST2_STATUS=$(get_status "$INST2_RESP")
 INST2_ID=$(echo "$INST2_BODY" | jq -r '.id')
-echo "  Created inst-2: $INST2_ID (status $INST2_STATUS)"
+debug "  Created inst-2: $INST2_ID (status $INST2_STATUS)"
 
 if [ "$INST1_STATUS" = "201" ] && [ "$INST2_STATUS" = "201" ]; then
   pass "Created 2 instances with V1 attributes"
@@ -231,8 +235,8 @@ DRY_RESP=$(api PUT "${META_URL}/catalog-versions/${CV_ID}/pins/${PIN_ID}?dry_run
 DRY_STATUS=$(get_status "$DRY_RESP")
 DRY_BODY=$(get_body "$DRY_RESP")
 
-echo "  Dry-run response (status $DRY_STATUS):"
-echo "$DRY_BODY" | jq '.' 2>/dev/null || echo "$DRY_BODY"
+debug "  Dry-run response (status $DRY_STATUS):"
+if [ "${DEBUG:-}" = "1" ]; then echo "$DRY_BODY" | jq '.' 2>/dev/null || echo "$DRY_BODY"; fi
 
 if [ "$DRY_STATUS" = "200" ]; then
   pass "Dry-run returned 200"
@@ -315,8 +319,8 @@ REAL_RESP=$(api PUT "${META_URL}/catalog-versions/${CV_ID}/pins/${PIN_ID}" RW \
 REAL_STATUS=$(get_status "$REAL_RESP")
 REAL_BODY=$(get_body "$REAL_RESP")
 
-echo "  UpdatePin response (status $REAL_STATUS):"
-echo "$REAL_BODY" | jq '.' 2>/dev/null || echo "$REAL_BODY"
+debug "  UpdatePin response (status $REAL_STATUS):"
+if [ "${DEBUG:-}" = "1" ]; then echo "$REAL_BODY" | jq '.' 2>/dev/null || echo "$REAL_BODY"; fi
 
 if [ "$REAL_STATUS" = "200" ]; then
   pass "UpdatePin returned 200"
@@ -350,8 +354,8 @@ GET1_FINAL=$(api GET "${DATA_URL}/catalogs/${CATALOG_NAME}/${ET_NAME}/${INST1_ID
 GET1_FINAL_BODY=$(get_body "$GET1_FINAL")
 GET1_FINAL_STATUS=$(get_status "$GET1_FINAL")
 
-echo "  Instance 1 after migration (status $GET1_FINAL_STATUS):"
-echo "$GET1_FINAL_BODY" | jq '.attributes' 2>/dev/null || echo "$GET1_FINAL_BODY"
+debug "  Instance 1 after migration (status $GET1_FINAL_STATUS):"
+if [ "${DEBUG:-}" = "1" ]; then echo "$GET1_FINAL_BODY" | jq '.attributes' 2>/dev/null || echo "$GET1_FINAL_BODY"; fi
 
 FINAL_A=$(echo "$GET1_FINAL_BODY" | jq -r '.attributes[] | select(.name=="attr-a") | .value')
 if [ "$FINAL_A" = "alpha" ]; then
@@ -379,14 +383,4 @@ else
   fail "Instance 2 attr-a" "expected 'apple', got '$FINAL2_A'"
 fi
 
-# ===================================================================
-# Summary
-# ===================================================================
-echo ""
-echo "============================================"
-echo "  Schema Evolution Tests: $PASS passed, $FAIL failed (of $TOTAL)"
-echo "============================================"
-
-if [ "$FAIL" -gt 0 ]; then
-  exit 1
-fi
+print_summary "test-schema-evolution"

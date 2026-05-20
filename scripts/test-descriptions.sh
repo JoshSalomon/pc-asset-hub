@@ -7,6 +7,8 @@
 #
 
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/test-summary.sh"
 
 API_BASE="${1:-http://localhost:30080}"
 
@@ -420,18 +422,4 @@ for name in "${CATALOG_NAMES[@]}"; do
   curl -s -X DELETE "${API_BASE}/api/data/v1/catalogs/${name}" "${HEADERS[@]}" > /dev/null 2>&1 || true
 done
 
-echo ""
-echo "=== Results ==="
-echo ""
-echo "  Total: $((PASSED + FAILED))"
-echo "  Passed: $PASSED"
-echo "  Failed: $FAILED"
-
-if [ "$FAILED" -gt 0 ]; then
-  echo ""
-  echo "  SOME TESTS FAILED"
-  exit 1
-else
-  echo ""
-  echo "  ALL TESTS PASSED"
-fi
+print_summary "test-descriptions"

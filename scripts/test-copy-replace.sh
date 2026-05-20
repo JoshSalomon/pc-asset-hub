@@ -2,6 +2,8 @@
 # Live test script for Copy & Replace Catalog (Phase 8 / FF-8)
 # Usage: ./scripts/test-copy-replace.sh [API_BASE_URL]
 set -uo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/test-summary.sh"
 
 API="${1:-http://localhost:30080}"
 PASS=0; FAIL=0; TOTAL=0
@@ -228,12 +230,4 @@ else
   fail "Replace as RO returns 403" "got $CODE"
 fi
 
-# --- Summary ---
-h "Results"
-echo "  Total: $TOTAL  Pass: $PASS  Fail: $FAIL"
-if [ "$FAIL" -gt 0 ]; then
-  echo "  SOME TESTS FAILED"
-  exit 1
-else
-  echo "  ALL TESTS PASSED"
-fi
+print_summary "test-copy-replace"

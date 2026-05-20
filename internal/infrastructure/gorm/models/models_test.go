@@ -166,7 +166,7 @@ func TestCatalogConversion(t *testing.T) {
 
 func TestAllModels(t *testing.T) {
 	models := AllModels()
-	assert.Len(t, models, 14)
+	assert.Len(t, models, 15)
 }
 
 func TestInitDB(t *testing.T) {
@@ -272,6 +272,54 @@ func TestTypeDefinitionVersionToModel_EmptyJSONObject(t *testing.T) {
 	require.NotNil(t, m)
 	// Both "" and "{}" hit the same nil-constraints branch
 	assert.Equal(t, map[string]any{}, m.Constraints)
+}
+
+func TestExportBindingConversion(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	lastRun := now.Add(-time.Hour)
+	m := &domain.ExportBinding{
+		ID:            "eb1",
+		CatalogID:     "cat1",
+		ExporterName:  "mcp-gateway",
+		Parameters:    map[string]string{"server_type": "mcp-server", "tool_type": "mcp-tool"},
+		Enabled:       true,
+		LastRunAt:     &lastRun,
+		LastRunStatus: "success",
+		LastRunError:  "",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	g := ExportBindingFromModel(m)
+	assert.Equal(t, "eb1", g.ID)
+	assert.Equal(t, "cat1", g.CatalogID)
+	assert.Equal(t, "mcp-gateway", g.ExporterName)
+	assert.Contains(t, g.Parameters, "server_type")
+	assert.True(t, g.Enabled)
+	assert.Equal(t, "success", g.LastRunStatus)
+
+	back := g.ToModel()
+	assert.Equal(t, m.ID, back.ID)
+	assert.Equal(t, m.CatalogID, back.CatalogID)
+	assert.Equal(t, m.ExporterName, back.ExporterName)
+	assert.Equal(t, m.Parameters["server_type"], back.Parameters["server_type"])
+	assert.Equal(t, m.Parameters["tool_type"], back.Parameters["tool_type"])
+	assert.True(t, back.Enabled)
+	assert.Equal(t, "success", back.LastRunStatus)
+}
+
+func TestExportBindingToModel_EmptyParameters(t *testing.T) {
+	g := &ExportBinding{
+		ID:            "eb2",
+		CatalogID:     "cat1",
+		ExporterName:  "mcp-gateway",
+		Parameters:    "",
+		Enabled:       true,
+		LastRunStatus: "never",
+	}
+	back := g.ToModel()
+	assert.Equal(t, "eb2", back.ID)
+	assert.NotNil(t, back.Parameters)
+	assert.Empty(t, back.Parameters)
 }
 
 // InitDB containment cardinality fix — verifies containment associations get "0..1" source cardinality

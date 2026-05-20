@@ -246,7 +246,7 @@ export default function ImportCatalogModal({ isOpen, onClose, onSuccess }: Props
       setDryRunResult(result)
       if (result.collisions?.length > 0) {
         const autoReuse = result.collisions
-          .filter(c => c.resolution === 'identical' && c.type !== 'catalog' && c.type !== 'catalog_version')
+          .filter(c => c.resolution === 'identical' && c.type !== 'catalog')
           .map(c => c.name)
         setReuseExisting(autoReuse)
         setStep('collisions')
@@ -368,7 +368,7 @@ export default function ImportCatalogModal({ isOpen, onClose, onSuccess }: Props
               <Tbody>
                 {dryRunResult.collisions.map((c, i) => {
                   const canToggle = (c.resolution === 'identical' || c.resolution === 'conflict') &&
-                    c.type !== 'catalog' && c.type !== 'catalog_version'
+                    c.type !== 'catalog'
                   const isReusing = reuseExisting.includes(c.name)
                   return (
                     <Tr key={i}>

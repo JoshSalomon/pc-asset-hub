@@ -7,11 +7,13 @@ import { api } from '../../api/client'
 
 vi.mock('../../api/client', () => ({
   api: {
-    catalogs: { get: vi.fn(), list: vi.fn(), validate: vi.fn(), publish: vi.fn(), unpublish: vi.fn(), copy: vi.fn(), replace: vi.fn(), update: vi.fn(), export: vi.fn() },
+    catalogs: { get: vi.fn(), list: vi.fn(), validate: vi.fn(), publish: vi.fn(), unpublish: vi.fn(), copy: vi.fn(), replace: vi.fn(), update: vi.fn(), export: vi.fn(), publishPreview: vi.fn(), publishWithToken: vi.fn() },
     catalogVersions: { listPins: vi.fn(), list: vi.fn() },
     versions: { snapshot: vi.fn() },
     instances: { list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), createContained: vi.fn(), listContained: vi.fn(), setParent: vi.fn() },
     links: { create: vi.fn(), delete: vi.fn(), forwardRefs: vi.fn(), reverseRefs: vi.fn() },
+    exporters: { list: vi.fn() },
+    exportBindings: { list: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), run: vi.fn(), download: vi.fn() },
   },
   setAuthRole: vi.fn(),
 }))
@@ -117,6 +119,10 @@ beforeEach(() => {
     { id: 'cv1', version_label: 'v1.0', lifecycle_stage: 'development' },
     { id: 'cv2', version_label: 'v2.0', lifecycle_stage: 'testing' },
   ], total: 2 })
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [] })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [] })
+  ;(api.catalogs.publishPreview as Mock).mockResolvedValue({ session_token: 'tok1', bindings: [], has_failures: false, expires_at: '2026-01-01T01:00:00Z' })
+  ;(api.catalogs.publishWithToken as Mock).mockResolvedValue({ status: 'published' })
 })
 
 // Helper: wait for instance table to render
@@ -272,14 +278,20 @@ test('T-16.61: Unpublish button visible for Admin on published catalog', async (
   await expect.element(page.getByRole('button', { name: 'Unpublish' })).toBeVisible()
 })
 
-// T-16.62: Clicking Publish calls API
+// T-16.62: Clicking Publish opens preview modal and calls publishPreview
 test('T-16.62: clicking Publish calls API', async () => {
   ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid', published: false })
-  ;(api.catalogs.publish as Mock).mockResolvedValue({ status: 'published' })
+  ;(api.catalogs.publishPreview as Mock).mockResolvedValue({
+    session_token: 'tok1', bindings: [], has_failures: false, expires_at: '2026-01-01T01:00:00Z',
+  })
   renderDetail('Admin')
   await waitForInstances()
   await page.getByRole('button', { name: 'Publish' }).click()
-  expect(api.catalogs.publish).toHaveBeenCalledWith('my-catalog')
+  expect(api.catalogs.publishPreview).toHaveBeenCalledWith('my-catalog')
+  // Confirm in the preview modal
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Publish' }).click()
+  expect(api.catalogs.publishWithToken).toHaveBeenCalledWith('my-catalog', 'tok1')
 })
 
 // T-16.63: Published badge shown after publish
@@ -308,10 +320,10 @@ test('clicking Unpublish calls API', async () => {
   expect(api.catalogs.unpublish).toHaveBeenCalledWith('my-catalog')
 })
 
-// Publish error shows error message
+// Publish preview error shows error message
 test('publish error shows error message', async () => {
   ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid', published: false })
-  ;(api.catalogs.publish as Mock).mockRejectedValue(new Error('publish failed'))
+  ;(api.catalogs.publishPreview as Mock).mockRejectedValue(new Error('publish failed'))
   renderDetail('Admin')
   await waitForInstances()
   await page.getByRole('button', { name: 'Publish' }).click()

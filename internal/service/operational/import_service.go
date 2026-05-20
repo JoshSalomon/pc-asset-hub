@@ -235,10 +235,10 @@ func (s *ImportService) DryRun(ctx context.Context, req *ImportRequest) (*DryRun
 		newCount++
 	}
 
-	// Check CV label collision
+	// Check CV label collision — existing CV can be reused
 	if _, err := s.cvRepo.GetByLabel(ctx, cvLabel); err == nil {
-		collisions = append(collisions, Collision{Type: "catalog_version", Name: cvLabel, Resolution: "conflict", Detail: "catalog version label already exists"})
-		conflictCount++
+		collisions = append(collisions, Collision{Type: "catalog_version", Name: cvLabel, Resolution: "identical", Detail: "catalog version label already exists — can reuse"})
+		identicalCount++
 	} else if !domainerrors.IsNotFound(err) {
 		return nil, err
 	} else {
@@ -435,19 +435,49 @@ func (s *ImportService) Import(ctx context.Context, req *ImportRequest) (*Import
 			}
 		}
 
-		// 2. Create CV
-		cvID := uuid.Must(uuid.NewV7()).String()
-		now := time.Now()
-		newCV := &models.CatalogVersion{
-			ID:             cvID,
-			VersionLabel:   cvLabel,
-			Description:    dataCopy.CatalogVersion.Description,
-			LifecycleStage: models.LifecycleStageDevelopment,
-			CreatedAt:      now,
-			UpdatedAt:      now,
-		}
-		if err := s.cvRepo.Create(txCtx, newCV); err != nil {
-			return err
+		// 2. Create or reuse CV
+		var cvID string
+		cvReused := false
+		if reuseSet[cvLabel] {
+			existingCV, err := s.cvRepo.GetByLabel(txCtx, cvLabel)
+			if err != nil {
+				return fmt.Errorf("reuse_existing catalog version %q not found: %w", cvLabel, err)
+			}
+			cvID = existingCV.ID
+			cvReused = true
+
+			// Validate that the reused CV's pins cover all entity types in the import
+			existingPins, err := s.pinRepo.ListByCatalogVersion(txCtx, cvID)
+			if err != nil {
+				return fmt.Errorf("failed to list pins for reused CV: %w", err)
+			}
+			pinnedETIDs := make(map[string]bool)
+			for _, pin := range existingPins {
+				etv, err := s.etvRepo.GetByID(txCtx, pin.EntityTypeVersionID)
+				if err == nil {
+					pinnedETIDs[etv.EntityTypeID] = true
+				}
+			}
+			for _, et := range dataCopy.EntityTypes {
+				existingET, err := s.etRepo.GetByName(txCtx, et.Name)
+				if err == nil && !pinnedETIDs[existingET.ID] {
+					return domainerrors.NewValidation(fmt.Sprintf("reused catalog version %q does not have entity type %q pinned — pins do not match import data", cvLabel, et.Name))
+				}
+			}
+		} else {
+			cvID = uuid.Must(uuid.NewV7()).String()
+			now := time.Now()
+			newCV := &models.CatalogVersion{
+				ID:             cvID,
+				VersionLabel:   cvLabel,
+				Description:    dataCopy.CatalogVersion.Description,
+				LifecycleStage: models.LifecycleStageDevelopment,
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			}
+			if err := s.cvRepo.Create(txCtx, newCV); err != nil {
+				return err
+			}
 		}
 
 		// 3. Create/reuse entity types
@@ -464,14 +494,16 @@ func (s *ImportService) Import(ctx context.Context, req *ImportRequest) (*Import
 				etNameToID[et.Name] = existingET.ID
 				etNameToVersionID[et.Name] = latestETV.ID
 
-				// Pin the existing entity type version
-				pinID := uuid.Must(uuid.NewV7()).String()
-				if err := s.pinRepo.Create(txCtx, &models.CatalogVersionPin{
-					ID:                  pinID,
-					CatalogVersionID:    cvID,
-					EntityTypeVersionID: latestETV.ID,
-				}); err != nil {
-					return err
+				// Pin the existing entity type version (skip if CV reused — pins already exist)
+				if !cvReused {
+					pinID := uuid.Must(uuid.NewV7()).String()
+					if err := s.pinRepo.Create(txCtx, &models.CatalogVersionPin{
+						ID:                  pinID,
+						CatalogVersionID:    cvID,
+						EntityTypeVersionID: latestETV.ID,
+					}); err != nil {
+						return err
+					}
 				}
 				reusedAssocs, err := s.assocRepo.ListByVersion(txCtx, latestETV.ID)
 				if err != nil {
@@ -502,13 +534,15 @@ func (s *ImportService) Import(ctx context.Context, req *ImportRequest) (*Import
 				if isEntityTypeIdentical(attrs, assocs, et, s.tdvRepo, s.tdRepo, s.etRepo, txCtx) {
 					etNameToID[et.Name] = existingET.ID
 					etNameToVersionID[et.Name] = latestETV.ID
-					pinID := uuid.Must(uuid.NewV7()).String()
-					if err := s.pinRepo.Create(txCtx, &models.CatalogVersionPin{
-						ID:                  pinID,
-						CatalogVersionID:    cvID,
-						EntityTypeVersionID: latestETV.ID,
-					}); err != nil {
-						return err
+					if !cvReused {
+						pinID := uuid.Must(uuid.NewV7()).String()
+						if err := s.pinRepo.Create(txCtx, &models.CatalogVersionPin{
+							ID:                  pinID,
+							CatalogVersionID:    cvID,
+							EntityTypeVersionID: latestETV.ID,
+						}); err != nil {
+							return err
+						}
 					}
 					for _, a := range assocs {
 						allAssocByName[a.Name] = a
@@ -615,15 +649,17 @@ func (s *ImportService) Import(ctx context.Context, req *ImportRequest) (*Import
 			}
 		}
 
-		// Auto-pin type definitions (create CatalogVersionTypePin entries)
-		for _, tdvID := range tdNameToVersionID {
-			typePinID := uuid.Must(uuid.NewV7()).String()
-			if err := s.typePinRepo.Create(txCtx, &models.CatalogVersionTypePin{
-				ID:                      typePinID,
-				CatalogVersionID:        cvID,
-				TypeDefinitionVersionID: tdvID,
-			}); err != nil {
-				return err
+		// Auto-pin type definitions (skip if CV reused — pins already exist)
+		if !cvReused {
+			for _, tdvID := range tdNameToVersionID {
+				typePinID := uuid.Must(uuid.NewV7()).String()
+				if err := s.typePinRepo.Create(txCtx, &models.CatalogVersionTypePin{
+					ID:                      typePinID,
+					CatalogVersionID:        cvID,
+					TypeDefinitionVersionID: tdvID,
+				}); err != nil {
+					return err
+				}
 			}
 		}
 

@@ -49,6 +49,8 @@ import CopyCatalogModal from '../../components/CopyCatalogModal'
 import ReplaceCatalogModal from '../../components/ReplaceCatalogModal'
 import { useCatalogDiagram } from '../../hooks/useCatalogDiagram'
 import DiagramTabContent from '../../components/DiagramTabContent'
+import ExportBindingsPanel from '../../components/ExportBindingsPanel'
+import PublishPreviewModal from '../../components/PublishPreviewModal'
 
 export default function CatalogDetailPage({ role }: { role: Role }) {
   const { name } = useParams<{ name: string }>()
@@ -91,6 +93,9 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
   const [setParentOpen, setSetParentOpen] = useState(false)
   const [parentTypeName, setParentTypeName] = useState('')
   const [setParentError, setSetParentError] = useState<string | null>(null)
+
+  // Publish preview modal
+  const [publishPreviewOpen, setPublishPreviewOpen] = useState(false)
 
   // Copy catalog modal
   const [copyOpen, setCopyOpen] = useState(false)
@@ -344,10 +349,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
           </Button>
         )}
         {canPublishOrReplace && (
-          <Button variant="primary" onClick={async () => {
-            try { await api.catalogs.publish(catalog.name); await loadCatalog() }
-            catch (e) { setError(e instanceof Error ? e.message : 'Failed to publish') }
-          }}>
+          <Button variant="primary" onClick={() => setPublishPreviewOpen(true)}>
             Publish
           </Button>
         )}
@@ -591,6 +593,11 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
               />
             </PageSection>
           </Tab>,
+          <Tab key="__export__" eventKey="__export__" title={<TabTitleText>Export Plugins</TabTitleText>}>
+            <PageSection padding={{ default: 'noPadding' }} style={{ marginTop: '1rem' }}>
+              {name && catalog && <ExportBindingsPanel catalogName={name} catalogVersionId={catalog.catalog_version_id} isAdmin={isAdmin} isRW={canWrite} />}
+            </PageSection>
+          </Tab>,
           ]}
         </Tabs>
       )}
@@ -690,6 +697,14 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
         error={replaceError}
         loading={replaceLoading}
       />
+
+      {publishPreviewOpen && name && (
+        <PublishPreviewModal
+          catalogName={name}
+          onClose={() => setPublishPreviewOpen(false)}
+          onPublished={() => { setPublishPreviewOpen(false); loadCatalog() }}
+        />
+      )}
     </PageSection>
   )
 }

@@ -169,6 +169,19 @@ type Catalog struct {
 	UpdatedAt        time.Time
 }
 
+type ExportBinding struct {
+	ID            string
+	CatalogID     string
+	ExporterName  string
+	Parameters    map[string]string
+	Enabled       bool
+	LastRunAt     *time.Time
+	LastRunStatus string
+	LastRunError  string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
 type EntityInstance struct {
 	ID               string
 	EntityTypeID     string

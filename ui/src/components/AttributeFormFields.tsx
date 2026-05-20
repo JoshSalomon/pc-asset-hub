@@ -2,12 +2,11 @@ import { FormGroup, TextInput, TextArea, Checkbox, HelperText, HelperTextItem, D
 import type { SnapshotAttribute } from '../types'
 import { validateAttributeValue } from '../utils/validateAttributeValue'
 
-const instanceNameRegex = /^[a-zA-Z0-9_][a-zA-Z0-9 ._-]*$/
+const instanceNameRegex = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
 
 export function validateInstanceName(name: string): string | null {
   if (!name.trim()) return null
-  if (name.length > 255) return 'Name must not exceed 255 characters'
-  if (!instanceNameRegex.test(name)) return 'Name must start with a letter, digit, or underscore, and contain only letters, digits, spaces, dots, hyphens, and underscores'
+  if (name.length > 63 || !instanceNameRegex.test(name)) return 'Instance name must be a valid Kubernetes resource name: lowercase letters, numbers, and hyphens only, must start and end with a letter or number, max 63 characters'
   return null
 }
 

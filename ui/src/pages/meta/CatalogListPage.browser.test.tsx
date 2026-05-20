@@ -17,6 +17,9 @@ vi.mock('../../api/client', () => ({
     catalogVersions: {
       list: vi.fn(),
     },
+    exportBindings: {
+      list: vi.fn(),
+    },
   },
   setAuthRole: vi.fn(),
 }))
@@ -55,6 +58,7 @@ beforeEach(() => {
   ;(api.catalogs.create as Mock).mockResolvedValue({ id: 'c3', name: 'new-catalog' })
   ;(api.catalogs.delete as Mock).mockResolvedValue(undefined)
   ;(api.catalogVersions.list as Mock).mockResolvedValue({ items: mockCVs, total: 2 })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [] })
 })
 
 // T-10.41: Catalogs page renders
@@ -367,6 +371,45 @@ test('CV load error — create modal opens but CV select has no options', async 
   // No CV options should be visible (release-1.0 or release-2.0)
   expect(page.getByText('release-1.0').query()).toBeNull()
   expect(page.getByText('release-2.0').query()).toBeNull()
+})
+
+// T-34.99: Catalog delete with bindings shows warning
+test('T-34.99: Delete catalog with bindings shows binding count warning', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', enabled: true },
+    { id: 'b2', exporter_name: 'configmap', enabled: true },
+  ] })
+  render(
+    <MemoryRouter initialEntries={['/catalogs']}>
+      <Routes>
+        <Route path="/catalogs" element={<CatalogListPage role="Admin" />} />
+        <Route path="/catalogs/:name" element={<div>Detail</div>} />
+      </Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByText('production-app-a')).toBeVisible()
+  await page.getByRole('row', { name: /production-app-a/ }).getByRole('button', { name: 'Delete' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // Should warn about export bindings
+  await expect.element(page.getByText(/2 export binding/)).toBeVisible()
+})
+
+// T-34.114: Delete dialog gracefully handles binding list failure
+test('T-34.114: Delete dialog shows even when binding list fails', async () => {
+  ;(api.exportBindings.list as Mock).mockRejectedValue(new Error('Network error'))
+  render(
+    <MemoryRouter initialEntries={['/catalogs']}>
+      <Routes>
+        <Route path="/catalogs" element={<CatalogListPage role="Admin" />} />
+        <Route path="/catalogs/:name" element={<div>Detail</div>} />
+      </Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByText('production-app-a')).toBeVisible()
+  await page.getByRole('row', { name: /production-app-a/ }).getByRole('button', { name: 'Delete' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // Should NOT show binding warning (it fell back to 0)
+  expect(page.getByText(/export binding/).query()).toBeNull()
 })
 
 // === statusColor default branch ===

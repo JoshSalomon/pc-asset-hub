@@ -266,3 +266,16 @@ export interface UpdatePinResponse {
   pin: CatalogVersionPin
   migration?: MigrationReport
 }
+
+export interface ExportBinding {
+  id: string
+  catalog_id: string
+  exporter_name: string
+  parameters: Record<string, string>
+  enabled: boolean
+  last_run_at: string | null
+  last_run_status: string
+  last_run_error?: string
+  created_at: string
+  updated_at: string
+}

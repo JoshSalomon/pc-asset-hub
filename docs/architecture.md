@@ -170,6 +170,7 @@ Manages catalogs and entity instances. Used by all roles. Scoped to a specific c
 - Forward and reverse reference queries
 - Filtering, sorting, pagination
 - Catalog export/import (JSON file, Admin+)
+- Export plugin bindings: attach exporters to catalogs, run manually or on publish (FF-15)
 
 ### URL Structure
 
@@ -207,6 +208,18 @@ Operational API (catalog-name is DNS-label: [a-z0-9-], max 63 chars):
   /api/data/v1/catalogs/{catalog-name}/validate
   /api/data/v1/catalogs/{catalog-name}/export
   /api/data/v1/catalogs/import
+
+  # Catalog lifecycle
+  /api/data/v1/catalogs/{catalog-name}/publish
+  /api/data/v1/catalogs/{catalog-name}/publish/preview    # FF-15: pre-publish export preview
+  /api/data/v1/catalogs/{catalog-name}/unpublish
+
+  # Export plugin bindings (FF-15)
+  /api/data/v1/exporters
+  /api/data/v1/catalogs/{catalog-name}/export-bindings
+  /api/data/v1/catalogs/{catalog-name}/export-bindings/{binding-id}
+  /api/data/v1/catalogs/{catalog-name}/export-bindings/{binding-id}/run
+  /api/data/v1/catalogs/{catalog-name}/export-bindings/download?token={token}
 ```
 
 ### Catalog Scoping

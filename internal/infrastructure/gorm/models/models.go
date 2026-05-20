@@ -478,6 +478,54 @@ func AssociationLinkFromModel(m *domain.AssociationLink) *AssociationLink {
 	}
 }
 
+type ExportBinding struct {
+	ID            string `gorm:"primaryKey;size:36"`
+	CatalogID     string `gorm:"not null;size:36;index"`
+	ExporterName  string `gorm:"not null;size:255"`
+	Parameters    string `gorm:"not null;default:'{}'"`
+	Enabled       bool   `gorm:"not null;default:true"`
+	LastRunAt     *time.Time
+	LastRunStatus string `gorm:"not null;size:20;default:'never'"`
+	LastRunError  string `gorm:"default:''"`
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+func (b *ExportBinding) ToModel() *domain.ExportBinding {
+	params := map[string]string{}
+	if b.Parameters != "" {
+		_ = json.Unmarshal([]byte(b.Parameters), &params)
+	}
+	return &domain.ExportBinding{
+		ID:            b.ID,
+		CatalogID:     b.CatalogID,
+		ExporterName:  b.ExporterName,
+		Parameters:    params,
+		Enabled:       b.Enabled,
+		LastRunAt:     b.LastRunAt,
+		LastRunStatus: b.LastRunStatus,
+		LastRunError:  b.LastRunError,
+		CreatedAt:     b.CreatedAt,
+		UpdatedAt:     b.UpdatedAt,
+	}
+}
+
+func ExportBindingFromModel(m *domain.ExportBinding) *ExportBinding {
+	paramsJSON, _ := json.Marshal(m.Parameters)
+	return &ExportBinding{
+		ID:            m.ID,
+		CatalogID:     m.CatalogID,
+		ExporterName:  m.ExporterName,
+		Parameters:    string(paramsJSON),
+		Enabled:       m.Enabled,
+		LastRunAt:     m.LastRunAt,
+		LastRunStatus: m.LastRunStatus,
+		LastRunError:  m.LastRunError,
+		CreatedAt:     m.CreatedAt,
+		UpdatedAt:     m.UpdatedAt,
+	}
+}
+
 // AllModels returns all GORM model structs for auto-migration.
 func AllModels() []any {
 	return []any{
@@ -495,6 +543,7 @@ func AllModels() []any {
 		&EntityInstance{},
 		&InstanceAttributeValue{},
 		&AssociationLink{},
+		&ExportBinding{},
 	}
 }
 

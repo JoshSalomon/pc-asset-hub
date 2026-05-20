@@ -40,6 +40,7 @@ import { useCatalogDiagram } from '../../hooks/useCatalogDiagram'
 import ValidationResults from '../../components/ValidationResults'
 import InstanceDetailPanel from '../../components/InstanceDetailPanel'
 import DiagramTabContent from '../../components/DiagramTabContent'
+import ExportBindingsPanel from '../../components/ExportBindingsPanel'
 
 export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
   const { name } = useParams<{ name: string }>()
@@ -560,6 +561,12 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
               diagramLoading={diagram.diagramLoading}
               diagramError={diagram.diagramError}
             />
+          </PageSection>
+        </Tab>
+
+        <Tab eventKey="__export__" title={<TabTitleText>Export Plugins</TabTitleText>}>
+          <PageSection padding={{ default: 'noPadding' }} style={{ marginTop: '1rem' }}>
+            {catalog && <ExportBindingsPanel catalogName={catalog.name} catalogVersionId={catalog.catalog_version_id} isAdmin={role === 'Admin' || role === 'SuperAdmin'} isRW={canWrite} />}
           </PageSection>
         </Tab>
       </Tabs>

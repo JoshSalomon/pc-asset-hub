@@ -800,6 +800,26 @@ test('catalogs.export throws on error', async () => {
   await expect(api.catalogs.export('my-cat')).rejects.toThrow('403: forbidden')
 })
 
+test('catalogs.export throws clean message on HTML error', async () => {
+  mockFetch.mockReturnValue(Promise.resolve({
+    ok: false,
+    status: 502,
+    text: () => Promise.resolve('<html><head><title>502 Bad Gateway</title></head></html>'),
+  }))
+
+  await expect(api.catalogs.export('my-cat')).rejects.toThrow('502: Bad Gateway')
+})
+
+test('fetchJSON throws clean message on HTML error (e.g. 502 from nginx)', async () => {
+  mockFetch.mockReturnValue(Promise.resolve({
+    ok: false,
+    status: 502,
+    text: () => Promise.resolve('<html><head><title>502 Bad Gateway</title></head><body><h1>502 Bad Gateway</h1></body></html>'),
+  }))
+
+  await expect(api.catalogs.list()).rejects.toThrow('502: Bad Gateway')
+})
+
 test('catalogs.import sends POST with body', async () => {
   const importData = { data: { catalog: { name: 'imported' } } }
   mockFetch.mockReturnValue(jsonResponse({ status: 'ok', catalog_name: 'imported' }))
@@ -819,4 +839,150 @@ test('catalogs.import with dry_run sends query param', async () => {
   await api.catalogs.import(importData, { dry_run: true })
   const url = mockFetch.mock.calls[0][0]
   expect(url).toContain('?dry_run=true')
+})
+
+// === Export Bindings API coverage ===
+
+test('exporters.list sends GET to /exporters', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ items: [{ name: 'mcp-gateway', description: 'MCP', parameter_schema: [] }] }))
+
+  const result = await api.exporters.list()
+  expect(result.items).toHaveLength(1)
+  const url = mockFetch.mock.calls[0][0]
+  expect(url).toContain('/exporters')
+})
+
+test('exportBindings.list sends GET with catalog name', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ items: [] }))
+
+  await api.exportBindings.list('my-catalog')
+  const url = mockFetch.mock.calls[0][0]
+  expect(url).toContain('/catalogs/my-catalog/export-bindings')
+})
+
+test('exportBindings.create sends POST with body', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'b1', exporter_name: 'mcp-gateway' }))
+
+  const result = await api.exportBindings.create('my-catalog', {
+    exporter_name: 'mcp-gateway',
+    parameters: { server_type: 'mcp-server' },
+  })
+  expect(result.id).toBe('b1')
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-catalog/export-bindings')
+  expect(opts.method).toBe('POST')
+})
+
+test('exportBindings.update sends PUT with body', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'b1', enabled: false }))
+
+  await api.exportBindings.update('my-catalog', 'b1', { enabled: false })
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-catalog/export-bindings/b1')
+  expect(opts.method).toBe('PUT')
+})
+
+test('exportBindings.delete sends DELETE', async () => {
+  mockFetch.mockReturnValue(noContentResponse())
+
+  await api.exportBindings.delete('my-catalog', 'b1')
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-catalog/export-bindings/b1')
+  expect(opts.method).toBe('DELETE')
+})
+
+test('exportBindings.run downloads YAML blob', async () => {
+  setAuthRole('RW')
+  const mockBlob = new Blob(['test: true'], { type: 'application/x-yaml' })
+  mockFetch.mockReturnValue(Promise.resolve({
+    ok: true,
+    status: 200,
+    blob: () => Promise.resolve(mockBlob),
+    headers: new Headers({ 'Content-Disposition': 'attachment; filename="my-catalog-export.yaml"' }),
+  }))
+
+  // Don't stub URL or document.createElement — it breaks V8 coverage collection (LTM mem_5d443426)
+  await api.exportBindings.run('my-catalog', 'b1')
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-catalog/export-bindings/b1/run')
+  expect(opts.method).toBe('POST')
+  expect(opts.headers['X-User-Role']).toBe('RW')
+})
+
+test('exportBindings.run throws on error', async () => {
+  mockFetch.mockReturnValue(Promise.resolve({
+    ok: false,
+    status: 500,
+    text: () => Promise.resolve('internal error'),
+  }))
+
+  await expect(api.exportBindings.run('my-catalog', 'b1')).rejects.toThrow('500: internal error')
+})
+
+test('exportBindings.run throws clean message on HTML error (e.g. 502 from nginx)', async () => {
+  mockFetch.mockReturnValue(Promise.resolve({
+    ok: false,
+    status: 502,
+    text: () => Promise.resolve('<html><head><title>502 Bad Gateway</title></head><body><center><h1>502 Bad Gateway</h1></center></body></html>'),
+  }))
+
+  await expect(api.exportBindings.run('my-catalog', 'b1')).rejects.toThrow('502: Bad Gateway')
+})
+
+test('exportBindings.download downloads YAML blob', async () => {
+  setAuthRole('RW')
+  const mockBlob = new Blob(['test: true'], { type: 'application/x-yaml' })
+  mockFetch.mockReturnValue(Promise.resolve({
+    ok: true,
+    status: 200,
+    blob: () => Promise.resolve(mockBlob),
+    headers: new Headers({ 'Content-Disposition': 'attachment; filename="my-catalog-export.yaml"' }),
+  }))
+
+  // Don't stub URL or document.createElement — it breaks V8 coverage collection (LTM mem_5d443426)
+  await api.exportBindings.download('my-catalog', 'token1', 'b1')
+  const url = mockFetch.mock.calls[0][0]
+  expect(url).toContain('/catalogs/my-catalog/export-bindings/download?token=token1&binding=b1')
+})
+
+test('exportBindings.download throws on error', async () => {
+  mockFetch.mockReturnValue(Promise.resolve({
+    ok: false,
+    status: 404,
+    text: () => Promise.resolve('not found'),
+  }))
+
+  await expect(api.exportBindings.download('my-catalog', 'bad-token', 'b1')).rejects.toThrow('404: not found')
+})
+
+test('exportBindings.download throws clean message on HTML error', async () => {
+  mockFetch.mockReturnValue(Promise.resolve({
+    ok: false,
+    status: 502,
+    text: () => Promise.resolve('<html><head><title>502 Bad Gateway</title></head></html>'),
+  }))
+
+  await expect(api.exportBindings.download('my-catalog', 'tok', 'b1')).rejects.toThrow('502: Bad Gateway')
+})
+
+test('catalogs.publishPreview sends POST', async () => {
+  mockFetch.mockReturnValue(jsonResponse({
+    session_token: 'tok1', expires_at: '2026-01-01', bindings: [], has_failures: false,
+  }))
+
+  const result = await api.catalogs.publishPreview('my-catalog')
+  expect(result.session_token).toBe('tok1')
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-catalog/publish/preview')
+  expect(opts.method).toBe('POST')
+})
+
+test('catalogs.publishWithToken sends POST with session_token', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ status: 'ok' }))
+
+  await api.catalogs.publishWithToken('my-catalog', 'session-tok')
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/catalogs/my-catalog/publish')
+  expect(opts.method).toBe('POST')
+  expect(JSON.parse(opts.body)).toEqual({ session_token: 'session-tok' })
 })

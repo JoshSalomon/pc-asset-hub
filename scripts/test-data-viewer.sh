@@ -20,6 +20,8 @@
 #   - curl installed
 
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/test-summary.sh"
 
 API_BASE="${1:-http://localhost:30080}"
 UI_BASE="${2:-http://localhost:30000}"
@@ -423,15 +425,4 @@ else
   fail "T10.2 Empty tree type" "expected array, got $TREE_TYPE"
 fi
 
-# ================================================================
-# Summary
-# ================================================================
-
-echo ""
-echo "========================================"
-echo "  Results: $PASS passed, $FAIL failed"
-echo "========================================"
-
-if [ "$FAIL" -gt 0 ]; then
-  exit 1
-fi
+print_summary "test-data-viewer"

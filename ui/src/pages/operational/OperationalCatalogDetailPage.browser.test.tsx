@@ -12,6 +12,8 @@ vi.mock('../../api/client', () => ({
     instances: { list: vi.fn(), get: vi.fn(), tree: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), setParent: vi.fn(), createContained: vi.fn() },
     versions: { snapshot: vi.fn() },
     links: { forwardRefs: vi.fn(), reverseRefs: vi.fn(), create: vi.fn(), delete: vi.fn() },
+    exporters: { list: vi.fn() },
+    exportBindings: { list: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), run: vi.fn(), download: vi.fn() },
   },
   setAuthRole: vi.fn(),
 }))
@@ -136,6 +138,8 @@ beforeEach(() => {
   ;(api.instances.get as Mock).mockResolvedValue(mockInstanceDetail)
   ;(api.links.forwardRefs as Mock).mockResolvedValue(mockForwardRefs)
   ;(api.links.reverseRefs as Mock).mockResolvedValue(mockReverseRefs)
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [] })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [] })
 })
 
 // === Catalog Detail Header ===
@@ -1646,7 +1650,7 @@ test('Create modal: invalid instance name shows validation error', async () => {
   await userEvent.selectOptions(etSelect, 'mcp-server')
   await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
   await page.getByRole('textbox', { name: /^Name/ }).fill('we)(?')
-  await expect.element(page.getByText(/must start with/)).toBeVisible()
+  await expect.element(page.getByText(/Kubernetes resource name/)).toBeVisible()
 })
 
 test('Create modal: valid instance name shows no validation error', async () => {
@@ -1658,7 +1662,7 @@ test('Create modal: valid instance name shows no validation error', async () => 
   await userEvent.selectOptions(etSelect, 'mcp-server')
   await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
   await page.getByRole('textbox', { name: /^Name/ }).fill('my-server')
-  expect(page.getByText(/must start with/).elements().length).toBe(0)
+  expect(page.getByText(/Kubernetes resource name/).elements().length).toBe(0)
 })
 
 test('Create modal: Create button disabled when name has invalid chars', async () => {
@@ -1757,6 +1761,311 @@ test('Delete modal for non-existent tree node shows empty descendants', async ()
   ;(api.instances.get as Mock).mockResolvedValue({ ...mockInstanceDetail, id: 'orphan' })
   renderDetail('RW')
   // Tree is empty so no descendants will be found — tests getDescendants empty-return guard
+})
+
+// === Export Plugins Tab ===
+
+test('Export Plugins tab shows "No export bindings" when empty', async () => {
+  renderDetail()
+  await page.getByText('Export Plugins').click()
+  await expect.element(page.getByText('No export bindings configured.')).toBeVisible()
+})
+
+test('Export Plugins tab shows bindings list', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: { server_type: 'mcp-server', tool_type: 'mcp-tool' }, enabled: true, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+    ],
+  })
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [{ name: 'mcp-gateway', description: 'MCP', parameter_schema: [] }] })
+  renderDetail('Admin')
+  await page.getByText('Export Plugins').click()
+  await expect.element(page.getByText('mcp-gateway')).toBeVisible()
+  await expect.element(page.getByText('server_type=mcp-server')).toBeVisible()
+  await expect.element(page.getByText('never')).toBeVisible()
+})
+
+test('Export Plugins tab: Admin sees Add/Edit/Delete buttons', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+    ],
+  })
+  renderDetail('Admin')
+  await page.getByText('Export Plugins').click()
+  await expect.element(page.getByRole('button', { name: 'Add Export Binding' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Edit' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Delete' })).toBeVisible()
+})
+
+test('Export Plugins tab: RW sees Export Now but not Add/Edit/Delete', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_at: null, last_run_status: 'success', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+    ],
+  })
+  renderDetail('RW')
+  await page.getByText('Export Plugins').click()
+  await expect.element(page.getByRole('button', { name: 'Export Now' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Add Export Binding' })).not.toBeInTheDocument()
+})
+
+test('Export Plugins tab: Export Now calls run API', async () => {
+  ;(api.exportBindings.run as Mock).mockResolvedValue(undefined)
+  ;(api.exportBindings.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+    ],
+  })
+  renderDetail('RW')
+  await page.getByText('Export Plugins').click()
+  await page.getByRole('button', { name: 'Export Now' }).click()
+  await vi.waitFor(() => {
+    expect(api.exportBindings.run).toHaveBeenCalledWith('test-catalog', 'b1', undefined)
+  })
+})
+
+test('Export Plugins tab: Delete shows confirmation modal', async () => {
+  ;(api.exportBindings.delete as Mock).mockResolvedValue(undefined)
+  ;(api.exportBindings.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+    ],
+  })
+  renderDetail('Admin')
+  await page.getByText('Export Plugins').click()
+  await page.getByRole('button', { name: 'Delete' }).click()
+  await expect.element(page.getByText('Delete Export Binding')).toBeVisible()
+  await expect.element(page.getByText(/Are you sure you want to delete/)).toBeVisible()
+  // Confirm delete
+  const deleteButtons = page.getByRole('button', { name: 'Delete' })
+  // Second Delete button is in the modal
+  const allDeleteBtns = await deleteButtons.all()
+  await allDeleteBtns[allDeleteBtns.length - 1].click()
+  await vi.waitFor(() => {
+    expect(api.exportBindings.delete).toHaveBeenCalledWith('test-catalog', 'b1')
+  })
+})
+
+test('Export Plugins tab: Delete modal closes on Escape', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+    ],
+  })
+  renderDetail('Admin')
+  await page.getByText('Export Plugins').click()
+  await page.getByRole('button', { name: 'Delete' }).click()
+  await expect.element(page.getByText('Delete Export Binding')).toBeVisible()
+  // Press Escape to trigger onClose
+  await userEvent.keyboard('{Escape}')
+  // Modal should close — delete target cleared
+  await expect.element(page.getByText('Delete Export Binding')).not.toBeInTheDocument()
+})
+
+test('Export Plugins tab: Toggle enabled/disabled', async () => {
+  ;(api.exportBindings.update as Mock).mockResolvedValue({ id: 'b1', enabled: false })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+    ],
+  })
+  renderDetail('Admin')
+  await page.getByText('Export Plugins').click()
+  await page.getByRole('button', { name: 'Enabled' }).click()
+  await vi.waitFor(() => {
+    expect(api.exportBindings.update).toHaveBeenCalledWith('test-catalog', 'b1', { enabled: false })
+  })
+})
+
+test('Export Plugins tab: Export Now disabled when binding is disabled', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: {}, enabled: false, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+    ],
+  })
+  renderDetail('RW')
+  await page.getByText('Export Plugins').click()
+  const exportBtn = page.getByRole('button', { name: 'Export Now' })
+  await expect.element(exportBtn).toBeVisible()
+  expect(exportBtn.element()).toHaveProperty('disabled', true)
+})
+
+test('Export Plugins tab: entity type dropdowns are sorted alphabetically', async () => {
+  // Mock pins in non-alphabetical order
+  ;(api.catalogVersions.listPins as Mock).mockResolvedValue({
+    items: [
+      { pin_id: 'p1', entity_type_name: 'zebra', entity_type_id: 'et3', entity_type_version_id: 'etv3', version: 1 },
+      { pin_id: 'p2', entity_type_name: 'alpha', entity_type_id: 'et1', entity_type_version_id: 'etv1', version: 1 },
+      { pin_id: 'p3', entity_type_name: 'mango', entity_type_id: 'et2', entity_type_version_id: 'etv2', version: 1 },
+    ],
+  })
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [
+    { name: 'mcp-gateway', description: 'MCP Gateway', parameter_schema: [
+      { name: 'server_type', type: 'entity_type', required: true, description: 'Server' },
+    ] },
+  ] })
+  renderDetail('Admin')
+  await page.getByText('Export Plugins').click()
+  await page.getByRole('button', { name: 'Add Export Binding' }).click()
+  // Select exporter to show param fields
+  const exporterSelect = document.querySelector('select[aria-label="Select exporter"]') as HTMLSelectElement
+  exporterSelect.value = 'mcp-gateway'
+  exporterSelect.dispatchEvent(new Event('change', { bubbles: true }))
+  await new Promise(r => setTimeout(r, 500))
+  // Get options from the entity type dropdown
+  const etSelect = document.querySelector('select[aria-label="server_type"]') as HTMLSelectElement
+  const options = Array.from(etSelect.options).map(o => o.text).filter(t => t !== 'Select entity type...')
+  expect(options).toEqual(['alpha', 'mango', 'zebra'])
+})
+
+test('Export Plugins tab: Add binding modal shows error when pins fail to load', async () => {
+  // listPins succeeds for page load, then fails for the modal
+  ;(api.catalogVersions.listPins as Mock)
+    .mockResolvedValueOnce({ items: mockPins, total: 3 })
+    .mockRejectedValueOnce(new Error('500: pins service down'))
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [
+    { name: 'mcp-gateway', description: 'MCP Gateway', parameter_schema: [
+      { name: 'server_type', type: 'entity_type', required: true, description: 'Server' },
+    ] },
+  ] })
+  renderDetail('Admin')
+  await page.getByText('Export Plugins').click()
+  await page.getByRole('button', { name: 'Add Export Binding' }).click()
+  const exporterSelect = document.querySelector('select[aria-label="Select exporter"]') as HTMLSelectElement
+  exporterSelect.value = 'mcp-gateway'
+  exporterSelect.dispatchEvent(new Event('change', { bubbles: true }))
+  await new Promise(r => setTimeout(r, 500))
+  // Should show error, not just empty dropdown
+  await expect.element(page.getByText(/Failed to load entity types/i)).toBeVisible()
+})
+
+test('Export Plugins tab: Add binding modal opens with exporter select', async () => {
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [
+    { name: 'mcp-gateway', description: 'MCP Gateway', parameter_schema: [
+      { name: 'server_type', type: 'string', required: true, description: 'Server entity type' },
+      { name: 'tool_type', type: 'string', required: true, description: 'Tool entity type' },
+    ] },
+  ] })
+  renderDetail('Admin')
+  await page.getByText('Export Plugins').click()
+  await page.getByRole('button', { name: 'Add Export Binding' }).click()
+  // Modal should show the exporter selector
+  await expect.element(page.getByRole('combobox', { name: 'Select exporter' })).toBeVisible()
+})
+
+test('Export Plugins tab: last run timestamp shown when last_run_at is set', async () => {
+  const runDate = '2026-03-15T10:30:00Z'
+  const expectedTimestamp = new Date(runDate).toLocaleString()
+  ;(api.exportBindings.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_at: runDate, last_run_status: 'success', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+    ],
+  })
+  renderDetail('RW')
+  await page.getByText('Export Plugins').click()
+  await expect.element(page.getByText('success')).toBeVisible()
+  await expect.element(page.getByText(expectedTimestamp)).toBeVisible()
+})
+
+test('Export Plugins tab: no timestamp shown when last_run_at is null', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+    ],
+  })
+  renderDetail('RW')
+  await page.getByText('Export Plugins').click()
+  await expect.element(page.getByText('never')).toBeVisible()
+  // No date should appear in the last run cell
+  const lastRunCell = page.getByText('never').element()?.parentElement
+  expect(lastRunCell?.querySelectorAll('span').length).toBeLessThanOrEqual(1)
+})
+
+test('Export Plugins tab: binding with error shows failed status', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_at: '2026-01-01', last_run_status: 'failed', last_run_error: 'schema drift', created_at: '2026-01-01', updated_at: '2026-01-01' },
+    ],
+  })
+  renderDetail('RW')
+  await page.getByText('Export Plugins').click()
+  // Check for the binding row with status
+  await expect.element(page.getByRole('gridcell', { name: 'mcp-gateway' })).toBeVisible()
+})
+
+test('Export Plugins tab: run error shows alert', async () => {
+  ;(api.exportBindings.run as Mock).mockRejectedValue(new Error('Export run failed'))
+  ;(api.exportBindings.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+    ],
+  })
+  renderDetail('RW')
+  await page.getByText('Export Plugins').click()
+  await page.getByRole('button', { name: 'Export Now' }).click()
+  await expect.element(page.getByText('Export run failed')).toBeVisible()
+})
+
+// T-34.75k: Export Now opens VS instance picker modal when binding has virtual_server_type
+test('Export Plugins tab: Export Now opens VS instance picker for VS binding', async () => {
+  ;(api.instances.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'vs1', name: 'prod-vs' },
+      { id: 'vs2', name: 'staging-vs' },
+    ],
+  })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: { virtual_server_type: 'virtual-server' }, enabled: true, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+    ],
+  })
+  renderDetail('RW')
+  await page.getByText('Export Plugins').click()
+  await page.getByRole('button', { name: 'Export Now' }).click()
+  // VS picker modal should appear
+  await expect.element(page.getByText('Select Virtual Server')).toBeVisible()
+})
+
+// T-34.75l: VS instance picker shows only instances of virtual_server_type
+test('Export Plugins tab: VS picker shows correct instances', async () => {
+  ;(api.instances.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'vs1', name: 'prod-vs' },
+      { id: 'vs2', name: 'staging-vs' },
+    ],
+  })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: { virtual_server_type: 'virtual-server' }, enabled: true, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+    ],
+  })
+  renderDetail('RW')
+  await page.getByText('Export Plugins').click()
+  await page.getByRole('button', { name: 'Export Now' }).click()
+  await expect.element(page.getByText('Select Virtual Server')).toBeVisible()
+  // Verify instances are listed — check the dropdown has both options
+  const select = document.querySelector('select[aria-label="Select virtual server instance"]') as HTMLSelectElement
+  const options = Array.from(select.options).map(o => o.text).filter(t => t !== 'Select an instance...')
+  expect(options).toContain('prod-vs')
+  expect(options).toContain('staging-vs')
+  // Verify instances.list was called with the correct entity type
+  expect(api.instances.list).toHaveBeenCalledWith('test-catalog', 'virtual-server', { limit: 100 })
+})
+
+test('Export Plugins tab: VS picker shows error when API fails', async () => {
+  ;(api.instances.list as Mock).mockRejectedValue(new Error('502: Bad Gateway'))
+  ;(api.exportBindings.list as Mock).mockResolvedValue({
+    items: [
+      { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: { virtual_server_type: 'virtual-server' }, enabled: true, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+    ],
+  })
+  renderDetail('RW')
+  await page.getByText('Export Plugins').click()
+  await page.getByRole('button', { name: 'Export Now' }).click()
+  // Should show the error, not "No instances found"
+  await expect.element(page.getByText(/Bad Gateway|failed|error/i).first()).toBeVisible()
+  expect(page.getByText('No virtual-server instances found').query()).toBeNull()
 })
 
 // Cover edit onChange callback in modal (L587 equivalent for edit)

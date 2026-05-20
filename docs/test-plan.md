@@ -279,6 +279,24 @@ Each feature area is tested at the appropriate layers:
 | TD-119 regression: regex cache bounded growth | | | | X | |
 | TD-129 regression: deterministic etvIDs ordering | X | | | | |
 | TD-130 regression: migration limit early rejection | X | | X | | |
+| Instance name DNS-1123 validation (FF-15 prereq) | X | | X | X | |
+| Exporter registry — register/get/list | X | | X | | |
+| Export binding CRUD + parameter validation (US-60) | X | X | X | X | |
+| Export binding ValidateSchema — entity types + attributes + associations | X | X | X | | |
+| Export run — manual trigger + download (US-61) | X | | X | X | |
+| MCP Gateway CR exporter — mapping + YAML output (US-62) | X | | X | X | |
+| MCP Gateway ValidateSchema — route_name + containment check | X | X | | | |
+| Export round-trip — YAML parseable + matches CRD schema | X | | X | | |
+| Publish preview — schema re-validation + cache + optimistic lock | X | | X | X | |
+| PreviewCache — store/retrieve/TTL/expiry | X | | | | |
+| Publish with token — retrieve + commit + download | X | | X | X | |
+| Publish without token — fire-and-forget export | X | | X | | |
+| Per-binding download endpoint | | | X | X | |
+| Catalog delete — cascade bindings + count in response | X | X | X | X | |
+| Export binding RBAC — Admin+ CRUD, RW+ run, any list | | | X | X | |
+| Deterministic YAML output ordering | X | | X | | |
+| Export plugins live tests (curl) | | | X | | |
+| Export plugins system tests (Playwright) | | | | X | |
 
 ### Bug Fix & UX Polish Sprint Test Strategy (Phase 1)
 
@@ -1033,3 +1051,53 @@ Add write capabilities (instance CRUD, containment, links) to the operational da
 - **Browser tests (non-SuperAdmin on published)**: Verify ALL write controls hidden. Verify published badge displayed. Verify Validate button still visible (read-only validation).
 - **Browser tests (SuperAdmin on published)**: Verify ALL write controls visible. Verify published warning badge displayed.
 - **System tests (live RBAC)**: Switch roles in live system, verify controls appear/disappear correctly. Attempt write operations as RO via API, verify 403.
+
+### 5.50 Instance Name DNS-1123 Validation (FF-15 prerequisite)
+
+Tighten instance name validation from permissive regex to DNS-1123 subdomain format. Ensures all instance names are valid as K8s resource names.
+
+- **Unit tests (service)**: `ValidateInstanceName()` rejects uppercase, underscores, spaces, dots, leading/trailing hyphens, names > 63 chars. Accepts lowercase alphanumeric with hyphens.
+- **Unit tests (service)**: `CreateInstance`, `CreateContainedInstance`, `UpdateInstance` return clear error message for invalid names.
+- **Browser tests**: Create Instance modal shows inline validation error for invalid names. Edit Instance modal shows same validation.
+- **Live tests (curl)**: Attempt to create instances with invalid names via API, verify 400 with descriptive message.
+
+### 5.51 Export Plugin Framework (US-60, US-61, US-62, FF-15)
+
+Extensible export system with export bindings as catalog sub-resources. Phase 1: compiled-in Go plugins, one MCP Gateway CR exporter, manual download delivery.
+
+**Exporter Registry:**
+- **Unit tests**: Registry Register/Get/List operations. Get non-existent exporter returns not found. List empty registry returns empty array.
+
+**Export Binding CRUD (US-60):**
+- **Unit tests (service)**: Create binding with valid exporter and parameters. Create with non-existent exporter fails. Create with missing required parameter fails. ValidateSchema checks entity types exist in CV and required attributes present. Update parameters. Delete binding. List bindings by catalog. Multiple bindings to same exporter allowed.
+- **API tests (handler)**: POST/GET/PUT/DELETE for bindings. RBAC: Admin+ for create/update/delete, any role for list/get. Catalog not found returns 404. Invalid exporter name returns 400. Invalid parameters return 400 with details of what's missing.
+- **Browser tests**: Export Plugins tab renders binding list. Add Binding modal shows exporter dropdown and parameter form. Edit modal pre-fills values. Delete with confirmation. Enable/disable toggle.
+- **Live tests (curl)**: Full CRUD lifecycle against deployed system. RBAC enforcement per role.
+
+**Export Run (US-61):**
+- **Unit tests (service)**: Run single binding produces artifacts. Run on empty catalog returns comment-only YAML. Run with missing required attributes fails with descriptive error listing incomplete instances. ValidateSchema re-run catches schema drift.
+- **API tests (handler)**: POST /run returns YAML with Content-Disposition header. RBAC: RW+ can run. Deterministic output: same input produces byte-identical YAML.
+- **Browser tests**: "Export Now" button triggers download. Download file has correct name and content.
+- **Live tests (curl)**: Run export against live catalog, verify YAML is valid and matches catalog data.
+
+**MCP Gateway CR Exporter (US-62):**
+- **Unit tests (exporter)**: Produces MCPServerRegistration per server instance with correct apiVersion, kind, metadata, spec fields. Produces MCPVirtualServer with prefixed tool names (`server_name + "_" + tool_name`). Prefix derived from server instance name. route_name attribute maps to targetRef.name. Optional mcp_path and credential_secret attributes. Labels and annotations set correctly. Servers sorted by name, tools sorted alphabetically. Missing route_name fails entire export.
+- **Unit tests (ValidateSchema)**: Checks server_type entity type exists. Checks server_type has route_name attribute. Checks containment association from server_type to tool_type exists. Checks virtual_server_type entity type exists. Checks virtual_server_type has association to tool_type. Rejects binding when any check fails.
+- **Integration tests (ValidateSchema)**: ValidateSchema against real DB with actual CV pins, attributes, and associations. Verify correct rejection when schema is incomplete.
+- **Round-trip tests (unit)**: Export YAML is valid — parseable by `yaml.Unmarshal` and matches expected CRD schema structure.
+- **VirtualServer instance selection (US-62)**: Export Run requires virtual server instance selection. Run handler presents available VS instances to caller. Only tools associated with the selected VS instance appear in the MCPVirtualServer CR. VirtualServer CR name comes from the selected instance name, not catalog name.
+- **Live tests (curl)**: Run exporter against a live deployed catalog with real mcp-server/mcp-tool instances and a selected virtual server instance. Verify YAML output contains only the tools from that VS instance. Verify round-trip: export YAML is valid K8s manifest.
+- **Live tests (determinism)**: Run the same export twice against live system, diff the output — must be byte-identical. Verify server ordering and tool ordering are alphabetical.
+- **System tests (Playwright)**: Trigger export from UI, select virtual server instance, download file, verify file name and non-empty content.
+
+**Publish Integration (US-61):**
+- **Unit tests (service)**: PublishPreview re-validates bindings via ValidateSchema. PublishPreview caches artifacts via PreviewCache. Publish with token retrieves cached artifacts. Publish with expired token returns 410. Publish with modified catalog returns 409 (optimistic lock). Publish without token runs exports as fire-and-forget. Binding status updated after run.
+- **Unit tests (PreviewCache)**: InMemoryPreviewCache Store/Retrieve/Delete. TTL expiry. Retrieve expired returns error. CatalogUpdatedAt stored and retrievable.
+- **API tests (handler)**: POST /publish/preview returns session token and per-binding results. POST /publish with token succeeds. GET /download with token and binding ID returns YAML. RBAC: Admin+ for preview, RW+ for download.
+- **Browser tests**: Publish flow calls preview first. Failure dialog shows per-binding results. "Publish Anyway" and "Abort" buttons work. Successful publish auto-downloads files per binding.
+- **Live tests (curl)**: Full publish preview → commit → download flow against deployed system. Schema drift detection (modify CV between binding creation and preview).
+
+**Catalog Delete with Bindings:**
+- **Unit tests**: Catalog delete cascades to bindings. Delete response includes deleted_bindings_count.
+- **Browser tests**: Delete catalog with bindings shows warning listing affected bindings.
+- **Live tests (curl)**: Delete catalog, verify bindings gone, verify response includes count.

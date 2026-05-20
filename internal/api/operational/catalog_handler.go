@@ -1,6 +1,7 @@
 package operational
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -8,18 +9,41 @@ import (
 
 	"github.com/project-catalyst/pc-asset-hub/internal/api/dto"
 	apimw "github.com/project-catalyst/pc-asset-hub/internal/api/middleware"
+	domainerrors "github.com/project-catalyst/pc-asset-hub/internal/domain/errors"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
+	"github.com/project-catalyst/pc-asset-hub/internal/domain/repository"
 	svcop "github.com/project-catalyst/pc-asset-hub/internal/service/operational"
+	"github.com/project-catalyst/pc-asset-hub/internal/service/operational/export"
 )
 
 type CatalogHandler struct {
 	svc           *svcop.CatalogService
 	validationSvc *svcop.CatalogValidationService
 	accessChecker apimw.CatalogAccessChecker
+	bindingRepo   repository.ExportBindingRepository
+	previewCache  export.PreviewCache
 }
 
-func NewCatalogHandler(svc *svcop.CatalogService, validationSvc *svcop.CatalogValidationService, accessChecker apimw.CatalogAccessChecker) *CatalogHandler {
-	return &CatalogHandler{svc: svc, validationSvc: validationSvc, accessChecker: accessChecker}
+func NewCatalogHandler(svc *svcop.CatalogService, validationSvc *svcop.CatalogValidationService, accessChecker apimw.CatalogAccessChecker, opts ...CatalogHandlerOption) *CatalogHandler {
+	h := &CatalogHandler{svc: svc, validationSvc: validationSvc, accessChecker: accessChecker}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
+}
+
+type CatalogHandlerOption func(*CatalogHandler)
+
+func WithBindingRepo(repo repository.ExportBindingRepository) CatalogHandlerOption {
+	return func(h *CatalogHandler) {
+		h.bindingRepo = repo
+	}
+}
+
+func WithPreviewCache(cache export.PreviewCache) CatalogHandlerOption {
+	return func(h *CatalogHandler) {
+		h.previewCache = cache
+	}
 }
 
 func (h *CatalogHandler) CreateCatalog(c echo.Context) error {
@@ -106,11 +130,37 @@ func (h *CatalogHandler) GetCatalog(c echo.Context) error {
 
 func (h *CatalogHandler) DeleteCatalog(c echo.Context) error {
 	name := c.Param("catalog-name")
+	ctx := c.Request().Context()
 
-	if err := h.svc.Delete(c.Request().Context(), name); err != nil {
+	var deletedBindingsCount int
+	if h.bindingRepo != nil {
+		cat, getErr := h.svc.GetByName(ctx, name)
+		if getErr != nil && !domainerrors.IsNotFound(getErr) {
+			return mapError(getErr)
+		}
+		if cat != nil {
+			count, countErr := h.bindingRepo.CountByCatalog(ctx, cat.ID)
+			if countErr != nil {
+				log.Printf("warning: failed to count export bindings for catalog %s: %v", cat.ID, countErr)
+			} else {
+				deletedBindingsCount = count
+			}
+			if delErr := h.bindingRepo.DeleteByCatalog(ctx, cat.ID); delErr != nil {
+				log.Printf("warning: failed to delete export bindings for catalog %s (CASCADE will clean up): %v", cat.ID, delErr)
+			}
+		}
+	}
+
+	if err := h.svc.Delete(ctx, name); err != nil {
 		return mapError(err)
 	}
 
+	if deletedBindingsCount > 0 {
+		return c.JSON(http.StatusOK, map[string]any{
+			"status":                 "deleted",
+			"deleted_bindings_count": deletedBindingsCount,
+		})
+	}
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -144,6 +194,26 @@ func (h *CatalogHandler) ValidateCatalog(c echo.Context) error {
 
 func (h *CatalogHandler) PublishCatalog(c echo.Context) error {
 	name := c.Param("catalog-name")
+
+	// Check optimistic lock if session token provided (from publish preview)
+	var body struct {
+		SessionToken string `json:"session_token"`
+	}
+	_ = c.Bind(&body)
+	if body.SessionToken != "" && h.previewCache != nil {
+		entry, err := h.previewCache.Retrieve(body.SessionToken)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusGone, "preview session expired or not found")
+		}
+		catalog, err := h.svc.GetByName(c.Request().Context(), name)
+		if err != nil {
+			return mapError(err)
+		}
+		if !entry.CatalogUpdatedAt.Equal(catalog.UpdatedAt) {
+			return echo.NewHTTPError(http.StatusConflict, "catalog modified since preview — re-run preview")
+		}
+	}
+
 	if err := h.svc.Publish(c.Request().Context(), name); err != nil {
 		return mapError(err)
 	}

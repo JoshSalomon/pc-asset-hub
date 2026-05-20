@@ -518,7 +518,7 @@ func TestT30_42_ApplyRenamesNil(t *testing.T) {
 	assert.Equal(t, "server", data.EntityTypes[0].Name)
 }
 
-// T-30.43: DryRun — CV label collision
+// T-30.43: DryRun — CV label collision is reported as reusable (identical), not hard conflict
 func TestT30_43_DryRunCVLabelCollision(t *testing.T) {
 	svc, catalogRepo, cvRepo, _, etRepo, _, _, _, _, _, _, _, _, _ := newImportService()
 
@@ -529,8 +529,17 @@ func TestT30_43_DryRunCVLabelCollision(t *testing.T) {
 	req := &ImportRequest{Data: minimalExportData()}
 	result, err := svc.DryRun(context.Background(), req)
 	require.NoError(t, err)
-	assert.Equal(t, "conflicts_found", result.Status)
-	assert.Equal(t, 1, result.Summary.Conflicts)
+	// CV collision should be reusable, not a hard conflict
+	var cvCollision *Collision
+	for i, c := range result.Collisions {
+		if c.Type == "catalog_version" {
+			cvCollision = &result.Collisions[i]
+		}
+	}
+	require.NotNil(t, cvCollision)
+	assert.Equal(t, "identical", cvCollision.Resolution, "CV label collision should be reusable")
+	assert.Equal(t, 0, result.Summary.Conflicts, "CV collision should not count as a conflict")
+	assert.Equal(t, 1, result.Summary.Identical, "CV collision should count as identical")
 }
 
 // T-30.44: DryRun — cv_label override
@@ -2703,4 +2712,85 @@ func TestImport_CatalogNameCheck_DBError(t *testing.T) {
 	_, err := svc.Import(context.Background(), req)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "database connection lost")
+}
+
+// Import with existing CV label in reuseSet should reuse the CV instead of creating a new one
+func TestImport_ReuseCatalogVersion(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, _, assocRepo, tdRepo, tdvRepo, instRepo, _, _, typePinRepo := newImportService()
+
+	catalogRepo.On("GetByName", mock.Anything, "test-catalog").Return(nil, domainerrors.NewNotFound("Catalog", "test-catalog"))
+	cvRepo.On("GetByLabel", mock.Anything, "v1.0").Return(&models.CatalogVersion{ID: "existing-cv-id"}, nil)
+	// Reused CV has server ET pinned
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "existing-cv-id").Return([]*models.CatalogVersionPin{
+		{ID: "p1", CatalogVersionID: "existing-cv-id", EntityTypeVersionID: "etv-server"},
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv-server").Return(&models.EntityTypeVersion{ID: "etv-server", EntityTypeID: "et-server"}, nil)
+	// ET exists — will be reused
+	etRepo.On("GetByName", mock.Anything, "server").Return(&models.EntityType{ID: "et-server"}, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-server").Return(&models.EntityTypeVersion{ID: "etv-server", EntityTypeID: "et-server", Version: 1}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "etv-server").Return([]*models.Association{}, nil)
+	tdRepo.On("List", mock.Anything, mock.Anything).Return([]*models.TypeDefinition{
+		{ID: "td-string", Name: "string", BaseType: "string", System: true},
+	}, 1, nil)
+	tdvRepo.On("GetLatestByTypeDefinition", mock.Anything, "td-string").Return(&models.TypeDefinitionVersion{ID: "tdv-string"}, nil)
+
+	catalogRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Catalog")).Return(nil)
+	instRepo.On("List", mock.Anything, mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
+	typePinRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+
+	data := minimalExportData()
+	req := &ImportRequest{
+		Data:          data,
+		ReuseExisting: []string{"v1.0", "server"},
+	}
+	result, err := svc.Import(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, "test-catalog", result.CatalogName)
+
+	// CV should NOT have been created
+	cvRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	// Catalog should reference the existing CV ID
+	catalogCall := catalogRepo.Calls[len(catalogRepo.Calls)-1]
+	createdCatalog := catalogCall.Arguments[1].(*models.Catalog)
+	assert.Equal(t, "existing-cv-id", createdCatalog.CatalogVersionID)
+
+	// ET pins should NOT be created when reusing CV + reusing ETs (pins already exist)
+	pinRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	// Type definition pins should NOT be created when reusing CV (pins already exist)
+	typePinRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+}
+
+// C5: Import with reused CV validates that existing pins cover the import's entity types
+func TestImport_ReuseCVWithMismatchedPins_Fails(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, _, assocRepo, tdRepo, tdvRepo, instRepo, _, _, typePinRepo := newImportService()
+
+	catalogRepo.On("GetByName", mock.Anything, "test-catalog").Return(nil, domainerrors.NewNotFound("Catalog", "test-catalog"))
+	cvRepo.On("GetByLabel", mock.Anything, "v1.0").Return(&models.CatalogVersion{ID: "existing-cv-id"}, nil)
+
+	// Existing CV has pins for "other-type", NOT "server" which the import needs
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "existing-cv-id").Return([]*models.CatalogVersionPin{
+		{ID: "p1", CatalogVersionID: "existing-cv-id", EntityTypeVersionID: "etv-other"},
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv-other").Return(&models.EntityTypeVersion{ID: "etv-other", EntityTypeID: "et-other"}, nil)
+	etRepo.On("GetByName", mock.Anything, "server").Return(&models.EntityType{ID: "et-server"}, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-server").Return(&models.EntityTypeVersion{ID: "etv-server", EntityTypeID: "et-server", Version: 1}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "etv-server").Return([]*models.Association{}, nil)
+	tdRepo.On("List", mock.Anything, mock.Anything).Return([]*models.TypeDefinition{
+		{ID: "td-string", Name: "string", BaseType: "string", System: true},
+	}, 1, nil)
+	tdvRepo.On("GetLatestByTypeDefinition", mock.Anything, "td-string").Return(&models.TypeDefinitionVersion{ID: "tdv-string"}, nil)
+	catalogRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Catalog")).Return(nil)
+	instRepo.On("List", mock.Anything, mock.Anything).Return([]*models.EntityInstance{}, 0, nil)
+	typePinRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+
+	data := minimalExportData()
+	req := &ImportRequest{
+		Data:          data,
+		ReuseExisting: []string{"v1.0", "server"},
+	}
+	_, err := svc.Import(context.Background(), req)
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "server")
+	assert.Contains(t, err.Error(), "pinned")
 }
