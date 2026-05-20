@@ -61,6 +61,17 @@ export default function CatalogListPage({ role }: { role: Role }) {
   // Delete modal
   const [deleteTarget, setDeleteTarget] = useState<Catalog | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleteBindingCount, setDeleteBindingCount] = useState(0)
+
+  useEffect(() => {
+    if (deleteTarget) {
+      api.exportBindings.list(deleteTarget.name)
+        .then(res => setDeleteBindingCount(res.items?.length || 0))
+        .catch(() => setDeleteBindingCount(0))
+    } else {
+      setDeleteBindingCount(0)
+    }
+  }, [deleteTarget])
 
   // Import modal
   const [importOpen, setImportOpen] = useState(false)
@@ -263,6 +274,9 @@ export default function CatalogListPage({ role }: { role: Role }) {
         <ModalBody>
           {deleteError && <Alert variant="danger" title={deleteError} isInline style={{ marginBottom: '1rem' }} />}
           Are you sure you want to delete catalog <strong>{deleteTarget?.name}</strong>? All entity instances in this catalog will be deleted. This action cannot be undone.
+          {deleteBindingCount > 0 && (
+            <Alert variant="warning" title={`${deleteBindingCount} export binding(s) will also be deleted.`} isInline style={{ marginTop: '1rem' }} />
+          )}
         </ModalBody>
         <ModalFooter>
           <Button variant="danger" onClick={handleDelete}>Delete</Button>

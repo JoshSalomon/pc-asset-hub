@@ -1202,3 +1202,236 @@ func TestRemapAttributeIDs_EmptyInputs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count)
 }
+
+// T-34.97: Catalog delete cascades to bindings via DeleteByCatalog
+func TestT34_97_ExportBinding_DeleteByCatalog(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	bindingRepo := repository.NewExportBindingGormRepo(db)
+	catalogRepo := repository.NewCatalogGormRepo(db)
+	ctx := context.Background()
+
+	catID := id()
+	cat := &models.Catalog{
+		ID: catID, Name: "cascade-test", CatalogVersionID: id(),
+		ValidationStatus: "draft",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	require.NoError(t, catalogRepo.Create(ctx, cat))
+
+	b1 := &models.ExportBinding{
+		ID: id(), CatalogID: catID, ExporterName: "mcp-gateway",
+		Parameters: map[string]string{}, Enabled: true, LastRunStatus: "never",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	b2 := &models.ExportBinding{
+		ID: id(), CatalogID: catID, ExporterName: "mcp-gateway",
+		Parameters: map[string]string{}, Enabled: true, LastRunStatus: "never",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	require.NoError(t, bindingRepo.Create(ctx, b1))
+	require.NoError(t, bindingRepo.Create(ctx, b2))
+
+	count, err := bindingRepo.CountByCatalog(ctx, catID)
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
+
+	require.NoError(t, bindingRepo.DeleteByCatalog(ctx, catID))
+
+	count, err = bindingRepo.CountByCatalog(ctx, catID)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+}
+
+// T-34.18: Create binding integration test — parameters JSON round-trip against real DB
+func TestT34_18_ExportBinding_CreateAndRetrieve(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	bindingRepo := repository.NewExportBindingGormRepo(db)
+	catalogRepo := repository.NewCatalogGormRepo(db)
+	ctx := context.Background()
+
+	catID := id()
+	cat := &models.Catalog{
+		ID: catID, Name: "binding-roundtrip", CatalogVersionID: id(),
+		ValidationStatus: "draft",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	require.NoError(t, catalogRepo.Create(ctx, cat))
+
+	params := map[string]string{
+		"server_type":      "mcp-server",
+		"tool_type":        "mcp-tool",
+		"target_namespace": "production",
+	}
+	bindingID := id()
+	b := &models.ExportBinding{
+		ID: bindingID, CatalogID: catID, ExporterName: "mcp-gateway",
+		Parameters: params, Enabled: true, LastRunStatus: "never",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	require.NoError(t, bindingRepo.Create(ctx, b))
+
+	// GetByID — verify JSON round-trip
+	got, err := bindingRepo.GetByID(ctx, bindingID)
+	require.NoError(t, err)
+	assert.Equal(t, "mcp-gateway", got.ExporterName)
+	assert.Equal(t, params, got.Parameters)
+	assert.True(t, got.Enabled)
+
+	// ListByCatalog — verify binding appears
+	list, err := bindingRepo.ListByCatalog(ctx, catID)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, params, list[0].Parameters)
+
+	// Update parameters
+	got.Parameters["target_namespace"] = "staging"
+	require.NoError(t, bindingRepo.Update(ctx, got))
+	updated, err := bindingRepo.GetByID(ctx, bindingID)
+	require.NoError(t, err)
+	assert.Equal(t, "staging", updated.Parameters["target_namespace"])
+}
+
+// ExportBinding: GetByID not found
+func TestExportBinding_GetByID_NotFound(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	ctx := context.Background()
+	bindingRepo := repository.NewExportBindingGormRepo(db)
+
+	_, err := bindingRepo.GetByID(ctx, "nonexistent")
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// ExportBinding: Delete
+func TestExportBinding_Delete(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	ctx := context.Background()
+	catalogRepo := repository.NewCatalogGormRepo(db)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	bindingRepo := repository.NewExportBindingGormRepo(db)
+
+	cvID := id()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{ID: cvID, VersionLabel: "v1", CreatedAt: time.Now()}))
+	catID := id()
+	require.NoError(t, catalogRepo.Create(ctx, &models.Catalog{
+		ID: catID, Name: "del-test", CatalogVersionID: cvID,
+		ValidationStatus: "draft", CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	bindingID := id()
+	require.NoError(t, bindingRepo.Create(ctx, &models.ExportBinding{
+		ID: bindingID, CatalogID: catID, ExporterName: "mcp-gateway",
+		Parameters: map[string]string{}, Enabled: true, LastRunStatus: "never",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	require.NoError(t, bindingRepo.Delete(ctx, bindingID))
+
+	_, err := bindingRepo.GetByID(ctx, bindingID)
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// ExportBinding: Delete not found
+func TestExportBinding_Delete_NotFound(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	ctx := context.Background()
+	bindingRepo := repository.NewExportBindingGormRepo(db)
+
+	err := bindingRepo.Delete(ctx, "nonexistent")
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// ExportBinding: CountByCatalog
+func TestExportBinding_CountByCatalog(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	ctx := context.Background()
+	catalogRepo := repository.NewCatalogGormRepo(db)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	bindingRepo := repository.NewExportBindingGormRepo(db)
+
+	cvID := id()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{ID: cvID, VersionLabel: "v1", CreatedAt: time.Now()}))
+	catID := id()
+	require.NoError(t, catalogRepo.Create(ctx, &models.Catalog{
+		ID: catID, Name: "count-test", CatalogVersionID: cvID,
+		ValidationStatus: "draft", CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	// Initially zero
+	count, err := bindingRepo.CountByCatalog(ctx, catID)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+
+	// Add a binding
+	require.NoError(t, bindingRepo.Create(ctx, &models.ExportBinding{
+		ID: id(), CatalogID: catID, ExporterName: "mcp-gateway",
+		Parameters: map[string]string{}, Enabled: true, LastRunStatus: "never",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	count, err = bindingRepo.CountByCatalog(ctx, catID)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+}
+
+// ExportBinding: DeleteByCatalog
+func TestExportBinding_DeleteByCatalog(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	ctx := context.Background()
+	catalogRepo := repository.NewCatalogGormRepo(db)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	bindingRepo := repository.NewExportBindingGormRepo(db)
+
+	cvID := id()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{ID: cvID, VersionLabel: "v1", CreatedAt: time.Now()}))
+	catID := id()
+	require.NoError(t, catalogRepo.Create(ctx, &models.Catalog{
+		ID: catID, Name: "delcat-test", CatalogVersionID: cvID,
+		ValidationStatus: "draft", CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	require.NoError(t, bindingRepo.Create(ctx, &models.ExportBinding{
+		ID: id(), CatalogID: catID, ExporterName: "mcp-gateway",
+		Parameters: map[string]string{}, Enabled: true, LastRunStatus: "never",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, bindingRepo.Create(ctx, &models.ExportBinding{
+		ID: id(), CatalogID: catID, ExporterName: "mcp-gateway",
+		Parameters: map[string]string{}, Enabled: true, LastRunStatus: "never",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	count, _ := bindingRepo.CountByCatalog(ctx, catID)
+	assert.Equal(t, 2, count)
+
+	require.NoError(t, bindingRepo.DeleteByCatalog(ctx, catID))
+
+	count, _ = bindingRepo.CountByCatalog(ctx, catID)
+	assert.Equal(t, 0, count)
+}
+
+// ExportBinding: closedDB error paths
+func TestExportBinding_ClosedDB(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	bindingRepo := repository.NewExportBindingGormRepo(db)
+
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.Close()
+
+	ctx := context.Background()
+
+	_, err = bindingRepo.GetByID(ctx, "x")
+	assert.Error(t, err)
+
+	_, err = bindingRepo.ListByCatalog(ctx, "x")
+	assert.Error(t, err)
+
+	err = bindingRepo.Delete(ctx, "x")
+	assert.Error(t, err)
+
+	_, err = bindingRepo.CountByCatalog(ctx, "x")
+	assert.Error(t, err)
+}

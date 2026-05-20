@@ -16,15 +16,22 @@ If unsure which phase you're in, ask before proceeding.
 - "I'll write a few tests then implement" — no. One test at a time.
 - "The test would obviously fail" — prove it. Run it.
 - "I'll refactor after" — refactor is step 3, after GREEN.
+- "It's just a refactor, no test needed" — run existing tests BEFORE the refactor to establish baseline, then verify they still pass AFTER.
+- "I'll fix the code first, then write the test" — if you're editing a non-test file without a RED test in the same turn, STOP.
 
 ## Process & Methodology Compliance
 
 - Always follow the prescribed skill or process workflow (feat-plan, bug-solver, coverage-report) in order. Do not skip steps.
+- **Phase 6 (Quality Review) is a hard gate.** It MUST run before Phase 7 (Coverage). Never skip it, never defer it. The test completeness review agent (QR4) catches design flaws that coverage cannot — tests validating wrong behavior is worse than no tests.
 - Do not commit code until ALL tests pass and the user approves.
 - When reporting test results, if tests are failing, fix them before reporting success.
+- **Any test failure on the branch is your responsibility.** "Pre-existing" is not an excuse. If it passes on main and fails on the branch, it's a regression from your changes.
+- **"Done" means deployed + live tests pass.** Not "code compiles and unit tests pass." Deploy and run `make test-live` before claiming completion.
 - Ask before making bulk changes (e.g., sed replacements across files).
 - Never claim work is done without running verification commands and showing actual output.
 - Before opening a PR, ALL test suites must pass: backend (`go test ./internal/... -count=1`), browser (`cd ui && npx vitest run --config vitest.browser.config.ts`), live API scripts (`make test-live`), and live browser system tests (`cd ui && npx vitest run --config vitest.system.config.ts`).
+- **System tests must exercise the actual UI flow.** Never bypass UI behavior with API fallbacks in the test body. If the UI has a modal, picker, or confirmation step, the test must interact with it through the browser — not skip it with a direct API call. API calls in `beforeAll` for data setup are fine; API calls in the test body to work around a UI flow are not.
+- **When a test fails, ask "what is the UI actually doing?" first.** Take a screenshot, read the component code, trace the click handler. The goal is to verify the system works, not to make the test pass. A test that passes by bypassing the UI proves nothing.
 
 ## Code Coverage — Non-Negotiable
 
@@ -41,6 +48,7 @@ This project treats test coverage as a first-class quality metric. Every session
 5. **Per-file coverage must never decrease.** If `CatalogDetailPage.tsx` was at 81% before your changes and it's at 79% after, you have a regression. Fix it before committing.
 6. **Report ALL coverage numbers honestly.** Include the raw counts (e.g., "1843/2179 = 84.6%"). Do not round in ways that hide regressions.
 7. **Do not wait to be asked.** Run coverage proactively after implementation, not only when the human invokes /coverage-test.
+8. **Arithmetic reconciliation is mandatory.** Compute `(new total - baseline total) - (new covered - baseline covered) = net new uncovered`. This number MUST equal the count of justified uncovered lines. If it doesn't match, find the missing lines before presenting the report. Do not present numbers that don't add up.
 
 ### Rationalizations that are NOT acceptable
 
@@ -50,9 +58,15 @@ This project treats test coverage as a first-class quality metric. Every session
 - "Coverage is at 95%, that's good enough" — 95% means 5% of the code is untested. That's not good enough.
 - "I'll improve coverage in a later session" — improve it NOW.
 
+## Project Memory
+
+This project maintains a shared memory file at `.claude/memory/MEMORY.md` in the repo root. **Read this file at the start of every session** — it contains architecture patterns, lessons learned, infrastructure notes, and feature status that apply across all sessions and environments (host and container).
+
+When you learn something important during a session (a lesson, a pattern, a gotcha), update `.claude/memory/MEMORY.md` so future sessions benefit. Keep entries concise — one line per item in the index, details in linked files if needed.
+
 ## LTM Integration
 
-This project uses the [Claude LTM plugin](https://github.com/JoshSalomon/claude-ltm) for persistent memory across sessions.
+This project uses the [Claude LTM plugin](https://github.com/JoshSalomon/claude-ltm) for persistent memory across sessions. LTM is per-environment (host or container) and complements the shared project memory file above.
 
 ### Proactive Memory Usage
 

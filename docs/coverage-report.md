@@ -1,6 +1,6 @@
 # AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-05-07
+Last updated: 2026-05-13
 
 ---
 
@@ -8,12 +8,12 @@ Last updated: 2026-05-07
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 1930 | 100% | 98.4% (5250/5335) | — |
+| Backend (Go) | 2113 | 100% | 98.6% (5816/5898) | — |
 | UI — Unit tests (node) | 41 | 100% | — | — |
-| UI — Browser tests (Playwright) | 1209 | 100% | 95.40% (3253/3410) | 97.70% (2929/2998) |
+| UI — Browser tests (Playwright) | 1261 | 100% | 95.53% (3420/3580) | 97.81% (3085/3154) |
 | UI — System tests (Playwright + live server) | 181 | 100% | — | — |
 | Live system (bash scripts) | 697 | 100% | — | — |
-| **Total** | **4058** | **100%** | — | — |
+| **Total** | **4293** | **100%** | — | — |
 
 ---
 
@@ -24,18 +24,19 @@ Last updated: 2026-05-07
 | `internal/api/health` | 100.0% (10/10) | Phase 5 QA: Readyz DB-ping error path now covered (was 90.0%, 9/10) |
 | `internal/api/meta` | 99.8% (502/503) | `defaultListParams` in version_history_handler: 1 pre-existing uncovered function |
 | `internal/api/middleware` | 100.0% (69/69) | |
-| `internal/api/operational` | 98.5% (336/341) | Copy/Replace/Update/Import handlers bind-error branches only |
+| `internal/api/operational` | 98.9% (438/443) | Copy/Replace/Update/Import handlers bind-error branches + export binding handler |
 | `internal/domain/errors` | 100.0% (32/32) | |
 | `internal/domain/models` | 100.0% (8/8) | |
 | `internal/infrastructure/config` | 100.0% (21/21) | |
-| `internal/infrastructure/gorm/models` | 100.0% (43/43) | Migration code removed (TD-21 in Session 011) |
-| `internal/infrastructure/gorm/repository` | 96.3% (755/784) | Phase 5 QA: +17 tests covering Delete/Update not-found branches, 0% functions (was 91.6%, 717/783) |
+| `internal/infrastructure/gorm/models` | 100.0% (49/49) | ExportBinding model conversion tests added |
+| `internal/infrastructure/gorm/repository` | 96.5% (789/818) | ExportBinding repo CRUD + closedDB tests added |
 | `internal/infrastructure/k8s` | 100.0% (54/54) | Phase 5 QA: K8s client error paths now covered (was 92.6%, 50/54) |
 | `internal/operator/api/v1alpha1` | 97.7% (85/87) | `DeepCopyObject` nil-receiver guard |
 | `internal/operator/controllers` | 94.3% (198/210) | `SetupWithManager` (envtest — deferred to Phase B), `SetOwnerReference` error branches (unreachable) |
 | `internal/operator/crdgen` | 94.3% (33/35) | `json.Marshal` error guards on well-formed inputs (unreachable) |
 | `internal/service/meta` | 99.3% (1132/1140) | BulkCopy error paths, requiresDeepCopy edge cases |
-| `internal/service/operational` | 98.7% (1927/1953) | json.Marshal/Unmarshal on well-formed data, defensive nil guards, import duplicate catalog check |
+| `internal/service/operational` | 98.9% (1946/1967) | json.Marshal/Unmarshal on well-formed data, defensive nil guards, import duplicate catalog check |
+| `internal/service/operational/export` | 99.5% (405/407) | NEW: Export plugin binding service, MCP Gateway exporter, publish preview, preview cache |
 | `internal/service/validation` | 100.0% (45/45) | Phase 5 QA: cycle detection edge cases now covered (was 95.6%, 43/45) |
 
 ### Excluded from Coverage
@@ -126,6 +127,18 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | L350 | `if (!id) return` | Same — guard in `handleUpdatePinVersion` |
 | L361 | `if (!id) return` | Same — guard in `handleRemovePin` |
 
+**ExportBindingsPanel.tsx** (1 statement — dead-code guard):
+
+| Line | Code | Why unreachable |
+|------|------|-----------------|
+| L66 | `if (!deleteTarget) return` | Delete button only exists when `deleteTarget` is set; handler can never fire with `deleteTarget === null` |
+
+**PublishPreviewModal.tsx** (1 statement — defensive guard):
+
+| Line | Code | Why unreachable |
+|------|------|-----------------|
+| L55 | `if (!preview) return` | Publish button only renders when `preview` is loaded (`{preview && ...}`); guard unreachable via UI |
+
 **CatalogDetailPage.tsx** (4 statements — Phase 2 handler guards + PF6 Select callback):
 
 | Line | Code | Why unreachable |
@@ -167,7 +180,7 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | Test File | Tests | Status |
 |-----------|-------|--------|
 | `App.browser.test.tsx` | 53 | Pass |
-| `client.browser.test.ts` | 70 | Pass |
+| `client.browser.test.ts` | 81 | Pass |
 | `AddAssociationModal.browser.test.tsx` | 7 | Pass |
 | `AddAttributeModal.browser.test.tsx` | 16 | Pass |
 | `AddChildModal.browser.test.tsx` | 10 | Pass |
@@ -200,20 +213,20 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | `usePinManagement.browser.test.tsx` | 27 | Pass |
 | `useValidation.browser.test.tsx` | 12 | Pass |
 | `LandingPage.browser.test.tsx` | 12 | Pass |
-| `CatalogDetailPage.browser.test.tsx` | 61 | Pass |
+| `CatalogDetailPage.browser.test.tsx` | 89 | Pass |
 | `CatalogDetailPage-coverage.browser.test.tsx` | 58 | Pass |
 | `CatalogDetailPage-validation.browser.test.tsx` | 51 | Pass |
-| `CatalogListPage.browser.test.tsx` | 27 | Pass |
+| `CatalogListPage.browser.test.tsx` | 29 | Pass |
 | `CatalogVersionDetailPage.browser.test.tsx` | 75 | Pass |
 | `EntityTypeDetailPage.browser.test.tsx` | 145 | Pass |
 | `EntityTypeListPage.browser.test.tsx` | 12 | Pass |
 | `TypeDefinitionDetailPage.browser.test.tsx` | 47 | Pass |
 | `TypeDefinitionListPage.browser.test.tsx` | 66 | Pass |
-| `OperationalCatalogDetailPage.browser.test.tsx` | 132 | Pass |
+| `OperationalCatalogDetailPage.browser.test.tsx` | 143 | Pass |
 | `buildTypedAttrs.browser.test.ts` | 4 | Pass |
 | `formatAttributeValue.browser.test.tsx` | 18 | Pass |
 | `validateAttributeValue.browser.test.ts` | 3 | Pass |
-| **Total** | **1209** | **100% pass** |
+| **Total** | **1261** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
@@ -241,7 +254,7 @@ Coverage is measured using V8 provider via `@vitest/coverage-v8`. Rebased from I
 | File | Stmts (covered/total) | Stmts % | Lines (covered/total) | Lines % |
 |------|-----------------------|---------|-----------------------|---------|
 | `App.tsx` | 275/309 | 89.0% | 250/269 | 92.9% |
-| `api/client.ts` | 106/114 | 93.0% | 97/105 | 92.4% |
+| `api/client.ts` | 141/149 | 94.6% | 97/103 | 94.2% |
 | `components/AddAssociationModal.tsx` | 87/87 | 100.0% | 79/79 | 100% |
 | `components/AddAttributeModal.tsx` | 29/29 | 100.0% | 25/25 | 100% |
 | `components/AddChildModal.tsx` | 78/79 | 98.7% | 67/67 | 100% |
@@ -254,10 +267,12 @@ Coverage is measured using V8 provider via `@vitest/coverage-v8`. Rebased from I
 | `components/EditAttributeModal.tsx` | 22/22 | 100.0% | 20/20 | 100% |
 | `components/EditInstanceModal.tsx` | 19/19 | 100.0% | 17/17 | 100% |
 | `components/EntityTypeDiagram.tsx` | 95/103 | 92.2% | 90/98 | 91.8% |
+| `components/ExportBindingsPanel.tsx` | 93/94 | 98.9% | 83/85 | 97.6% |
 | `components/ImportCatalogModal.tsx` | 180/199 | 90.5% | 164/178 | 92.1% |
 | `components/InstanceDetailPanel.tsx` | 9/9 | 100.0% | 9/9 | 100% |
 | `components/LinkModal.tsx` | 51/52 | 98.1% | 44/44 | 100% |
 | `components/MigrationPreviewModal.tsx` | 11/11 | 100.0% | 11/11 | 100% |
+| `components/PublishPreviewModal.tsx` | 33/34 | 97.1% | 30/32 | 93.8% |
 | `components/RenameEntityTypeModal.tsx` | 12/12 | 100.0% | 12/12 | 100% |
 | `components/ReplaceCatalogModal.tsx` | 17/17 | 100.0% | 15/15 | 100% |
 | `components/SetParentModal.tsx` | 27/27 | 100.0% | 23/23 | 100% |
@@ -276,14 +291,14 @@ Coverage is measured using V8 provider via `@vitest/coverage-v8`. Rebased from I
 | `hooks/usePinManagement.ts` | 94/95 | 98.9% | 88/88 | 100% |
 | `hooks/useValidation.ts` | 44/44 | 100.0% | 39/39 | 100% |
 | `pages/LandingPage.tsx` | 21/21 | 100.0% | 20/20 | 100% |
-| `pages/meta/CatalogDetailPage.tsx` | 219/231 | 94.8% | 190/191 | 99.5% |
-| `pages/meta/CatalogListPage.tsx` | 81/97 | 83.5% | 73/81 | 90.1% |
+| `pages/meta/CatalogDetailPage.tsx` | 220/232 | 94.8% | 191/192 | 99.5% |
+| `pages/meta/CatalogListPage.tsx` | 88/104 | 84.6% | 80/88 | 90.9% |
 | `pages/meta/CatalogVersionDetailPage.tsx` | 159/165 | 96.4% | 141/142 | 99.3% |
 | `pages/meta/EntityTypeDetailPage.tsx` | 156/161 | 96.9% | 134/134 | 100% |
 | `pages/meta/EntityTypeListPage.tsx` | 11/12 | 91.7% | 11/12 | 91.7% |
 | `pages/meta/TypeDefinitionDetailPage.tsx` | 86/90 | 95.6% | 76/76 | 100% |
 | `pages/meta/TypeDefinitionListPage.tsx` | 154/157 | 98.1% | 142/143 | 99.3% |
-| `pages/operational/OperationalCatalogDetailPage.tsx` | 273/286 | 95.5% | 248/248 | 100% |
+| `pages/operational/OperationalCatalogDetailPage.tsx` | 273/287 | 95.1% | 248/248 | 100% |
 | `utils/buildTypedAttrs.ts` | 17/17 | 100.0% | 15/15 | 100% |
 | `utils/dnsLabel.ts` | 3/3 | 100.0% | 2/2 | 100% |
 | `utils/errorMessage.ts` | 1/1 | 100.0% | 1/1 | 100% |
@@ -292,7 +307,7 @@ Coverage is measured using V8 provider via `@vitest/coverage-v8`. Rebased from I
 | `utils/statusColor.ts` | 6/6 | 100.0% | 6/6 | 100% |
 | `utils/typeLabel.ts` | 1/1 | 100.0% | 1/1 | 100% |
 | `utils/validateAttributeValue.ts` | 97/98 | 99.0% | 86/86 | 100% |
-| **All files (52)** | **3253/3410** | **95.40%** | **2929/2998** | **97.70%** |
+| **All files (54)** | **3420/3580** | **95.53%** | **3085/3154** | **97.81%** |
 
 **Unit tests** (supplemental — covers components that work in jsdom without browser):
 
@@ -1351,6 +1366,74 @@ npx vitest run --config vitest.browser.config.ts --coverage
 # Run system tests (requires running kind cluster)
 npx vitest run --config vitest.system.config.ts
 ```
+
+### New Code Coverage (Session 029 — FF-15 Export Plugins Coverage)
+
+**Backend:** Comprehensive coverage tests for the new export plugin package and modified files.
+
+| Package | Before | After | Delta |
+|---------|--------|-------|-------|
+| `api/operational` | 98.5% (336/341) 5 uncov | 98.9% (438/443) 5 uncov | +102 covered, +102 total, 0 delta uncov |
+| `gorm/models` | 100.0% (43/43) 0 uncov | 100.0% (49/49) 0 uncov | +6 covered, +6 total |
+| `gorm/repository` | 96.3% (755/784) 29 uncov | 96.5% (789/818) 29 uncov | +34 covered, +34 total |
+| `service/operational` | 98.7% (1927/1953) 26 uncov | 98.9% (1946/1967) 21 uncov | +19 covered, +14 total, **-5 uncov (improved)** |
+| `service/operational/export` | NEW (71.2%) | 99.5% (405/407) 2 uncov | From 71.2% to 99.5% |
+| **Overall backend** | **98.4% (5250/5335)** | **98.6% (5816/5898)** | +566 covered, +563 total |
+
+New backend test files:
+- `internal/service/operational/export/binding_service_coverage_test.go` — 45+ test cases covering Get, Run, RunAll, Create/Update/Delete error paths, buildInstancesByType, PublishPreview error paths, GetCachedArtifacts, PreviewCache store error, MCPGateway Description, resolveTargetName fallback, TTL from env
+- Additional tests in `internal/api/operational/export_binding_handler_test.go` — GetBinding success/not-found/catalog-not-found, bind errors for Create/Update, service errors for List/Update/Delete/Run/Preview, Download missing params/empty/wrong catalog
+- Additional tests in `internal/infrastructure/gorm/repository/data_repo_test.go` — ExportBinding GetByID not-found, Delete, Delete not-found, CountByCatalog, DeleteByCatalog, closedDB error paths
+- Additional tests in `internal/infrastructure/gorm/models/models_test.go` — ExportBinding round-trip conversion, empty parameters
+
+Remaining uncovered lines in export package (2 statements, genuinely uncoverable):
+
+| File:Line | Code | Why uncoverable |
+|-----------|------|-----------------|
+| `mcp_gateway_exporter.go:124-126` | `yaml.Marshal` error on well-formed `k8sResource` struct | `yaml.Marshal` only fails on channels, functions, or unsupported types; struct fields are all strings/maps |
+| `mcp_gateway_exporter.go:151-153` | `yaml.Marshal` error on `k8sResource` for VirtualServer | Same unreachable pattern |
+
+Previously uncovered, now covered:
+- `preview_cache.go:63-73` — cleanupLoop goroutine body (6 stmts): refactored to injectable interval via `NewInMemoryPreviewCacheWithInterval`, tested with 10ms interval in `TestInMemoryPreviewCache_CleanupLoop_RemovesExpired`
+- `publish_service.go:79-81` — previewCache.Store error: covered via `failingCache` mock in `TestPublishPreview_StoreError`
+- `instance_service.go` — 9 previously uncovered error paths (bidirectional link bump errors, SetParent bump errors, resolveParentChain cycle guard): covered by 9 new tests (`TestCov_CreateLink_BiDir*`, `TestCov_DeleteLink_BiDir*`, `TestCov_SetParent_*`, `TestCov_ResolveParentChain_CycleGuard`)
+
+**UI:** New components (ExportBindingsPanel, PublishPreviewModal) and comprehensive browser tests.
+
+| File | Before | After | Delta |
+|------|--------|-------|-------|
+| `ExportBindingsPanel.tsx` (NEW) | — | 93/94 stmts (98.9%) | 1 uncov: L66 dead-code guard |
+| `PublishPreviewModal.tsx` (NEW) | — | 33/34 stmts (97.1%) | 1 uncov: L55 defensive guard (button only renders when preview loaded) |
+| `client.ts` | 106/114 (93.0%) | 141/149 (94.6%) | +35 covered, +35 total; all new methods covered |
+| `CatalogDetailPage.tsx` | 219/231 (94.8%) | 220/232 (94.8%) | +1 covered, +1 total; 12 pre-existing uncov |
+| `CatalogListPage.tsx` | 81/97 (83.5%) | 88/104 (84.6%) | +7 covered, +7 total; new binding count line now covered |
+| `OperationalCatalogDetailPage.tsx` | 272/285 (95.4%) | 273/287 (95.1%) | +1 covered, +2 total; 14 pre-existing uncov |
+| `client.browser.test.ts` | 70 tests | 81 tests | +11 tests covering exporters.list, exportBindings CRUD, run, download, publishPreview, publishWithToken |
+| `CatalogDetailPage.browser.test.tsx` | 61 tests | 89 tests | +28 tests covering Export Plugins tab (bindings CRUD, cancel, error paths, default params, publish preview flow, error handling) |
+| `CatalogListPage.browser.test.tsx` | 27 tests | 29 tests | +2 tests covering export binding count on delete dialog, binding list error handling |
+| `OperationalCatalogDetailPage.browser.test.tsx` | 132 tests | 143 tests | +11 tests covering Export Plugins tab (empty state, bindings list, Admin controls, RW controls, Export Now, Delete confirm, Delete Escape close, Toggle enabled, Add modal, error display, run error) |
+
+New uncovered lines in new files (2 total):
+
+| File:Line | Code | Why uncoverable |
+|-----------|------|-----------------|
+| `ExportBindingsPanel.tsx:66` | `if (!deleteTarget) return` | Dead-code guard: delete button only renders when `deleteTarget` is set; the handler can never fire with `deleteTarget === null` |
+| `PublishPreviewModal.tsx:55` | `if (!preview) return` | Guard in `handlePublish`: Publish button only renders when `preview` is loaded (`{preview && !preview.has_failures && (...)})`), so this guard is unreachable via UI interaction |
+
+Previously uncovered, now covered:
+- `ExportBindingsPanel.tsx:187` — PF6 Modal `onClose`: covered by `TestCov_DeleteModalClosesOnEscape` using `userEvent.keyboard('{Escape}')`
+
+Backend test count: 1930 -> 2113 (+183 including subtests).
+Browser test count: 1230 -> 1261 (+31 new tests).
+
+**Overall UI coverage (V8 provider):**
+
+| Metric | Before (session start) | After | Delta |
+|--------|----------------------|-------|-------|
+| Statements | 93.82% (3359/3580) | 95.53% (3420/3580) | **+1.71pp** (+61 covered) |
+| Lines | 96.06% (3030/3154) | 97.81% (3085/3154) | **+1.75pp** (+55 covered) |
+| Functions | 93.07% (847/910) | 94.94% (864/910) | **+1.87pp** (+17 covered) |
+| Branches | 84.90% (2261/2663) | 86.03% (2291/2663) | **+1.13pp** (+30 covered) |
 
 ### Linting
 

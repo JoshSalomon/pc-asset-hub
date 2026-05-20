@@ -7,6 +7,8 @@
 # Default: http://localhost:30080
 
 set -uo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/test-summary.sh"
 
 API_BASE="${1:-http://localhost:30080}"
 META_API="$API_BASE/api/meta/v1"
@@ -677,21 +679,5 @@ RESP=$(curl -s -w "\n%{http_code}" -X GET "$META_API/entity-types" \
   -H "X-User-Role: InvalidRole" -H "Content-Type: application/json")
 assert_status "$RESP" "401" "Invalid X-User-Role header returns 401"
 
-# ============================================================
-# Results
-# ============================================================
-header "Results"
 
-echo ""
-echo "  Total: $TOTAL"
-echo "  Passed: $PASS"
-echo "  Failed: $FAIL"
-echo ""
-
-if [ "$FAIL" -gt 0 ]; then
-  echo "  SOME TESTS FAILED"
-  exit 1
-else
-  echo "  ALL TESTS PASSED"
-  exit 0
-fi
+print_summary "test-rbac-enforcement"

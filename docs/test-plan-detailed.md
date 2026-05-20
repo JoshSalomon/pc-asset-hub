@@ -30,7 +30,7 @@ Development proceeds through three environment phases, each with increasing infr
 
 **Milestones completed**: 1–12 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired; T-13.102 changed by FF-6), T-14.01 through T-14.22, T-15.01 through T-15.81, T-16.01 through T-16.69, T-17.01 through T-17.88, T-24.01 through T-24.28, T-25.01 through T-25.39, T-26.01 through T-26.18, T-27.01 through T-27.27, T-32.01 through T-32.78, T-33.01 through T-33.12, and T-34.01 through T-34.117 (1121 test cases), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired; T-13.102 changed by FF-6), T-14.01 through T-14.22, T-15.01 through T-15.81, T-16.01 through T-16.69, T-17.01 through T-17.88, T-24.01 through T-24.28, T-25.01 through T-25.39, T-26.01 through T-26.18, T-27.01 through T-27.27, T-32.01 through T-32.78, T-33.01 through T-33.12, and T-34.01 through T-34.133 (1137 test cases), using SQLite and mocked/simulated infrastructure.
 
 **Human checkpoint**: After all 802 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
@@ -4470,6 +4470,8 @@ Covered by existing CreateInstanceModal/EditInstanceModal tests — update exist
 | T-34.10 | Create binding — ValidateSchema checks entity type exists in CV | Unit | Error if type not pinned |
 | T-34.11 | Create binding — ValidateSchema checks required attribute exists on entity type | Unit | Error: "missing attribute 'route_name'" |
 | T-34.12 | Create binding — ValidateSchema checks containment association exists | Unit | Error if no containment from server to tool type |
+| T-34.12b | Create binding — ValidateSchema checks virtual_server_type entity type exists in CV | Unit | Error if VS type not pinned |
+| T-34.12c | Create binding — ValidateSchema checks virtual_server_type has association to tool_type | Unit | Error if no association from VS to tool type |
 | T-34.13 | Create multiple bindings to same exporter with different params | Unit | Both created |
 | T-34.14 | Update binding parameters | Unit | Parameters updated |
 | T-34.15 | Update binding enabled/disabled toggle | Unit | Enabled flag updated |
@@ -4534,12 +4536,12 @@ Covered by existing CreateInstanceModal/EditInstanceModal tests — update exist
 | T-34.58 | MCPServerRegistration spec.credentialRef from credential_secret attribute (optional) | Unit | CredentialRef set when present, omitted when absent |
 | T-34.59 | Labels: assethub.io/catalog, assethub.io/exporter, assethub.io/binding-id set | Unit | All labels present |
 | T-34.60 | Annotations: assethub.io/exported-at, assethub.io/source-system set | Unit | All annotations present |
-| T-34.61 | MCPVirtualServer produced once per catalog | Unit | Exactly one VS CR |
-| T-34.62 | MCPVirtualServer metadata.name matches catalog name | Unit | Names match |
+| T-34.61 | MCPVirtualServer produced once per export run (for the selected VS instance) | Unit | Exactly one VS CR |
+| T-34.62 | MCPVirtualServer metadata.name matches the selected virtual server instance name | Unit | Names match instance, not catalog |
 | T-34.63 | MCPVirtualServer spec.description matches catalog description | Unit | Descriptions match |
-| T-34.64 | MCPVirtualServer spec.tools contains all tool names prefixed by parent server name | Unit | All tools present, correctly prefixed |
+| T-34.64 | MCPVirtualServer spec.tools contains only tools associated with the selected VS instance | Unit | Only associated tools, not all catalog tools |
 | T-34.65 | Tool name format: {server_name}_{tool_name} | Unit | Correct format |
-| T-34.66 | Tools from multiple servers are all included in one VirtualServer | Unit | Tools from server A and B combined |
+| T-34.66 | Tools from servers NOT associated with the selected VS are excluded | Unit | Only selected VS's tools present |
 | T-34.67 | Deterministic ordering: servers sorted by name | Unit | Alphabetical |
 | T-34.68 | Deterministic ordering: tools sorted alphabetically within VirtualServer | Unit | Alphabetical |
 | T-34.69 | VirtualServer CR appears last in output (after all server registrations) | Unit | Correct order |
@@ -4549,6 +4551,25 @@ Covered by existing CreateInstanceModal/EditInstanceModal tests — update exist
 | T-34.73 | Round-trip: output YAML parseable by yaml.Unmarshal into unstructured objects | Unit | Parse succeeds |
 | T-34.74 | Round-trip: parsed objects have correct apiVersion, kind, metadata.name | Unit | Fields match |
 | T-34.75 | Deterministic: same input produces identical output on two runs (excluding timestamp annotations like exported-at) | Unit | Outputs equal after stripping timestamps |
+
+### VirtualServer Instance Selection — Unit + API + Browser + Live Tests (US-62)
+
+| ID | Description | Layer | Expected |
+|----|-------------|-------|----------|
+| T-34.75a | virtual_server_type parameter is required and type entity_type | Unit | ParameterDef present |
+| T-34.75b | ValidateSchema: virtual_server_type must have association to tool_type | Unit | Error if no association |
+| T-34.75c | ValidateSchema: virtual_server_type without association to tool_type fails with descriptive error | Unit | Error message names both types |
+| T-34.75d | Export with VS instance: only tools associated with the selected VS instance appear in output | Unit | Filtered tool list |
+| T-34.75e | Export with VS instance: MCPVirtualServer name is the VS instance name, not catalog name | Unit | Correct CR name |
+| T-34.75f | Export with VS instance: servers not related to selected VS tools are excluded from output | Unit | Only relevant servers |
+| T-34.75g | Run on disabled binding returns 400 | Unit | Error: "disabled" |
+| T-34.75h | POST /run requires virtual_server_instance query parameter | API | 400 if missing |
+| T-34.75i | POST /run with non-existent VS instance returns 404 | API | 404 |
+| T-34.75j | POST /run with valid VS instance returns filtered YAML | API | 200, correct tools |
+| T-34.75k | UI: Export Now opens VS instance picker modal before downloading | Browser | Modal with instance list |
+| T-34.75l | UI: VS instance picker shows only instances of virtual_server_type | Browser | Correct instance list |
+| T-34.75m | Live: run export with VS instance, verify YAML contains only that VS's tools | Live | Filtered output |
+| T-34.75n | Live: run export with VS instance, verify VirtualServer CR name matches instance name | Live | Correct name |
 
 ### Publish Integration — Unit + API + Browser Tests (US-61)
 
@@ -4607,10 +4628,26 @@ Covered by existing CreateInstanceModal/EditInstanceModal tests — update exist
 | ID | Description | Layer | Expected |
 |----|-------------|-------|----------|
 | T-34.113 | Export Plugins tab visible on catalog detail page | System | Tab rendered |
-| T-34.114 | Add export binding via UI wizard | System | Binding created |
-| T-34.115 | Export Now button downloads YAML file | System | File downloaded |
-| T-34.116 | Delete binding via UI | System | Binding removed |
-| T-34.117 | Publish with bindings: preview shown, confirm, files downloaded | System | Full publish flow |
+| T-34.114 | Add export binding via UI wizard (Create button disabled until fields filled) | System | Binding created, Create initially disabled |
+| T-34.115 | Export Now downloads YAML via VS picker modal | System | File downloaded after VS selection |
+| T-34.116 | Delete binding via UI with confirmation dialog | System | Binding removed, row count decreases |
+| T-34.117 | Publish with bindings: preview shown, confirm, files downloaded | System | Full publish flow, published badge |
+| T-34.118 | Empty state shows "No export bindings configured" | System | Message rendered |
+| T-34.119 | RO role cannot see Add Export Binding button | System | Button not visible |
+| T-34.120 | RW role cannot see Add Export Binding button | System | Button not visible |
+| T-34.121 | Binding row shows exporter name and "never" status | System | Correct columns |
+| T-34.122 | Edit modal opens with pre-filled parameter values | System | Fields match current values |
+| T-34.123 | Edit saves updated parameter (persists on re-open) | System | Updated value visible |
+| T-34.124 | Enable/disable toggle changes binding state | System | Toggle text changes |
+| T-34.125 | Disabled binding Export Now button is disabled | System | Button disabled |
+| T-34.126 | RW sees binding list but no Edit/Delete/Toggle controls | System | Read-only, no mutation buttons |
+| T-34.127 | RO cannot see Export Now, Edit, or Delete buttons | System | No action buttons |
+| T-34.128 | Downloaded YAML contains valid CRs (apiVersion, labels, annotations) | System | Parseable YAML, correct metadata |
+| T-34.129 | Last run status updates to "success" after export | System | Status column shows "success" |
+| T-34.130 | Binding visible on operational catalog page (/catalogs/{name}) | System | Binding list visible in read-only mode |
+| T-34.131 | Cancel delete dialog preserves binding | System | Row count unchanged |
+| T-34.132 | Escape closes delete dialog without deleting | System | Row count unchanged |
+| T-34.133 | Catalog delete from list page shows export binding count warning | System | Warning alert in dialog |
 
 **Justification for skipped categories:**
 - **Operator tests**: FF-15 Phase 1 does not create CRs in K8s (download only). No operator involvement.

@@ -8,7 +8,9 @@ import (
 
 	"github.com/project-catalyst/pc-asset-hub/internal/api/dto"
 	apimw "github.com/project-catalyst/pc-asset-hub/internal/api/middleware"
+	domainerrors "github.com/project-catalyst/pc-asset-hub/internal/domain/errors"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
+	"github.com/project-catalyst/pc-asset-hub/internal/domain/repository"
 	svcop "github.com/project-catalyst/pc-asset-hub/internal/service/operational"
 )
 
@@ -16,10 +18,23 @@ type CatalogHandler struct {
 	svc           *svcop.CatalogService
 	validationSvc *svcop.CatalogValidationService
 	accessChecker apimw.CatalogAccessChecker
+	bindingRepo   repository.ExportBindingRepository
 }
 
-func NewCatalogHandler(svc *svcop.CatalogService, validationSvc *svcop.CatalogValidationService, accessChecker apimw.CatalogAccessChecker) *CatalogHandler {
-	return &CatalogHandler{svc: svc, validationSvc: validationSvc, accessChecker: accessChecker}
+func NewCatalogHandler(svc *svcop.CatalogService, validationSvc *svcop.CatalogValidationService, accessChecker apimw.CatalogAccessChecker, opts ...CatalogHandlerOption) *CatalogHandler {
+	h := &CatalogHandler{svc: svc, validationSvc: validationSvc, accessChecker: accessChecker}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
+}
+
+type CatalogHandlerOption func(*CatalogHandler)
+
+func WithBindingRepo(repo repository.ExportBindingRepository) CatalogHandlerOption {
+	return func(h *CatalogHandler) {
+		h.bindingRepo = repo
+	}
 }
 
 func (h *CatalogHandler) CreateCatalog(c echo.Context) error {
@@ -106,11 +121,30 @@ func (h *CatalogHandler) GetCatalog(c echo.Context) error {
 
 func (h *CatalogHandler) DeleteCatalog(c echo.Context) error {
 	name := c.Param("catalog-name")
+	ctx := c.Request().Context()
 
-	if err := h.svc.Delete(c.Request().Context(), name); err != nil {
+	var deletedBindingsCount int
+	if h.bindingRepo != nil {
+		cat, getErr := h.svc.GetByName(ctx, name)
+		if getErr != nil && !domainerrors.IsNotFound(getErr) {
+			return mapError(getErr)
+		}
+		if cat != nil {
+			deletedBindingsCount, _ = h.bindingRepo.CountByCatalog(ctx, cat.ID)
+			_ = h.bindingRepo.DeleteByCatalog(ctx, cat.ID)
+		}
+	}
+
+	if err := h.svc.Delete(ctx, name); err != nil {
 		return mapError(err)
 	}
 
+	if deletedBindingsCount > 0 {
+		return c.JSON(http.StatusOK, map[string]any{
+			"status":                 "deleted",
+			"deleted_bindings_count": deletedBindingsCount,
+		})
+	}
 	return c.NoContent(http.StatusNoContent)
 }
 

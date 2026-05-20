@@ -26,6 +26,7 @@ import (
 	v1alpha1 "github.com/project-catalyst/pc-asset-hub/internal/operator/api/v1alpha1"
 	svcmeta "github.com/project-catalyst/pc-asset-hub/internal/service/meta"
 	svcop "github.com/project-catalyst/pc-asset-hub/internal/service/operational"
+	"github.com/project-catalyst/pc-asset-hub/internal/service/operational/export"
 )
 
 func main() {
@@ -105,12 +106,27 @@ func main() {
 	cvHandler := apimeta.NewCatalogVersionHandler(cvSvc)
 	catalogAccessChecker := &middleware.HeaderCatalogAccessChecker{}
 	validationSvc := svcop.NewCatalogValidationService(catalogRepo, instRepo, iavRepo, pinRepo, etvRepo, attrRepo, assocRepo, tdvRepo, tdRepo, linkRepo, etRepo)
-	catalogHandler := apiop.NewCatalogHandler(catalogSvc, validationSvc, catalogAccessChecker)
+	// Export plugins
+	exporterRegistry := export.NewExporterRegistry()
+	exporterRegistry.Register(export.NewMCPGatewayExporter())
+	bindingRepo := gormrepo.NewExportBindingGormRepo(db)
+
+	catalogHandler := apiop.NewCatalogHandler(catalogSvc, validationSvc, catalogAccessChecker, apiop.WithBindingRepo(bindingRepo))
 	instanceHandler := apiop.NewInstanceHandler(instanceSvc, catalogSvc)
 	exportSvc := svcop.NewExportService(catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, tdvRepo, instRepo, iavRepo, linkRepo)
 	exportHandler := apiop.NewExportHandler(exportSvc, catalogAccessChecker)
 	importSvc := svcop.NewImportService(catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, tdvRepo, instRepo, iavRepo, linkRepo, typePinRepo, svcop.WithImportTransactionManager(txManager))
 	importHandler := apiop.NewImportHandler(importSvc, catalogAccessChecker)
+	previewCache := export.NewInMemoryPreviewCache()
+	exportBindingSvc := export.NewExportBindingService(
+		bindingRepo, catalogRepo, exporterRegistry,
+		cvRepo, pinRepo, etvRepo, etRepo, attrRepo, assocRepo,
+		export.WithInstanceRepos(instRepo, iavRepo),
+		export.WithLinkRepo(linkRepo),
+		export.WithPreviewCache(previewCache),
+	)
+	exportBindingHandler := apiop.NewExportBindingHandler(exportBindingSvc, exporterRegistry, catalogAccessChecker)
+
 	healthHandler := apihealth.NewHandler(db)
 
 	// Echo server
@@ -151,6 +167,12 @@ func main() {
 	apiop.RegisterImportRoutes(catalogGroup, importHandler, requireAdmin)
 	apiop.RegisterCatalogRoutes(catalogGroup, catalogHandler, requireRW, requireAdmin, requireWriteAccess)
 	apiop.RegisterExportRoutes(catalogGroup, exportHandler, requireAdmin)
+	apiop.RegisterExportBindingRoutes(catalogGroup, exportBindingHandler, requireRW, requireAdmin, requireWriteAccess)
+
+	// Exporters list (top-level, any authenticated user)
+	dataGroup := e.Group("/api/data/v1")
+	dataGroup.Use(middleware.RBACMiddleware(rbacProvider))
+	dataGroup.GET("/exporters", exportBindingHandler.ListExporters) // any authenticated role (RO+)
 
 	// Operational API — Instance CRUD (under catalogs, with per-catalog access check)
 	instanceGroup := catalogGroup.Group("/:catalog-name")

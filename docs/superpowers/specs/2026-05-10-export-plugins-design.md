@@ -669,6 +669,8 @@ spec:
       required: true
 ```
 
+**Prerequisite: configurable attribute field mapping (TD-152).** Phase 1's MCP Gateway exporter hardcodes attribute names (`route_name`, `mcp_path`, `credential_secret`). This works for the PoC where we control the schema, but dynamic plugins will export to consumer systems we don't control. Those systems may name their attributes differently (e.g., `route-name`, `httproute-ref`, `routeName`). Before implementing dynamic plugins, exporters must support configurable field mapping — binding parameters that let users map exporter-expected field names to actual attribute names in the catalog schema. Without this, every schema mismatch requires a new exporter or schema changes on the catalog side, which defeats the purpose of a plugin architecture.
+
 **Deferred because:** Phase 1 built-in plugins cover the first use case. Webhook support adds when third-party/dynamic exporters are needed.
 
 ### F7: Export Bindings in Catalog Import/Export (FF-12)
@@ -687,6 +689,28 @@ Export bindings reference exporters by name. When a catalog is exported (FF-12),
 - If the exporter doesn't exist: several options (skip, warn, create inactive, fail)
 
 **Deferred because:** The right behavior depends on the use case (backup vs live restore). Needs further discussion.
+
+### F8: CR Metadata — Source System and Binding ID (Phase 2+)
+
+Phase 1 CRs include `assethub.io/exported-at` (annotation), `assethub.io/catalog`, and `assethub.io/exporter` (labels). Two additional metadata fields from the design spec are deferred:
+
+- **`assethub.io/source-system`** (annotation): Identifies which Asset Hub instance produced the CR (e.g., `assethub-dev` vs `assethub-prod`). Useful when multiple Asset Hub deployments export to the same cluster. Requires a system-level identity config — either an environment variable (`ASSETHUB_INSTANCE_NAME`) or a value from the Asset Hub operator CR.
+- **`assethub.io/binding-id`** (label): Identifies which export binding produced the CR. Useful for selective cleanup (delete all CRs from a specific binding). Requires passing the binding ID through `ExportInput` to the exporter.
+
+**Deferred because:** Not needed for PoC. Both are operational convenience features for multi-deployment and CR lifecycle management scenarios. Will decide whether to implement or create a TD when Phase 2 work begins.
+
+### F9: Named Export Bindings (Phase 2+)
+
+Phase 1 export bindings are identified by their exporter name and parameter values. When a catalog has multiple bindings (e.g., two MCP Gateway bindings for different virtual servers, or bindings to different exporters), they are hard to distinguish in the UI — the user sees rows like "mcp-gateway / server_type=mcp-server" repeated with only subtle parameter differences.
+
+**Proposed change:** Add an optional `name` field to `ExportBinding` (model, GORM model, API request/response). The name is user-assigned, free-text, and displayed as the primary identifier in the binding list and export modals. When omitted, the UI falls back to showing the exporter name + parameter summary (current behavior).
+
+**Benefits:**
+- Easier to identify bindings at a glance: "Production MCP Export" vs "Staging MCP Export" instead of comparing parameter values
+- Better UX when the same exporter is used multiple times with different configurations
+- Natural label for the downloaded YAML file name (e.g., `production-mcp-export.yaml` instead of `catalog-name-export.yaml`)
+
+**Deferred because:** Single-binding scenarios work fine without names. Naming becomes valuable when users have 3+ bindings per catalog, which is uncommon in the PoC phase.
 
 ## Implementation Stages
 

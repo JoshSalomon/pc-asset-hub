@@ -4,6 +4,8 @@
 # Default: http://localhost:30080
 
 set -uo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/test-summary.sh"
 
 API_BASE="${1:-http://localhost:30080}"
 META_API="$API_BASE/api/meta/v1"
@@ -357,19 +359,4 @@ else
   fail "Constraint violation" "status=$STATUS val_status=$VAL_STATUS errors=$ERROR_COUNT body=$BODY"
 fi
 
-
-header "Results"
-
-echo ""
-echo "  Total: $TOTAL"
-echo "  Passed: $PASS"
-echo "  Failed: $FAIL"
-echo ""
-
-if [ "$FAIL" -gt 0 ]; then
-  echo "  SOME TESTS FAILED"
-  exit 1
-else
-  echo "  ALL TESTS PASSED"
-  exit 0
-fi
+print_summary "test-validation"

@@ -48,6 +48,7 @@ test-live:
 	"$(PROJECT_ROOT)scripts/test-import-export-e2e.sh"
 	"$(PROJECT_ROOT)scripts/test-rbac-enforcement.sh"
 	"$(PROJECT_ROOT)scripts/test-error-handling.sh"
+	"$(PROJECT_ROOT)scripts/test-export-plugins.sh"
 	"$(PROJECT_ROOT)scripts/test-cross-feature-workflow.sh"
 
 test-all: test-backend test-unit test-browser test-system test-live

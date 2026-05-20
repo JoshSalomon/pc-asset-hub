@@ -177,3 +177,37 @@ func (m *MockAssociationLinkRepo) GetReverseRefs(ctx context.Context, targetInst
 	}
 	return args.Get(0).([]*models.AssociationLink), args.Error(1)
 }
+
+// MockExportBindingRepo mocks ExportBindingRepository.
+type MockExportBindingRepo struct{ mock.Mock }
+
+func (m *MockExportBindingRepo) Create(ctx context.Context, binding *models.ExportBinding) error {
+	return m.Called(ctx, binding).Error(0)
+}
+func (m *MockExportBindingRepo) GetByID(ctx context.Context, id string) (*models.ExportBinding, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.ExportBinding), args.Error(1)
+}
+func (m *MockExportBindingRepo) ListByCatalog(ctx context.Context, catalogID string) ([]*models.ExportBinding, error) {
+	args := m.Called(ctx, catalogID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.ExportBinding), args.Error(1)
+}
+func (m *MockExportBindingRepo) Update(ctx context.Context, binding *models.ExportBinding) error {
+	return m.Called(ctx, binding).Error(0)
+}
+func (m *MockExportBindingRepo) Delete(ctx context.Context, id string) error {
+	return m.Called(ctx, id).Error(0)
+}
+func (m *MockExportBindingRepo) CountByCatalog(ctx context.Context, catalogID string) (int, error) {
+	args := m.Called(ctx, catalogID)
+	return args.Int(0), args.Error(1)
+}
+func (m *MockExportBindingRepo) DeleteByCatalog(ctx context.Context, catalogID string) error {
+	return m.Called(ctx, catalogID).Error(0)
+}

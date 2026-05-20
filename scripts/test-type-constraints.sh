@@ -4,6 +4,8 @@
 # Default: http://localhost:30080
 
 set -uo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/test-summary.sh"
 
 API_BASE="${1:-http://localhost:30080}"
 META_API="$API_BASE/api/meta/v1"
@@ -328,21 +330,5 @@ api DELETE "$META_API/type-definitions/$PERCENT_TD_ID" Admin > /dev/null 2>&1 ||
 echo "  Deleted custom type definitions"
 
 # ===================================================================
-# Results
-# ===================================================================
 
-header "Results"
-
-echo ""
-echo "  Total: $TOTAL"
-echo "  Passed: $PASS"
-echo "  Failed: $FAIL"
-echo ""
-
-if [ "$FAIL" -gt 0 ]; then
-  echo "  SOME TESTS FAILED"
-  exit 1
-else
-  echo "  ALL TESTS PASSED"
-  exit 0
-fi
+print_summary "test-type-constraints"

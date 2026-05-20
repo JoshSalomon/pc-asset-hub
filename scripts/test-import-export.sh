@@ -2,6 +2,8 @@
 # Live test script for Catalog Import/Export (US-55, US-56, Milestone 20)
 # Usage: ./scripts/test-import-export.sh [API_BASE_URL]
 set -uo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/test-summary.sh"
 
 API="${1:-http://localhost:30080}"
 PASS=0; FAIL=0; TOTAL=0
@@ -567,9 +569,4 @@ else
   fail "Re-import actual request rejects duplicate" "got $CODE — $(cat /tmp/reimport-resp.json)"
 fi
 
-# === Summary ===
-h "Summary"
-echo "  Total: $TOTAL, Passed: $PASS, Failed: $FAIL"
-if [ "$FAIL" -gt 0 ]; then
-  exit 1
-fi
+print_summary "test-import-export"

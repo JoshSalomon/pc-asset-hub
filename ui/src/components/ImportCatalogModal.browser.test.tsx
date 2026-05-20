@@ -697,43 +697,60 @@ test('closing modal via X on done step calls onClose but not onSuccess', async (
   expect(props.onSuccess).not.toHaveBeenCalled()
 })
 
-// === Collision detail: catalog/catalog_version type shows "Create" not toggle ===
+// === Collision detail: catalog type shows "Create" not toggle, CV shows reuse toggle ===
 
 test('catalog type collision shows Create not toggle', async () => {
   const dryRunCatalogCollision = {
     status: 'ok',
     collisions: [
       { type: 'catalog', name: 'my-catalog', resolution: 'identical', detail: 'Same catalog' },
-      { type: 'catalog_version', name: 'v1.0', resolution: 'identical', detail: 'Same version' },
     ],
-    summary: { total_entities: 2, conflicts: 0, identical: 2, new: 0 },
+    summary: { total_entities: 1, conflicts: 0, identical: 1, new: 0 },
   }
   ;(api.catalogs.import as Mock).mockResolvedValue(dryRunCatalogCollision)
   renderModal()
   await uploadFile(sampleExportData)
   await page.getByRole('button', { name: 'Analyze' }).click()
 
-  // catalog and catalog_version types should show "Create" text, not toggle button
-  const creates = page.getByText('Create', { exact: true })
-  expect(creates.elements().length).toBeGreaterThanOrEqual(2)
+  // catalog type should show "Create" text (not a toggle checkbox)
+  await expect.element(page.getByText('Create', { exact: true })).toBeVisible()
 })
 
-test('catalog/CV conflict rows show error message', async () => {
-  const dryRunCatalogConflict = {
-    status: 'conflicts_found',
+test('catalog_version identical collision shows reuse toggle', async () => {
+  const dryRunCVCollision = {
+    status: 'ok',
     collisions: [
-      { type: 'catalog', name: 'my-catalog', resolution: 'conflict', detail: 'Catalog name already exists' },
-      { type: 'catalog_version', name: 'v1.0', resolution: 'conflict', detail: 'CV label already exists' },
+      { type: 'catalog_version', name: 'v1.0', resolution: 'identical', detail: 'CV label already exists — can reuse' },
     ],
-    summary: { total_entities: 2, conflicts: 2, identical: 0, new: 0 },
+    summary: { total_entities: 1, conflicts: 0, identical: 1, new: 0 },
   }
-  ;(api.catalogs.import as Mock).mockResolvedValue(dryRunCatalogConflict)
+  ;(api.catalogs.import as Mock).mockResolvedValue(dryRunCVCollision)
   renderModal()
   await uploadFile(sampleExportData)
   await page.getByRole('button', { name: 'Analyze' }).click()
 
-  const errors = page.getByText(/go back and change/i)
-  expect(errors.elements().length).toBe(2)
+  // CV collision should auto-reuse (identical) and show "Reuse existing" toggle
+  await expect.element(page.getByText('Reuse existing')).toBeVisible()
+})
+
+test('catalog conflict row shows error message, CV identical shows reuse', async () => {
+  const dryRunMixed = {
+    status: 'conflicts_found',
+    collisions: [
+      { type: 'catalog', name: 'my-catalog', resolution: 'conflict', detail: 'Catalog name already exists' },
+      { type: 'catalog_version', name: 'v1.0', resolution: 'identical', detail: 'CV label already exists — can reuse' },
+    ],
+    summary: { total_entities: 2, conflicts: 1, identical: 1, new: 0 },
+  }
+  ;(api.catalogs.import as Mock).mockResolvedValue(dryRunMixed)
+  renderModal()
+  await uploadFile(sampleExportData)
+  await page.getByRole('button', { name: 'Analyze' }).click()
+
+  // Catalog conflict shows error
+  await expect.element(page.getByText(/go back and change the catalog name/i)).toBeVisible()
+  // CV identical shows reuse toggle
+  await expect.element(page.getByText('Reuse existing')).toBeVisible()
 })
 
 test('Continue disabled when catalog name has conflict', async () => {

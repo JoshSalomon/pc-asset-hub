@@ -258,7 +258,7 @@ describe('Catalog Detail Page', () => {
 // ============================================================
 
 describe('Instance CRUD', () => {
-  const instanceName = 'TestInstance1'
+  const instanceName = 'test-instance-1'
 
   test('create instance: click Create, fill modal, verify in table', async () => {
     await pg.goto(`${UI_URL}/schema/catalogs/${CATALOG_TEST_NAME}`)
@@ -359,8 +359,8 @@ describe('Instance CRUD', () => {
 // ============================================================
 
 describe('Containment', () => {
-  const parentName = 'ParentWithChild'
-  const childName = 'ContainedChild1'
+  const parentName = 'parent-with-child'
+  const childName = 'contained-child-1'
 
   test('add contained instance via Details panel', async () => {
     // Create a fresh parent instance via UI so we know it's visible
@@ -484,10 +484,20 @@ describe('Publishing', () => {
     // Should see valid status (use exact match to avoid matching "Validate" button)
     await visible(pg.getByText('valid', { exact: true }).first())
 
-    // Click Publish
+    // Click Publish — opens preview modal (FF-15: publish now shows preview first)
     await pg.getByRole('button', { name: 'Publish' }).click()
 
-    // Wait for publish to complete and page to refresh
+    // Preview modal appears — wait for it and click Publish inside the modal
+    const dialog = pg.getByRole('dialog')
+    await visible(dialog, 20000)
+
+    // Click the Publish button inside the modal
+    const modalPublishBtn = dialog.getByRole('button', { name: /Publish/ })
+    await visible(modalPublishBtn)
+    await modalPublishBtn.click()
+
+    // Wait for modal to close and page to refresh
+    await hidden(dialog, 20000)
     await pg.waitForTimeout(1000)
 
     // Verify published badge (use Label role to avoid matching alert heading)

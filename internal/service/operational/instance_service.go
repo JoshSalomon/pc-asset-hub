@@ -17,17 +17,14 @@ import (
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/repository"
 )
 
-var instanceNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9 ._-]*$`)
+var instanceNameRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
 func ValidateInstanceName(name string) error {
 	if strings.TrimSpace(name) == "" {
 		return domainerrors.NewValidation("instance name is required")
 	}
-	if len(name) > 255 {
-		return domainerrors.NewValidation("instance name must not exceed 255 characters")
-	}
-	if !instanceNameRegex.MatchString(name) {
-		return domainerrors.NewValidation("instance name must start with a letter, digit, or underscore, and contain only letters, digits, spaces, dots, hyphens, and underscores")
+	if len(name) > 63 || !instanceNameRegex.MatchString(name) {
+		return domainerrors.NewValidation("instance name must be a valid Kubernetes resource name: lowercase letters, numbers, and hyphens only, must start and end with a letter or number, max 63 characters")
 	}
 	return nil
 }

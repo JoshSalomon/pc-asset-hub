@@ -5,6 +5,8 @@
 #
 # Usage: ./scripts/test-import-export-e2e.sh [API_BASE_URL]
 set -uo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/test-summary.sh"
 
 API="${1:-http://localhost:30080}"
 META="$API/api/meta/v1"
@@ -581,11 +583,5 @@ else
   fail "API: pii-filter forward refs" "orig=$ORIG_PII_REFS, imported=$IMP_PII_REFS"
 fi
 
-# ============================================================
-# Summary
-# ============================================================
-h "Summary"
-echo "  Total: $TOTAL, Passed: $PASS, Failed: $FAIL"
-if [ "$FAIL" -gt 0 ]; then
-  exit 1
-fi
+
+print_summary "test-import-export-e2e"

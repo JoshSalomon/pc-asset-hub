@@ -519,6 +519,29 @@
       "phase": 0,
       "difficulty": 0.7,
       "created_at": "2026-05-07T17:06:40.113917+00:00"
+    },
+    "mem_dbd8c2b8": {
+      "topic": "Coverage generator agents must write tests, not just measure",
+      "tags": [
+        "feedback",
+        "coverage",
+        "subagent-dispatch"
+      ],
+      "phase": 0,
+      "difficulty": 0.8,
+      "created_at": "2026-05-13T12:54:15.351597+00:00"
+    },
+    "mem_9c392673": {
+      "topic": "FF-15 Export Plugin Mechanism — implementation patterns",
+      "tags": [
+        "FF-15",
+        "export-plugins",
+        "architecture",
+        "MCP-gateway"
+      ],
+      "phase": 0,
+      "difficulty": 0.8,
+      "created_at": "2026-05-20T07:36:53.072653+00:00"
     }
   }
 }

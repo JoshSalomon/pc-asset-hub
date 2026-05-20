@@ -7,11 +7,13 @@ import { api } from '../../api/client'
 
 vi.mock('../../api/client', () => ({
   api: {
-    catalogs: { get: vi.fn(), list: vi.fn(), validate: vi.fn(), publish: vi.fn(), unpublish: vi.fn(), copy: vi.fn(), replace: vi.fn(), update: vi.fn(), export: vi.fn() },
+    catalogs: { get: vi.fn(), list: vi.fn(), validate: vi.fn(), publish: vi.fn(), unpublish: vi.fn(), copy: vi.fn(), replace: vi.fn(), update: vi.fn(), export: vi.fn(), publishPreview: vi.fn(), publishWithToken: vi.fn() },
     catalogVersions: { listPins: vi.fn(), list: vi.fn() },
     versions: { snapshot: vi.fn() },
     instances: { list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), createContained: vi.fn(), listContained: vi.fn(), setParent: vi.fn() },
     links: { create: vi.fn(), delete: vi.fn(), forwardRefs: vi.fn(), reverseRefs: vi.fn() },
+    exporters: { list: vi.fn() },
+    exportBindings: { list: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), run: vi.fn(), download: vi.fn() },
   },
   setAuthRole: vi.fn(),
 }))
@@ -110,6 +112,13 @@ beforeEach(() => {
   ;(api.catalogs.copy as Mock).mockResolvedValue({ id: 'new-id', name: 'copy-cat' })
   ;(api.catalogs.replace as Mock).mockResolvedValue({ id: 'src-id', name: 'prod' })
   ;(api.catalogs.export as Mock).mockResolvedValue({ catalog: { name: 'my-catalog' }, entity_types: [] })
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [{ name: 'mcp-gateway', description: 'MCP Gateway Exporter', parameter_schema: [{ name: 'server_type', type: 'string', required: true, description: 'Server type' }] }] })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [] })
+  ;(api.exportBindings.create as Mock).mockResolvedValue({ id: 'b1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_status: 'never' })
+  ;(api.exportBindings.delete as Mock).mockResolvedValue(undefined)
+  ;(api.exportBindings.run as Mock).mockResolvedValue(undefined)
+  ;(api.catalogs.publishPreview as Mock).mockResolvedValue({ session_token: 'tok1', bindings: [], has_failures: false, expires_at: '2026-01-01T01:00:00Z' })
+  ;(api.catalogs.publishWithToken as Mock).mockResolvedValue({ status: 'published' })
   ;(api.catalogs.list as Mock).mockResolvedValue({ items: [{ name: 'other-cat' }, { name: 'prod-cat' }], total: 2 })
   ;(api.catalogs.update as Mock).mockResolvedValue({ ...mockCatalog, description: 'updated desc' })
   ;(api.catalogVersions.list as Mock).mockResolvedValue({ items: [
@@ -973,4 +982,534 @@ test('add contained modal mode dropdown is interactive', async () => {
   await page.getByRole('dialog').getByText('Create New').click()
   // "Adopt Existing" option should be visible in the dropdown
   await expect.element(page.getByText('Adopt Existing').first()).toBeVisible()
+})
+
+// T-34.30: Export Plugins tab visible on CatalogDetailPage
+test('T-34.30: Export Plugins tab visible', async () => {
+  render(
+    <MemoryRouter initialEntries={['/catalogs/my-catalog']}>
+      <Routes><Route path="/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await expect.element(page.getByRole('tab', { name: 'Export Plugins' })).toBeVisible()
+})
+
+// T-34.31: Export Plugins tab shows empty state when no bindings
+test('T-34.31: Export Plugins tab shows empty state', async () => {
+  render(
+    <MemoryRouter initialEntries={['/catalogs/my-catalog']}>
+      <Routes><Route path="/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await expect.element(page.getByText('No export bindings configured')).toBeVisible()
+})
+
+// T-34.32: Add Export Binding button visible for Admin
+test('T-34.32: Add Export Binding button visible for Admin', async () => {
+  render(
+    <MemoryRouter initialEntries={['/catalogs/my-catalog']}>
+      <Routes><Route path="/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await expect.element(page.getByRole('button', { name: 'Add Export Binding' })).toBeVisible()
+})
+
+// T-34.38: RO role: Add Export Binding button hidden
+test('T-34.38: RO role: Add Export Binding hidden', async () => {
+  render(
+    <MemoryRouter initialEntries={['/catalogs/my-catalog']}>
+      <Routes><Route path="/catalogs/:name" element={<CatalogDetailPage role="RO" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  expect(page.getByRole('button', { name: 'Add Export Binding' }).elements().length).toBe(0)
+})
+
+// T-34.33: Add Binding modal opens with exporter dropdown
+test('T-34.33: Add Binding modal opens with exporter dropdown', async () => {
+  render(
+    <MemoryRouter initialEntries={['/catalogs/my-catalog']}>
+      <Routes><Route path="/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await page.getByRole('button', { name: 'Add Export Binding' }).click()
+  await expect.element(page.getByRole('button', { name: 'Create' })).toBeVisible()
+})
+
+// T-34.39: Binding list shows binding data
+test('T-34.39: Binding list shows binding data', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: { server_type: 'mcp-server' }, enabled: true, last_run_status: 'success', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+  ] })
+  render(
+    <MemoryRouter initialEntries={['/catalogs/my-catalog']}>
+      <Routes><Route path="/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await expect.element(page.getByText('mcp-gateway')).toBeVisible()
+  await expect.element(page.getByText('success')).toBeVisible()
+})
+
+// T-34.37: Enable/disable toggle updates binding
+test('T-34.37: Enable/disable toggle updates binding', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: { server_type: 'mcp-server' }, enabled: true, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+  ] })
+  ;(api.exportBindings.update as Mock).mockResolvedValue({ id: 'b1', enabled: false })
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
+      <Routes><Route path="/schema/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await expect.element(page.getByRole('button', { name: 'Enabled' })).toBeVisible()
+  await page.getByRole('button', { name: 'Enabled' }).click()
+  expect(api.exportBindings.update).toHaveBeenCalledWith('my-catalog', 'b1', { enabled: false })
+})
+
+// T-34.48: "Export Now" button triggers YAML download
+test('T-34.48: Export Now triggers download', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+  ] })
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
+      <Routes><Route path="/schema/catalogs/:name" element={<CatalogDetailPage role="RW" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await expect.element(page.getByRole('button', { name: 'Export Now' })).toBeVisible()
+  await page.getByRole('button', { name: 'Export Now' }).click()
+  expect(api.exportBindings.run).toHaveBeenCalledWith('my-catalog', 'b1', undefined)
+})
+
+// T-34.49: Export error shows error message in UI
+test('T-34.49: Export error shows error message', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+  ] })
+  ;(api.exportBindings.run as Mock).mockRejectedValue(new Error('Export failed: missing route_name'))
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
+      <Routes><Route path="/schema/catalogs/:name" element={<CatalogDetailPage role="RW" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await page.getByRole('button', { name: 'Export Now' }).click()
+  await expect.element(page.getByText('Export failed: missing route_name')).toBeVisible()
+})
+
+// T-34.34: Add Binding modal validates required params — Create disabled when required params empty
+test('T-34.34: Add Binding modal validates required params', async () => {
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
+      <Routes><Route path="/schema/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await page.getByRole('button', { name: 'Add Export Binding' }).click()
+  // Select an exporter that has a required param
+  const select = page.getByLabelText('Select exporter')
+  await select.selectOptions('mcp-gateway')
+  // Required param "server_type" is empty — Create should be disabled
+  const createBtn = page.getByRole('button', { name: 'Create' })
+  await expect.element(createBtn).toBeVisible()
+  expect((createBtn.element() as HTMLButtonElement).disabled).toBe(true)
+})
+
+// T-34.35: Edit Binding modal pre-fills current parameters
+test('T-34.35: Edit Binding modal pre-fills params', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: { server_type: 'mcp-server' }, enabled: true, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+  ] })
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
+      <Routes><Route path="/schema/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await expect.element(page.getByText('mcp-gateway')).toBeVisible()
+  // Click Edit in the binding row (scope to the grid to avoid the catalog Edit button)
+  const grid = page.getByRole('grid', { name: 'Export bindings' })
+  await grid.getByRole('button', { name: 'Edit' }).click()
+  // Modal should have pre-filled server_type param
+  const serverTypeInput = page.getByRole('textbox', { name: /server_type/ })
+  await expect.element(serverTypeInput).toBeVisible()
+  expect((serverTypeInput.element() as HTMLInputElement).value).toBe('mcp-server')
+})
+
+// T-34.36: Delete Binding shows confirmation dialog
+test('T-34.36: Delete Binding shows confirmation dialog', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+  ] })
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
+      <Routes><Route path="/schema/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await expect.element(page.getByText('mcp-gateway')).toBeVisible()
+  await page.getByRole('button', { name: 'Delete' }).click()
+  // Should show confirmation dialog, NOT delete immediately
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  await expect.element(page.getByText(/Are you sure/)).toBeVisible()
+  // Confirm delete
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
+  expect(api.exportBindings.delete).toHaveBeenCalledWith('my-catalog', 'b1')
+})
+
+// --- Publish Preview Flow Tests ---
+
+const validCatalog = {
+  ...mockCatalog,
+  validation_status: 'valid',
+  published: false,
+}
+
+// T-34.92: Publish flow calls preview first, results shown in modal
+test('T-34.92: Publish calls preview first and shows results', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue(validCatalog)
+  ;(api.catalogs.publishPreview as Mock).mockResolvedValue({
+    session_token: 'tok1', expires_at: '2026-01-01T01:00:00Z', has_failures: false,
+    bindings: [{ binding_id: 'b1', exporter_name: 'mcp-gateway', status: 'success', artifact_count: 2, error: '' }],
+  })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_status: 'never', last_run_error: '' },
+  ] })
+  renderDetail('Admin')
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Publish' }).click()
+  // Should show preview modal with binding results
+  const dialog = page.getByRole('dialog')
+  await expect.element(dialog).toBeVisible()
+  await expect.element(dialog.getByText('mcp-gateway')).toBeVisible()
+  await expect.element(dialog.getByText('success')).toBeVisible()
+  expect(api.catalogs.publishPreview).toHaveBeenCalledWith('my-catalog')
+})
+
+// T-34.93: Publish with failures shows confirmation dialog with per-binding results
+test('T-34.93: Publish with failures shows per-binding results', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue(validCatalog)
+  ;(api.catalogs.publishPreview as Mock).mockResolvedValue({
+    session_token: 'tok1', expires_at: '2026-01-01T01:00:00Z', has_failures: true,
+    bindings: [
+      { binding_id: 'b1', exporter_name: 'mcp-gateway', status: 'success', artifact_count: 2, error: '' },
+      { binding_id: 'b2', exporter_name: 'configmap', status: 'failed', artifact_count: 0, error: 'missing instances' },
+    ],
+  })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_status: 'never', last_run_error: '' },
+    { id: 'b2', exporter_name: 'configmap', parameters: {}, enabled: true, last_run_status: 'never', last_run_error: '' },
+  ] })
+  renderDetail('Admin')
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Publish' }).click()
+  const dialog93 = page.getByRole('dialog')
+  await expect.element(dialog93).toBeVisible()
+  // Should show failure details in the results table
+  const previewGrid = dialog93.getByRole('grid', { name: 'Preview results' })
+  await expect.element(previewGrid.getByText('failed')).toBeVisible()
+  await expect.element(previewGrid.getByText('missing instances')).toBeVisible()
+  // Should have "Publish Anyway" and "Abort" buttons
+  await expect.element(page.getByRole('button', { name: 'Publish Anyway' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Abort' })).toBeVisible()
+})
+
+// T-34.94: Publish Anyway commits despite failures
+test('T-34.94: Publish Anyway commits despite failures', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue(validCatalog)
+  ;(api.catalogs.publishPreview as Mock).mockResolvedValue({
+    session_token: 'tok1', expires_at: '2026-01-01T01:00:00Z', has_failures: true,
+    bindings: [
+      { binding_id: 'b1', exporter_name: 'mcp-gateway', status: 'failed', artifact_count: 0, error: 'some error' },
+    ],
+  })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_status: 'never', last_run_error: '' },
+  ] })
+  renderDetail('Admin')
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Publish' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  await page.getByRole('button', { name: 'Publish Anyway' }).click()
+  expect(api.catalogs.publishWithToken).toHaveBeenCalledWith('my-catalog', 'tok1')
+})
+
+// T-34.95: Abort cancels — catalog stays unpublished
+test('T-34.95: Abort cancels publish', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue(validCatalog)
+  ;(api.catalogs.publishPreview as Mock).mockResolvedValue({
+    session_token: 'tok1', expires_at: '2026-01-01T01:00:00Z', has_failures: true,
+    bindings: [
+      { binding_id: 'b1', exporter_name: 'mcp-gateway', status: 'failed', artifact_count: 0, error: 'err' },
+    ],
+  })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_status: 'never', last_run_error: '' },
+  ] })
+  renderDetail('Admin')
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Publish' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  await page.getByRole('button', { name: 'Abort' }).click()
+  // Modal should close and publishWithToken should NOT have been called
+  expect(api.catalogs.publishWithToken).not.toHaveBeenCalled()
+})
+
+// T-34.96: Successful publish auto-downloads files per binding
+test('T-34.96: Successful publish auto-downloads per binding', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue(validCatalog)
+  ;(api.catalogs.publishPreview as Mock).mockResolvedValue({
+    session_token: 'tok1', expires_at: '2026-01-01T01:00:00Z', has_failures: false,
+    bindings: [
+      { binding_id: 'b1', exporter_name: 'mcp-gateway', status: 'success', artifact_count: 2, error: '' },
+      { binding_id: 'b2', exporter_name: 'other', status: 'success', artifact_count: 1, error: '' },
+    ],
+  })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_status: 'never', last_run_error: '' },
+    { id: 'b2', exporter_name: 'other', parameters: {}, enabled: true, last_run_status: 'never', last_run_error: '' },
+  ] })
+  ;(api.exportBindings.download as Mock).mockResolvedValue(undefined)
+  renderDetail('Admin')
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Publish' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // No failures — click Publish (not "Publish Anyway")
+  await page.getByRole('dialog').getByRole('button', { name: 'Publish' }).click()
+  expect(api.catalogs.publishWithToken).toHaveBeenCalledWith('my-catalog', 'tok1')
+  // After publish succeeds, download should be called for each binding
+  expect(api.exportBindings.download).toHaveBeenCalledWith('my-catalog', 'tok1', 'b1')
+  expect(api.exportBindings.download).toHaveBeenCalledWith('my-catalog', 'tok1', 'b2')
+})
+
+// T-34.106: Create binding submits form with exporter and params
+test('T-34.106: Create binding submits form with exporter and params', async () => {
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
+      <Routes><Route path="/schema/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await page.getByRole('button', { name: 'Add Export Binding' }).click()
+  // Select exporter
+  await page.getByLabelText('Select exporter').selectOptions('mcp-gateway')
+  // Fill in required param
+  const paramInput = page.getByRole('textbox', { name: /server_type/ })
+  await expect.element(paramInput).toBeVisible()
+  await paramInput.fill('my-server')
+  // Create button should now be enabled
+  await page.getByRole('button', { name: 'Create' }).click()
+  expect(api.exportBindings.create).toHaveBeenCalledWith('my-catalog', {
+    exporter_name: 'mcp-gateway',
+    parameters: { server_type: 'my-server' },
+  })
+})
+
+// T-34.107: Edit binding submits updated params
+test('T-34.107: Edit binding submits updated params', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: { server_type: 'mcp-server' }, enabled: true, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+  ] })
+  ;(api.exportBindings.update as Mock).mockResolvedValue({ id: 'b1', parameters: { server_type: 'updated' } })
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
+      <Routes><Route path="/schema/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await expect.element(page.getByText('mcp-gateway')).toBeVisible()
+  const grid = page.getByRole('grid', { name: 'Export bindings' })
+  await grid.getByRole('button', { name: 'Edit' }).click()
+  // Change param value
+  const paramInput = page.getByRole('textbox', { name: /server_type/ })
+  await paramInput.fill('updated-server')
+  await page.getByRole('button', { name: 'Save' }).click()
+  expect(api.exportBindings.update).toHaveBeenCalledWith('my-catalog', 'b1', { parameters: { server_type: 'updated-server' } })
+})
+
+// T-34.108: Delete binding cancel closes modal without deleting
+test('T-34.108: Delete binding cancel closes modal', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+  ] })
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
+      <Routes><Route path="/schema/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await page.getByRole('button', { name: 'Delete' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  // Click Cancel
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  expect(api.exportBindings.delete).not.toHaveBeenCalled()
+})
+
+// T-34.109: Toggle enabled error shows alert
+test('T-34.109: Toggle enabled error shows alert', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+  ] })
+  ;(api.exportBindings.update as Mock).mockRejectedValue(new Error('Update failed: forbidden'))
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
+      <Routes><Route path="/schema/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await page.getByRole('button', { name: 'Enabled' }).click()
+  await expect.element(page.getByText('Update failed: forbidden')).toBeVisible()
+})
+
+// T-34.110: Delete binding error shows alert
+test('T-34.110: Delete binding error shows alert', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+  ] })
+  ;(api.exportBindings.delete as Mock).mockRejectedValue(new Error('Delete forbidden'))
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
+      <Routes><Route path="/schema/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await page.getByRole('button', { name: 'Delete' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
+  await expect.element(page.getByText('Delete forbidden')).toBeVisible()
+})
+
+// T-34.111: Publish preview error shows alert in modal
+test('T-34.111: Publish preview error shows alert', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue(validCatalog)
+  ;(api.catalogs.publishPreview as Mock).mockRejectedValue(new Error('Preview failed: timeout'))
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [] })
+  renderDetail('Admin')
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Publish' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  await expect.element(page.getByText('Preview failed: timeout')).toBeVisible()
+})
+
+// T-34.112: Publish with token error shows error in modal
+test('T-34.112: Publish with token error shows error', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue(validCatalog)
+  ;(api.catalogs.publishPreview as Mock).mockResolvedValue({
+    session_token: 'tok1', expires_at: '2026-01-01T01:00:00Z', has_failures: false,
+    bindings: [{ binding_id: 'b1', exporter_name: 'mcp-gateway', status: 'success', artifact_count: 1, error: '' }],
+  })
+  ;(api.catalogs.publishWithToken as Mock).mockRejectedValue(new Error('Publish failed: invalid token'))
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_status: 'never', last_run_error: '' },
+  ] })
+  renderDetail('Admin')
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Publish' }).click()
+  await expect.element(page.getByRole('dialog')).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Publish' }).click()
+  await expect.element(page.getByText('Publish failed: invalid token')).toBeVisible()
+})
+
+// T-34.113: Create binding error shows alert in modal
+test('T-34.113: Create binding error shows alert', async () => {
+  ;(api.exportBindings.create as Mock).mockRejectedValue(new Error('Create failed: duplicate'))
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
+      <Routes><Route path="/schema/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await page.getByRole('button', { name: 'Add Export Binding' }).click()
+  await page.getByLabelText('Select exporter').selectOptions('mcp-gateway')
+  const paramInput = page.getByRole('textbox', { name: /server_type/ })
+  await paramInput.fill('my-server')
+  await page.getByRole('button', { name: 'Create' }).click()
+  await expect.element(page.getByText('Create failed: duplicate')).toBeVisible()
+})
+
+// T-34.115: Add Binding modal Cancel closes without creating
+test('T-34.115: Add Binding modal Cancel closes', async () => {
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
+      <Routes><Route path="/schema/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await page.getByRole('button', { name: 'Add Export Binding' }).click()
+  await expect.element(page.getByRole('button', { name: 'Create' })).toBeVisible()
+  // Cancel the modal
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  // Modal should close — Create button should be gone
+  expect(page.getByRole('button', { name: 'Create' }).query()).toBeNull()
+  expect(api.exportBindings.create).not.toHaveBeenCalled()
+})
+
+// T-34.116: Edit Binding modal Cancel closes without saving
+test('T-34.116: Edit Binding modal Cancel closes', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: { server_type: 'mcp-server' }, enabled: true, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+  ] })
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
+      <Routes><Route path="/schema/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await expect.element(page.getByText('mcp-gateway')).toBeVisible()
+  const grid = page.getByRole('grid', { name: 'Export bindings' })
+  await grid.getByRole('button', { name: 'Edit' }).click()
+  await expect.element(page.getByRole('button', { name: 'Save' })).toBeVisible()
+  // Cancel the modal
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  // Modal should close
+  expect(page.getByRole('button', { name: 'Save' }).query()).toBeNull()
+  expect(api.exportBindings.update).not.toHaveBeenCalled()
+})
+
+// T-34.117: Add Binding modal pre-fills default param values
+test('T-34.117: Add Binding modal pre-fills default param values', async () => {
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [
+    { name: 'mcp-gateway', description: 'MCP Gateway Exporter', parameter_schema: [
+      { name: 'server_type', type: 'string', required: true, description: 'Server type', default: 'mcp-default' },
+      { name: 'port', type: 'string', required: false, description: 'Port number' },
+    ] },
+  ] })
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
+      <Routes><Route path="/schema/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await page.getByRole('button', { name: 'Add Export Binding' }).click()
+  await page.getByLabelText('Select exporter').selectOptions('mcp-gateway')
+  // The default value should be pre-filled
+  const paramInput = page.getByRole('textbox', { name: /server_type/ })
+  await expect.element(paramInput).toBeVisible()
+  expect((paramInput.element() as HTMLInputElement).value).toBe('mcp-default')
 })

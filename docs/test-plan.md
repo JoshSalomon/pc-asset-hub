@@ -1082,12 +1082,13 @@ Extensible export system with export bindings as catalog sub-resources. Phase 1:
 
 **MCP Gateway CR Exporter (US-62):**
 - **Unit tests (exporter)**: Produces MCPServerRegistration per server instance with correct apiVersion, kind, metadata, spec fields. Produces MCPVirtualServer with prefixed tool names (`server_name + "_" + tool_name`). Prefix derived from server instance name. route_name attribute maps to targetRef.name. Optional mcp_path and credential_secret attributes. Labels and annotations set correctly. Servers sorted by name, tools sorted alphabetically. Missing route_name fails entire export.
-- **Unit tests (ValidateSchema)**: Checks server_type entity type exists. Checks server_type has route_name attribute. Checks containment association from server_type to tool_type exists. Rejects binding when any check fails.
+- **Unit tests (ValidateSchema)**: Checks server_type entity type exists. Checks server_type has route_name attribute. Checks containment association from server_type to tool_type exists. Checks virtual_server_type entity type exists. Checks virtual_server_type has association to tool_type. Rejects binding when any check fails.
 - **Integration tests (ValidateSchema)**: ValidateSchema against real DB with actual CV pins, attributes, and associations. Verify correct rejection when schema is incomplete.
 - **Round-trip tests (unit)**: Export YAML is valid — parseable by `yaml.Unmarshal` and matches expected CRD schema structure.
-- **Live tests (curl)**: Run exporter against a live deployed catalog with real mcp-server/mcp-tool instances. Verify YAML output matches catalog data. Verify round-trip: export YAML is valid K8s manifest (`yaml.Unmarshal` into unstructured object succeeds, apiVersion/kind/metadata present).
+- **VirtualServer instance selection (US-62)**: Export Run requires virtual server instance selection. Run handler presents available VS instances to caller. Only tools associated with the selected VS instance appear in the MCPVirtualServer CR. VirtualServer CR name comes from the selected instance name, not catalog name.
+- **Live tests (curl)**: Run exporter against a live deployed catalog with real mcp-server/mcp-tool instances and a selected virtual server instance. Verify YAML output contains only the tools from that VS instance. Verify round-trip: export YAML is valid K8s manifest.
 - **Live tests (determinism)**: Run the same export twice against live system, diff the output — must be byte-identical. Verify server ordering and tool ordering are alphabetical.
-- **System tests (Playwright)**: Trigger export from UI, download file, verify file name and non-empty content.
+- **System tests (Playwright)**: Trigger export from UI, select virtual server instance, download file, verify file name and non-empty content.
 
 **Publish Integration (US-61):**
 - **Unit tests (service)**: PublishPreview re-validates bindings via ValidateSchema. PublishPreview caches artifacts via PreviewCache. Publish with token retrieves cached artifacts. Publish with expired token returns 410. Publish with modified catalog returns 409 (optimistic lock). Publish without token runs exports as fire-and-forget. Binding status updated after run.

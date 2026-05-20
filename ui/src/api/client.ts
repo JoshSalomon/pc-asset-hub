@@ -20,12 +20,37 @@ import type {
   TreeNodeResponse,
   ValidationResult,
   ListResponse,
+  ExportBinding,
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/meta/v1'
 const DATA_BASE_URL = import.meta.env.VITE_DATA_API_BASE_URL || '/api/data/v1'
 
 let currentRole: string | null = null
+
+function downloadBlob(blob: Blob, res: Response, fallbackName: string) {
+  const disposition = res.headers.get('Content-Disposition') || ''
+  const match = disposition.match(/filename="?([^";\n]+)"?/)
+  const filename = match ? match[1] : fallbackName
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function parseErrorBody(body: string): string {
+  if (body.trimStart().startsWith('<')) {
+    const titleMatch = body.match(/<title>([^<]*)<\/title>/i)
+    if (titleMatch) {
+      const title = titleMatch[1].replace(/^\d+\s*/, '')
+      return title || 'Server error'
+    }
+    return 'Server error (HTML response)'
+  }
+  return body
+}
 
 export function setAuthRole(role: string | null) {
   currentRole = role
@@ -42,7 +67,7 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, { ...options, headers })
   if (!res.ok) {
     const body = await res.text()
-    throw new Error(`${res.status}: ${body}`)
+    throw new Error(`${res.status}: ${parseErrorBody(body)}`)
   }
   if (res.status === 204) return undefined as T
   return res.json()
@@ -251,7 +276,7 @@ export const api = {
       const res = await fetch(`${DATA_BASE_URL}/catalogs/${name}/export${qs ? `?${qs}` : ''}`, { headers })
       if (!res.ok) {
         const body = await res.text()
-        throw new Error(`${res.status}: ${body}`)
+        throw new Error(`${res.status}: ${parseErrorBody(body)}`)
       }
       return res.json()
     },
@@ -261,6 +286,63 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       })
+    },
+    publishPreview: (name: string) =>
+      fetchJSON<{ session_token: string; expires_at: string; bindings: Array<{ binding_id: string; exporter_name: string; status: string; artifact_count: number; error: string }>; has_failures: boolean }>(
+        `${DATA_BASE_URL}/catalogs/${name}/publish/preview`, { method: 'POST' }),
+    publishWithToken: (name: string, sessionToken: string) =>
+      fetchJSON(`${DATA_BASE_URL}/catalogs/${name}/publish`, {
+        method: 'POST',
+        body: JSON.stringify({ session_token: sessionToken }),
+      }),
+  },
+
+  exporters: {
+    list: () =>
+      fetchJSON<ListResponse<{ name: string; description: string; parameter_schema: Array<{ name: string; type: string; description: string; required: boolean; default?: string }> }>>(
+        `${DATA_BASE_URL}/exporters`),
+  },
+
+  exportBindings: {
+    list: (catalogName: string) =>
+      fetchJSON<ListResponse<ExportBinding>>(`${DATA_BASE_URL}/catalogs/${catalogName}/export-bindings`),
+    create: (catalogName: string, data: { exporter_name: string; parameters: Record<string, string> }) =>
+      fetchJSON<ExportBinding>(`${DATA_BASE_URL}/catalogs/${catalogName}/export-bindings`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    update: (catalogName: string, bindingId: string, data: { parameters?: Record<string, string>; enabled?: boolean }) =>
+      fetchJSON<ExportBinding>(`${DATA_BASE_URL}/catalogs/${catalogName}/export-bindings/${bindingId}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    delete: (catalogName: string, bindingId: string) =>
+      fetchJSON(`${DATA_BASE_URL}/catalogs/${catalogName}/export-bindings/${bindingId}`, { method: 'DELETE' }),
+    run: async (catalogName: string, bindingId: string, vsInstanceName?: string) => {
+      const headers: Record<string, string> = {}
+      if (currentRole) headers['X-User-Role'] = currentRole
+      const qs = vsInstanceName ? `?virtual_server_instance=${encodeURIComponent(vsInstanceName)}` : ''
+      const res = await fetch(`${DATA_BASE_URL}/catalogs/${catalogName}/export-bindings/${bindingId}/run${qs}`, {
+        method: 'POST',
+        headers,
+      })
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`${res.status}: ${parseErrorBody(body)}`)
+      }
+      const blob = await res.blob()
+      downloadBlob(blob, res, `${catalogName}-export.yaml`)
+    },
+    download: async (catalogName: string, token: string, bindingId: string) => {
+      const headers: Record<string, string> = {}
+      if (currentRole) headers['X-User-Role'] = currentRole
+      const res = await fetch(`${DATA_BASE_URL}/catalogs/${catalogName}/export-bindings/download?token=${token}&binding=${bindingId}`, { headers })
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`${res.status}: ${parseErrorBody(body)}`)
+      }
+      const blob = await res.blob()
+      downloadBlob(blob, res, `${catalogName}-export.yaml`)
     },
   },
 

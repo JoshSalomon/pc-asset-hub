@@ -12,6 +12,8 @@
 #   - curl installed
 
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/test-summary.sh"
 
 API_BASE="${1:-http://localhost:30080}"
 META_URL="${API_BASE}/api/meta/v1"
@@ -573,13 +575,4 @@ else
   fail "Version after conflict" "expected 2, got $OL_FINAL_VER"
 fi
 
-# --- Summary ---
-
-echo ""
-echo "============================================"
-echo "  Results: ${PASS} passed, ${FAIL} failed"
-echo "============================================"
-
-if [ "$FAIL" -gt 0 ]; then
-  exit 1
-fi
+print_summary "test-containment-links"
