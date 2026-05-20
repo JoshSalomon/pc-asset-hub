@@ -139,7 +139,11 @@
     main.deck[data-slide-current="5"] .slide[data-slide="5"],
     main.deck[data-slide-current="6"] .slide[data-slide="6"],
     main.deck[data-slide-current="7"] .slide[data-slide="7"],
-    main.deck[data-slide-current="8"] .slide[data-slide="8"] {
+    main.deck[data-slide-current="8"] .slide[data-slide="8"],
+    main.deck[data-slide-current="9"] .slide[data-slide="9"],
+    main.deck[data-slide-current="10"] .slide[data-slide="10"],
+    main.deck[data-slide-current="11"] .slide[data-slide="11"],
+    main.deck[data-slide-current="12"] .slide[data-slide="12"] {
       opacity: 1;
       visibility: visible;
       pointer-events: auto;
@@ -232,8 +236,12 @@
     main.deck[data-slide-current="4"],
     main.deck[data-slide-current="5"],
     main.deck[data-slide-current="6"],
-    main.deck[data-slide-current="7"] { background: var(--bg-light); }
-    main.deck[data-slide-current="8"] { background: var(--bg-dark); }
+    main.deck[data-slide-current="7"],
+    main.deck[data-slide-current="8"],
+    main.deck[data-slide-current="9"],
+    main.deck[data-slide-current="10"],
+    main.deck[data-slide-current="11"] { background: var(--bg-light); }
+    main.deck[data-slide-current="12"] { background: var(--bg-dark); }
 
     /* === MOTION LIBRARY === */
     @keyframes fade-up { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
@@ -464,7 +472,155 @@
       color: var(--teal-70);
     }
 
-    /* === SLIDE 3 — Schema + Catalog === */
+    /* === SLIDE 3 — Pace of Change (timeline) === */
+    .s3n-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-lg);
+      margin-top: var(--space-xl);
+    }
+    .s3n-era {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-md);
+    }
+    .s3n-era-label {
+      flex-shrink: 0;
+      width: 72px;
+      font-family: var(--font-display);
+      font-weight: 900;
+      font-size: var(--fs-small);
+      color: var(--text-dark-muted);
+      padding-top: 6px;
+      text-align: right;
+    }
+    .s3n-era-label--now { color: var(--rh-red); }
+    .s3n-era-label--next { color: var(--text-dark-muted); font-style: italic; font-weight: 700; }
+    .s3n-era-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      position: relative;
+      padding-left: var(--space-md);
+      border-left: 3px solid var(--border-diagram);
+    }
+    .s3n-era--now .s3n-era-chips { border-left-color: var(--rh-red); }
+    .s3n-era--next .s3n-era-chips { border-left: 3px dashed var(--text-dark-muted); }
+    .s3n-chip {
+      display: inline-block;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      font-weight: 500;
+      background: var(--bg-light-alt);
+      border: 1px solid var(--border-diagram);
+      color: var(--text-dark-secondary);
+    }
+    .s3n-chip--teal { background: var(--teal-10); border-color: var(--teal-40); color: var(--teal-70); }
+    .s3n-chip--orange { background: var(--orange-10); border-color: var(--orange-40); color: #8a4b00; }
+    .s3n-chip--red { background: var(--rh-red-light); border-color: var(--rh-red); color: var(--rh-red-dark); }
+    .s3n-chip--ghost {
+      border: 2px dashed var(--text-dark-muted);
+      background: transparent;
+      color: var(--text-dark-muted);
+      font-style: italic;
+    }
+    .s3n-callout {
+      margin-top: var(--space-lg);
+      padding: var(--space-md) var(--space-lg);
+      background: var(--rh-red-light);
+      border-left: 4px solid var(--rh-red);
+      border-radius: 0 8px 8px 0;
+      font-size: var(--fs-small);
+      color: var(--text-dark-primary);
+      line-height: 1.55;
+    }
+
+    /* === SLIDE 4 — Skills Emerge (hub diagram) === */
+    .s4n-hub {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: var(--space-xl);
+      gap: var(--space-lg);
+    }
+    .s4n-center {
+      border: 3px solid var(--rh-red);
+      border-radius: 12px;
+      padding: var(--space-md) var(--space-xl);
+      background: var(--rh-red-light);
+      text-align: center;
+    }
+    .s4n-center-name {
+      font-family: var(--font-display);
+      font-weight: 900;
+      font-size: var(--fs-h3);
+      color: var(--rh-red-dark);
+    }
+    .s4n-center-desc {
+      font-size: var(--fs-small);
+      color: var(--text-dark-secondary);
+      margin-top: 0.2rem;
+    }
+    .s4n-connections {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-md);
+      width: 100%;
+    }
+    .s4n-conn {
+      border-left: 3px solid var(--border-diagram);
+      padding: 0.6rem 1rem;
+      border-radius: 0 8px 8px 0;
+      background: #fafafa;
+    }
+    .s4n-conn--teal { border-left-color: var(--teal-50); }
+    .s4n-conn--purple { border-left-color: var(--purple-50); }
+    .s4n-conn--orange { border-left-color: var(--orange-40); }
+    .s4n-conn-header {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      margin-bottom: 0.25rem;
+    }
+    .s4n-conn-entity {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+    .s4n-conn--teal .s4n-conn-entity { color: var(--teal-70); }
+    .s4n-conn--purple .s4n-conn-entity { color: var(--purple-50); }
+    .s4n-conn--orange .s4n-conn-entity { color: #8a4b00; }
+    .s4n-conn-type {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+    .s4n-conn--teal .s4n-conn-type { background: var(--teal-10); color: var(--teal-70); }
+    .s4n-conn--purple .s4n-conn-type { background: var(--purple-10); color: var(--purple-50); }
+    .s4n-conn--orange .s4n-conn-type { background: var(--orange-10); color: #8a4b00; }
+    .s4n-conn-desc {
+      font-size: 0.78rem;
+      color: var(--text-dark-secondary);
+      line-height: 1.45;
+    }
+    .s4n-value-blurb {
+      margin-top: var(--space-md);
+      padding: var(--space-sm) var(--space-lg);
+      background: var(--bg-light-alt);
+      border: 1px solid var(--border-diagram);
+      border-radius: 6px;
+      font-size: var(--fs-small);
+      color: var(--text-dark-secondary);
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    /* === SLIDE 5 — Schema + Catalog === */
     .s3-panels {
       display: grid;
       grid-template-columns: 1fr auto 1fr;
@@ -1036,7 +1192,158 @@
     }
     .s8-ex-arrow.visible { opacity: 1; }
 
-    /* === SLIDE 8 — Under the Hood === */
+    /* === SLIDE 10 — Export Plugin Alternative === */
+    .s10-compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-xl);
+      margin-top: var(--space-xl);
+      align-items: start;
+    }
+    .s10-approach {
+      padding: var(--space-lg);
+      border-radius: 8px;
+      background: var(--bg-light-alt);
+      border: 1px solid var(--border-diagram);
+    }
+    .s10-approach--old {
+      border-top: 4px solid var(--text-dark-muted);
+      opacity: 0.7;
+    }
+    .s10-approach--new {
+      border-top: 4px solid var(--teal-50);
+      box-shadow: 0 2px 16px rgba(55, 163, 163, 0.10);
+    }
+    .s10-approach-label {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-label);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: var(--space-md);
+    }
+    .s10-approach--old .s10-approach-label { color: var(--text-dark-muted); }
+    .s10-approach--new .s10-approach-label { color: var(--teal-70); }
+    .s10-flow {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      margin-bottom: var(--space-sm);
+    }
+    .s10-node {
+      padding: 0.35rem 0.7rem;
+      border-radius: 4px;
+      font-size: var(--fs-small);
+      font-weight: 500;
+      border: 1px solid var(--border-diagram);
+      background: #fff;
+    }
+    .s10-node--hub { border-color: var(--teal-50); color: var(--teal-70); }
+    .s10-node--cr { border-color: var(--orange-40); color: #8a4b00; font-family: var(--font-mono); }
+    .s10-node--gw { border-color: var(--purple-50); color: var(--purple-50); }
+    .s10-node--muted { color: var(--text-dark-muted); }
+    .s10-flow-arrow { color: var(--text-dark-muted); font-size: 1.1rem; }
+    .s10-note {
+      font-size: 0.78rem;
+      color: var(--text-dark-secondary);
+      line-height: 1.45;
+      margin-top: var(--space-xs);
+    }
+    .s10-note--dim { color: var(--text-dark-muted); }
+    .s10-cr-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: var(--space-sm);
+    }
+    .s10-cr-chip {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 500;
+      background: var(--teal-10);
+      border: 1px solid var(--teal-40);
+      color: var(--teal-70);
+    }
+    .s10-advantage {
+      margin-top: var(--space-md);
+      padding: var(--space-sm) var(--space-md);
+      background: var(--teal-10);
+      border: 1px solid var(--teal-40);
+      border-radius: 6px;
+      font-size: var(--fs-small);
+      color: var(--teal-70);
+      text-align: center;
+      line-height: 1.5;
+    }
+    .s10-advantage strong { font-weight: 700; }
+
+    /* === SLIDE 11 — Backstage Comparison === */
+    .s11-table {
+      width: 100%;
+      margin-top: var(--space-xl);
+      border-collapse: separate;
+      border-spacing: 0;
+      border: 1px solid var(--border-diagram);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .s11-table th, .s11-table td {
+      padding: 0.6rem 1rem;
+      text-align: left;
+      font-size: var(--fs-small);
+      border-bottom: 1px solid var(--border-diagram);
+      vertical-align: top;
+    }
+    .s11-table tr:last-child td { border-bottom: none; }
+    .s11-table th {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-label);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 0.7rem 1rem;
+    }
+    .s11-col-dim {
+      width: 22%;
+      color: var(--text-dark-muted);
+      font-weight: 700;
+      font-family: var(--font-display);
+      font-size: 0.78rem;
+    }
+    .s11-col-bs {
+      width: 39%;
+      background: var(--bg-light-alt);
+    }
+    .s11-col-ah {
+      width: 39%;
+      background: var(--teal-10);
+    }
+    .s11-table th.s11-col-bs { color: var(--text-dark-muted); background: var(--bg-light-alt); }
+    .s11-table th.s11-col-ah { color: var(--teal-70); background: var(--teal-10); }
+    .s11-table th.s11-col-dim { background: #fff; }
+    .s11-table td.s11-col-ah { color: var(--teal-70); }
+    .s11-table td.s11-col-bs { color: var(--text-dark-secondary); }
+    .s11-insight {
+      margin-top: var(--space-lg);
+      padding: var(--space-md) var(--space-lg);
+      background: var(--bg-light-alt);
+      border: 1px solid var(--border-diagram);
+      border-radius: 6px;
+      font-size: var(--fs-small);
+      color: var(--text-dark-secondary);
+      line-height: 1.55;
+    }
+    .s11-insight strong {
+      font-weight: 700;
+      color: var(--text-dark-primary);
+    }
+
+    /* === SLIDE 12 — Under the Hood === */
     .s9 {
       display: flex;
       flex-direction: column;
@@ -1193,12 +1500,14 @@
       .deck-controls { padding: 0.3rem 0.6rem; gap: 0.5rem; }
       .deck-controls button { width: 32px; height: 32px; font-size: 1.05rem; }
       .deck-dots button { width: 8px; height: 8px; }
+      .s4n-connections { grid-template-columns: 1fr; }
       .s3-panels { grid-template-columns: 1fr; }
       .s3-arrow { padding-top: 0; transform: rotate(90deg); }
       .s4-layout { grid-template-columns: 1fr; }
       .s4-caption { grid-column: 1; }
       .s5-servers-row { grid-template-columns: 1fr; }
       .s5-vs-row { grid-template-columns: 1fr; }
+      .s10-compare { grid-template-columns: 1fr; }
       .s8-arch { flex-direction: column; }
       .s9-grid { grid-template-columns: 1fr 1fr; }
     }
@@ -1217,8 +1526,52 @@
     </section>
 
     <section class="slide slide-light" data-slide="2" aria-label="Slide 2">
+      <div class="slide-inner" data-stagger>
+        <div class="slide-eyebrow anim-fade-up">Motivation</div>
+        <h2 class="h2 anim-fade-up">The landscape shifts every week</h2>
+        <p class="lead anim-fade-up">Yesterday it was models and tools. Today it&rsquo;s skills, guardrails, and evaluators. Tomorrow &mdash; something we haven&rsquo;t named yet. A system that hardcodes entity types can&rsquo;t keep up.</p>
+        <div class="s3n-timeline">
+          <div class="s3n-era seq-step" data-seq-delay="400">
+            <div class="s3n-era-label">2024</div>
+            <div class="s3n-era-chips">
+              <span class="s3n-chip">Models</span>
+              <span class="s3n-chip">MCP Servers</span>
+              <span class="s3n-chip">Tools</span>
+            </div>
+          </div>
+          <div class="s3n-era seq-step" data-seq-delay="800">
+            <div class="s3n-era-label">2025</div>
+            <div class="s3n-era-chips">
+              <span class="s3n-chip s3n-chip--teal">Guardrails</span>
+              <span class="s3n-chip s3n-chip--teal">Evaluators</span>
+              <span class="s3n-chip s3n-chip--teal">Virtual Servers</span>
+            </div>
+          </div>
+          <div class="s3n-era s3n-era--now seq-step" data-seq-delay="1200">
+            <div class="s3n-era-label s3n-era-label--now">Now</div>
+            <div class="s3n-era-chips">
+              <span class="s3n-chip s3n-chip--red">Skills</span>
+              <span class="s3n-chip s3n-chip--orange">Prompt Libraries</span>
+              <span class="s3n-chip s3n-chip--orange">Agent Configs</span>
+            </div>
+          </div>
+          <div class="s3n-era s3n-era--next seq-step" data-seq-delay="1600">
+            <div class="s3n-era-label s3n-era-label--next">Next?</div>
+            <div class="s3n-era-chips">
+              <span class="s3n-chip s3n-chip--ghost">???</span>
+              <span class="s3n-chip s3n-chip--ghost">???</span>
+            </div>
+          </div>
+        </div>
+        <div class="s3n-callout seq-step" data-seq-delay="2000">
+          Each new entity type brings new attributes, new relationships, and new access rules. Hardcoding means weeks of dev work for each one &mdash; and the ecosystem won&rsquo;t wait.
+        </div>
+      </div>
+    </section>
+
+    <section class="slide slide-light" data-slide="3" aria-label="Slide 3">
       <div class="slide-inner s2" data-stagger>
-        <div class="slide-eyebrow anim-fade-up">The Problem</div>
+        <div class="slide-eyebrow anim-fade-up">Case in Point</div>
         <h2 class="h2 anim-fade-up">MCP gives us servers and tools.<br>But the ecosystem has <span style="color:var(--rh-red);">gaps</span>.</h2>
         <p class="lead anim-fade-up">MCP defines how tools communicate. But who tracks what&rsquo;s available, decides what&rsquo;s exposed, and governs changes? Nobody &mdash; yet.</p>
         <div class="s2-definitions anim-fade-up">
@@ -1264,7 +1617,54 @@
       </div>
     </section>
 
-    <section class="slide slide-light" data-slide="3" aria-label="Slide 3">
+    <section class="slide slide-light" data-slide="4" aria-label="Slide 4">
+      <div class="slide-inner" data-stagger>
+        <div class="slide-eyebrow anim-fade-up" style="color:var(--orange-40);">Real-World Example</div>
+        <h2 class="h2 anim-fade-up">A skills catalog &mdash; in days, not months</h2>
+        <p class="lead anim-fade-up">Skills are the latest addition. They don&rsquo;t exist in isolation &mdash; they connect to models, environments, harnesses, and need access control. Here&rsquo;s what that looks like in a schema-driven system.</p>
+        <div class="s4n-hub">
+          <div class="s4n-center seq-step" data-seq-delay="400">
+            <div class="s4n-center-name">Skill</div>
+            <div class="s4n-center-desc">New entity type &mdash; defined at runtime</div>
+          </div>
+          <div class="s4n-connections">
+            <div class="s4n-conn s4n-conn--teal seq-step" data-seq-delay="800">
+              <div class="s4n-conn-header">
+                <span class="s4n-conn-entity">Harness</span>
+                <span class="s4n-conn-type">containment</span>
+              </div>
+              <div class="s4n-conn-desc">The harness that hosts and executes this skill &mdash; deleting the harness cascades to its skills.</div>
+            </div>
+            <div class="s4n-conn s4n-conn--purple seq-step" data-seq-delay="1100">
+              <div class="s4n-conn-header">
+                <span class="s4n-conn-entity">Model</span>
+                <span class="s4n-conn-type">reference</span>
+              </div>
+              <div class="s4n-conn-desc">Which models can run this skill &mdash; a skill may support multiple models.</div>
+            </div>
+            <div class="s4n-conn s4n-conn--purple seq-step" data-seq-delay="1400">
+              <div class="s4n-conn-header">
+                <span class="s4n-conn-entity">Environment</span>
+                <span class="s4n-conn-type">reference</span>
+              </div>
+              <div class="s4n-conn-desc">Where this skill can execute &mdash; dev, staging, or production clusters.</div>
+            </div>
+            <div class="s4n-conn s4n-conn--orange seq-step" data-seq-delay="1700">
+              <div class="s4n-conn-header">
+                <span class="s4n-conn-entity">Access Policy</span>
+                <span class="s4n-conn-type">association</span>
+              </div>
+              <div class="s4n-conn-desc">Who can discover and use this skill &mdash; not every team should see every capability.</div>
+            </div>
+          </div>
+          <div class="s4n-value-blurb seq-step" data-seq-delay="2000">
+            No code changes. Define the entity type, add attributes, wire up associations, and the catalog is ready to populate.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide slide-light" data-slide="5" aria-label="Slide 5">
       <div class="slide-inner s3" data-stagger>
         <div class="slide-eyebrow anim-fade-up" style="color:var(--teal-50);">The Solution</div>
         <h2 class="h2 anim-fade-up">Two parts. One system.</h2>
@@ -1293,7 +1693,7 @@
       </div>
     </section>
 
-    <section class="slide slide-light" data-slide="4" aria-label="Slide 4">
+    <section class="slide slide-light" data-slide="6" aria-label="Slide 6">
       <div class="slide-inner s4" data-stagger>
         <div class="slide-eyebrow anim-fade-up" style="color:var(--teal-50);">Data Model</div>
         <h2 class="h2 anim-fade-up">Three entity types, two relationship kinds</h2>
@@ -1352,7 +1752,7 @@
       </div>
     </section>
 
-    <section class="slide slide-light" data-slide="5" aria-label="Slide 5">
+    <section class="slide slide-light" data-slide="7" aria-label="Slide 7">
       <div class="slide-inner s5">
         <div data-stagger>
           <div class="slide-eyebrow anim-fade-up" style="color:var(--orange-40);">Catalog in Action</div>
@@ -1419,7 +1819,7 @@
       </div>
     </section>
 
-    <section class="slide slide-light" data-slide="6" aria-label="Slide 6">
+    <section class="slide slide-light" data-slide="8" aria-label="Slide 8">
       <div class="slide-inner s7">
         <div data-stagger>
           <div class="slide-eyebrow anim-fade-up" style="color:var(--teal-50);">Lifecycle</div>
@@ -1458,10 +1858,10 @@
       </div>
     </section>
 
-    <section class="slide slide-light" data-slide="7" aria-label="Slide 7">
+    <section class="slide slide-light" data-slide="9" aria-label="Slide 9">
       <div class="slide-inner s8">
         <div data-stagger>
-          <div class="slide-eyebrow anim-fade-up" style="color:var(--teal-70);">Gateway Registration</div>
+          <div class="slide-eyebrow anim-fade-up" style="color:var(--teal-70);">Gateway Integration &mdash; Option 1</div>
           <h2 class="h2 anim-fade-up">Publish once. Gateway watches.</h2>
           <p class="lead anim-fade-up" style="margin-top:var(--space-xs);">Publishing a catalog creates a Kubernetes Custom Resource. The MCP Gateway controller watches for changes and auto-discovers new catalogs.</p>
         </div>
@@ -1519,7 +1919,99 @@
       </div>
     </section>
 
-    <section class="slide slide-dark" data-slide="8" aria-label="Slide 8">
+    <section class="slide slide-light" data-slide="10" aria-label="Slide 10">
+      <div class="slide-inner" data-stagger>
+        <div class="slide-eyebrow anim-fade-up" style="color:var(--orange-40);">Gateway Integration &mdash; Option 2</div>
+        <h2 class="h2 anim-fade-up">Plugins that speak the consumer&rsquo;s language</h2>
+        <p class="lead anim-fade-up">The mcp-gateway export plugin generates the Gateway&rsquo;s native CRDs directly. The Gateway never needs to know Asset Hub exists.</p>
+        <div class="s10-compare">
+          <div class="s10-approach s10-approach--old seq-step" data-seq-delay="400">
+            <div class="s10-approach-label">Integration Model</div>
+            <div class="s10-flow">
+              <span class="s10-node s10-node--hub">Asset Hub</span>
+              <span class="s10-flow-arrow">&rarr;</span>
+              <span class="s10-node s10-node--cr">Catalog CR</span>
+              <span class="s10-flow-arrow">&larr;</span>
+              <span class="s10-node s10-node--gw">Gateway</span>
+              <span class="s10-flow-arrow">&rarr;</span>
+              <span class="s10-node s10-node--muted">Fetch data</span>
+            </div>
+            <p class="s10-note s10-note--dim">Gateway must integrate with Asset Hub API to discover and fetch catalog data. Tight coupling between systems.</p>
+          </div>
+          <div class="s10-approach s10-approach--new seq-step" data-seq-delay="800">
+            <div class="s10-approach-label">Export Plugin Model</div>
+            <div class="s10-flow">
+              <span class="s10-node s10-node--hub">Asset Hub</span>
+              <span class="s10-flow-arrow">&rarr;</span>
+              <span class="s10-node s10-node--cr">mcp-gateway exporter</span>
+              <span class="s10-flow-arrow">&rarr;</span>
+              <span class="s10-node s10-node--gw">Native CRDs</span>
+            </div>
+            <div class="s10-cr-list">
+              <span class="s10-cr-chip">MCPServerRegistration</span>
+              <span class="s10-cr-chip">MCPVirtualServer</span>
+            </div>
+            <p class="s10-note">Asset Hub generates the Gateway&rsquo;s own CRDs. The Gateway sees its native resources &mdash; no custom integration, no API calls back to Asset Hub.</p>
+            <div class="s10-advantage seq-step" data-seq-delay="1200">
+              <strong>Zero coupling.</strong> The Gateway treats exported CRDs like any other resource it manages. Asset Hub is the authoring system &mdash; the Gateway is just a consumer of standard Kubernetes resources.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide slide-light" data-slide="11" aria-label="Slide 11">
+      <div class="slide-inner" data-stagger>
+        <div class="slide-eyebrow anim-fade-up" style="color:var(--teal-70);">Positioning</div>
+        <h2 class="h2 anim-fade-up">Asset Hub vs. Backstage Software Catalog</h2>
+        <table class="s11-table seq-step" data-seq-delay="400">
+          <thead>
+            <tr>
+              <th class="s11-col-dim"></th>
+              <th class="s11-col-bs">Backstage</th>
+              <th class="s11-col-ah">Asset Hub</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="s11-col-dim">Source of truth</td>
+              <td class="s11-col-bs">YAML files scattered across Git repos</td>
+              <td class="s11-col-ah">Centralized database with REST API</td>
+            </tr>
+            <tr>
+              <td class="s11-col-dim">Entity model</td>
+              <td class="s11-col-bs">Fixed kinds &mdash; Component, API, Resource, System, Domain</td>
+              <td class="s11-col-ah">Dynamic &mdash; define any entity type at runtime</td>
+            </tr>
+            <tr>
+              <td class="s11-col-dim">Relationships</td>
+              <td class="s11-col-bs">Predefined set (providesApi, dependsOn, partOf, &hellip;)</td>
+              <td class="s11-col-ah">Custom associations with types and cardinality</td>
+            </tr>
+            <tr>
+              <td class="s11-col-dim">Schema evolution</td>
+              <td class="s11-col-bs">Code changes + deployment for new entity kinds</td>
+              <td class="s11-col-ah">Runtime configuration &mdash; no code deployment</td>
+            </tr>
+            <tr>
+              <td class="s11-col-dim">Validation</td>
+              <td class="s11-col-bs">YAML schema checks per entity file</td>
+              <td class="s11-col-ah">Cross-entity validation &mdash; required attrs, associations, containment</td>
+            </tr>
+            <tr>
+              <td class="s11-col-dim">Lifecycle</td>
+              <td class="s11-col-bs">External &mdash; managed through Git workflows</td>
+              <td class="s11-col-ah">Built-in &mdash; draft &rarr; validate &rarr; publish with RBAC</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="s11-insight seq-step" data-seq-delay="800">
+          <strong>The fundamental difference is the source of truth.</strong> When Git is your source of truth, schema lives in code, changes go through PRs, and consistency depends on convention. When a purpose-built database is your source of truth, the system itself enforces schema, validates relationships, and manages lifecycle &mdash; across all entities, atomically.
+        </div>
+      </div>
+    </section>
+
+    <section class="slide slide-dark" data-slide="12" aria-label="Slide 12">
       <div class="slide-inner s9" data-stagger>
         <div class="slide-eyebrow anim-fade-up">Under the Hood</div>
         <h2 class="h2 anim-fade-up">Built for OpenShift</h2>
@@ -1541,7 +2033,7 @@
             <div class="stat-label">Target Platform</div>
           </div>
           <div class="s9-stat">
-            <div class="stat-value" style="color:var(--rh-red);">2,700+</div>
+            <div class="stat-value" style="color:var(--rh-red);">3,400+</div>
             <div class="stat-label">Tests + 97%+ coverage</div>
           </div>
           <div class="s9-stat">
@@ -1561,8 +2053,8 @@
         </div>
         <div class="s9-upcoming anim-fade-up">
           <div class="s9-upcoming-label">Next Up</div>
-          <div class="s9-upcoming-title">Import / Export</div>
-          <p class="s9-upcoming-desc">Export catalogs to client-native formats (CRs, YAML) &mdash; clients don&rsquo;t need to change.</p>
+          <div class="s9-upcoming-title">Dynamic Export Plugins</div>
+          <p class="s9-upcoming-desc">Pluggable exporters that generate consumer-native resources &mdash; MCP Gateway CRDs today, any format tomorrow.</p>
         </div>
         <p class="s9-tagline anim-fade-up">Catalog MCP tools today. Models and prompts tomorrow.</p>
         <div style="font-family:var(--font-display);font-size:2.5rem;font-weight:900;color:var(--rh-red);" class="anim-fade-up">Red&thinsp;Hat</div>
@@ -1581,16 +2073,20 @@
       <li><button type="button" role="tab" aria-label="Go to slide 6" data-goto="6"></button></li>
       <li><button type="button" role="tab" aria-label="Go to slide 7" data-goto="7"></button></li>
       <li><button type="button" role="tab" aria-label="Go to slide 8" data-goto="8"></button></li>
+      <li><button type="button" role="tab" aria-label="Go to slide 9" data-goto="9"></button></li>
+      <li><button type="button" role="tab" aria-label="Go to slide 10" data-goto="10"></button></li>
+      <li><button type="button" role="tab" aria-label="Go to slide 11" data-goto="11"></button></li>
+      <li><button type="button" role="tab" aria-label="Go to slide 12" data-goto="12"></button></li>
     </ol>
     <button class="btn-next" type="button" aria-label="Next slide" data-action="next">&rarr;</button>
-    <span class="deck-counter" aria-live="polite">01 / 08</span>
+    <span class="deck-counter" aria-live="polite">01 / 12</span>
   </nav>
 
   <script>
     (function () {
       'use strict';
 
-      const TOTAL = 8;
+      const TOTAL = 12;
       const deck = document.getElementById('deck');
       const slides = Array.from(deck.querySelectorAll('.slide'));
       const dots = Array.from(document.querySelectorAll('.deck-dots button'));
@@ -1778,10 +2274,10 @@
 
         var slideNum = parseInt(cur.getAttribute('data-slide'), 10);
 
-        // Slide 5: tools in virtual servers keep their source-server colors (no override)
+        // Slide 7: tools in virtual servers keep their source-server colors (no override)
 
-        // Slide 6: light up promotion and update states
-        if (slideNum === 6) {
+        // Slide 8: light up promotion and update states
+        if (slideNum === 8) {
           var promoStates = ['draft', 'validate', 'testing', 'production', 'publish'];
           promoStates.forEach(function (state, i) {
             setTimeout(function () {
@@ -1798,8 +2294,8 @@
           });
         }
 
-        // Slide 7: animate example flow steps (first flow, then second)
-        if (slideNum === 7) {
+        // Slide 9: animate example flow steps (first flow, then second)
+        if (slideNum === 9) {
           var exSteps = cur.querySelectorAll('.s8-ex-step:not(.s8-ex-step2), .s8-ex-arrow:not(.s8-ex-arrow2)');
           exSteps.forEach(function (el) {
             var delay = parseInt(el.getAttribute('data-ex-delay') || '0', 10);
