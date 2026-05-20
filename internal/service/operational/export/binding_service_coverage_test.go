@@ -1198,7 +1198,8 @@ func TestRun_VSInstanceNotFound(t *testing.T) {
 
 	// buildExportInput needs these
 	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{}, nil)
-	// resolveVSInstanceTools needs these
+	// resolveVSInstanceTools needs entity type lookup + instance list
+	s.etRepo.On("GetByName", ctx, "virtual-server").Return(&models.EntityType{ID: "et-vs", Name: "virtual-server"}, nil)
 	instRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.EntityInstance{}, nil)
 	s.bindingRepo.On("Update", ctx, mock.AnythingOfType("*models.ExportBinding")).Return(nil)
 
@@ -1358,4 +1359,131 @@ func TestInMemoryPreviewCache_CleanupLoop_RemovesExpired(t *testing.T) {
 	entry, err := cache.Retrieve("valid-token")
 	require.NoError(t, err)
 	assert.Equal(t, "cat2", entry.CatalogName)
+}
+
+// --- Copilot PR#23 fix: resolveVSInstanceTools must filter by entity type ---
+
+func TestRun_VSInstancePicksCorrectEntityType(t *testing.T) {
+	// Bug: resolveVSInstanceTools matched by name only without checking entity type.
+	// Two instances named "shared-name" exist — one is a VS type, one is a server type.
+	// The resolver must pick the VS type, not the server type.
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	iavRepo := new(mocks.MockInstanceAttributeValueRepo)
+	linkRepo := new(mocks.MockAssociationLinkRepo)
+
+	s := setupBindingService()
+	s.registry.Register(&stubExporter{
+		name:      "test-exp",
+		exportOut: &export.ExportOutput{Artifacts: []export.K8sArtifact{{Name: "a", YAML: "test: true"}}},
+	})
+
+	svc := export.NewExportBindingService(
+		s.bindingRepo, s.catalogRepo, s.registry,
+		s.cvRepo, s.pinRepo, s.etvRepo, s.etRepo,
+		s.attrRepo, s.assocRepo,
+		export.WithInstanceRepos(instRepo, iavRepo),
+		export.WithLinkRepo(linkRepo),
+	)
+
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "c1").Return(&models.Catalog{
+		ID: "cat1", Name: "c1", CatalogVersionID: "cv1",
+	}, nil)
+	s.bindingRepo.On("GetByID", ctx, "b1").Return(&models.ExportBinding{
+		ID: "b1", CatalogID: "cat1", ExporterName: "test-exp",
+		Parameters: map[string]string{"virtual_server_type": "vs-type"},
+		Enabled:    true,
+	}, nil)
+	s.bindingRepo.On("Update", ctx, mock.AnythingOfType("*models.ExportBinding")).Return(nil)
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+
+	// Two instances with the same name but different entity types
+	serverInst := &models.EntityInstance{ID: "inst-server", Name: "shared-name", EntityTypeID: "et-server", CatalogID: "cat1"}
+	vsInst := &models.EntityInstance{ID: "inst-vs", Name: "shared-name", EntityTypeID: "et-vs", CatalogID: "cat1"}
+	instRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.EntityInstance{serverInst, vsInst}, nil)
+
+	// The VS entity type
+	s.etRepo.On("GetByName", ctx, "vs-type").Return(&models.EntityType{ID: "et-vs", Name: "vs-type"}, nil)
+
+	// Links from the correct VS instance (et-vs), not from the server
+	linkRepo.On("GetForwardRefs", ctx, "inst-vs").Return([]*models.AssociationLink{
+		{ID: "link1", TargetInstanceID: "tool1"},
+	}, nil)
+	// If the bug exists, the code calls GetForwardRefs with "inst-server" instead
+	linkRepo.On("GetForwardRefs", ctx, "inst-server").Return([]*models.AssociationLink{}, nil)
+
+	// buildExportInput needs iavRepo for attribute resolution
+	iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+
+	out, err := svc.Run(ctx, "c1", "b1", "shared-name")
+	require.NoError(t, err)
+	require.NotNil(t, out)
+
+	// Verify the link repo was called with the VS instance ID, not the server instance ID
+	linkRepo.AssertCalled(t, "GetForwardRefs", ctx, "inst-vs")
+	linkRepo.AssertNotCalled(t, "GetForwardRefs", ctx, "inst-server")
+}
+
+func TestBuildExportInput_LinksByAssocNotNil(t *testing.T) {
+	// Copilot fix 6: LinksByAssoc must be initialized to empty map, not nil.
+	// A nil map causes panic when an exporter writes to it.
+	// We use a capturing exporter to verify the field is initialized.
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	iavRepo := new(mocks.MockInstanceAttributeValueRepo)
+
+	var linksByAssocWasNil bool
+	capturingExporter := &stubExporter{
+		name: "capturer",
+		exportFn: func(_ context.Context, input export.ExportInput) (*export.ExportOutput, error) {
+			for _, instances := range input.InstancesByType {
+				for _, inst := range instances {
+					if inst.LinksByAssoc == nil {
+						linksByAssocWasNil = true
+					}
+				}
+			}
+			return &export.ExportOutput{Artifacts: []export.K8sArtifact{}}, nil
+		},
+	}
+
+	s := setupBindingService()
+	s.registry.Register(capturingExporter)
+
+	svc := export.NewExportBindingService(
+		s.bindingRepo, s.catalogRepo, s.registry,
+		s.cvRepo, s.pinRepo, s.etvRepo, s.etRepo,
+		s.attrRepo, s.assocRepo,
+		export.WithInstanceRepos(instRepo, iavRepo),
+	)
+
+	ctx := context.Background()
+	s.catalogRepo.On("GetByName", ctx, "c1").Return(&models.Catalog{
+		ID: "cat1", Name: "c1", CatalogVersionID: "cv1",
+	}, nil)
+	s.bindingRepo.On("GetByID", ctx, "b1").Return(&models.ExportBinding{
+		ID: "b1", CatalogID: "cat1", ExporterName: "capturer",
+		Parameters: map[string]string{}, Enabled: true,
+	}, nil)
+	s.bindingRepo.On("Update", ctx, mock.AnythingOfType("*models.ExportBinding")).Return(nil)
+
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{
+		ID: "etv1", EntityTypeID: "et1", Version: 1,
+	}, nil)
+	s.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	s.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+
+	instRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.EntityInstance{
+		{ID: "inst1", Name: "s1", EntityTypeID: "et1", CatalogID: "cat1", Version: 1},
+	}, nil)
+	iavRepo.On("GetValuesForVersion", ctx, "inst1", 1).Return([]*models.InstanceAttributeValue{}, nil)
+
+	_, err := svc.Run(ctx, "c1", "b1", "")
+	require.NoError(t, err)
+
+	// The capturing exporter checked LinksByAssoc on each instance
+	assert.False(t, linksByAssocWasNil, "LinksByAssoc must be initialized to non-nil map on service-built instances")
 }

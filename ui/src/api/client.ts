@@ -36,8 +36,12 @@ function downloadBlob(blob: Blob, res: Response, fallbackName: string) {
   const a = document.createElement('a')
   a.href = url
   a.download = filename
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(url)
+  setTimeout(() => {
+    URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+  }, 5000)
 }
 
 function parseErrorBody(body: string): string {

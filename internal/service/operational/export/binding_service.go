@@ -237,6 +237,12 @@ func (s *ExportBindingService) resolveVSInstanceTools(ctx context.Context, catal
 		return nil, domainerrors.NewValidation("instance and link repos required for VS instance selection")
 	}
 
+	// Resolve the VS entity type ID to filter instances by type, not just name
+	vsET, err := s.etRepo.GetByName(ctx, vsTypeName)
+	if err != nil {
+		return nil, domainerrors.NewNotFound("EntityType", vsTypeName)
+	}
+
 	instances, err := s.instRepo.ListByCatalog(ctx, catalog.ID)
 	if err != nil {
 		return nil, err
@@ -244,7 +250,7 @@ func (s *ExportBindingService) resolveVSInstanceTools(ctx context.Context, catal
 
 	var vsInstance *models.EntityInstance
 	for _, inst := range instances {
-		if inst.Name == vsInstanceName {
+		if inst.Name == vsInstanceName && inst.EntityTypeID == vsET.ID {
 			vsInstance = inst
 			break
 		}
@@ -534,12 +540,13 @@ func (s *ExportBindingService) buildInstancesByType(ctx context.Context, catalog
 		}
 
 		ei := &ExportInstance{
-			ID:          inst.ID,
-			EntityType:  etName,
-			Name:        inst.Name,
-			Description: inst.Description,
-			ParentID:    inst.ParentInstanceID,
-			Attributes:  attrValues,
+			ID:           inst.ID,
+			EntityType:   etName,
+			Name:         inst.Name,
+			Description:  inst.Description,
+			ParentID:     inst.ParentInstanceID,
+			Attributes:   attrValues,
+			LinksByAssoc: make(map[string][]ExportLink),
 		}
 
 		data.byType[etName] = append(data.byType[etName], ei)

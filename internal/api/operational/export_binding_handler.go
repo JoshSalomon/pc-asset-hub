@@ -106,6 +106,9 @@ func (h *ExportBindingHandler) RunBinding(c echo.Context) error {
 		return mapError(err)
 	}
 	yamlContent := renderMultiDocYAML(output.Artifacts)
+	if yamlContent == "" {
+		yamlContent = fmt.Sprintf("# No instances found for export — catalog '%s'\n", catalogName)
+	}
 	c.Response().Header().Set("Content-Disposition",
 		fmt.Sprintf(`attachment; filename="%s-export.yaml"`, catalogName))
 	return c.Blob(http.StatusOK, "application/x-yaml", []byte(yamlContent))

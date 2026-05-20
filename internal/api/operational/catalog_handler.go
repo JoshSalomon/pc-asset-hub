@@ -1,6 +1,7 @@
 package operational
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -130,8 +131,15 @@ func (h *CatalogHandler) DeleteCatalog(c echo.Context) error {
 			return mapError(getErr)
 		}
 		if cat != nil {
-			deletedBindingsCount, _ = h.bindingRepo.CountByCatalog(ctx, cat.ID)
-			_ = h.bindingRepo.DeleteByCatalog(ctx, cat.ID)
+			count, countErr := h.bindingRepo.CountByCatalog(ctx, cat.ID)
+			if countErr != nil {
+				log.Printf("warning: failed to count export bindings for catalog %s: %v", cat.ID, countErr)
+			} else {
+				deletedBindingsCount = count
+			}
+			if delErr := h.bindingRepo.DeleteByCatalog(ctx, cat.ID); delErr != nil {
+				log.Printf("warning: failed to delete export bindings for catalog %s (CASCADE will clean up): %v", cat.ID, delErr)
+			}
 		}
 	}
 

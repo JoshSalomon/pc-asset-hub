@@ -275,7 +275,7 @@ export interface ExportBinding {
   enabled: boolean
   last_run_at: string | null
   last_run_status: string
-  last_run_error: string
+  last_run_error?: string
   created_at: string
   updated_at: string
 }

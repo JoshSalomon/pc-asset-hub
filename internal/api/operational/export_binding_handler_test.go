@@ -535,8 +535,8 @@ func TestT34_47b_RunBinding_EmptyCatalog(t *testing.T) {
 	e.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	// Empty artifacts → renderMultiDocYAML returns ""
-	assert.Equal(t, "", rec.Body.String())
+	// Empty artifacts → should return comment-only YAML, not empty body
+	assert.Contains(t, rec.Body.String(), "# No instances found for export")
 }
 
 // T-34.86: POST /publish/preview returns session token and binding results
