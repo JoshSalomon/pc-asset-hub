@@ -28,45 +28,53 @@ The system manages assets such as models, MCP servers, tools, guardrails, evalua
 | Component | Technology | Description |
 |-----------|-----------|-------------|
 | API Server | Go, Echo, GORM | REST API with two API sets: Meta (schema management) and Operational (data management). RBAC via OpenShift SubjectAccessReview. |
-| UI | React, TypeScript, PatternFly | Two UIs served from a single build — Meta UI for schema administration, Operational UI for data browsing. |
+| UI | React, TypeScript, PatternFly | Two UIs served from a single build — Meta UI for schema administration, Operational UI for data browsing and editing. |
 | Database | PostgreSQL / SQLite | Source of truth. PostgreSQL for production, SQLite for development. |
 | Operator | Go, operator-sdk | Manages hub installation. Reconciles AssetHub, CatalogVersion, and Catalog CRs. |
 
 ## Key Concepts
 
 - **Entity Types** — dynamically defined asset categories (e.g., "MCP Server", "Model", "Tool") with custom attributes and associations
+- **Type Definitions** — reusable data types (string, number, integer, boolean, url, date, enum, list, json) with constraints (max_length, pattern, min/max, enum values)
 - **Catalog Versions** — immutable schema snapshots that pin specific entity type versions, with a lifecycle (development → testing → production)
 - **Catalogs** — named data containers pinned to a catalog version, holding entity instances with attribute values
 - **Associations** — typed relationships between entity types: containment (parent-child hierarchy), directional, and bidirectional
 - **Validation** — on-demand schema validation checks required attributes, enum values, mandatory associations, and containment consistency
 - **Publishing** — valid catalogs are published as K8s Custom Resources for external discovery, with write protection on published data
 - **Copy & Replace** — staging workflow for updating published catalogs without downtime: copy, edit, validate, swap atomically
+- **Export Plugins** — extensible system for producing consumer-specific output (K8s CRs, ConfigMaps, YAML) from catalog data via registered exporter plugins
 
 ## Features
 
 ### Meta Layer (Schema Management)
 
 - Entity type CRUD with copy-on-write versioning
-- Attributes (string, number, enum) with required/optional, reordering, copy-from
+- 9 base types (string, number, integer, boolean, url, date, enum, list, json) with type-specific constraints
+- Type definitions with versioning and constraint validation (max_length, pattern, min/max, enum values)
+- Attributes with required/optional, reordering, copy-from, type-aware forms
 - Associations (containment, directional, bidirectional) with UML-style cardinality
-- Enum management with value lists
 - Catalog version lifecycle (development → testing → production) with K8s CR generation
-- UML entity diagram with interactive topology visualization
+- UML entity diagram with interactive topology visualization and composition diamonds
 
 ### Operational Layer (Data Management)
 
 - Catalog CRUD with DNS-label naming and catalog version pinning
-- Entity instance CRUD with dynamic attribute forms and optimistic locking
+- Entity instance CRUD with dynamic attribute forms, inline validation, and optimistic locking
+- Instance names validated as Kubernetes resource names (DNS-1123)
 - Containment hierarchy (parent-child) and association link management
+- Full editing in the operational data viewer: create, edit, delete instances, manage containment and links
 - On-demand validation with structured error reporting
-- Catalog publishing with K8s Catalog CRs and write protection
+- Catalog publishing with K8s Catalog CRs, write protection, and export plugin preview
 - Copy & Replace for atomic catalog updates with archive and rollback
+- Export/Import catalogs to portable JSON format (schema + data round-trip)
+- Export plugins: attach exporter bindings to catalogs, run on demand or automatically on publish
+- Built-in MCP Gateway CR exporter (MCPServerRegistration + MCPVirtualServer)
 - Per-catalog RBAC via K8s SubjectAccessReview
 
 ### UIs
 
-- **Meta UI** (`http://localhost:30000/`) — schema administration: entity types, attributes, associations, enums, catalog versions, catalog management (CRUD, validation, publishing, copy & replace)
-- **Operational UI** (`http://localhost:30000/operational`) — read-only data viewer: containment tree browser, instance detail with attributes, reference navigation with breadcrumbs
+- **Meta UI** (`/schema`) — schema administration: entity types, attributes, associations, type definitions, catalog versions, catalog management (CRUD, validation, publishing, copy & replace, import/export, export plugins)
+- **Operational UI** (`/catalogs/{name}`) — data viewer and editor: containment tree browser, instance detail with attributes, reference navigation, create/edit/delete instances, containment and link management, export plugins
 
 ## Getting Started
 
@@ -81,8 +89,8 @@ Quick start on a local kind cluster:
 This builds all images, creates a kind cluster, and deploys the full stack. Once complete:
 
 - **API server:** http://localhost:30080
-- **Meta UI:** http://localhost:30000
-- **Operational UI:** http://localhost:30000/operational
+- **Meta UI:** http://localhost:30000/schema
+- **Operational UI:** http://localhost:30000/catalogs
 
 ### API Examples
 
@@ -101,6 +109,9 @@ curl -s -X POST http://localhost:30080/api/data/v1/catalogs \
 curl -s -X POST http://localhost:30080/api/data/v1/catalogs/my-catalog/mcp-server \
   -H 'Content-Type: application/json' -H 'X-User-Role: Admin' \
   -d '{"name": "my-server", "attributes": {"hostname": "localhost"}}' | jq .
+
+# List registered export plugins
+curl -s http://localhost:30080/api/data/v1/exporters -H 'X-User-Role: Admin' | jq .
 ```
 
 ## Development
@@ -183,7 +194,7 @@ pc-asset-hub/
 │   │   ├── dto/             # Request/response types
 │   │   ├── meta/            # Meta API handlers
 │   │   ├── middleware/      # RBAC, catalog access
-│   │   └── operational/     # Operational API handlers
+│   │   └── operational/     # Operational API handlers (catalog, instance, export)
 │   ├── domain/
 │   │   ├── errors/          # Domain error types
 │   │   ├── models/          # Domain models
@@ -195,18 +206,19 @@ pc-asset-hub/
 │   └── service/
 │       ├── meta/            # Meta service layer
 │       ├── operational/     # Operational service layer
+│       │   └── export/      # Export plugin framework (registry, bindings, exporters)
 │       └── validation/      # Cardinality validation
 ├── ui/
 │   └── src/
 │       ├── api/             # API client
-│       ├── components/      # Shared components
+│       ├── components/      # Shared components (modals, panels, forms)
 │       ├── hooks/           # Shared hooks
 │       └── pages/
 │           ├── meta/        # Meta UI pages
 │           └── operational/ # Operational UI pages
 ├── deploy/                  # K8s manifests
 ├── scripts/                 # Build, deploy, and test scripts
-├── docs/                    # Architecture, test plans, coverage
+├── docs/                    # Architecture, test plans, coverage, design specs
 ├── PRD.md                   # Product requirements
 └── DEPLOYMENT.md            # Deployment guide
 ```
@@ -215,11 +227,11 @@ pc-asset-hub/
 
 | Layer | Tests | Coverage |
 |-------|-------|----------|
-| Backend (Go) | 1460 | 97.5% |
-| UI Browser (Playwright) | 857 | 93.6% |
-| Live System (bash) | 303 | — |
-| System (Playwright + live) | 30 | — |
-| **Total** | **2725** | |
+| Backend (Go) | ~2100 | 97%+ |
+| UI Browser (Playwright) | ~1274 | 95%+ |
+| Live System (bash scripts) | ~539 | — |
+| System (Playwright + live) | ~202 | — |
+| **Total** | **~4100** | |
 
 ## Documentation
 
@@ -232,7 +244,7 @@ pc-asset-hub/
 | [docs/test-plan.md](docs/test-plan.md) | Testing strategy, coverage matrix, cross-cutting test approaches |
 | [docs/test-plan-detailed.md](docs/test-plan-detailed.md) | Detailed test cases with IDs, layers, and expected outcomes |
 | [docs/coverage-report.md](docs/coverage-report.md) | Per-package coverage numbers, uncovered lines, test counts |
-| [docs/plans/](docs/plans/) | Implementation design documents |
+| [docs/superpowers/specs/](docs/superpowers/specs/) | Design specifications for major features |
 
 ## Roles
 
@@ -240,7 +252,7 @@ pc-asset-hub/
 |------|------------|
 | RO | Read all data |
 | RW | Read + create/update/delete instances and catalogs |
-| Admin | RW + publish/unpublish catalogs, promote/demote catalog versions, replace catalogs |
+| Admin | RW + publish/unpublish catalogs, promote/demote catalog versions, replace catalogs, manage export bindings |
 | SuperAdmin | Admin + edit published catalogs (bypasses write protection) |
 
 ## License
