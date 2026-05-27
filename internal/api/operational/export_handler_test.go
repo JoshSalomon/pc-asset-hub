@@ -35,8 +35,7 @@ func setupExportServer() (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockCatalog
 	linkRepo := new(mocks.MockAssociationLinkRepo)
 
 	exportSvc := svcop.NewExportService(catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, tdvRepo, instRepo, iavRepo, linkRepo)
-	accessChecker := &apimw.HeaderCatalogAccessChecker{}
-	exportHandler := apiop.NewExportHandler(exportSvc, accessChecker)
+	exportHandler := apiop.NewExportHandler(exportSvc)
 
 	e := echo.New()
 	g := e.Group("/api/data/v1/catalogs")
@@ -55,6 +54,26 @@ func doExportRequest(e *echo.Echo, path string, role apimw.Role) *httptest.Respo
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 	return rec
+}
+
+// T-35.86: NewExportHandler constructor works without accessChecker parameter
+func TestT35_86_NewExportHandlerNoAccessChecker(t *testing.T) {
+	catalogRepo := new(mocks.MockCatalogRepo)
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	pinRepo := new(mocks.MockCatalogVersionPinRepo)
+	etRepo := new(mocks.MockEntityTypeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	attrRepo := new(mocks.MockAttributeRepo)
+	assocRepo := new(mocks.MockAssociationRepo)
+	tdRepo := new(mocks.MockTypeDefinitionRepo)
+	tdvRepo := new(mocks.MockTypeDefinitionVersionRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	iavRepo := new(mocks.MockInstanceAttributeValueRepo)
+	linkRepo := new(mocks.MockAssociationLinkRepo)
+
+	exportSvc := svcop.NewExportService(catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, tdvRepo, instRepo, iavRepo, linkRepo)
+	handler := apiop.NewExportHandler(exportSvc)
+	require.NotNil(t, handler, "NewExportHandler should work without accessChecker parameter")
 }
 
 // T-30.14: GET /catalogs/{name}/export — success

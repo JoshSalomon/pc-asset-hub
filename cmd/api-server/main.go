@@ -115,9 +115,9 @@ func main() {
 	catalogHandler := apiop.NewCatalogHandler(catalogSvc, validationSvc, catalogAccessChecker, apiop.WithBindingRepo(bindingRepo), apiop.WithPreviewCache(previewCache))
 	instanceHandler := apiop.NewInstanceHandler(instanceSvc, catalogSvc)
 	exportSvc := svcop.NewExportService(catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, tdvRepo, instRepo, iavRepo, linkRepo)
-	exportHandler := apiop.NewExportHandler(exportSvc, catalogAccessChecker)
+	exportHandler := apiop.NewExportHandler(exportSvc)
 	importSvc := svcop.NewImportService(catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, tdvRepo, instRepo, iavRepo, linkRepo, typePinRepo, svcop.WithImportTransactionManager(txManager))
-	importHandler := apiop.NewImportHandler(importSvc, catalogAccessChecker)
+	importHandler := apiop.NewImportHandler(importSvc)
 	exportBindingSvc := export.NewExportBindingService(
 		bindingRepo, catalogRepo, exporterRegistry,
 		cvRepo, pinRepo, etvRepo, etRepo, attrRepo, assocRepo,

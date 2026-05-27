@@ -5,17 +5,15 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	apimw "github.com/project-catalyst/pc-asset-hub/internal/api/middleware"
 	svcop "github.com/project-catalyst/pc-asset-hub/internal/service/operational"
 )
 
 type ImportHandler struct {
-	svc           *svcop.ImportService
-	accessChecker apimw.CatalogAccessChecker
+	svc *svcop.ImportService
 }
 
-func NewImportHandler(svc *svcop.ImportService, accessChecker apimw.CatalogAccessChecker) *ImportHandler {
-	return &ImportHandler{svc: svc, accessChecker: accessChecker}
+func NewImportHandler(svc *svcop.ImportService) *ImportHandler {
+	return &ImportHandler{svc: svc}
 }
 
 func (h *ImportHandler) ImportCatalog(c echo.Context) error {

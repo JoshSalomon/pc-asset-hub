@@ -227,10 +227,7 @@ describe('Operational Editing System Tests', () => {
     await pg.getByRole('button', { name: 'Add Child' }).click()
     await visible(pg.getByRole('dialog'))
 
-    // Select child entity type via PF6 Select (click toggle text → click option text)
-    await pg.getByText('Select child type...').click()
-    await pg.getByText(etChildName).click()
-
+    // TD-142: Child type pre-selected (only one containment type)
     // Fill child name
     await pg.locator('#child-name').fill('ui-test-child')
 
@@ -438,7 +435,7 @@ describe('Operational Editing System Tests', () => {
     // SuperAdmin can mutate even published catalogs
     await visible(pg.getByRole('button', { name: 'Create Instance' }), 10000)
 
-    await apiCall('POST', `/api/data/v1/catalogs/${CATALOG_NAME}/unpublish`)
+    await apiCall('POST', `/api/data/v1/catalogs/${CATALOG_NAME}/unpublish`, undefined, 'SuperAdmin')
   })
 })
 

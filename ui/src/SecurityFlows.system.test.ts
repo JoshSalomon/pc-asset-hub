@@ -251,8 +251,8 @@ describe('Test 2: Published catalog restrictions', () => {
     // No Validate button
     expect(await pg.getByRole('button', { name: 'Validate' }).isVisible()).toBe(false)
 
-    // Unpublish button should be visible (Admin can unpublish)
-    await visible(pg.getByRole('button', { name: 'Unpublish' }))
+    // TD-148: Unpublish button hidden for Admin on published catalogs (only SuperAdmin)
+    expect(await pg.getByRole('button', { name: 'Unpublish' }).isVisible()).toBe(false)
 
     // Check for write protection alert (might not show if page thinks user is SuperAdmin)
     // This alert only shows for non-Admin roles on published catalogs

@@ -3,6 +3,8 @@ package export
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +29,7 @@ type ExportBindingService struct {
 	iavRepo      repository.InstanceAttributeValueRepository
 	linkRepo     repository.AssociationLinkRepository
 	previewCache PreviewCache
+	previewTTL   time.Duration
 }
 
 func NewExportBindingService(
@@ -51,11 +54,28 @@ func NewExportBindingService(
 		etRepo:      etRepo,
 		attrRepo:    attrRepo,
 		assocRepo:   assocRepo,
+		previewTTL:  parsePreviewTTL(),
 	}
 	for _, opt := range opts {
 		opt(s)
 	}
 	return s
+}
+
+// parsePreviewTTL reads the PUBLISH_PREVIEW_TTL env var once and returns
+// the parsed duration (in seconds). Falls back to 5 minutes.
+func parsePreviewTTL() time.Duration {
+	if v := os.Getenv("PUBLISH_PREVIEW_TTL"); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil {
+			return time.Duration(secs) * time.Second
+		}
+	}
+	return 5 * time.Minute
+}
+
+// PreviewTTL returns the cached preview TTL duration.
+func (s *ExportBindingService) PreviewTTL() time.Duration {
+	return s.previewTTL
 }
 
 type ExportBindingServiceOption func(*ExportBindingService)

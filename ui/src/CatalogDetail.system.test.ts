@@ -519,8 +519,8 @@ describe('Publishing', () => {
   })
 
   test('unpublish catalog: click Unpublish, verify badge removed', async () => {
-    // Already on published catalog as Admin
-    await setRole(pg, 'Admin')
+    // TD-148: Unpublish requires SuperAdmin on published catalogs
+    await setRole(pg, 'SuperAdmin')
 
     // Click Unpublish
     await pg.getByRole('button', { name: 'Unpublish' }).click()

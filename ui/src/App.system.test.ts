@@ -10,22 +10,20 @@
 //   npm run test:system
 
 import { test, expect, beforeAll, afterAll } from 'vitest'
-import { chromium, type Browser, type Page, type Locator } from 'playwright'
-
-const UI_URL = process.env.UI_URL || 'http://localhost:30000'
-const API_URL = process.env.API_URL || 'http://localhost:30080'
+import type { Browser, Page } from 'playwright'
+import {
+  setupBrowser,
+  teardownBrowser,
+  visible,
+  hidden,
+  apiCall,
+  getTypeVersionId,
+  UI_URL,
+  API_URL,
+} from './test-helpers/system'
 
 let browser: Browser
 let pg: Page
-
-// Playwright locator assertion helpers
-async function visible(locator: Locator, timeout = 15000) {
-  await locator.waitFor({ state: 'visible', timeout })
-}
-
-async function hidden(locator: Locator) {
-  await locator.waitFor({ state: 'hidden', timeout: 15000 })
-}
 
 async function navigateToEntityType(name: string) {
   await navigateToUI()
@@ -45,44 +43,10 @@ async function navigateToTypeDefDetail(typeName: string) {
   await visible(pg.getByRole('heading', { name: typeName }))
 }
 
-// Look up a type definition's latest version ID by name (local version for this file)
-const localTypeVersionCache: Record<string, string> = {}
-async function getTypeVersionId(typeName: string): Promise<string> {
-  if (localTypeVersionCache[typeName]) return localTypeVersionCache[typeName]
-  const headers = { 'Content-Type': 'application/json', 'X-User-Role': 'Admin' }
-  const res = await (await fetch(`${API_URL}/api/meta/v1/type-definitions`, { headers })).json()
-  const td = res.items?.find((t: { name: string }) => t.name === typeName)
-  if (!td) throw new Error(`Type definition '${typeName}' not found`)
-  const versions = await (await fetch(`${API_URL}/api/meta/v1/type-definitions/${td.id}/versions`, { headers })).json()
-  const latest = versions.items?.[versions.items.length - 1]
-  if (!latest) throw new Error(`No versions found for type definition '${typeName}'`)
-  localTypeVersionCache[typeName] = latest.id
-  return latest.id
-}
-
-async function apiCall(method: string, path: string, body?: object) {
-  const res = await fetch(`${API_URL}${path}`, {
-    method,
-    headers: { 'Content-Type': 'application/json', 'X-User-Role': 'Admin' },
-    body: body ? JSON.stringify(body) : undefined,
-  })
-  if (method === 'DELETE') return { status: res.status, body: null }
-  const text = await res.text()
-  try {
-    return { status: res.status, body: JSON.parse(text) }
-  } catch {
-    return { status: res.status, body: text }
-  }
-}
-
 beforeAll(async () => {
-  const health = await fetch(`${API_URL}/healthz`)
-  if (!health.ok) throw new Error('API not reachable')
-
-  const headless = process.env.HEADLESS !== 'false'
-  const slowMo = process.env.SLOWMO ? Number(process.env.SLOWMO) : undefined
-  browser = await chromium.launch({ headless, slowMo })
-  pg = await browser.newPage()
+  const setup = await setupBrowser()
+  browser = setup.browser
+  pg = setup.page
 })
 
 // Track resources created during tests for cleanup
@@ -136,11 +100,11 @@ async function cleanupTestData() {
 afterAll(async () => {
   // Clean up all tracked resources (reverse order to handle dependencies)
   for (const r of [...createdResources].reverse()) {
-    const path = r.type === 'entity-type' ? `/api/meta/v1/entity-types/${r.id}`
+    const rpath = r.type === 'entity-type' ? `/api/meta/v1/entity-types/${r.id}`
       : r.type === 'type-definition' ? `/api/meta/v1/type-definitions/${r.id}`
       : `/api/meta/v1/catalog-versions/${r.id}`
     try {
-      await fetch(`${API_URL}${path}`, {
+      await fetch(`${API_URL}${rpath}`, {
         method: 'DELETE',
         headers: { 'X-User-Role': 'SuperAdmin' },
       })
@@ -151,7 +115,7 @@ afterAll(async () => {
   await cleanupTestData()
 
   await pg?.close()
-  await browser?.close()
+  await teardownBrowser(browser)
 })
 
 async function navigateToUI() {

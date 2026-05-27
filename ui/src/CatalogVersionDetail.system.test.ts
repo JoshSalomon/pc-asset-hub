@@ -215,10 +215,8 @@ test('BOM Add Pin modal opens and can add a pin', async () => {
   await pg.getByRole('dialog').getByText('Select entity type...').click()
   await pg.getByTestId(`pin-et-${testName('CVDetail_ET2')}`).click()
 
-  // Select version (V1)
-  await visible(pg.getByRole('dialog').getByText('Select version...'))
-  await pg.getByRole('dialog').getByText('Select version...').click()
-  await pg.getByTestId('pin-etv-V1').click()
+  // TD-79: Version auto-selected to latest. Click Add directly.
+  await pg.waitForTimeout(500)
 
   // Click Add
   await pg.getByRole('dialog').getByRole('button', { name: 'Add' }).click()

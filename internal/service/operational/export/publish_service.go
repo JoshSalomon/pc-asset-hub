@@ -2,8 +2,6 @@ package export
 
 import (
 	"context"
-	"os"
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -118,10 +116,5 @@ func (s *ExportBindingService) GetPreviewEntry(token string) (*PreviewCacheEntry
 }
 
 func (s *ExportBindingService) getPreviewTTL() time.Duration {
-	if v := os.Getenv("PUBLISH_PREVIEW_TTL"); v != "" {
-		if secs, err := strconv.Atoi(v); err == nil {
-			return time.Duration(secs) * time.Second
-		}
-	}
-	return 5 * time.Minute
+	return s.previewTTL
 }
