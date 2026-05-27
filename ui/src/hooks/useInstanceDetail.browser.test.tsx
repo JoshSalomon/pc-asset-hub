@@ -27,7 +27,7 @@ const mockInstance: EntityInstance = {
 }
 
 const mockInstanceWithParent: EntityInstance = {
-  ...mockInstance, id: 'i1-with-parent', parent_instance_id: 'parent1',
+  ...mockInstance, id: 'i1-with-parent', parent_instance_id: 'parent1', parent_instance_name: 'parent-inst',
 }
 
 function TestComponent({ catalogName, entityTypeName, assocs, role }: { catalogName?: string; entityTypeName: string; assocs?: SnapshotAssociation[]; role?: 'RO' | 'RW' | 'Admin' | 'SuperAdmin' }) {
@@ -86,16 +86,16 @@ test('T-19.21: useInstanceDetail skips parent name when no parent', async () => 
   expect(api.instances.get).toHaveBeenCalledWith('my-catalog', 'model', 'i1')
 })
 
-// T-19.22: selectInstance handles parent name load error (falls back to ID)
-test('T-19.22: useInstanceDetail parent name error falls back to ID', async () => {
-  // First call (re-fetch) succeeds, second call (parent resolution) fails
+// T-19.22: selectInstance shows loading when parent_instance_name is missing
+test('T-19.22: useInstanceDetail parent name missing falls back to loading', async () => {
+  const instanceWithoutParentName = { ...mockInstanceWithParent, parent_instance_name: undefined }
   ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
-    if (id === 'i1-with-parent') return Promise.resolve(mockInstanceWithParent)
-    return Promise.reject(new Error('Not found'))
+    if (id === mockInstanceWithParent.id) return Promise.resolve(instanceWithoutParentName)
+    return Promise.resolve(mockInstance)
   })
   render(<TestComponent catalogName="my-catalog" entityTypeName="model" />)
   await page.getByTestId('select-parent').click()
-  await expect.element(page.getByTestId('parent-name')).toHaveTextContent('parent1')
+  await expect.element(page.getByTestId('parent-name')).toHaveTextContent('loading...')
 })
 
 // T-19.23: selectInstance handles children load error

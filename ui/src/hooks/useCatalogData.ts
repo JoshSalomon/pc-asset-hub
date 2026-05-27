@@ -16,6 +16,9 @@ export function useCatalogData(catalogName: string | undefined, role: Role) {
   // Enum values cache for enum dropdowns (keyed by type_definition_version_id)
   const [enumValues, setEnumValues] = useState<Record<string, string[]>>({})
 
+  // TD-146: Entity types that are containment targets (for orphan warning)
+  const [containmentTargetTypes, setContainmentTargetTypes] = useState<Set<string>>(new Set())
+
   const loadCatalog = useCallback(async () => {
     if (!catalogName) return
     setAuthRole(role)
@@ -63,10 +66,34 @@ export function useCatalogData(catalogName: string | undefined, role: Role) {
 
   useEffect(() => { loadSchema() }, [loadSchema])
 
+  useEffect(() => {
+    if (!pins.length) return
+    let cancelled = false
+    const loadAll = async () => {
+      const targets = new Set<string>()
+      const snapshots = await Promise.all(
+        pins.map(pin => api.versions.snapshot(pin.entity_type_id, pin.version).catch(() => null))
+      )
+      if (cancelled) return
+      for (const snapshot of snapshots) {
+        if (!snapshot) continue
+        for (const a of snapshot.associations || []) {
+          if (a.type === 'containment' && a.direction === 'outgoing' && a.target_entity_type_name) {
+            targets.add(a.target_entity_type_name)
+          }
+        }
+      }
+      setContainmentTargetTypes(targets)
+    }
+    loadAll()
+    return () => { cancelled = true }
+  }, [pins])
+
   return {
     catalog, loading, error, setError,
     pins, activeTab, setActiveTab,
     schemaAttrs, schemaAssocs, enumValues,
+    containmentTargetTypes,
     loadCatalog,
   }
 }

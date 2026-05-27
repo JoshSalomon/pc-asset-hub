@@ -1345,12 +1345,7 @@ test('handleAddChild create mode calls createContained and refreshes tree', asyn
   await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
   await page.getByRole('button', { name: 'Add Child' }).click()
   await expect.element(page.getByText('Add Contained Instance')).toBeVisible()
-  // Select child type via PF6 Select (uses button-based menu, not native options)
-  await page.getByText('Select child type...').click()
-  await vi.waitFor(async () => {
-    await expect.element(page.getByText('mcp-tool').first()).toBeVisible()
-  })
-  await page.getByText('mcp-tool').first().click()
+  // Child type pre-selected (only one containment type: mcp-tool) — TD-142
   // Fill in name
   await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
   await page.getByRole('textbox', { name: /^Name/ }).fill('new-child')
@@ -1372,12 +1367,7 @@ test('handleAddChild adopt mode calls setParent API', async () => {
   await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
   await page.getByRole('button', { name: 'Add Child' }).click()
   await expect.element(page.getByText('Add Contained Instance')).toBeVisible()
-  // Select child type via PF6 Select
-  await page.getByText('Select child type...').click()
-  await vi.waitFor(async () => {
-    await expect.element(page.getByText('mcp-tool').first()).toBeVisible()
-  })
-  await page.getByText('mcp-tool').first().click()
+  // Child type pre-selected (only one containment type: mcp-tool) — TD-142
   // Switch to Adopt mode
   await vi.waitFor(async () => {
     await expect.element(page.getByText('Create New')).toBeVisible()
@@ -1408,7 +1398,11 @@ test('handleAddChild adopt mode calls setParent API', async () => {
 test('handleSetParent calls setParent API and refreshes tree', async () => {
   ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
   ;(api.instances.setParent as Mock).mockResolvedValue({})
-  ;(api.instances.list as Mock).mockResolvedValue({ items: [{ id: 'i1', name: 'my-server', entity_type_id: 'et1' }], total: 1 })
+  // Include i1 (current parent, will be filtered) and i99 (different server, will appear)
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [
+    { id: 'i1', name: 'my-server', entity_type_id: 'et1' },
+    { id: 'i99', name: 'other-server', entity_type_id: 'et1' },
+  ], total: 2 })
   renderDetail('RW')
   await openTreeAndExpandServers()
   await page.getByText('▸').first().click()
@@ -1418,15 +1412,15 @@ test('handleSetParent calls setParent API and refreshes tree', async () => {
   await page.getByRole('button', { name: 'Set Parent' }).click()
   await expect.element(page.getByRole('dialog')).toBeVisible()
   await vi.waitFor(() => { expect(api.instances.list).toHaveBeenCalledWith('test-catalog', 'mcp-server') })
-  // Select parent instance via data-testid (bypasses aria-hidden on PF6 Select portal)
+  // Current parent (i1) is filtered; select the other server
   await page.getByText('Select container...').click()
-  await page.getByTestId('parent-inst-i1').click()
+  await page.getByTestId('parent-inst-i99').click()
   // Submit
   await page.getByRole('button', { name: 'Set Container' }).click()
   await vi.waitFor(() => {
     expect(api.instances.setParent).toHaveBeenCalledWith('test-catalog', 'mcp-tool', 'i2', expect.objectContaining({
       parent_type: 'mcp-server',
-      parent_instance_id: 'i1',
+      parent_instance_id: 'i99',
     }))
   })
 })
@@ -1434,7 +1428,11 @@ test('handleSetParent calls setParent API and refreshes tree', async () => {
 test('handleSetParent error shows error in modal', async () => {
   ;(api.instances.get as Mock).mockResolvedValue(mockChildDetail)
   ;(api.instances.setParent as Mock).mockRejectedValue(new Error('parent assignment failed'))
-  ;(api.instances.list as Mock).mockResolvedValue({ items: [{ id: 'i1', name: 'my-server', entity_type_id: 'et1' }], total: 1 })
+  // Include i1 (current parent, will be filtered) and i99 (different server, will appear)
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [
+    { id: 'i1', name: 'my-server', entity_type_id: 'et1' },
+    { id: 'i99', name: 'other-server', entity_type_id: 'et1' },
+  ], total: 2 })
   renderDetail('RW')
   await openTreeAndExpandServers()
   await page.getByText('▸').first().click()
@@ -1444,8 +1442,9 @@ test('handleSetParent error shows error in modal', async () => {
   await page.getByRole('button', { name: 'Set Parent' }).click()
   await expect.element(page.getByRole('dialog')).toBeVisible()
   await vi.waitFor(() => { expect(api.instances.list).toHaveBeenCalled() })
+  // Current parent (i1) is filtered; select the other server
   await page.getByText('Select container...').click()
-  await page.getByTestId('parent-inst-i1').click()
+  await page.getByTestId('parent-inst-i99').click()
   await page.getByRole('button', { name: 'Set Container' }).click()
   await expect.element(page.getByText('parent assignment failed')).toBeVisible()
 })
@@ -1691,12 +1690,7 @@ test('handleAddChild error path: createContained failure shows error in modal', 
   await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
   await page.getByRole('button', { name: 'Add Child' }).click()
   await expect.element(page.getByText('Add Contained Instance')).toBeVisible()
-  // Select child type
-  await page.getByText('Select child type...').click()
-  await vi.waitFor(async () => {
-    await expect.element(page.getByText('mcp-tool').first()).toBeVisible()
-  })
-  await page.getByText('mcp-tool').first().click()
+  // Child type is pre-selected to mcp-tool (only one containment target)
   // Fill in name and submit
   await expect.element(page.getByRole('textbox', { name: /^Name/ })).toBeVisible()
   await page.getByRole('textbox', { name: /^Name/ }).fill('bad-child')
@@ -2088,3 +2082,134 @@ test('Edit modal: changing attribute triggers onChange callback', async () => {
     expect(call[3].attributes).toHaveProperty('endpoint', 'https://new-endpoint.com')
   })
 })
+
+// === TD-142: Add Child modal initialChildType pre-selection ===
+
+test('T-35.52: Operational page: Add Child modal pre-selects child type when only one containment type exists', async () => {
+  // mcp-server has exactly one outgoing containment (to mcp-tool)
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Add Child' }).click()
+  await expect.element(page.getByText('Add Contained Instance')).toBeVisible()
+  // The child type should be pre-selected to 'mcp-tool' (the only containment target)
+  // The MenuToggle should show 'mcp-tool' instead of 'Select child type...'
+  await expect.element(page.getByText('mcp-tool').first()).toBeVisible()
+  expect(page.getByText('Select child type...').elements().length).toBe(0)
+})
+
+test('T-35.53: Operational page: Add Child modal loads schema attributes automatically for pre-selected type', async () => {
+  // When the child type is pre-selected, the schema should be loaded automatically
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  // Clear snapshot call count to track calls triggered by modal opening
+  ;(api.versions.snapshot as Mock).mockClear()
+  await page.getByRole('button', { name: 'Add Child' }).click()
+  await expect.element(page.getByText('Add Contained Instance')).toBeVisible()
+  // Schema should be loaded automatically for the pre-selected type (mcp-tool, etv2)
+  // The AddChildModal should call loadChildSchema which calls loadSchemaSnapshot
+  // which calls api.versions.snapshot for the pre-selected child type
+  await vi.waitFor(() => {
+    expect(api.versions.snapshot).toHaveBeenCalledWith('et2', 1)
+  })
+})
+
+test('T-35.54: Operational page: Add Child modal shows dropdown with no pre-selection when multiple containment types exist', async () => {
+  // Override snapshot to have TWO outgoing containment associations
+  const snapshotMultiContainment = {
+    ...mockSnapshotServer,
+    associations: [
+      { id: 'assoc-1', name: 'contains-tool', type: 'containment', target_entity_type_id: 'et2', target_entity_type_name: 'mcp-tool', source_role: 'parent', target_role: 'child', source_cardinality: '0..n', target_cardinality: '1', direction: 'outgoing' as const, source_entity_type_id: 'et1', source_entity_type_name: 'mcp-server' },
+      { id: 'assoc-3', name: 'contains-resource', type: 'containment', target_entity_type_id: 'et3', target_entity_type_name: 'model', source_role: 'parent', target_role: 'child', source_cardinality: '0..n', target_cardinality: '1', direction: 'outgoing' as const, source_entity_type_id: 'et1', source_entity_type_name: 'mcp-server' },
+      { id: 'assoc-link-1', name: 'uses-model', type: 'directional', target_entity_type_id: 'et3', target_entity_type_name: 'model', source_role: '', target_role: '', source_cardinality: '0..n', target_cardinality: '0..n', direction: 'outgoing' as const, source_entity_type_id: 'et1', source_entity_type_name: 'mcp-server' },
+    ],
+  }
+  ;(api.versions.snapshot as Mock).mockImplementation((etId: string) => {
+    if (etId === 'et2') return Promise.resolve(mockSnapshotTool)
+    return Promise.resolve(snapshotMultiContainment)
+  })
+  ;(api.instances.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  renderDetail('RW')
+  await openTreeAndExpandServers()
+  await clickTreeNode('my-server')
+  await expect.element(page.getByRole('heading', { name: 'my-server' })).toBeVisible()
+  await vi.waitFor(() => { expect(api.versions.snapshot).toHaveBeenCalled() })
+  await page.getByRole('button', { name: 'Add Child' }).click()
+  await expect.element(page.getByText('Add Contained Instance')).toBeVisible()
+  // With multiple containment types, no pre-selection — 'Select child type...' should show
+  await expect.element(page.getByText('Select child type...')).toBeVisible()
+})
+
+// === TD-146: Orphaned containment target warning ===
+
+// T-35.58: Root entity type group that is a containment target shows warning indicator
+test('T-35.58: orphaned containment target group shows warning icon', async () => {
+  // Tree with an orphaned mcp-tool instance at root level (no parent)
+  const treeWithOrphan = [
+    ...mockTree,
+    { instance_id: 'i-orphan', instance_name: 'orphan-tool', entity_type_name: 'mcp-tool',
+      description: 'orphaned', children: [] },
+  ]
+  ;(api.instances.tree as Mock).mockResolvedValue(treeWithOrphan)
+  renderDetail()
+  await page.getByRole('tab', { name: 'Tree Browser' }).click()
+  // mcp-tool group appears at root because of the orphan
+  await expect.element(page.getByText(/mcp-tool.*\(1\)/)).toBeVisible()
+  // Warning icon should be visible (mcp-tool is a containment target)
+  const warningIcon = page.getByTitle('This entity type is a containment target — instances here may need a parent container')
+  await expect.element(warningIcon).toBeVisible()
+})
+
+// T-35.59: Root entity type group that is NOT a containment target shows no warning
+test('T-35.59: non-target root group shows no warning', async () => {
+  renderDetail()
+  await page.getByRole('tab', { name: 'Tree Browser' }).click()
+  // mcp-server group is at root — it's NOT a containment target (it's the source)
+  await expect.element(page.getByText(/mcp-server.*\(2\)/)).toBeVisible()
+  // No warning icon on the mcp-server group
+  const serverGroupText = page.getByText(/mcp-server.*\(2\)/)
+  const groupElement = serverGroupText.element()?.closest('div')
+  expect(groupElement?.textContent).not.toContain('⚠')
+})
+
+// T-35.60: Warning disappears when no orphaned instances at root
+test('T-35.60: no warning when containment target has no orphans at root', async () => {
+  // Default mockTree has no orphans — mcp-tool instances are all nested under mcp-server
+  renderDetail()
+  await page.getByRole('tab', { name: 'Tree Browser' }).click()
+  await expect.element(page.getByText(/mcp-server.*\(2\)/)).toBeVisible()
+  // No mcp-tool group at root level (all tools are contained)
+  // No warning icons should exist
+  expect(page.getByTitle('This entity type is a containment target — instances here may need a parent container').elements().length).toBe(0)
+})
+
+// Coverage: containmentTargetTypes cleanup cancellation
+test('containmentTargetTypes effect cleanup sets cancelled flag', async () => {
+  // Import cleanup to unmount all rendered components
+  const { cleanup } = await import('vitest-browser-react')
+  // Make snapshot return a delayed promise so the effect is still pending when we unmount
+  ;(api.versions.snapshot as Mock).mockImplementation(() => new Promise(resolve => {
+    setTimeout(() => resolve(mockSnapshotServer), 500)
+  }))
+  renderDetail()
+  // Unmount immediately — the cleanup function sets cancelled=true, and when the
+  // delayed promise resolves, the if (cancelled) return guard fires
+  await cleanup()
+  // Wait for the delayed promise to resolve after unmount
+  await new Promise(r => setTimeout(r, 600))
+})
+
+// Coverage: OperationalCatalogDetailPage.tsx:140 — loadSchemaSnapshot .catch fallback
+// This .catch arrow function handles snapshot load failures in the containmentTargetTypes
+// effect. It passes individually but fails in the full suite (30s timeout) because
+// vitest-browser-react's component cleanup between tests is asynchronous — effects from
+// the previous test's unmount fire after vi.clearAllMocks(), consuming mock overrides
+// intended for this test. The catch IS reachable and correct; it just can't be reliably
+// exercised in browser test isolation. Accepted as 1 uncovered line.

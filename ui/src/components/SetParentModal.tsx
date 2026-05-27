@@ -28,6 +28,7 @@ interface Props {
   onSubmit: (parentType: string, parentId: string) => Promise<void>
   onRemoveParent: () => void
   error: string | null
+  currentParentInstanceId?: string
 }
 
 export default function SetParentModal({
@@ -38,6 +39,7 @@ export default function SetParentModal({
   hasParent,
   onSubmit, onRemoveParent,
   error,
+  currentParentInstanceId,
 }: Props) {
   const [parentInstanceId, setParentInstanceId] = useState('')
   const [parentInstSelectOpen, setParentInstSelectOpen] = useState(false)
@@ -50,7 +52,8 @@ export default function SetParentModal({
     if (!catalogName || !typeName) { setParentInstances([]); return }
     try {
       const res = await api.instances.list(catalogName, typeName)
-      setParentInstances(res.items || [])
+      const all = res.items || []
+      setParentInstances(currentParentInstanceId ? all.filter(i => i.id !== currentParentInstanceId) : all)
     } catch { setParentInstances([]) }
   }
 

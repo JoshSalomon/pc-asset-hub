@@ -1179,3 +1179,100 @@ func TestT18_06_SystemAttrsInListResponse(t *testing.T) {
 	assert.Equal(t, "name", attrs[0].(map[string]any)["name"])
 	assert.Equal(t, "inst-a", attrs[0].(map[string]any)["value"])
 }
+
+// === TD-33: parent_instance_name in DTO ===
+
+// T-35.64: Instance DTO includes parent_instance_name when instance has a parent
+func TestT35_64_InstanceDTOIncludesParentName(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.mockPinResolution()
+
+	parentName := "my-parent-server"
+	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
+		ID: "i1", EntityTypeID: "et1", CatalogID: "cat1",
+		ParentInstanceID: "p1", ParentInstanceName: &parentName,
+		Name: "child-inst", Version: 1,
+	}, nil)
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, "i1", 1).Return([]*models.InstanceAttributeValue{}, nil)
+	m.instRepo.On("GetByID", mock.Anything, "p1").Return(&models.EntityInstance{
+		ID: "p1", EntityTypeID: "et1", CatalogID: "cat1", Name: "my-parent-server", Version: 1,
+	}, nil)
+	m.etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "model"}, nil)
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model/i1", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, "my-parent-server", resp["parent_instance_name"])
+}
+
+// T-35.65: Instance DTO has null parent_instance_name when instance has no parent
+func TestT35_65_InstanceDTONullParentNameNoParent(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.mockPinResolution()
+
+	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
+		ID: "i1", EntityTypeID: "et1", CatalogID: "cat1",
+		Name: "root-inst", Version: 1,
+	}, nil)
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, "i1", 1).Return([]*models.InstanceAttributeValue{}, nil)
+	m.etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "model"}, nil).Maybe()
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model/i1", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	_, hasParentName := resp["parent_instance_name"]
+	assert.False(t, hasParentName, "root instance should not have parent_instance_name")
+}
+
+// --- Coverage: syncCR with non-nil catalogSvc ---
+
+func TestCov_SyncCR_WithCatalogSvc(t *testing.T) {
+	m := newInstanceMocks()
+	svc := svcop.NewInstanceService(
+		m.instRepo, m.iavRepo, m.catalogRepo, m.cvRepo,
+		m.pinRepo, m.attrRepo, m.etvRepo, m.etRepo, m.tdvRepo, m.tdRepo,
+		m.assocRepo, m.linkRepo,
+	)
+	// Create a CatalogService (crManager=nil, so SyncCR is a no-op but still exercised)
+	catalogSvc := svcop.NewCatalogService(m.catalogRepo, m.cvRepo, m.instRepo, nil, "")
+	handler := apiop.NewInstanceHandler(svc, catalogSvc)
+
+	e := echo.New()
+	g := e.Group("/api/data/v1/catalogs/:catalog-name")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	requireRW := apimw.RequireRole(apimw.RoleRW)
+	apiop.RegisterInstanceRoutes(g, handler, requireRW)
+
+	m.mockPinResolution()
+	m.instRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.catalogRepo.On("UpdateValidationStatus", mock.Anything, "cat1", models.ValidationStatusDraft).Return(nil)
+
+	rec := doInstanceRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/model",
+		`{"name":"inst"}`, apimw.RoleRW)
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
+// T-35.66: Instance with deleted parent — parent chain resolution fails with 404
+func TestT35_66_InstanceDeletedParentReturns404(t *testing.T) {
+	e, m := setupInstanceServer()
+	m.mockPinResolution()
+
+	m.instRepo.On("GetByID", mock.Anything, "i1").Return(&models.EntityInstance{
+		ID: "i1", EntityTypeID: "et1", CatalogID: "cat1",
+		ParentInstanceID: "deleted-parent",
+		Name: "orphan-inst", Version: 1,
+	}, nil)
+	m.iavRepo.On("GetValuesForVersion", mock.Anything, "i1", 1).Return([]*models.InstanceAttributeValue{}, nil)
+	m.instRepo.On("GetByID", mock.Anything, "deleted-parent").Return(nil, domainerrors.NewNotFound("EntityInstance", "deleted-parent"))
+	m.etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "model"}, nil).Maybe()
+
+	rec := doInstanceRequest(e, http.MethodGet, "/api/data/v1/catalogs/my-catalog/model/i1", "", apimw.RoleRO)
+	assert.Equal(t, http.StatusNotFound, rec.Code, "deleted parent causes parent chain resolution to return 404")
+}

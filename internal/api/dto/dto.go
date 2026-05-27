@@ -426,17 +426,18 @@ type UpdateInstanceRequest struct {
 }
 
 type InstanceResponse struct {
-	ID               string                     `json:"id"`
-	EntityTypeID     string                     `json:"entity_type_id"`
-	CatalogID        string                     `json:"catalog_id"`
-	ParentInstanceID string                     `json:"parent_instance_id,omitempty"`
-	Name             string                     `json:"name"`
-	Description      string                     `json:"description"`
-	Version          int                        `json:"version"`
-	Attributes       []AttributeValueResponse   `json:"attributes"`
-	ParentChain      []ParentChainEntryResponse `json:"parent_chain,omitempty"`
-	CreatedAt        time.Time                  `json:"created_at"`
-	UpdatedAt        time.Time                  `json:"updated_at"`
+	ID                 string                     `json:"id"`
+	EntityTypeID       string                     `json:"entity_type_id"`
+	CatalogID          string                     `json:"catalog_id"`
+	ParentInstanceID   string                     `json:"parent_instance_id,omitempty"`
+	ParentInstanceName *string                    `json:"parent_instance_name,omitempty"`
+	Name               string                     `json:"name"`
+	Description        string                     `json:"description"`
+	Version            int                        `json:"version"`
+	Attributes         []AttributeValueResponse   `json:"attributes"`
+	ParentChain        []ParentChainEntryResponse `json:"parent_chain,omitempty"`
+	CreatedAt          time.Time                  `json:"created_at"`
+	UpdatedAt          time.Time                  `json:"updated_at"`
 }
 
 type AttributeValueResponse struct {

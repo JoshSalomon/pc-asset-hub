@@ -34,12 +34,10 @@ export function useInstanceDetail(catalogName: string | undefined, entityTypeNam
       return
     }
     setSelectedInstance(inst)
-    // Resolve parent name if instance is contained
-    if (inst.parent_instance_id) {
-      try {
-        const parent = await api.instances.get(catalogName, entityTypeName, inst.parent_instance_id)
-        setParentName(parent.name)
-      } catch { setParentName(inst.parent_instance_id) }
+    if (inst.parent_instance_name) {
+      setParentName(inst.parent_instance_name)
+    } else if (inst.parent_instance_id) {
+      setParentName('loading...')
     }
     // Load contained children — find containment associations pointing from this entity type
     setChildrenLoading(true)

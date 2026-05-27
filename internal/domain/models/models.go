@@ -183,15 +183,16 @@ type ExportBinding struct {
 }
 
 type EntityInstance struct {
-	ID               string
-	EntityTypeID     string
-	CatalogID        string
-	ParentInstanceID string // empty if top-level
-	Name             string
-	Description      string
-	Version          int
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                 string
+	EntityTypeID       string
+	CatalogID          string
+	ParentInstanceID   string // empty if top-level
+	ParentInstanceName *string
+	Name               string
+	Description        string
+	Version            int
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 type InstanceAttributeValue struct {
