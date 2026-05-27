@@ -103,9 +103,18 @@ for FILE in $CHANGED_FILES; do
   # Get new line numbers from git diff (only added/changed lines)
   NEW_LINES=$(git diff -U0 "$BASE" -- "$FILE" | awk '
     /^@@/ {
-      match($0, /\+([0-9]+)(,([0-9]+))?/, arr)
-      start = arr[1]
-      count = arr[3] == "" ? 1 : arr[3]
+      # Parse +start,count from hunk header (POSIX awk compatible)
+      s = $0
+      sub(/.*\+/, "", s)
+      sub(/ .*/, "", s)
+      if (index(s, ",") > 0) {
+        split(s, parts, ",")
+        start = parts[1] + 0
+        count = parts[2] + 0
+      } else {
+        start = s + 0
+        count = 1
+      }
       for (i = start; i < start + count; i++) print i
     }
   ' | sort -nu)

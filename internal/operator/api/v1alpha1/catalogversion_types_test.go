@@ -94,6 +94,17 @@ func TestTCV05_CatalogVersionListDeepCopyNil(t *testing.T) {
 	assert.Nil(t, list.DeepCopy())
 }
 
+func TestCatalogVersionList_DeepCopyObject(t *testing.T) {
+	list := &CatalogVersionList{
+		Items: []CatalogVersion{{ObjectMeta: metav1.ObjectMeta{Name: "cv1"}}},
+	}
+	obj := list.DeepCopyObject()
+	require.NotNil(t, obj)
+	cpList, ok := obj.(*CatalogVersionList)
+	require.True(t, ok)
+	assert.Len(t, cpList.Items, 1)
+}
+
 // T-CV.06: AddToScheme registers CatalogVersion and CatalogVersionList.
 func TestTCV06_AddToSchemeRegistersCatalogVersion(t *testing.T) {
 	s := runtime.NewScheme()

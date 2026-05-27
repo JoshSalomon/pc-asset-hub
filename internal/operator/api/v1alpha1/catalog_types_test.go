@@ -84,6 +84,17 @@ func TestCatalogList_DeepCopyNil(t *testing.T) {
 	assert.Nil(t, list.DeepCopy())
 }
 
+func TestCatalogList_DeepCopyObject(t *testing.T) {
+	list := &CatalogList{
+		Items: []Catalog{{ObjectMeta: metav1.ObjectMeta{Name: "a"}}},
+	}
+	obj := list.DeepCopyObject()
+	require.NotNil(t, obj)
+	cpList, ok := obj.(*CatalogList)
+	require.True(t, ok)
+	assert.Len(t, cpList.Items, 1)
+}
+
 func TestCatalog_RegisteredInScheme(t *testing.T) {
 	s := runtime.NewScheme()
 	err := AddToScheme(s)
