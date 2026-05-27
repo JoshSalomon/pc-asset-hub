@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
@@ -308,6 +309,10 @@ func (s *ExportService) ExportCatalog(ctx context.Context, catalogName string, e
 			Constraints: tdv.Constraints,
 		})
 	}
+
+	sort.Slice(exportTypeDefs, func(i, j int) bool {
+		return exportTypeDefs[i].Name < exportTypeDefs[j].Name
+	})
 
 	// Build instances
 	allInstances, err := s.instRepo.ListByCatalog(ctx, catalog.ID)

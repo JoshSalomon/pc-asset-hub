@@ -567,3 +567,148 @@ func TestMCPGateway_MissingRouteNameKeyFails(t *testing.T) {
 // T-34.43: Note — schema re-validation on publish is tested in publish_service_test.go
 // (TestPublishPreview_RevalidatesSchema). The PublishPreview path calls
 // ValidateSchema before Export, catching schema drift since binding creation.
+
+// === TD-152: MCP Gateway configurable attribute mapping ===
+
+// T-35.30: ParameterSchema includes route_name_attr, mcp_path_attr, credential_secret_attr as optional with defaults
+func TestT35_30_ParameterSchemaIncludesAttrMapping(t *testing.T) {
+	e := export.NewMCPGatewayExporter()
+	params := e.ParameterSchema()
+
+	paramByName := make(map[string]export.ParameterDef)
+	for _, p := range params {
+		paramByName[p.Name] = p
+	}
+
+	rna, ok := paramByName["route_name_attr"]
+	require.True(t, ok, "route_name_attr must be in parameter schema")
+	assert.False(t, rna.Required, "route_name_attr should be optional")
+	assert.Equal(t, "route_name", rna.Default)
+
+	mpa, ok := paramByName["mcp_path_attr"]
+	require.True(t, ok, "mcp_path_attr must be in parameter schema")
+	assert.False(t, mpa.Required)
+	assert.Equal(t, "mcp_path", mpa.Default)
+
+	csa, ok := paramByName["credential_secret_attr"]
+	require.True(t, ok, "credential_secret_attr must be in parameter schema")
+	assert.False(t, csa.Required)
+	assert.Equal(t, "credential_secret", csa.Default)
+}
+
+// T-35.31: ValidateSchema uses mapped route_name_attr instead of hardcoded "route_name"
+func TestT35_31_ValidateSchemaUsesCustomAttrName(t *testing.T) {
+	e := export.NewMCPGatewayExporter()
+	params := map[string]string{
+		"server_type":         "mcp-server",
+		"tool_type":           "mcp-tool",
+		"virtual_server_type": "mcp-vs",
+		"route_name_attr":     "httproute-ref",
+	}
+	schema := export.SchemaInfo{
+		EntityTypes: []export.SchemaEntityType{
+			{
+				Name:       "mcp-server",
+				Attributes: []string{"httproute-ref", "mcp_path"},
+				Associations: []export.SchemaAssociation{
+					{Type: "containment", TargetEntityType: "mcp-tool"},
+				},
+			},
+			{Name: "mcp-tool"},
+			{
+				Name: "mcp-vs",
+				Associations: []export.SchemaAssociation{
+					{Type: "directional", TargetEntityType: "mcp-tool"},
+				},
+			},
+		},
+	}
+
+	err := e.ValidateSchema(params, schema)
+	assert.NoError(t, err)
+}
+
+// T-35.32: ValidateSchema fails when mapped attribute name doesn't exist in schema
+func TestT35_32_ValidateSchemaFailsOnMissingMappedAttr(t *testing.T) {
+	e := export.NewMCPGatewayExporter()
+	params := map[string]string{
+		"server_type":         "mcp-server",
+		"tool_type":           "mcp-tool",
+		"virtual_server_type": "mcp-vs",
+		"route_name_attr":     "nonexistent-attr",
+	}
+	schema := export.SchemaInfo{
+		EntityTypes: []export.SchemaEntityType{
+			{
+				Name:       "mcp-server",
+				Attributes: []string{"route_name"},
+				Associations: []export.SchemaAssociation{
+					{Type: "containment", TargetEntityType: "mcp-tool"},
+				},
+			},
+			{Name: "mcp-tool"},
+			{
+				Name: "mcp-vs",
+				Associations: []export.SchemaAssociation{
+					{Type: "directional", TargetEntityType: "mcp-tool"},
+				},
+			},
+		},
+	}
+
+	err := e.ValidateSchema(params, schema)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nonexistent-attr")
+}
+
+// T-35.33: Export reads attribute values using mapped names from binding params
+func TestT35_33_ExportUsesCustomAttrNames(t *testing.T) {
+	e := export.NewMCPGatewayExporter()
+	input := export.ExportInput{
+		CatalogName: "test",
+		Parameters: map[string]string{
+			"server_type":          "mcp-server",
+			"tool_type":            "mcp-tool",
+			"target_namespace":     "ns",
+			"route_name_attr":      "httproute-ref",
+			"mcp_path_attr":        "endpoint",
+			"credential_secret_attr": "secret-name",
+		},
+		InstancesByType: map[string][]*export.ExportInstance{
+			"mcp-server": {{
+				ID: "s1", EntityType: "mcp-server", Name: "my-server",
+				Attributes: map[string]any{
+					"httproute-ref": "my-route",
+					"endpoint":     "/custom-mcp",
+					"secret-name":  "my-secret",
+				},
+			}},
+		},
+		ChildrenOf: map[string][]*export.ExportInstance{
+			"s1": {{ID: "t1", EntityType: "mcp-tool", Name: "tool1"}},
+		},
+	}
+
+	output, err := e.Export(context.Background(), input)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(output.Artifacts), 1)
+
+	// The YAML should use the mapped attribute values
+	serverYAML := output.Artifacts[0].YAML
+	assert.Contains(t, serverYAML, "my-route", "should use httproute-ref value")
+	assert.Contains(t, serverYAML, "/custom-mcp", "should use endpoint value")
+	assert.Contains(t, serverYAML, "my-secret", "should use secret-name value")
+}
+
+// T-35.34: Export with default params (omitted optional attrs) uses "route_name", "mcp_path", "credential_secret"
+func TestT35_34_ExportDefaultAttrNames(t *testing.T) {
+	e := export.NewMCPGatewayExporter()
+	input := mcpInput()
+
+	output, err := e.Export(context.Background(), input)
+	require.NoError(t, err)
+	require.NotEmpty(t, output.Artifacts)
+
+	serverYAML := output.Artifacts[0].YAML
+	assert.Contains(t, serverYAML, "github-mcp-route", "should use route_name value")
+}
