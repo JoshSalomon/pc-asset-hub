@@ -242,3 +242,32 @@ func TestT15_32_IntegrationStatusPersisted(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, models.ValidationStatusValid, cat.ValidationStatus)
 }
+
+// T-35.28: Full validation with invalid instance name against real SQLite
+func TestT35_28_ValidationInvalidInstanceNameRealDB(t *testing.T) {
+	svc, ctx, catalogID, etID, _, _, catRepo, instRepo, _, _ := setupValidationIntegration(t)
+
+	instID := newID()
+	require.NoError(t, instRepo.Create(ctx, &models.EntityInstance{
+		ID: instID, EntityTypeID: etID, CatalogID: catalogID,
+		Name: "My Invalid Server!", Version: 1,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	result, err := svc.Validate(ctx, "test-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusInvalid, result.Status)
+
+	found := false
+	for _, e := range result.Errors {
+		if e.Field == "name" && e.InstanceName == "My Invalid Server!" {
+			assert.Contains(t, e.Violation, "invalid characters")
+			found = true
+		}
+	}
+	assert.True(t, found, "expected name format error for 'My Invalid Server!'")
+
+	cat, err := catRepo.GetByName(ctx, "test-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusInvalid, cat.ValidationStatus)
+}

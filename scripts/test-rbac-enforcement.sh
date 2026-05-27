@@ -405,7 +405,10 @@ RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" RW)
 assert_status "$RESP" "403" "RW cannot unpublish catalog (403)"
 
 RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" Admin)
-assert_status "$RESP" "200" "Admin can unpublish catalog (200)"
+assert_status "$RESP" "403" "Admin cannot unpublish published catalog (403) — TD-148"
+
+RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" SuperAdmin)
+assert_status "$RESP" "200" "SuperAdmin can unpublish published catalog (200)"
 
 # ============================================================
 # SECTION 8: Operational API — Export (Admin+ required)
@@ -582,7 +585,7 @@ RESP=$(api DELETE "$DATA_API/catalogs/$CATALOG_NAME" Admin)
 assert_status "$RESP" "403" "Admin cannot delete published catalog (403)"
 
 # Unpublish before cleanup
-api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" Admin > /dev/null
+api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" SuperAdmin > /dev/null
 
 # ============================================================
 # SECTION 12: Catalog Copy/Replace RBAC

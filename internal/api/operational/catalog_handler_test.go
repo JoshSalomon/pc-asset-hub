@@ -1141,3 +1141,147 @@ func TestDeleteCatalog_DeleteBindingsError_StillDeletes(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	assert.Equal(t, float64(2), body["deleted_bindings_count"])
 }
+
+func setupCatalogServerWithWriteAccess(publishedCatalogs map[string]bool) (*echo.Echo, *mocks.MockCatalogRepo, *mocks.MockCatalogVersionRepo) {
+	catRepo := new(mocks.MockCatalogRepo)
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo, nil, "")
+	accessChecker := &apimw.HeaderCatalogAccessChecker{}
+	handler := apiop.NewCatalogHandler(svc, nil, accessChecker)
+
+	e := echo.New()
+	g := e.Group("/api/data/v1/catalogs")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	requireRW := apimw.RequireRole(apimw.RoleRW)
+	requireAdmin := apimw.RequireRole(apimw.RoleAdmin)
+	publishChecker := &mockPublishChecker{published: publishedCatalogs}
+	requireWriteAccess := apimw.RequireWriteAccess(publishChecker)
+	apiop.RegisterCatalogRoutes(g, handler, requireRW, requireAdmin, requireWriteAccess)
+
+	return e, catRepo, cvRepo
+}
+
+// T-35.01: RequireWriteAccess applied to unpublish route — Admin on published catalog returns 403
+func TestT35_01_UnpublishPublished_AdminBlocked(t *testing.T) {
+	e, catRepo, _ := setupCatalogServerWithWriteAccess(map[string]bool{"my-catalog": true})
+
+	// Mock setup lets the handler succeed if middleware doesn't block
+	catRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", Published: true,
+	}, nil)
+	catRepo.On("UpdatePublished", mock.Anything, "c1", false, (*time.Time)(nil)).Return(nil)
+
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/unpublish", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// T-35.02: RequireWriteAccess on unpublish — SuperAdmin on published catalog returns 200
+func TestT35_02_UnpublishPublished_SuperAdminAllowed(t *testing.T) {
+	e, catRepo, _ := setupCatalogServerWithWriteAccess(map[string]bool{"my-catalog": true})
+
+	catRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", Published: true,
+	}, nil)
+	catRepo.On("UpdatePublished", mock.Anything, "c1", false, (*time.Time)(nil)).Return(nil)
+
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/unpublish", "", apimw.RoleSuperAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// T-35.03: RequireWriteAccess on publish — Admin on published catalog returns 403
+func TestT35_03_PublishPublished_AdminBlocked(t *testing.T) {
+	e, catRepo, _ := setupCatalogServerWithWriteAccess(map[string]bool{"my-catalog": true})
+
+	// If middleware doesn't block, handler would succeed
+	catRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid, Published: true,
+	}, nil)
+	catRepo.On("UpdatePublished", mock.Anything, "c1", true, mock.AnythingOfType("*time.Time")).Return(nil)
+
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/publish", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// T-35.04: Admin can still publish an unpublished valid catalog (no regression)
+func TestT35_04_PublishUnpublished_AdminAllowed(t *testing.T) {
+	e, catRepo, cvRepo := setupCatalogServerWithWriteAccess(map[string]bool{"my-catalog": false})
+
+	catRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog", CatalogVersionID: "cv1",
+		ValidationStatus: models.ValidationStatusValid,
+	}, nil)
+	catRepo.On("UpdatePublished", mock.Anything, "c1", true, mock.AnythingOfType("*time.Time")).Return(nil)
+	cvRepo.On("GetByID", mock.Anything, "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1"}, nil)
+
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/publish", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// T-35.05: Admin can still unpublish an unpublished catalog (no regression)
+func TestT35_05_UnpublishUnpublished_AdminAllowed(t *testing.T) {
+	e, catRepo, _ := setupCatalogServerWithWriteAccess(map[string]bool{"my-catalog": false})
+
+	catRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "my-catalog",
+	}, nil)
+	catRepo.On("UpdatePublished", mock.Anything, "c1", false, (*time.Time)(nil)).Return(nil)
+
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/unpublish", "", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// --- Coverage: PublishCatalog GetByName error with session token ---
+
+func TestPublish_SessionToken_GetByNameError(t *testing.T) {
+	catRepo := new(mocks.MockCatalogRepo)
+	cvRepo := new(mocks.MockCatalogVersionRepo)
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	svc := svcop.NewCatalogService(catRepo, cvRepo, instRepo, nil, "")
+	accessChecker := &apimw.HeaderCatalogAccessChecker{}
+
+	cache := export.NewInMemoryPreviewCache()
+	defer cache.Stop()
+	previewTime := time.Date(2026, 5, 10, 14, 0, 0, 0, time.UTC)
+	cache.Store("tok-456", export.PreviewCacheEntry{
+		CatalogName:      "my-catalog",
+		CatalogUpdatedAt: previewTime,
+		Artifacts:        map[string][]export.K8sArtifact{},
+	}, 5*time.Minute)
+
+	handler := apiop.NewCatalogHandler(svc, nil, accessChecker, apiop.WithPreviewCache(cache))
+
+	e := echo.New()
+	g := e.Group("/api/data/v1/catalogs")
+	rbac := &apimw.HeaderRBACProvider{}
+	g.Use(apimw.RBACMiddleware(rbac))
+	requireRW := apimw.RequireRole(apimw.RoleRW)
+	apiop.RegisterCatalogRoutes(g, handler, requireRW, apimw.RequireRole(apimw.RoleAdmin))
+
+	// GetByName returns error — exercises the error branch in PublishCatalog
+	catRepo.On("GetByName", mock.Anything, "my-catalog").Return(
+		(*models.Catalog)(nil), domainerrors.NewNotFound("Catalog", "my-catalog"))
+
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/my-catalog/publish",
+		`{"session_token":"tok-456"}`, apimw.RoleAdmin)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// --- Coverage: CopyCatalog bind error ---
+
+func TestCopyCatalog_BindError(t *testing.T) {
+	e, _, _, _, _, _ := setupCatalogServerWithCopy()
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/copy", "bad{json", apimw.RoleRW)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// --- Coverage: ReplaceCatalog bind error ---
+
+func TestReplaceCatalog_BindError(t *testing.T) {
+	e, _, _, _, _, _ := setupCatalogServerWithCopy()
+	rec := doCatalogRequest(e, http.MethodPost, "/api/data/v1/catalogs/replace", "bad{json", apimw.RoleAdmin)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}

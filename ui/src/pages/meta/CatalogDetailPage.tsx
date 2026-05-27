@@ -353,7 +353,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
             Publish
           </Button>
         )}
-        {isAdmin && catalog.published && (
+        {role === 'SuperAdmin' && catalog.published && (
           <Button variant="warning" onClick={async () => {
             try { await api.catalogs.unpublish(catalog.name); await loadCatalog() }
             catch (e) { setError(e instanceof Error ? e.message : 'Failed to unpublish') }
@@ -654,6 +654,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
         instanceName={detail.selectedInstance?.name}
         parentTypeName={parentTypeName}
         hasParent={!!detail.selectedInstance?.parent_instance_id}
+        currentParentInstanceId={detail.selectedInstance?.parent_instance_id}
         onSubmit={handleSetParent}
         onRemoveParent={() => {
           if (detail.selectedInstance && name && activeTab) {

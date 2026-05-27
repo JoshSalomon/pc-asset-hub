@@ -52,9 +52,14 @@ func (h *ExportBindingHandler) ListBindings(c echo.Context) error {
 	if err != nil {
 		return mapError(err)
 	}
+	showParams := isAdminOrAbove(c)
 	items := make([]any, len(bindings))
 	for i, b := range bindings {
-		items[i] = bindingToDTO(b)
+		dto := bindingToDTO(b)
+		if !showParams {
+			dto.Parameters = nil
+		}
+		items[i] = dto
 	}
 	return c.JSON(http.StatusOK, map[string]any{"items": items})
 }
@@ -66,7 +71,16 @@ func (h *ExportBindingHandler) GetBinding(c echo.Context) error {
 	if err != nil {
 		return mapError(err)
 	}
-	return c.JSON(http.StatusOK, bindingToDTO(binding))
+	dto := bindingToDTO(binding)
+	if !isAdminOrAbove(c) {
+		dto.Parameters = nil
+	}
+	return c.JSON(http.StatusOK, dto)
+}
+
+func isAdminOrAbove(c echo.Context) bool {
+	role := apimw.GetRoleFromContext(c)
+	return role == apimw.RoleAdmin || role == apimw.RoleSuperAdmin
 }
 
 type updateBindingRequest struct {
@@ -129,7 +143,7 @@ type bindingDTO struct {
 	ID            string            `json:"id"`
 	CatalogID     string            `json:"catalog_id"`
 	ExporterName  string            `json:"exporter_name"`
-	Parameters    map[string]string `json:"parameters"`
+	Parameters    map[string]string `json:"parameters,omitempty"`
 	Enabled       bool              `json:"enabled"`
 	LastRunAt     *time.Time        `json:"last_run_at"`
 	LastRunStatus string            `json:"last_run_status"`

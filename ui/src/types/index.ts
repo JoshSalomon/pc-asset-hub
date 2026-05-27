@@ -170,6 +170,7 @@ export interface EntityInstance {
   entity_type_id: string
   catalog_id: string
   parent_instance_id?: string
+  parent_instance_name?: string
   name: string
   description: string
   version: number
@@ -271,7 +272,7 @@ export interface ExportBinding {
   id: string
   catalog_id: string
   exporter_name: string
-  parameters: Record<string, string>
+  parameters?: Record<string, string>
   enabled: boolean
   last_run_at: string | null
   last_run_status: string
