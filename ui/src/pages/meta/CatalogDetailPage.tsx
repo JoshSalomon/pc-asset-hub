@@ -78,7 +78,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
   const canWrite = role === 'RW' || role === 'Admin' || role === 'SuperAdmin'
   const isAdmin = role === 'Admin' || role === 'SuperAdmin'
   const canMutate = canWrite && (!catalog?.published || role === 'SuperAdmin')
-  const canValidate = canMutate
+  const canValidate = canWrite
 
   // Add contained instance modal state
   const [addChildOpen, setAddChildOpen] = useState(false)
@@ -361,7 +361,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
             Unpublish
           </Button>
         )}
-        {canMutate && (
+        {canWrite && (
           <Button variant="secondary" onClick={() => { setCopyOpen(true); setCopyError(null) }}>
             Copy
           </Button>
@@ -469,7 +469,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
                   <div style={{ border: '1px solid #d2d2d2', padding: '1rem', marginTop: '1rem', borderRadius: '4px' }}>
                     <Title headingLevel="h4">Details: {detail.selectedInstance.name}</Title>
                     {detail.selectedInstance.parent_instance_id && (
-                      <p style={{ color: '#6a6e73', marginBottom: '0.5rem' }}>Contained by: {detail.parentName || detail.selectedInstance.parent_instance_id}</p>
+                      <p style={{ color: '#6a6e73', marginBottom: '0.5rem' }}>Contained by: {detail.selectedInstance.parent_instance_name || detail.selectedInstance.parent_instance_id}</p>
                     )}
                     {canMutate && schemaAssocs.filter(a => a.type === 'containment' && a.direction === 'incoming').length > 0 && (
                       <Button variant="secondary" size="sm" onClick={() => {

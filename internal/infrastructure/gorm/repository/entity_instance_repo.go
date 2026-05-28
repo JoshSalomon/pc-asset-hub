@@ -159,6 +159,7 @@ func (r *EntityInstanceGormRepo) List(ctx context.Context, entityTypeID, catalog
 		result[i] = records[i].ToModel()
 	}
 	resolveParentNames(result)
+	r.resolveUnresolvedParentNames(ctx, result)
 	return result, int(total), nil
 }
 
@@ -185,6 +186,34 @@ func resolveParentNames(instances []*models.EntityInstance) {
 	}
 	for _, inst := range instances {
 		if inst.ParentInstanceID != "" {
+			if name, ok := nameByID[inst.ParentInstanceID]; ok {
+				n := name
+				inst.ParentInstanceName = &n
+			}
+		}
+	}
+}
+
+func (r *EntityInstanceGormRepo) resolveUnresolvedParentNames(ctx context.Context, instances []*models.EntityInstance) {
+	var unresolvedIDs []string
+	for _, inst := range instances {
+		if inst.ParentInstanceID != "" && inst.ParentInstanceName == nil {
+			unresolvedIDs = append(unresolvedIDs, inst.ParentInstanceID)
+		}
+	}
+	if len(unresolvedIDs) == 0 {
+		return
+	}
+	var parents []gormmodels.EntityInstance
+	if err := getDB(ctx, r.db).Select("id, name").Where("id IN ?", unresolvedIDs).Find(&parents).Error; err != nil {
+		return
+	}
+	nameByID := make(map[string]string, len(parents))
+	for _, p := range parents {
+		nameByID[p.ID] = p.Name
+	}
+	for _, inst := range instances {
+		if inst.ParentInstanceID != "" && inst.ParentInstanceName == nil {
 			if name, ok := nameByID[inst.ParentInstanceID]; ok {
 				n := name
 				inst.ParentInstanceName = &n

@@ -944,8 +944,9 @@ test('details pane shows parent name not UUID', async () => {
   renderDetail('Admin')
   await expect.element(page.getByRole('gridcell', { name: 'child-inst' })).toBeVisible()
   await page.getByRole('button', { name: 'Details' }).first().click()
-  // Should show parent name, not UUID
+  // Should show parent name, not UUID — and UUID should never appear
   await expect.element(page.getByText('Contained by: my-parent-server').first()).toBeVisible()
+  await expect.element(page.getByText('p1')).not.toBeInTheDocument()
 })
 
 // UX: mode shows "Create New" (disabled) when no uncontained instances, hides "Adopt Existing"
@@ -1197,6 +1198,16 @@ test('T-35.07: Unpublish button visible for SuperAdmin on published catalog', as
   renderDetail('SuperAdmin')
   await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
   await expect.element(page.getByRole('button', { name: 'Unpublish' })).toBeVisible()
+})
+
+// TD-148 regression: Admin on published catalog sees Copy, Validate, and Export buttons
+test('Copy, Validate, and Export buttons visible for Admin on published catalog', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue(publishedCatalog)
+  renderDetail('Admin')
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Copy' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Validate' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Export' })).toBeVisible()
 })
 
 // T-35.08: Publish button still visible for Admin on unpublished valid catalog (no regression)
@@ -1721,11 +1732,14 @@ test('T-35.44: No warning when types are distinct', async () => {
 
 // Coverage: useCatalogData containmentTargetTypes cleanup cancellation
 test('useCatalogData containmentTargetTypes cleanup on unmount', async () => {
-  const { cleanup } = await import('vitest-browser-react')
+  let resolveSnapshot: (v: unknown) => void
   ;(api.versions.snapshot as Mock).mockImplementation(() => new Promise(resolve => {
-    setTimeout(() => resolve(mockSnapshot), 500)
+    resolveSnapshot = resolve
   }))
   renderDetail()
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  const { cleanup } = await import('vitest-browser-react')
   await cleanup()
-  await new Promise(r => setTimeout(r, 600))
+  resolveSnapshot!(mockSnapshot)
+  await new Promise(r => setTimeout(r, 50))
 })

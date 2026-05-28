@@ -248,8 +248,8 @@ describe('Test 2: Published catalog restrictions', () => {
     // No Edit description button (inline edit for description)
     expect(await pg.getByRole('button', { name: 'Edit description' }).isVisible()).toBe(false)
 
-    // No Validate button
-    expect(await pg.getByRole('button', { name: 'Validate' }).isVisible()).toBe(false)
+    // Validate button IS visible for Admin on published catalogs (validation is read-like)
+    await visible(pg.getByRole('button', { name: 'Validate' }))
 
     // TD-148: Unpublish button hidden for Admin on published catalogs (only SuperAdmin)
     expect(await pg.getByRole('button', { name: 'Unpublish' }).isVisible()).toBe(false)
