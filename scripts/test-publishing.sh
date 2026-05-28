@@ -379,7 +379,10 @@ fi
 # Clean up sync test catalog
 api DELETE "$DATA_API/catalogs/$SYNC_CATALOG" Admin > /dev/null 2>&1 || true
 
-header "Test T-30.22: Validate on published catalog blocked for RW (403)"
+header "Test T-30.22: Validate on published catalog allowed for RW (200)"
+# NOTE: This behavior is pending a product decision (TD-158).
+# Currently RW+ can validate published catalogs. If the decision is to
+# restrict to SuperAdmin, revert to expecting 403 here.
 
 # Re-validate and re-publish for this test
 api POST "$DATA_API/catalogs/$CATALOG_NAME/validate" SuperAdmin > /dev/null 2>&1
@@ -387,10 +390,10 @@ api POST "$DATA_API/catalogs/$CATALOG_NAME/publish" SuperAdmin > /dev/null 2>&1
 
 RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/validate" RW)
 STATUS=$(get_status "$RESP")
-if [ "$STATUS" = "403" ]; then
-  pass "T-30.22: Validate on published catalog blocked for RW (403)"
+if [ "$STATUS" = "200" ]; then
+  pass "T-30.22: Validate on published catalog allowed for RW (200)"
 else
-  fail "T-30.22: Validate on published catalog" "expected=403 got=$STATUS"
+  fail "T-30.22: Validate on published catalog" "expected=200 got=$STATUS"
 fi
 
 # Clean up: unpublish again
