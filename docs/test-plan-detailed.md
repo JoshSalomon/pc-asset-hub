@@ -2433,9 +2433,9 @@ Pure refactoring of `CatalogDetailPage.tsx` into 3 custom hooks + 5 modal compon
 
 | ID | Test Case | Layer | Expected |
 |----|-----------|-------|----------|
-| T-19.20 | selectInstance loads parent name, children, refs | Hook | All three populated from API |
-| T-19.21 | selectInstance with no parent skips parent name load | Hook | `parentName` empty, no parent API call |
-| T-19.22 | selectInstance handles parent name load error (falls back to ID) | Hook | `parentName` = parent UUID |
+| T-19.20 | selectInstance loads children and refs | Hook | Children and refs populated from API |
+| ~~T-19.21~~ | ~~selectInstance with no parent skips parent name load~~ | ~~Hook~~ | Removed — parentName state eliminated; parent name read from instance object directly |
+| ~~T-19.22~~ | ~~selectInstance handles parent name load error (falls back to ID)~~ | ~~Hook~~ | Removed — parentName state eliminated; no async parent lookup |
 | T-19.23 | selectInstance handles children load error | Hook | `children` = empty array |
 | T-19.24 | selectInstance handles refs load error | Hook | `forwardRefs`, `reverseRefs` = empty arrays |
 | T-19.25 | clearSelection resets all detail state | Hook | All detail state cleared |
