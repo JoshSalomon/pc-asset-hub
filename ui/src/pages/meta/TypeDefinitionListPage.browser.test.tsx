@@ -907,3 +907,77 @@ test('switching sort column resets direction to asc', async () => {
   const firstRow = rows[0]?.querySelector('td')?.textContent
   expect(firstRow).toContain('IsEnabled') // boolean is first when sorted asc by base_type
 })
+
+// === TD-137: Name search filter ===
+
+// T-35.76: SearchInput text field appears in Types tab toolbar
+test('T-35.76: SearchInput appears in Types tab toolbar', async () => {
+  renderPage()
+  await expect.element(page.getByRole('button', { name: 'BuiltinString' })).toBeVisible()
+  await expect.element(page.getByPlaceholder('Filter types by name')).toBeVisible()
+})
+
+// T-35.77: Typing in name filter filters type definitions by name (case-insensitive substring)
+test('T-35.77: name filter filters type definitions by name (case-insensitive)', async () => {
+  renderPage()
+  await expect.element(page.getByRole('button', { name: 'BuiltinString' })).toBeVisible()
+
+  // Type "port" (lowercase) — should match "PortNum" (case-insensitive)
+  await page.getByPlaceholder('Filter types by name').fill('port')
+
+  await expect.element(page.getByRole('button', { name: 'PortNum' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'BuiltinString' })).not.toBeInTheDocument()
+  await expect.element(page.getByRole('button', { name: 'StatusEnum' })).not.toBeInTheDocument()
+  await expect.element(page.getByRole('button', { name: 'IsEnabled' })).not.toBeInTheDocument()
+})
+
+// T-35.78: Clearing search restores full type list
+test('T-35.78: clearing search restores full type list', async () => {
+  renderPage()
+  await expect.element(page.getByRole('button', { name: 'BuiltinString' })).toBeVisible()
+
+  // Filter to show only one type
+  const searchInput = page.getByPlaceholder('Filter types by name')
+  await searchInput.fill('port')
+  await expect.element(page.getByRole('button', { name: 'PortNum' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'BuiltinString' })).not.toBeInTheDocument()
+
+  // Clear the search — click the PF SearchInput clear (X) button to exercise onClear callback
+  await page.getByRole('button', { name: 'Reset' }).click()
+
+  // All types should be visible again
+  await expect.element(page.getByRole('button', { name: 'BuiltinString' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'StatusEnum' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'PortNum' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'IsEnabled' })).toBeVisible()
+})
+
+// T-35.79: Name filter combines with base type dropdown filter
+test('T-35.79: name filter combines with base type dropdown filter', async () => {
+  // Use types with overlapping names across base types for a meaningful combo test
+  const overlappingTypes = [
+    { ...mockSystemType, id: 't1', name: 'StringName', base_type: 'string' as const },
+    { ...mockSystemType, id: 't2', name: 'StringLabel', base_type: 'string' as const, system: false },
+    { ...mockSystemType, id: 't3', name: 'IntName', base_type: 'integer' as const, system: false },
+  ]
+  ;(api.typeDefinitions.list as Mock).mockResolvedValue({ items: overlappingTypes, total: 3 })
+  renderPage()
+  await expect.element(page.getByRole('button', { name: 'StringName' })).toBeVisible()
+
+  // First, filter by base type = string
+  await page.getByText('All base types').click()
+  await page.getByText('string', { exact: true }).last().click()
+
+  // Both string types visible, integer type hidden
+  await expect.element(page.getByRole('button', { name: 'StringName' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'StringLabel' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'IntName' })).not.toBeInTheDocument()
+
+  // Now also filter by name containing "Label"
+  await page.getByPlaceholder('Filter types by name').fill('Label')
+
+  // Only StringLabel should remain (string base type AND name contains "Label")
+  await expect.element(page.getByRole('button', { name: 'StringLabel' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'StringName' })).not.toBeInTheDocument()
+  await expect.element(page.getByRole('button', { name: 'IntName' })).not.toBeInTheDocument()
+})

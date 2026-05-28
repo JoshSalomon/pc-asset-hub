@@ -619,16 +619,28 @@ The system leverages OpenShift's native RBAC. No custom user database or authent
 
 | Role | Meta API | Operational API | Lifecycle |
 |------|----------|----------------|-----------|
-| **RO** | GET only | GET only | — |
-| **RW** | GET only | Full CRUD | Create catalog version (dev). Promote dev→test. Demote test→dev. |
-| **Admin** | Full access (non-production) | Full CRUD | All RW lifecycle permissions. Promote test→production. |
-| **Super Admin** | Full access (including production) | Full CRUD | All Admin lifecycle permissions. Demote from production (to test or dev). |
+| **RO** | GET only | GET only (export binding parameters hidden) | — |
+| **RW** | GET only | Full CRUD on unpublished catalogs (export binding parameters hidden) | Create catalog version (dev). Promote dev→test. Demote test→dev. |
+| **Admin** | Full access (non-production) | Full CRUD on unpublished catalogs. Read + manage export bindings. Publish catalogs. | All RW lifecycle permissions. Promote test→production. |
+| **Super Admin** | Full access (including production) | Full CRUD on all catalogs (including published). Unpublish catalogs. | All Admin lifecycle permissions. Demote from production (to test or dev). |
+
+### Published Catalog Write Protection
+
+Published catalogs are immutable for all roles except Super Admin. The `RequireWriteAccess` middleware intercepts mutation requests (PUT, POST, DELETE) on published catalogs and returns 403 unless the caller is Super Admin. This applies to all data mutation routes including publish/unpublish lifecycle transitions.
+
+This is a security invariant: Admin can publish a catalog (promoting it to a protected state), but only Super Admin can unpublish or modify a published catalog's data. This prevents accidental or unauthorized changes to production-facing data.
+
+### Export Binding Access Model
+
+Export bindings are scoped to catalogs and follow a split access model:
+- **Mutations** (create, update, delete, run): Admin+ only (`requireAdmin` middleware)
+- **Read** (list, get): Any user with catalog access, but **binding parameters are filtered** for non-Admin users. RO/RW users see binding metadata (exporter name, status, timestamps) but not parameter values (which may contain infrastructure details like target namespaces and credential secret names).
 
 ### Implementation
 
 - Authentication: Extract identity from request (ServiceAccount token or Bearer token via OpenShift OAuth).
 - Authorization: SubjectAccessReview via `k8s.io/client-go` maps the authenticated user to application roles.
-- The API middleware enforces role checks before handlers execute.
+- The API middleware enforces role checks before handlers execute. Key middleware: `RequireRW` (RW+), `RequireAdmin` (Admin+), `RequireWriteAccess` (SuperAdmin on published catalogs), `RequireCatalogAccess` (per-catalog RBAC).
 - Development mode: Configurable mock RBAC for local development outside a cluster.
 
 ---

@@ -2019,3 +2019,18 @@ func TestT17_44_ReplaceCatalog_NilCRManager(t *testing.T) {
 	_, err := svc.ReplaceCatalog(ctx, "staging", "prod", "prod-archive")
 	require.NoError(t, err)
 }
+
+// CopyCatalog — ListByCatalog error propagates
+func TestCopyCatalog_ListByCatalogError(t *testing.T) {
+	svc, catRepo, _, instRepo, _, _ := setupCatalogServiceWithCopy()
+	ctx := context.Background()
+
+	catRepo.On("GetByName", ctx, "source").Return(&models.Catalog{
+		ID: "src-id", Name: "source", CatalogVersionID: "cv1",
+	}, nil)
+	instRepo.On("ListByCatalog", ctx, "src-id").Return(nil, fmt.Errorf("list error"))
+
+	_, err := svc.CopyCatalog(ctx, "source", "target", "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "list error")
+}

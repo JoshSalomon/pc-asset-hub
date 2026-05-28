@@ -42,7 +42,14 @@ func (r *EntityInstanceGormRepo) GetByID(ctx context.Context, id string) (*model
 		}
 		return nil, result.Error
 	}
-	return record.ToModel(), nil
+	inst := record.ToModel()
+	if inst.ParentInstanceID != "" {
+		var parent gormmodels.EntityInstance
+		if err := getDB(ctx, r.db).Select("name").First(&parent, "id = ?", inst.ParentInstanceID).Error; err == nil {
+			inst.ParentInstanceName = &parent.Name
+		}
+	}
+	return inst, nil
 }
 
 func (r *EntityInstanceGormRepo) GetByNameAndParent(ctx context.Context, entityTypeID, catalogID, parentInstanceID, name string) (*models.EntityInstance, error) {
@@ -151,6 +158,8 @@ func (r *EntityInstanceGormRepo) List(ctx context.Context, entityTypeID, catalog
 	for i := range records {
 		result[i] = records[i].ToModel()
 	}
+	resolveParentNames(result)
+	r.resolveUnresolvedParentNames(ctx, result)
 	return result, int(total), nil
 }
 
@@ -166,7 +175,51 @@ func (r *EntityInstanceGormRepo) ListByCatalog(ctx context.Context, catalogID st
 	for i := range records {
 		result[i] = records[i].ToModel()
 	}
+	resolveParentNames(result)
 	return result, nil
+}
+
+func resolveParentNames(instances []*models.EntityInstance) {
+	nameByID := make(map[string]string, len(instances))
+	for _, inst := range instances {
+		nameByID[inst.ID] = inst.Name
+	}
+	for _, inst := range instances {
+		if inst.ParentInstanceID != "" {
+			if name, ok := nameByID[inst.ParentInstanceID]; ok {
+				n := name
+				inst.ParentInstanceName = &n
+			}
+		}
+	}
+}
+
+func (r *EntityInstanceGormRepo) resolveUnresolvedParentNames(ctx context.Context, instances []*models.EntityInstance) {
+	var unresolvedIDs []string
+	for _, inst := range instances {
+		if inst.ParentInstanceID != "" && inst.ParentInstanceName == nil {
+			unresolvedIDs = append(unresolvedIDs, inst.ParentInstanceID)
+		}
+	}
+	if len(unresolvedIDs) == 0 {
+		return
+	}
+	var parents []gormmodels.EntityInstance
+	if err := getDB(ctx, r.db).Select("id, name").Where("id IN ?", unresolvedIDs).Find(&parents).Error; err != nil {
+		return
+	}
+	nameByID := make(map[string]string, len(parents))
+	for _, p := range parents {
+		nameByID[p.ID] = p.Name
+	}
+	for _, inst := range instances {
+		if inst.ParentInstanceID != "" && inst.ParentInstanceName == nil {
+			if name, ok := nameByID[inst.ParentInstanceID]; ok {
+				n := name
+				inst.ParentInstanceName = &n
+			}
+		}
+	}
 }
 
 func (r *EntityInstanceGormRepo) ListByParent(ctx context.Context, parentInstanceID string, params models.ListParams) ([]*models.EntityInstance, int, error) {
@@ -194,6 +247,15 @@ func (r *EntityInstanceGormRepo) ListByParent(ctx context.Context, parentInstanc
 	result := make([]*models.EntityInstance, len(records))
 	for i := range records {
 		result[i] = records[i].ToModel()
+	}
+	// All children share the same parent — resolve the name once
+	if len(result) > 0 {
+		var parent gormmodels.EntityInstance
+		if err := getDB(ctx, r.db).Select("name").First(&parent, "id = ?", parentInstanceID).Error; err == nil {
+			for _, inst := range result {
+				inst.ParentInstanceName = &parent.Name
+			}
+		}
 	}
 	return result, int(total), nil
 }

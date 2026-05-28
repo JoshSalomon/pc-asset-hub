@@ -124,9 +124,9 @@ export default function ExportBindingsPanel({ catalogName, catalogVersionId, isA
               <tr key={b.id} role="row">
                 <td role="gridcell">{b.exporter_name}</td>
                 <td role="gridcell">
-                  {Object.entries(b.parameters).map(([k, v]) => (
+                  {b.parameters ? Object.entries(b.parameters).map(([k, v]) => (
                     <Label key={k} style={{ marginRight: '0.25rem' }}>{k}={v}</Label>
-                  ))}
+                  )) : null}
                 </td>
                 <td role="gridcell">
                   {isAdmin ? (
@@ -264,6 +264,24 @@ function BindingModal({ mode, catalogName, catalogVersionId, exporters, binding,
     p => p.required && !params[p.name]
   ) ?? false
 
+  const duplicateEntityTypeWarning = (() => {
+    if (!exporter) return null
+    const etParams = exporter.parameter_schema.filter(p => p.type === 'entity_type')
+    const valueToNames: Record<string, string[]> = {}
+    for (const p of etParams) {
+      const v = params[p.name]
+      if (v) {
+        if (!valueToNames[v]) valueToNames[v] = []
+        valueToNames[v].push(p.name)
+      }
+    }
+    const dups = Object.entries(valueToNames).filter(([, names]) => names.length > 1)
+    if (dups.length === 0) return null
+    return dups.map(([, names]) =>
+      `Parameters ${names.join(' and ')} use the same entity type. For MCP Gateway, server and tool types should be distinct.`
+    ).join(' ')
+  })()
+
   const handleSubmit = async () => {
     try {
       setSubmitting(true)
@@ -290,6 +308,7 @@ function BindingModal({ mode, catalogName, catalogVersionId, exporters, binding,
       <ModalBody>
         {error && <Alert variant={AlertVariant.danger} title={error} isInline style={{ marginBottom: '1rem' }} />}
         {pinLoadError && <Alert variant={AlertVariant.warning} title={`Failed to load entity types: ${pinLoadError}`} isInline style={{ marginBottom: '1rem' }} />}
+        {duplicateEntityTypeWarning && <Alert variant={AlertVariant.warning} title={duplicateEntityTypeWarning} isInline style={{ marginBottom: '1rem' }} />}
         {mode === 'create' && (
           <FormGroup label="Exporter" isRequired fieldId="exporter-select">
             <select
@@ -316,6 +335,7 @@ function BindingModal({ mode, catalogName, catalogVersionId, exporters, binding,
             {p.type === 'entity_type' ? (
               <select
                 id={`param-${p.name}`}
+                data-testid={`param-${p.name}`}
                 aria-label={p.name}
                 value={params[p.name] || ''}
                 onChange={e => setParams(prev => ({ ...prev, [p.name]: e.target.value }))}

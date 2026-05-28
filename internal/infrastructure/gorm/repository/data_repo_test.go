@@ -547,6 +547,14 @@ func TestT2_21_DeleteAssociationLink(t *testing.T) {
 	assert.Len(t, refs, 0)
 }
 
+// Coverage: Delete AssociationLink with non-existent ID returns NotFound
+func TestAssociationLink_Delete_NotFound(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+	err := tc.linkRepo.Delete(ctx, "nonexistent-link-id")
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
 func TestT2_22_FilterForwardRefsByAssociationType(t *testing.T) {
 	tc, ctx := setupTestContext(t)
 
@@ -1434,4 +1442,125 @@ func TestExportBinding_ClosedDB(t *testing.T) {
 
 	_, err = bindingRepo.CountByCatalog(ctx, "x")
 	assert.Error(t, err)
+}
+
+// === TD-33: parent_instance_name in API response ===
+
+// T-35.67: ListByCatalog resolves parent name correctly
+func TestT35_67_ListByCatalog_ParentName(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+	catalogID := tc.cvID
+
+	parentID := id()
+	childID := id()
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: parentID, EntityTypeID: tc.etID, CatalogID: catalogID,
+		Name: "parent-server", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: childID, EntityTypeID: tc.etID, CatalogID: catalogID,
+		ParentInstanceID: parentID,
+		Name: "child-tool", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	results, err := tc.instRepo.ListByCatalog(ctx, catalogID)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+
+	for _, inst := range results {
+		if inst.Name == "child-tool" {
+			require.NotNil(t, inst.ParentInstanceName, "child should have parent name")
+			assert.Equal(t, "parent-server", *inst.ParentInstanceName)
+		}
+		if inst.Name == "parent-server" {
+			assert.Nil(t, inst.ParentInstanceName, "root instance should have nil parent name")
+		}
+	}
+}
+
+// T-35.68: ListByCatalog returns nil parent name for root instances
+func TestT35_68_ListByCatalog_NilParentForRoot(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+	catalogID := tc.cvID
+
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: id(), EntityTypeID: tc.etID, CatalogID: catalogID,
+		Name: "root-instance", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	results, err := tc.instRepo.ListByCatalog(ctx, catalogID)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Nil(t, results[0].ParentInstanceName)
+}
+
+// T-35.69: GetByID resolves parent name correctly
+func TestT35_69_GetByID_ParentName(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+	catalogID := tc.cvID
+
+	parentID := id()
+	childID := id()
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: parentID, EntityTypeID: tc.etID, CatalogID: catalogID,
+		Name: "parent-server", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, tc.instRepo.Create(ctx, &models.EntityInstance{
+		ID: childID, EntityTypeID: tc.etID, CatalogID: catalogID,
+		ParentInstanceID: parentID,
+		Name: "child-tool", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	child, err := tc.instRepo.GetByID(ctx, childID)
+	require.NoError(t, err)
+	require.NotNil(t, child.ParentInstanceName)
+	assert.Equal(t, "parent-server", *child.ParentInstanceName)
+
+	parent, err := tc.instRepo.GetByID(ctx, parentID)
+	require.NoError(t, err)
+	assert.Nil(t, parent.ParentInstanceName)
+}
+
+// TD-33 regression: List (per-type) resolves cross-type parent name
+func TestTD33_List_CrossTypeParentName(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	ctx := context.Background()
+	etRepo := repository.NewEntityTypeGormRepo(db)
+	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	instRepo := repository.NewEntityInstanceGormRepo(db)
+
+	// Create CV
+	cvID := id()
+	require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{ID: cvID, VersionLabel: "v-" + cvID[:8], LifecycleStage: models.LifecycleStageDevelopment, CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+
+	// Create two entity types
+	childETID := id()
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: childETID, Name: "Tool-" + childETID[:8], CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	childETVID := id()
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: childETVID, EntityTypeID: childETID, Version: 1, CreatedAt: time.Now()}))
+
+	parentETID := id()
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: parentETID, Name: "Server-" + parentETID[:8], CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+
+	// Parent is of type "Server", child is of type "Tool"
+	catalogID := cvID
+	parentID := id()
+	childID := id()
+	require.NoError(t, instRepo.Create(ctx, &models.EntityInstance{
+		ID: parentID, EntityTypeID: parentETID, CatalogID: catalogID,
+		Name: "my-server", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, instRepo.Create(ctx, &models.EntityInstance{
+		ID: childID, EntityTypeID: childETID, CatalogID: catalogID,
+		ParentInstanceID: parentID,
+		Name: "my-tool", Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+
+	// List only the child's entity type — parent is a different type, not in result set
+	results, _, err := instRepo.List(ctx, childETID, catalogID, models.ListParams{})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.NotNil(t, results[0].ParentInstanceName, "cross-type parent name should be resolved")
+	assert.Equal(t, "my-server", *results[0].ParentInstanceName)
 }

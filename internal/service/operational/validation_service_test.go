@@ -1956,3 +1956,157 @@ func TestContainment_TargetCardinality_ChildCount(t *testing.T) {
 	assert.Equal(t, models.ValidationStatusValid, result.Status)
 	assert.Empty(t, result.Errors, "source cardinality 1 means each child has 1 parent, NOT that parent has max 1 child")
 }
+
+// === TD-140: Catalog validation instance name format check ===
+
+// T-35.22: Validate produces error for instance with uppercase name
+func TestT35_22_ValidateUppercaseName(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "My Server"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusInvalid, result.Status)
+	found := false
+	for _, e := range result.Errors {
+		if e.Field == "name" && e.InstanceName == "My Server" {
+			assert.Contains(t, e.Violation, "invalid characters")
+			found = true
+		}
+	}
+	assert.True(t, found, "expected name format error for 'My Server'")
+}
+
+// T-35.23: Validate produces error for instance with spaces
+func TestT35_23_ValidateNameWithSpaces(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "my server"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	found := false
+	for _, e := range result.Errors {
+		if e.Field == "name" && e.InstanceName == "my server" {
+			found = true
+		}
+	}
+	assert.True(t, found, "expected name format error for 'my server'")
+}
+
+// T-35.24: Validate produces error for instance with special characters
+func TestT35_24_ValidateNameSpecialChars(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "my_server!"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	found := false
+	for _, e := range result.Errors {
+		if e.Field == "name" && e.InstanceName == "my_server!" {
+			found = true
+		}
+	}
+	assert.True(t, found, "expected name format error for 'my_server!'")
+}
+
+// T-35.25: Validate produces error for instance name exceeding 63 chars
+func TestT35_25_ValidateNameTooLong(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	longName := "a" + string(make([]byte, 63)) // 64 chars total — 'a' followed by 63 null bytes won't match
+	// Use a proper 64-char DNS label
+	longName = "abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123" // 68 chars
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: longName},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	found := false
+	for _, e := range result.Errors {
+		if e.Field == "name" && e.InstanceName == longName {
+			found = true
+		}
+	}
+	assert.True(t, found, "expected name format error for name exceeding 63 chars")
+}
+
+// T-35.26: Validate passes for valid DNS-label name
+func TestT35_26_ValidateValidDNSName(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: "my-server-01"},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusValid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusValid, result.Status)
+	assert.Empty(t, result.Errors)
+}
+
+// T-35.27: Validate still catches empty names (no regression)
+func TestT35_27_ValidateEmptyNameStillCaught(t *testing.T) {
+	svc, m := setupValidationService()
+	ctx := context.Background()
+	m.setupSingleEntityType(ctx)
+
+	m.instRepo.On("ListByCatalog", ctx, "c1").Return([]*models.EntityInstance{
+		{ID: "inst1", EntityTypeID: "et1", CatalogID: "c1", Name: ""},
+	}, nil)
+	m.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+	m.iavRepo.On("GetValuesForVersion", ctx, "inst1", mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	m.assocRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Association{}, nil)
+	m.catRepo.On("UpdateValidationStatus", ctx, "c1", models.ValidationStatusInvalid).Return(nil)
+
+	result, err := svc.Validate(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.Equal(t, models.ValidationStatusInvalid, result.Status)
+	found := false
+	for _, e := range result.Errors {
+		if e.Field == "name" && e.Violation == `required system attribute "name" is missing a value` {
+			found = true
+		}
+	}
+	assert.True(t, found, "empty name should still be caught")
+}

@@ -85,6 +85,39 @@ test('T-20.31: SetParentModal onSubmit receives correct args', async () => {
   expect(props.onSubmit).toHaveBeenCalledWith('server', 'p2')
 })
 
+// T-35.55: Set Parent dropdown excludes current parent instance
+test('T-35.55: Set Parent dropdown excludes current parent instance', async () => {
+  renderModal({ currentParentInstanceId: 'p1' })
+  await page.getByText('Select container...').click()
+  // server-1 (id=p1) should be filtered out since it's the current parent
+  await expect.element(page.getByText('server-2')).toBeVisible()
+  // server-1 should NOT appear in the dropdown
+  await expect.element(page.getByText('server-1')).not.toBeInTheDocument()
+})
+
+// T-35.56: Set Parent dropdown shows all other instances of parent type
+test('T-35.56: Set Parent dropdown shows all other instances when filtering current parent', async () => {
+  const threeInstances = [
+    ...mockParentInstances,
+    { id: 'p3', entity_type_id: 'et1', catalog_id: 'cat1', name: 'server-3', description: '', version: 1, attributes: [], created_at: '', updated_at: '' },
+  ]
+  ;(api.instances.list as Mock).mockResolvedValue({ items: threeInstances, total: 3 })
+  renderModal({ currentParentInstanceId: 'p2' })
+  await page.getByText('Select container...').click()
+  // server-2 (id=p2) is the current parent, should be excluded
+  await expect.element(page.getByText('server-1')).toBeVisible()
+  await expect.element(page.getByText('server-3')).toBeVisible()
+  await expect.element(page.getByText('server-2')).not.toBeInTheDocument()
+})
+
+// T-35.57: Set Parent dropdown shows all instances when no current parent
+test('T-35.57: Set Parent dropdown shows all instances when instance has no current parent', async () => {
+  renderModal() // no currentParentInstanceId prop
+  await page.getByText('Select container...').click()
+  await expect.element(page.getByText('server-1')).toBeVisible()
+  await expect.element(page.getByText('server-2')).toBeVisible()
+})
+
 // Line 50: loadParentInstances guard — catalogName undefined
 test('SetParentModal guard: loadParentInstances with undefined catalogName clears instances', async () => {
   renderModal({ catalogName: undefined })

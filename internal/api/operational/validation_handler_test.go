@@ -288,20 +288,32 @@ func setupValidationServerWithWriteGuard(publishedCatalogs map[string]bool) (*ec
 	return e, catRepo, instRepo, pinRepo, etvRepo, attrRepo, assocRepo, tdvRepo, tdRepo, linkRepo, etRepo, iavRepo
 }
 
-func TestValidateCatalog_PublishedBlocked_RW(t *testing.T) {
-	e, _, _, _, _, _, _, _, _, _, _, _ := setupValidationServerWithWriteGuard(map[string]bool{"prod-catalog": true})
+func TestValidateCatalog_PublishedAllowed_RW(t *testing.T) {
+	e, catRepo, instRepo, pinRepo, _, _, _, _, _, _, _, _ := setupValidationServerWithWriteGuard(map[string]bool{"prod-catalog": true})
+
+	catRepo.On("GetByName", mock.Anything, "prod-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "prod-catalog", CatalogVersionID: "cv1", Published: true,
+	}, nil)
+	instRepo.On("ListByCatalog", mock.Anything, "c1").Return([]*models.EntityInstance{}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+	catRepo.On("UpdateValidationStatus", mock.Anything, "c1", mock.Anything).Return(nil)
 
 	rec := doValidateRequest(e, "prod-catalog", apimw.RoleRW)
-	assert.Equal(t, http.StatusForbidden, rec.Code)
-	assert.Contains(t, rec.Body.String(), "SuperAdmin")
+	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
-func TestValidateCatalog_PublishedBlocked_Admin(t *testing.T) {
-	e, _, _, _, _, _, _, _, _, _, _, _ := setupValidationServerWithWriteGuard(map[string]bool{"prod-catalog": true})
+func TestValidateCatalog_PublishedAllowed_Admin(t *testing.T) {
+	e, catRepo, instRepo, pinRepo, _, _, _, _, _, _, _, _ := setupValidationServerWithWriteGuard(map[string]bool{"prod-catalog": true})
+
+	catRepo.On("GetByName", mock.Anything, "prod-catalog").Return(&models.Catalog{
+		ID: "c1", Name: "prod-catalog", CatalogVersionID: "cv1", Published: true,
+	}, nil)
+	instRepo.On("ListByCatalog", mock.Anything, "c1").Return([]*models.EntityInstance{}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+	catRepo.On("UpdateValidationStatus", mock.Anything, "c1", mock.Anything).Return(nil)
 
 	rec := doValidateRequest(e, "prod-catalog", apimw.RoleAdmin)
-	assert.Equal(t, http.StatusForbidden, rec.Code)
-	assert.Contains(t, rec.Body.String(), "SuperAdmin")
+	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
 func TestValidateCatalog_PublishedAllowed_SuperAdmin(t *testing.T) {

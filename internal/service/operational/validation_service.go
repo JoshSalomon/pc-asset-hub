@@ -147,7 +147,7 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 		assocCache[etvID] = assocs
 	}
 
-	// Validate system attribute: Name must be non-empty for all instances
+	// Validate system attribute: Name must be non-empty and DNS-label format for all instances
 	for _, inst := range instances {
 		if strings.TrimSpace(inst.Name) == "" {
 			etName := resolveETName(inst.EntityTypeID)
@@ -156,6 +156,14 @@ func (s *CatalogValidationService) Validate(ctx context.Context, catalogName str
 				InstanceName: "(id: " + inst.ID + ")",
 				Field:        "name",
 				Violation:    "required system attribute \"name\" is missing a value",
+			})
+		} else if len(inst.Name) > 63 || !dnsLabelRegex.MatchString(inst.Name) {
+			etName := resolveETName(inst.EntityTypeID)
+			validationErrors = append(validationErrors, ValidationError{
+				EntityType:   etName,
+				InstanceName: inst.Name,
+				Field:        "name",
+				Violation:    "instance name contains invalid characters (expected lowercase DNS label: [a-z0-9-], max 63 chars)",
 			})
 		}
 	}

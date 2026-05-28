@@ -878,6 +878,77 @@ func TestDeleteTypeDefinition_ListPinsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "pin query error")
 }
 
+// #6: Delete without pinRepo/etvRepo — checkTypeDefInUse returns validation error
+func TestDeleteTypeDefinition_WithoutPinAndETVRepos(t *testing.T) {
+	svc, tdRepo, _, _ := newTypeDefSvc()
+
+	td := &models.TypeDefinition{ID: "td-1", Name: "guardrailID", BaseType: models.BaseTypeString}
+	tdRepo.On("GetByID", mock.Anything, "td-1").Return(td, nil)
+
+	err := svc.DeleteTypeDefinition(context.Background(), "td-1")
+	assert.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "WithPinRepo")
+}
+
+// #7: checkTypeDefInUse — etvRepo.GetByID error during latest-version check
+func TestDeleteTypeDefinition_ETVGetByIDError(t *testing.T) {
+	svc, tdRepo, tdvRepo, attrRepo, pinRepo, etvRepo := newTypeDefSvcWithPins()
+
+	td := &models.TypeDefinition{ID: "td-1", Name: "guardrailID", BaseType: models.BaseTypeString}
+	tdRepo.On("GetByID", mock.Anything, "td-1").Return(td, nil)
+
+	tdvRepo.On("ListByTypeDefinition", mock.Anything, "td-1").Return([]*models.TypeDefinitionVersion{
+		{ID: "tdv-1", TypeDefinitionID: "td-1", VersionNumber: 1},
+	}, nil)
+
+	// Attribute in etv-1 references tdv-1
+	attrRepo.On("ListByTypeDefinitionVersionIDs", mock.Anything, []string{"tdv-1"}).Return([]*models.Attribute{
+		{ID: "attr-1", Name: "guard_id", EntityTypeVersionID: "etv-1", TypeDefinitionVersionID: "tdv-1"},
+	}, nil)
+
+	// etv-1 is NOT pinned
+	pinRepo.On("ListByEntityTypeVersionIDs", mock.Anything, []string{"etv-1"}).Return([]*models.CatalogVersionPin{}, nil)
+
+	// etvRepo.GetByID fails
+	etvRepo.On("GetByID", mock.Anything, "etv-1").Return(nil, errors.New("etv lookup error"))
+
+	err := svc.DeleteTypeDefinition(context.Background(), "td-1")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "etv lookup error")
+}
+
+// #8: checkTypeDefInUse — etvRepo.GetLatestByEntityType error during latest-version check
+func TestDeleteTypeDefinition_GetLatestByEntityTypeError(t *testing.T) {
+	svc, tdRepo, tdvRepo, attrRepo, pinRepo, etvRepo := newTypeDefSvcWithPins()
+
+	td := &models.TypeDefinition{ID: "td-1", Name: "guardrailID", BaseType: models.BaseTypeString}
+	tdRepo.On("GetByID", mock.Anything, "td-1").Return(td, nil)
+
+	tdvRepo.On("ListByTypeDefinition", mock.Anything, "td-1").Return([]*models.TypeDefinitionVersion{
+		{ID: "tdv-1", TypeDefinitionID: "td-1", VersionNumber: 1},
+	}, nil)
+
+	attrRepo.On("ListByTypeDefinitionVersionIDs", mock.Anything, []string{"tdv-1"}).Return([]*models.Attribute{
+		{ID: "attr-1", Name: "guard_id", EntityTypeVersionID: "etv-1", TypeDefinitionVersionID: "tdv-1"},
+	}, nil)
+
+	// etv-1 is NOT pinned
+	pinRepo.On("ListByEntityTypeVersionIDs", mock.Anything, []string{"etv-1"}).Return([]*models.CatalogVersionPin{}, nil)
+
+	// etvRepo.GetByID succeeds
+	etvRepo.On("GetByID", mock.Anything, "etv-1").Return(&models.EntityTypeVersion{
+		ID: "etv-1", EntityTypeID: "et-1", Version: 2,
+	}, nil)
+
+	// etvRepo.GetLatestByEntityType fails
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-1").Return(nil, errors.New("get latest error"))
+
+	err := svc.DeleteTypeDefinition(context.Background(), "td-1")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "get latest error")
+}
+
 // Coverage: checkTypeDefInUse with no versions returns nil (L251 early return)
 func TestDeleteTypeDefinition_NoVersions_SkipsInUseCheck(t *testing.T) {
 	svc, tdRepo, tdvRepo, _, _, _ := newTypeDefSvcWithPins()

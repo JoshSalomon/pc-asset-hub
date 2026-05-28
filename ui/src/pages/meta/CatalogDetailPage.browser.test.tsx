@@ -931,22 +931,22 @@ test('set container modal shows container type as text and pre-loads instances',
 test('details pane shows parent name not UUID', async () => {
   const childInstances = [{
     id: 'c1', entity_type_id: 'et1', catalog_id: 'cat1', parent_instance_id: 'p1',
+    parent_instance_name: 'my-parent-server',
     name: 'child-inst', description: '', version: 1,
     attributes: [{ name: 'hostname', type: 'string', value: 'h1' }],
     created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
   }]
   ;(api.instances.list as Mock).mockResolvedValue({ items: childInstances, total: 1 })
-  // Mock GetByID: return child instance for 'c1', parent for 'p1'
   ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
     if (id === 'c1') return Promise.resolve(childInstances[0])
-    if (id === 'p1') return Promise.resolve({ id: 'p1', name: 'my-parent-server', entity_type_id: 'et1' })
     return Promise.resolve({ id, name: `inst-${id}`, entity_type_id: 'et1' })
   })
   renderDetail('Admin')
   await expect.element(page.getByRole('gridcell', { name: 'child-inst' })).toBeVisible()
   await page.getByRole('button', { name: 'Details' }).first().click()
-  // Should show parent name, not UUID
+  // Should show parent name, not UUID — and UUID should never appear
   await expect.element(page.getByText('Contained by: my-parent-server').first()).toBeVisible()
+  await expect.element(page.getByText('p1')).not.toBeInTheDocument()
 })
 
 // UX: mode shows "Create New" (disabled) when no uncontained instances, hides "Adopt Existing"
@@ -1173,6 +1173,50 @@ test('T-34.36: Delete Binding shows confirmation dialog', async () => {
   // Confirm delete
   await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
   expect(api.exportBindings.delete).toHaveBeenCalledWith('my-catalog', 'b1')
+})
+
+// --- TD-148: Unpublish Button Visibility ---
+
+const publishedCatalog = {
+  ...mockCatalog,
+  validation_status: 'valid',
+  published: true,
+  published_at: '2026-01-01T00:00:00Z',
+}
+
+// T-35.06: Unpublish button hidden for Admin role on published catalog
+test('T-35.06: Unpublish button hidden for Admin on published catalog', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue(publishedCatalog)
+  renderDetail('Admin')
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Unpublish' })).not.toBeInTheDocument()
+})
+
+// T-35.07: Unpublish button visible for SuperAdmin on published catalog
+test('T-35.07: Unpublish button visible for SuperAdmin on published catalog', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue(publishedCatalog)
+  renderDetail('SuperAdmin')
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Unpublish' })).toBeVisible()
+})
+
+// TD-148 regression: Admin on published catalog sees Copy, Validate, and Export buttons
+test('Copy, Validate, and Export buttons visible for Admin on published catalog', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue(publishedCatalog)
+  renderDetail('Admin')
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Copy' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Validate' })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Export' })).toBeVisible()
+})
+
+// T-35.08: Publish button still visible for Admin on unpublished valid catalog (no regression)
+test('T-35.08: Publish button visible for Admin on unpublished valid catalog', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid', published: false })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [] })
+  renderDetail('Admin')
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Publish' })).toBeVisible()
 })
 
 // --- Publish Preview Flow Tests ---
@@ -1512,4 +1556,190 @@ test('T-34.117: Add Binding modal pre-fills default param values', async () => {
   const paramInput = page.getByRole('textbox', { name: /server_type/ })
   await expect.element(paramInput).toBeVisible()
   expect((paramInput.element() as HTMLInputElement).value).toBe('mcp-default')
+})
+
+// === TD-150: Export binding parameter visibility by role ===
+
+// T-35.20: Export Plugins tab for RO shows bindings without parameter values
+test('T-35.20: RO sees bindings without parameter values', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', enabled: true, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+  ] })
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
+      <Routes><Route path="/schema/catalogs/:name" element={<CatalogDetailPage role="RO" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  // Binding row should be visible with exporter name
+  await expect.element(page.getByText('mcp-gateway')).toBeVisible()
+  // No parameter values should be shown (parameters field omitted by API for non-Admin)
+  const paramCell = page.getByRole('grid', { name: 'Export bindings' }).getByRole('row').nth(1).getByRole('gridcell').nth(1)
+  // The parameters cell should be empty — no Label elements with key=value
+  expect(paramCell.element().textContent).toBe('')
+})
+
+// T-35.21: Export Plugins tab for Admin shows full parameter values
+test('T-35.21: Admin sees full parameter values', async () => {
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [
+    { id: 'b1', exporter_name: 'mcp-gateway', parameters: { server_type: 'mcp-server', tool_type: 'mcp-tool' }, enabled: true, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
+  ] })
+  render(
+    <MemoryRouter initialEntries={['/schema/catalogs/my-catalog']}>
+      <Routes><Route path="/schema/catalogs/:name" element={<CatalogDetailPage role="Admin" />} /></Routes>
+    </MemoryRouter>
+  )
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  // Binding row should be visible with exporter name
+  await expect.element(page.getByText('mcp-gateway')).toBeVisible()
+  // Parameter values should be visible as Label elements
+  await expect.element(page.getByText('server_type=mcp-server')).toBeVisible()
+  await expect.element(page.getByText('tool_type=mcp-tool')).toBeVisible()
+})
+
+// === TD-152: Attribute mapping UI fields ===
+
+// T-35.39: Add Binding modal shows optional attribute mapping fields with defaults pre-filled
+test('T-35.39: Binding modal shows attr mapping fields with defaults', async () => {
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [{
+    name: 'mcp-gateway', description: 'MCP Gateway',
+    parameter_schema: [
+      { name: 'server_type', type: 'entity_type', required: true, description: 'Server' },
+      { name: 'tool_type', type: 'entity_type', required: true, description: 'Tool' },
+      { name: 'virtual_server_type', type: 'entity_type', required: true, description: 'VS' },
+      { name: 'target_namespace', type: 'string', description: 'NS', default: 'default' },
+      { name: 'route_name_attr', type: 'string', description: 'Route attr', default: 'route_name' },
+      { name: 'mcp_path_attr', type: 'string', description: 'Path attr', default: 'mcp_path' },
+      { name: 'credential_secret_attr', type: 'string', description: 'Secret attr', default: 'credential_secret' },
+    ],
+  }] })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [] })
+  renderDetail('Admin')
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await page.getByRole('button', { name: 'Add Export Binding' }).click()
+  await page.getByLabelText('Select exporter').selectOptions('mcp-gateway')
+
+  const routeField = page.getByRole('textbox', { name: /route_name_attr/ })
+  await expect.element(routeField).toBeVisible()
+  expect((routeField.element() as HTMLInputElement).value).toBe('route_name')
+
+  const pathField = page.getByRole('textbox', { name: /mcp_path_attr/ })
+  await expect.element(pathField).toBeVisible()
+  expect((pathField.element() as HTMLInputElement).value).toBe('mcp_path')
+
+  const secretField = page.getByRole('textbox', { name: /credential_secret_attr/ })
+  await expect.element(secretField).toBeVisible()
+  expect((secretField.element() as HTMLInputElement).value).toBe('credential_secret')
+})
+
+// === TD-151: Export binding duplicate entity type warning ===
+
+const multiParamExporter = {
+  name: 'mcp-gateway',
+  description: 'MCP Gateway',
+  parameter_schema: [
+    { name: 'server_type', type: 'entity_type', required: true, description: 'Server type' },
+    { name: 'tool_type', type: 'entity_type', required: true, description: 'Tool type' },
+    { name: 'virtual_server_type', type: 'entity_type', required: true, description: 'VS type' },
+    { name: 'target_namespace', type: 'string', required: false, description: 'NS', default: 'default' },
+  ],
+}
+
+// T-35.41: Selecting same entity type for two params shows yellow warning alert
+test('T-35.41: Duplicate entity type shows warning', async () => {
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [multiParamExporter] })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [] })
+  renderDetail('Admin')
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await page.getByRole('button', { name: 'Add Export Binding' }).click()
+  await page.getByLabelText('Select exporter').selectOptions('mcp-gateway')
+
+  // Set both server_type and tool_type to the same value
+  const serverSelect = page.getByTestId('param-server_type')
+  const toolSelect = page.getByTestId('param-tool_type')
+  await serverSelect.selectOptions('model')
+  await toolSelect.selectOptions('model')
+
+  await expect.element(page.getByText(/use the same entity type/)).toBeVisible()
+})
+
+// T-35.42: Warning disappears when entity types changed to be distinct
+test('T-35.42: Warning disappears when types become distinct', async () => {
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [multiParamExporter] })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [] })
+  renderDetail('Admin')
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await page.getByRole('button', { name: 'Add Export Binding' }).click()
+  await page.getByLabelText('Select exporter').selectOptions('mcp-gateway')
+
+  // Set duplicate first
+  const serverSelect = page.getByTestId('param-server_type')
+  const toolSelect = page.getByTestId('param-tool_type')
+  await serverSelect.selectOptions('model')
+  await toolSelect.selectOptions('model')
+  await expect.element(page.getByText(/use the same entity type/)).toBeVisible()
+
+  // Fix: make them distinct
+  await toolSelect.selectOptions('tool')
+  await expect.element(page.getByText(/use the same entity type/)).not.toBeInTheDocument()
+})
+
+// T-35.43: Warning does not block form submission
+test('T-35.43: Duplicate warning does not block submission', async () => {
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [multiParamExporter] })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [] })
+  renderDetail('Admin')
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await page.getByRole('button', { name: 'Add Export Binding' }).click()
+  await page.getByLabelText('Select exporter').selectOptions('mcp-gateway')
+
+  // Set all required params with duplicates
+  await page.getByTestId('param-server_type').selectOptions('model')
+  await page.getByTestId('param-tool_type').selectOptions('model')
+  await page.getByTestId('param-virtual_server_type').selectOptions('tool')
+
+  // Submit button should still be enabled
+  const submitBtn = page.getByRole('button', { name: 'Create' })
+  await expect.element(submitBtn).not.toBeDisabled()
+})
+
+// T-35.44: No warning when all entity_type params have distinct values
+test('T-35.44: No warning when types are distinct', async () => {
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [multiParamExporter] })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [] })
+  renderDetail('Admin')
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Export Plugins' }).click()
+  await page.getByRole('button', { name: 'Add Export Binding' }).click()
+  await page.getByLabelText('Select exporter').selectOptions('mcp-gateway')
+
+  await page.getByTestId('param-server_type').selectOptions('model')
+  await page.getByTestId('param-tool_type').selectOptions('tool')
+
+  await expect.element(page.getByText(/use the same entity type/)).not.toBeInTheDocument()
+})
+
+// === TD-146: Orphaned containment target visual distinction ===
+
+// T-35.58-60: Orphan warning tests moved to OperationalCatalogDetailPage.browser.test.tsx
+// (warning only shows on operational page tree groups, not meta page tabs)
+
+// Coverage: useCatalogData containmentTargetTypes cleanup cancellation
+test('useCatalogData containmentTargetTypes cleanup on unmount', async () => {
+  let resolveSnapshot: (v: unknown) => void
+  ;(api.versions.snapshot as Mock).mockImplementation(() => new Promise(resolve => {
+    resolveSnapshot = resolve
+  }))
+  renderDetail()
+  await expect.element(page.getByRole('heading', { name: /my-catalog/ })).toBeVisible()
+  const { cleanup } = await import('vitest-browser-react')
+  await cleanup()
+  resolveSnapshot!(mockSnapshot)
+  await new Promise(r => setTimeout(r, 50))
 })

@@ -26,7 +26,17 @@ func (e *MCPGatewayExporter) ParameterSchema() []ParameterDef {
 		{Name: "tool_type", Type: "entity_type", Required: true, Description: "Entity type name for MCP tools"},
 		{Name: "virtual_server_type", Type: "entity_type", Required: true, Description: "Entity type name for MCP virtual servers"},
 		{Name: "target_namespace", Type: "string", Description: "K8s namespace for output CRs", Default: "default"},
+		{Name: "route_name_attr", Type: "string", Description: "Server attribute for HTTPRoute name", Default: "route_name"},
+		{Name: "mcp_path_attr", Type: "string", Description: "Server attribute for MCP endpoint path", Default: "mcp_path"},
+		{Name: "credential_secret_attr", Type: "string", Description: "Server attribute for K8s secret ref", Default: "credential_secret"},
 	}
+}
+
+func (e *MCPGatewayExporter) resolveAttrName(params map[string]string, paramKey, defaultName string) string {
+	if v, ok := params[paramKey]; ok && v != "" {
+		return v
+	}
+	return defaultName
 }
 
 func (e *MCPGatewayExporter) ValidateSchema(params map[string]string, schema SchemaInfo) error {
@@ -44,15 +54,16 @@ func (e *MCPGatewayExporter) ValidateSchema(params map[string]string, schema Sch
 		return domainerrors.NewValidation(fmt.Sprintf("entity type %q not found in catalog version", serverType))
 	}
 
+	routeNameAttr := e.resolveAttrName(params, "route_name_attr", "route_name")
 	hasRouteNameAttr := false
 	for _, attr := range serverET.Attributes {
-		if attr == "route_name" {
+		if attr == routeNameAttr {
 			hasRouteNameAttr = true
 			break
 		}
 	}
 	if !hasRouteNameAttr {
-		return domainerrors.NewValidation(fmt.Sprintf("entity type %q is missing required attribute 'route_name'", serverType))
+		return domainerrors.NewValidation(fmt.Sprintf("entity type %q is missing required attribute '%s'", serverType, routeNameAttr))
 	}
 
 	hasContainment := false
@@ -112,6 +123,9 @@ func (e *MCPGatewayExporter) Export(ctx context.Context, input ExportInput) (*Ex
 	if namespace == "" {
 		namespace = "default"
 	}
+	routeNameAttr := e.resolveAttrName(input.Parameters, "route_name_attr", "route_name")
+	mcpPathAttr := e.resolveAttrName(input.Parameters, "mcp_path_attr", "mcp_path")
+	credSecretAttr := e.resolveAttrName(input.Parameters, "credential_secret_attr", "credential_secret")
 
 	servers := input.InstancesByType[serverType]
 	if len(servers) == 0 {
@@ -129,7 +143,7 @@ func (e *MCPGatewayExporter) Export(ctx context.Context, input ExportInput) (*Ex
 	var missingRouteName []string
 
 	for _, server := range servers {
-		routeName, ok := server.Attributes["route_name"].(string)
+		routeName, ok := server.Attributes[routeNameAttr].(string)
 		if !ok || routeName == "" {
 			missingRouteName = append(missingRouteName, server.Name)
 			continue
@@ -155,12 +169,12 @@ func (e *MCPGatewayExporter) Export(ctx context.Context, input ExportInput) (*Ex
 		allTools = append(allTools, serverTools...)
 
 		mcpPath := "/mcp"
-		if p, ok := server.Attributes["mcp_path"].(string); ok && p != "" {
+		if p, ok := server.Attributes[mcpPathAttr].(string); ok && p != "" {
 			mcpPath = p
 		}
 
 		credentialRef := ""
-		if cr, ok := server.Attributes["credential_secret"].(string); ok && cr != "" {
+		if cr, ok := server.Attributes[credSecretAttr].(string); ok && cr != "" {
 			credentialRef = cr
 		}
 
@@ -179,7 +193,7 @@ func (e *MCPGatewayExporter) Export(ctx context.Context, input ExportInput) (*Ex
 	}
 
 	if len(missingRouteName) > 0 {
-		return nil, domainerrors.NewValidation(fmt.Sprintf("export failed: instances missing required attribute 'route_name': %s", strings.Join(missingRouteName, ", ")))
+		return nil, domainerrors.NewValidation(fmt.Sprintf("export failed: instances missing required attribute '%s': %s", routeNameAttr, strings.Join(missingRouteName, ", ")))
 	}
 
 	sort.Strings(allTools)

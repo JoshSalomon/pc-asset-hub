@@ -7,17 +7,15 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	apimw "github.com/project-catalyst/pc-asset-hub/internal/api/middleware"
 	svcop "github.com/project-catalyst/pc-asset-hub/internal/service/operational"
 )
 
 type ExportHandler struct {
-	svc           *svcop.ExportService
-	accessChecker apimw.CatalogAccessChecker
+	svc *svcop.ExportService
 }
 
-func NewExportHandler(svc *svcop.ExportService, accessChecker apimw.CatalogAccessChecker) *ExportHandler {
-	return &ExportHandler{svc: svc, accessChecker: accessChecker}
+func NewExportHandler(svc *svcop.ExportService) *ExportHandler {
+	return &ExportHandler{svc: svc}
 }
 
 func (h *ExportHandler) ExportCatalog(c echo.Context) error {

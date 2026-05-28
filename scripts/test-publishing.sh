@@ -154,14 +154,14 @@ else
   fail "Post-mutation state" "status=$VAL_STATUS published=$PUBLISHED"
 fi
 
-header "Test 10: Admin can unpublish (200)"
+header "Test 10: SuperAdmin can unpublish published catalog (200)"
 
-RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" Admin)
+RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" SuperAdmin)
 STATUS=$(get_status "$RESP")
 if [ "$STATUS" = "200" ]; then
-  pass "Admin can unpublish (200)"
+  pass "SuperAdmin can unpublish published catalog (200)"
 else
-  fail "Admin unpublish" "expected=200 got=$STATUS"
+  fail "SuperAdmin unpublish" "expected=200 got=$STATUS"
 fi
 
 header "Test 11: After unpublish, published=false"
@@ -366,7 +366,7 @@ fi
 
 header "Test 17: Unpublish removes CR"
 
-api POST "$DATA_API/catalogs/$SYNC_CATALOG/unpublish" Admin > /dev/null
+api POST "$DATA_API/catalogs/$SYNC_CATALOG/unpublish" SuperAdmin > /dev/null
 sleep 1
 
 CR_EXISTS=$(kubectl --context kind-assethub -n assethub get catalog "$SYNC_CATALOG" -o name 2>/dev/null)
@@ -379,22 +379,25 @@ fi
 # Clean up sync test catalog
 api DELETE "$DATA_API/catalogs/$SYNC_CATALOG" Admin > /dev/null 2>&1 || true
 
-header "Test T-30.22: Validate on published catalog blocked for RW (403)"
+header "Test T-30.22: Validate on published catalog allowed for RW (200)"
+# NOTE: This behavior is pending a product decision (TD-158).
+# Currently RW+ can validate published catalogs. If the decision is to
+# restrict to SuperAdmin, revert to expecting 403 here.
 
 # Re-validate and re-publish for this test
 api POST "$DATA_API/catalogs/$CATALOG_NAME/validate" SuperAdmin > /dev/null 2>&1
-api POST "$DATA_API/catalogs/$CATALOG_NAME/publish" Admin > /dev/null 2>&1
+api POST "$DATA_API/catalogs/$CATALOG_NAME/publish" SuperAdmin > /dev/null 2>&1
 
 RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/validate" RW)
 STATUS=$(get_status "$RESP")
-if [ "$STATUS" = "403" ]; then
-  pass "T-30.22: Validate on published catalog blocked for RW (403)"
+if [ "$STATUS" = "200" ]; then
+  pass "T-30.22: Validate on published catalog allowed for RW (200)"
 else
-  fail "T-30.22: Validate on published catalog" "expected=403 got=$STATUS"
+  fail "T-30.22: Validate on published catalog" "expected=200 got=$STATUS"
 fi
 
 # Clean up: unpublish again
-api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" Admin > /dev/null 2>&1
+api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" SuperAdmin > /dev/null 2>&1
 
 header "Test T-30.23: UpdateCatalogVersion on production CV blocked (400)"
 
@@ -436,10 +439,10 @@ header "Test 18: Publish idempotence — publish already-published catalog (200)
 
 # Re-validate and publish the catalog (it's currently unpublished from line 395)
 api POST "$DATA_API/catalogs/$CATALOG_NAME/validate" SuperAdmin > /dev/null 2>&1
-api POST "$DATA_API/catalogs/$CATALOG_NAME/publish" Admin > /dev/null 2>&1
+api POST "$DATA_API/catalogs/$CATALOG_NAME/publish" SuperAdmin > /dev/null 2>&1
 
-# Publish again — should be idempotent (200, not error)
-RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/publish" Admin)
+# Publish again — should be idempotent (200, not error). TD-148: requires SuperAdmin on published.
+RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/publish" SuperAdmin)
 STATUS=$(get_status "$RESP")
 if [ "$STATUS" = "200" ]; then
   pass "Publish idempotent on already-published catalog (200)"
@@ -459,8 +462,8 @@ fi
 
 header "Test 19: Unpublish → re-publish cycle"
 
-# Unpublish
-RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" Admin)
+# Unpublish — TD-148: requires SuperAdmin on published catalogs
+RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" SuperAdmin)
 STATUS=$(get_status "$RESP")
 if [ "$STATUS" = "200" ]; then
   echo "  Unpublished successfully"
@@ -514,8 +517,8 @@ else
   fail "CR recreation" "CR not found after re-publish"
 fi
 
-# Clean up: unpublish for cleanup section
-api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" Admin > /dev/null 2>&1
+# Clean up: unpublish for cleanup section (TD-148: requires SuperAdmin)
+api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" SuperAdmin > /dev/null 2>&1
 
 header "Cleanup (only removing test data created by this script)"
 

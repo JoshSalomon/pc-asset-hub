@@ -8,6 +8,9 @@ See [feedback_coverage_json_reporter.md](feedback_coverage_json_reporter.md) for
 See [feedback_omitted_fields_erase_data.md](feedback_omitted_fields_erase_data.md) for Go API update DTOs: use `*string` not `string` for optional fields to prevent silent data erasure.
 See mem_bf8081fc for FF-15 session lessons: Phase 6 before Phase 7, TDD discipline, arithmetic verification, deploy-before-done.
 See mem_dbd8c2b8 for coverage agent dispatch: agents must write tests not just measure.
+See mem_592902ca for Session 030 lessons: never claim pre-existing without proof, always show covered/total, never change measurement method mid-sprint, verify coverage after removing test interactions.
+See mem_eb180789 for coverage measurement method: use `scripts/go-coverage-table.sh` on fresh `coverage.out`. See `docs/coverage-measurement.md`.
+See mem_d5300e40 for UI coverage comparison gotcha: line-number comparison fails on modified files — must filter by git diff.
 
 ## Infrastructure
 

@@ -25,6 +25,7 @@ import {
   MenuToggle,
   type MenuToggleElement,
   NumberInput,
+  SearchInput,
 } from '@patternfly/react-core'
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table'
 import { api } from '../../api/client'
@@ -280,6 +281,7 @@ export default function TypeDefinitionListPage({ role }: Props) {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [filterBaseType, setFilterBaseType] = useState<string>('')
   const [filterOpen, setFilterOpen] = useState(false)
+  const [filterText, setFilterText] = useState('')
 
   const loadTypeDefs = useCallback(async () => {
     setLoading(true)
@@ -352,6 +354,15 @@ export default function TypeDefinitionListPage({ role }: Props) {
             </ToolbarItem>
           )}
           <ToolbarItem>
+            <SearchInput
+              placeholder="Filter types by name"
+              value={filterText}
+              onChange={(_e, value) => setFilterText(value)}
+              onClear={() => setFilterText('')}
+              aria-label="Filter type definitions by name"
+            />
+          </ToolbarItem>
+          <ToolbarItem>
             <Select
               isOpen={filterOpen}
               selected={filterBaseType}
@@ -380,7 +391,13 @@ export default function TypeDefinitionListPage({ role }: Props) {
           <EmptyStateBody>No type definitions yet. Create one to get started.</EmptyStateBody>
         </EmptyState>
       ) : (() => {
-        let displayed = filterBaseType ? typeDefs.filter(td => td.base_type === filterBaseType) : typeDefs
+        let displayed = typeDefs
+        if (filterText) {
+          displayed = displayed.filter(td => td.name.toLowerCase().includes(filterText.toLowerCase()))
+        }
+        if (filterBaseType) {
+          displayed = displayed.filter(td => td.base_type === filterBaseType)
+        }
         if (sortField) {
           displayed = [...displayed].sort((a, b) => {
             const va = a[sortField].toLowerCase()

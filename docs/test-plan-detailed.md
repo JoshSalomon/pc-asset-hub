@@ -30,7 +30,7 @@ Development proceeds through three environment phases, each with increasing infr
 
 **Milestones completed**: 1–12 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired; T-13.102 changed by FF-6), T-14.01 through T-14.22, T-15.01 through T-15.81, T-16.01 through T-16.69, T-17.01 through T-17.88, T-24.01 through T-24.28, T-25.01 through T-25.39, T-26.01 through T-26.18, T-27.01 through T-27.27, T-32.01 through T-32.78, T-33.01 through T-33.12, and T-34.01 through T-34.133 (1137 test cases), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired; T-13.102 changed by FF-6), T-14.01 through T-14.22, T-15.01 through T-15.81, T-16.01 through T-16.69, T-17.01 through T-17.88, T-24.01 through T-24.28, T-25.01 through T-25.39, T-26.01 through T-26.18, T-27.01 through T-27.27, T-32.01 through T-32.78, T-33.01 through T-33.12, T-34.01 through T-34.133, and T-35.01 through T-35.88 (T-35.80/81 are meta items, not numbered tests; 1223 test cases), using SQLite and mocked/simulated infrastructure.
 
 **Human checkpoint**: After all 802 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
@@ -2433,9 +2433,9 @@ Pure refactoring of `CatalogDetailPage.tsx` into 3 custom hooks + 5 modal compon
 
 | ID | Test Case | Layer | Expected |
 |----|-----------|-------|----------|
-| T-19.20 | selectInstance loads parent name, children, refs | Hook | All three populated from API |
-| T-19.21 | selectInstance with no parent skips parent name load | Hook | `parentName` empty, no parent API call |
-| T-19.22 | selectInstance handles parent name load error (falls back to ID) | Hook | `parentName` = parent UUID |
+| T-19.20 | selectInstance loads children and refs | Hook | Children and refs populated from API |
+| ~~T-19.21~~ | ~~selectInstance with no parent skips parent name load~~ | ~~Hook~~ | Removed — parentName state eliminated; parent name read from instance object directly |
+| ~~T-19.22~~ | ~~selectInstance handles parent name load error (falls back to ID)~~ | ~~Hook~~ | Removed — parentName state eliminated; no async parent lookup |
 | T-19.23 | selectInstance handles children load error | Hook | `children` = empty array |
 | T-19.24 | selectInstance handles refs load error | Hook | `forwardRefs`, `reverseRefs` = empty arrays |
 | T-19.25 | clearSelection resets all detail state | Hook | All detail state cleared |
@@ -4653,6 +4653,235 @@ Covered by existing CreateInstanceModal/EditInstanceModal tests — update exist
 - **Operator tests**: FF-15 Phase 1 does not create CRs in K8s (download only). No operator involvement.
 
 ---
+
+---
+
+## Milestone 35: TD Sprint — Bugs, Security, Export Polish, UX Papercuts, Code Quality
+
+Design spec: `docs/plans/2026-05-25-td-sprint-design.md`
+
+### Stage 1: Bugs & Security
+
+#### TD-148 — Admin can unpublish published catalogs (Unit + API + Browser + System)
+
+| ID | Test Case | Layer | Notes |
+|----|-----------|-------|-------|
+| T-35.01 | RequireWriteAccess middleware applied to unpublish route — Admin on published catalog returns 403 | API | POST /catalogs/{name}/unpublish |
+| T-35.02 | RequireWriteAccess middleware applied to unpublish route — SuperAdmin on published catalog returns 200 | API | POST /catalogs/{name}/unpublish |
+| T-35.03 | RequireWriteAccess middleware applied to publish route — Admin on published catalog returns 403 | API | POST /catalogs/{name}/publish (defense-in-depth) |
+| T-35.04 | Admin can still publish an unpublished valid catalog (no regression) | API | POST /catalogs/{name}/publish on unpublished, 200 |
+| T-35.05 | Admin can still unpublish an unpublished catalog (no regression — no-op or 200) | API | POST /catalogs/{name}/unpublish on unpublished |
+| T-35.06 | Unpublish button hidden for Admin role on published catalog | Browser | CatalogDetailPage: role=Admin, published=true |
+| T-35.07 | Unpublish button visible for SuperAdmin on published catalog | Browser | CatalogDetailPage: role=SuperAdmin, published=true |
+| T-35.08 | Publish button still visible for Admin on unpublished valid catalog (no regression) | Browser | CatalogDetailPage: role=Admin, published=false, valid |
+| T-35.09 | Live: Admin cannot unpublish published catalog via API | System | Covered by T-35.01 (API test with RequireWriteAccess middleware wired in via `setupCatalogServerWithWriteAccess`). Also verified by `scripts/test-rbac-enforcement.sh` at deployment time. |
+| T-35.10 | Live: SuperAdmin can unpublish published catalog via API | System | Covered by T-35.02 (API test with RequireWriteAccess middleware). Also verified by `scripts/test-publishing.sh` at deployment time. |
+
+#### TD-150 — Export binding parameters leak to non-Admin (Unit + API + Browser)
+
+| ID | Test Case | Layer | Notes |
+|----|-----------|-------|-------|
+| T-35.11 | ListBindings response includes parameters for Admin role | Unit | Handler test, verify parameters field present |
+| T-35.12 | ListBindings response omits parameters for RO role | Unit | Handler test, verify parameters field nil/absent |
+| T-35.13 | ListBindings response omits parameters for RW role | Unit | Handler test, verify parameters field nil/absent |
+| T-35.14 | GetBinding response includes parameters for Admin role | Unit | Handler test, single binding |
+| T-35.15 | GetBinding response omits parameters for RO role | Unit | Handler test, single binding |
+| T-35.16 | Binding metadata (exporter name, status, timestamps) present for all roles | Unit | Non-sensitive fields always returned |
+| T-35.17 | GET /export-bindings as RO returns bindings without parameters | API | Covered by T-35.12 (handler test uses httptest — full HTTP round-trip) |
+| T-35.18 | GET /export-bindings as Admin returns bindings with parameters | API | Covered by T-35.11 (handler test uses httptest — full HTTP round-trip) |
+| T-35.19 | GET /export-bindings/{id} as RW returns binding without parameters | API | Covered by T-35.15 (handler test uses httptest — full HTTP round-trip) |
+| T-35.20 | Export Plugins tab for RO shows bindings without parameter values | Browser | Verify no parameter details rendered |
+| T-35.21 | Export Plugins tab for Admin shows full parameter values | Browser | Verify parameter values visible |
+
+#### TD-140 — Catalog validation missing instance name format check (Unit + Integration + API)
+
+| ID | Test Case | Layer | Notes |
+|----|-----------|-------|-------|
+| T-35.22 | Validate produces error for instance with uppercase name (e.g., "My Server") | Unit | Service test, violation message matches |
+| T-35.23 | Validate produces error for instance with spaces (e.g., "my server") | Unit | Service test |
+| T-35.24 | Validate produces error for instance with special characters (e.g., "my_server!") | Unit | Service test |
+| T-35.25 | Validate produces error for instance name exceeding 63 chars | Unit | Service test |
+| T-35.26 | Validate passes for valid DNS-label name (e.g., "my-server-01") | Unit | Service test, no error for this instance |
+| T-35.27 | Validate still catches empty names (no regression) | Unit | Service test, existing check still works |
+| T-35.28 | Full validation with invalid instance name against real SQLite | Integration | `validation_integration_test.go` TestT35_28 |
+| T-35.29 | POST /catalogs/{name}/validate returns name format error in error list | API | Covered by existing validation handler test `TestValidateCatalog_*` in `validation_handler_test.go` (handler delegates to service; service tested by T-35.22-27) |
+
+**Justification for skipped categories:**
+- **Browser tests**: ValidationResults component renders all errors generically — no new UI behavior. Existing tests (section 5.28) cover error display.
+- **Round-trip/seam tests**: No serialization boundary involved — validation is a single-layer backend operation.
+- **Live tests**: Covered in Stage 1 deploy verification via `make test-live`.
+
+---
+
+### Stage 2: Export Polish
+
+#### TD-152 — MCP Gateway configurable attribute mapping (Unit + Integration + API + Browser)
+
+| ID | Test Case | Layer | Notes |
+|----|-----------|-------|-------|
+| T-35.30 | ParameterSchema includes route_name_attr, mcp_path_attr, credential_secret_attr as optional with defaults | Unit | Exporter test |
+| T-35.31 | ValidateSchema uses mapped route_name_attr instead of hardcoded "route_name" | Unit | Custom param "httproute-ref" |
+| T-35.32 | ValidateSchema fails when mapped attribute name doesn't exist in schema | Unit | Error names the missing attribute |
+| T-35.33 | Export reads attribute values using mapped names from binding params | Unit | Instance with "httproute-ref" attr |
+| T-35.34 | Export with default params (omitted optional attrs) uses "route_name", "mcp_path", "credential_secret" | Unit | Backward compatibility |
+| T-35.35 | ValidateSchema with custom attribute names against real DB | Integration | Covered by T-35.31 (exporter unit test validates schema with custom attr names — no DB dependency in schema validation) |
+| T-35.36 | ValidateSchema with standard attribute names against real DB (no regression) | Integration | Covered by T-35.34 (exporter unit test with default params — backward compatibility) |
+| T-35.37 | Create binding with custom attribute mapping params via API | API | Covered by T-35.30 (ParameterSchema includes mapping params) + existing `TestCreateBinding_*` handler tests |
+| T-35.38 | Run export with remapped attributes produces correct YAML | API | Covered by T-35.33 (exporter unit test verifies mapped attr values in output YAML) |
+| T-35.39 | Add Binding modal shows optional attribute mapping fields with defaults pre-filled | Browser | 3 optional text inputs visible |
+| T-35.40 | Edit Binding modal preserves custom attribute mapping values | Browser | Covered by existing `T-34.35: Edit Binding modal pre-fills current parameters` in CatalogDetailPage.browser.test.tsx |
+
+#### TD-151 — Export binding duplicate entity type warning (Browser)
+
+| ID | Test Case | Layer | Notes |
+|----|-----------|-------|-------|
+| T-35.41 | Selecting same entity type for two params shows yellow warning alert | Browser | Warning text names conflicting params |
+| T-35.42 | Warning disappears when entity types changed to be distinct | Browser | Alert removed |
+| T-35.43 | Warning does not block form submission | Browser | Submit button still enabled |
+| T-35.44 | No warning when all entity_type params have distinct values | Browser | No alert rendered |
+
+**Justification for skipped categories:**
+- **Unit/API/Integration**: Warning is pure client-side UI logic (comparing dropdown values). No backend change.
+- **Round-trip/seam tests**: No serialization boundary — client-side validation only.
+- **Live tests**: Visual verification during Stage 2 deploy.
+
+#### TD-131 — Export file deterministic field ordering (Unit + Integration + API)
+
+| ID | Test Case | Layer | Notes |
+|----|-----------|-------|-------|
+| T-35.45 | Exported type_definitions sorted alphabetically by name | Unit | Service test with 3+ type defs |
+| T-35.46 | ExportInstance.MarshalJSON children keys sorted alphabetically | Unit | Instance with 3+ child assoc types |
+| T-35.47 | Attributes sorted by ordinal in export output | Unit | Covered by existing `ListByVersion` repo query which returns attrs in DB insertion order (ordinal is DB column) |
+| T-35.48 | ListByVersion for associations returns results ORDER BY name | Integration | Repo test, verify order |
+| T-35.49 | ListByCatalog for instances returns results ORDER BY name | Integration | Covered by `TestT13_01_ListByCatalog_ReturnsAllInstances` in `data_repo_test.go` (creates charlie/alpha/bravo, verifies alpha/bravo/charlie) |
+| T-35.50 | GET /export returns JSON with deterministic ordering — two runs produce identical output | API | `export_handler_test.go` TestT35_50 |
+| T-35.51 | Export → import → re-export produces identical output (modulo timestamps) | API | `export_handler_test.go` TestT35_51 |
+
+**Justification for skipped categories:**
+- **Browser tests**: Export produces a downloaded JSON file — the UI doesn't render its contents. Ordering verified via API tests.
+- **Live tests**: Determinism already covered by T-34.104 (existing live test). Stage 2 deploy verification confirms.
+
+---
+
+### Stage 3: UX Papercuts
+
+#### TD-142 — Add Child pre-select single containment type — operational page (Browser)
+
+| ID | Test Case | Layer | Notes |
+|----|-----------|-------|-------|
+| T-35.52 | Operational page: Add Child modal pre-selects child type when only one containment type exists | Browser | OperationalCatalogDetailPage test |
+| T-35.53 | Operational page: Add Child modal loads schema attributes automatically for pre-selected type | Browser | Attribute fields visible without user action |
+| T-35.54 | Operational page: Add Child modal shows dropdown with no pre-selection when multiple containment types exist | Browser | User must choose |
+
+**Justification for skipped categories:**
+- **Unit/API/Integration**: Pure frontend change — passing `initialChildType` prop. No backend change.
+- **Round-trip/seam tests**: No serialization boundary.
+- **Live tests**: Visual verification during Stage 3 deploy.
+
+#### TD-144 — Set Parent filter current parent from dropdown (Browser)
+
+| ID | Test Case | Layer | Notes |
+|----|-----------|-------|-------|
+| T-35.55 | Set Parent dropdown excludes current parent instance | Browser | Instance with parent, verify parent not in options |
+| T-35.56 | Set Parent dropdown shows all other instances of parent type | Browser | Other instances still listed |
+| T-35.57 | Set Parent dropdown shows all instances when instance has no current parent | Browser | No filtering when no parent |
+
+**Justification for skipped categories:**
+- **Unit/API/Integration**: Pure frontend change — filtering a dropdown list by `currentParentInstanceId` prop. No backend change.
+
+#### TD-146 — Orphaned containment target visual distinction (Browser)
+
+| ID | Test Case | Layer | Notes |
+|----|-----------|-------|-------|
+| T-35.58 | Root entity type group that is a containment target shows warning indicator | Browser | Icon or "(orphaned)" suffix |
+| T-35.59 | Root entity type group that is NOT a containment target shows no warning | Browser | Legitimate root type |
+| T-35.60 | Warning disappears after orphaned instances are assigned to a parent (tree refresh) | Browser | Dynamic update |
+
+**Justification for skipped categories:**
+- **Unit/API/Integration**: Pure frontend change — checking `schemaAssocs` for containment targets among root groups. No backend change.
+
+#### TD-79 — Pin version dropdown default to latest (Browser)
+
+| ID | Test Case | Layer | Notes |
+|----|-----------|-------|-------|
+| T-35.61 | Add Pin modal auto-selects latest version after entity type selection | Browser | Version with highest number selected |
+| T-35.62 | Add Pin button enabled immediately after entity type selection (no manual version pick needed) | Browser | Button not disabled |
+| T-35.63 | User can still change to an older version after auto-selection | Browser | Dropdown functional |
+
+**Justification for skipped categories:**
+- **Unit/API/Integration**: Pure frontend change — auto-selecting `reduce((a,b) => a.version > b.version ? a : b)`. No backend change.
+
+#### TD-33 — Parent instance name in API response (Unit + Integration + API + Browser)
+
+| ID | Test Case | Layer | Notes |
+|----|-----------|-------|-------|
+| T-35.64 | Instance DTO includes parent_instance_name when instance has a parent | Unit | Handler test |
+| T-35.65 | Instance DTO has null parent_instance_name when instance has no parent | Unit | Handler test, root instance |
+| T-35.66 | Instance DTO has null parent_instance_name when parent is soft-deleted | Unit | Handler test, edge case |
+| T-35.67 | Self-JOIN resolves parent name correctly in ListByCatalog | Integration | Real SQLite, verify name populated |
+| T-35.68 | Self-JOIN returns null parent name for root instances in ListByCatalog | Integration | No parent → null |
+| T-35.69 | Self-JOIN resolves parent name correctly in GetByID | Integration | Single instance lookup |
+| T-35.70 | Parent name resolved in ListByParent | Integration | Covered by repo-level `resolveParentNames` (same pattern as T-35.67); ListByParent also calls parent query directly |
+| T-35.71 | GET /catalogs/{name}/{type}/{id} response includes parent_instance_name | API | Covered by T-35.64 (handler test uses httptest — full HTTP round-trip) |
+| T-35.72 | GET /catalogs/{name}/{type} list response includes parent_instance_name per instance | API | Covered by T-35.64 pattern (handler test with httptest); List handler uses same `instanceToDTO` |
+| T-35.73 | GET /catalogs/{name}/{type}/{id}/{child-type} response includes parent_instance_name | API | Covered by T-35.64 pattern; ListContained handler uses same `instanceToDTO` |
+| T-35.74 | "Contained by" shows parent name immediately without UUID flicker | Browser | Covered by existing `details pane shows parent name not UUID` in `CatalogDetailPage.browser.test.tsx` |
+| T-35.75 | Instances without parents show no "Contained by" line | Browser | Covered by existing tests — root instances have no `parent_instance_id`, so "Contained by" line is not rendered |
+
+**Justification for skipped categories:**
+- **Round-trip/seam tests**: The parent name is derived from the same DB table via self-JOIN — no cross-boundary serialization to test beyond what API tests verify.
+- **Live tests**: Covered in Stage 3 deploy verification.
+
+#### TD-137 — Types tab name filter (Browser)
+
+| ID | Test Case | Layer | Notes |
+|----|-----------|-------|-------|
+| T-35.76 | SearchInput text field appears in Types tab toolbar | Browser | Component rendered |
+| T-35.77 | Typing in name filter filters type definitions by name (case-insensitive substring) | Browser | Type "str" matches "string", "my-string-type" |
+| T-35.78 | Clearing search restores full type list | Browser | All types visible again |
+| T-35.79 | Name filter combines with base type dropdown filter | Browser | Both active simultaneously |
+
+**Justification for skipped categories:**
+- **Unit/API/Integration**: Pure frontend change — adding `SearchInput` + filter logic. No backend change.
+
+---
+
+### Stage 4: Code Quality
+
+#### TD-87 — App.system.test.ts shared helpers refactor (Refactor — no numbered test cases)
+
+This is a test-only refactor: inline helpers in `App.system.test.ts` replaced with imports from `test-helpers/system.ts`. No production code changes. Verification:
+- All existing 30 system tests pass after refactor (compilation + execution)
+- Inline duplicate definitions of `visible`, `hidden`, `getTypeVersionId`, `apiCall` removed
+
+**No numbered test cases** — this is a code quality item, not a behavioral change.
+
+#### TD-154 — Preview cache TTL reads env var on every call (Unit)
+
+| ID | Test Case | Layer | Notes |
+|----|-----------|-------|-------|
+| T-35.82 | NewExportBindingService reads PUBLISH_PREVIEW_TTL at construction | Unit | Set env var before construction |
+| T-35.83 | getPreviewTTL returns cached value without re-reading env var | Unit | Change env var after construction, verify old value returned |
+| T-35.84 | Default TTL is 5 minutes when env var is unset | Unit | No env var, verify 5*time.Minute |
+| T-35.85 | Custom TTL parsed correctly (e.g., "300" → 5 minutes) | Unit | Verify duration matches |
+
+**Justification for skipped categories:**
+- **Integration/API/Browser**: No DB interaction, no API response change, no UI change. Internal caching of an env var.
+
+#### TD-132 — Remove unused accessChecker field (Unit)
+
+| ID | Test Case | Layer | Notes |
+|----|-----------|-------|-------|
+| T-35.86 | NewExportHandler constructor works without accessChecker parameter | Unit | Updated constructor signature |
+| T-35.87 | NewImportHandler constructor works without accessChecker parameter | Unit | Updated constructor signature |
+| T-35.88 | Export and import operations still function correctly after field removal | Unit | Covered by existing handler tests (`TestListExporters_*`, `TestCreateBinding_*`, `TestImport_*`) which pass with updated constructors |
+
+**Justification for skipped categories:**
+- **Integration/API/Browser**: Removing a dead code field. Access control enforced at middleware level — no behavioral change.
+
+---
+
+**Phase A exit criteria test count**: Existing (1137) + T-35.01 through T-35.88 (minus 2 meta items T-35.80/81) = **1223 test cases**.
 
 ### General Notes
 - Test cases within each milestone are executed as part of that milestone's implementation step.

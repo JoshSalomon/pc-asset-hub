@@ -270,10 +270,10 @@ test('T-16.59: Publish button hidden when draft', async () => {
   expect(buttons).not.toContain('Publish')
 })
 
-// T-16.61: Unpublish button visible on published catalog for Admin
-test('T-16.61: Unpublish button visible for Admin on published catalog', async () => {
+// T-16.61 updated: Unpublish button visible on published catalog for SuperAdmin (TD-148)
+test('T-16.61: Unpublish button visible for SuperAdmin on published catalog', async () => {
   ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid', published: true })
-  renderDetail('Admin')
+  renderDetail('SuperAdmin')
   await waitForInstances()
   await expect.element(page.getByRole('button', { name: 'Unpublish' })).toBeVisible()
 })
@@ -314,7 +314,7 @@ test('T-16.65: warning banner for RW on published catalog', async () => {
 test('clicking Unpublish calls API', async () => {
   ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid', published: true })
   ;(api.catalogs.unpublish as Mock).mockResolvedValue({ status: 'unpublished' })
-  renderDetail('Admin')
+  renderDetail('SuperAdmin')
   await waitForInstances()
   await page.getByRole('button', { name: 'Unpublish' }).click()
   expect(api.catalogs.unpublish).toHaveBeenCalledWith('my-catalog')
@@ -334,7 +334,7 @@ test('publish error shows error message', async () => {
 test('unpublish error shows error message', async () => {
   ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, validation_status: 'valid', published: true })
   ;(api.catalogs.unpublish as Mock).mockRejectedValue(new Error('unpublish failed'))
-  renderDetail('Admin')
+  renderDetail('SuperAdmin')
   await waitForInstances()
   await page.getByRole('button', { name: 'Unpublish' }).click()
   await expect.element(page.getByText('unpublish failed')).toBeVisible()

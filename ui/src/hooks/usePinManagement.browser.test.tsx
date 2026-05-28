@@ -359,6 +359,42 @@ test('handleConfirmMigration error calls onError', async () => {
 })
 
 // handleCancelMigration clears preview without applying
+// T-35.61: Add Pin modal auto-selects latest version after entity type selection
+test('T-35.61: auto-selects latest version after entity type selection', async () => {
+  ;(api.versions.list as Mock).mockResolvedValue({ items: [
+    { id: 'etv-1', entity_type_id: 'et-1', version: 1, description: 'V1', created_at: '' },
+    { id: 'etv-3', entity_type_id: 'et-1', version: 3, description: 'V3', created_at: '' },
+    { id: 'etv-2', entity_type_id: 'et-1', version: 2, description: 'V2', created_at: '' },
+  ] })
+  render(<TestComponent cvId="cv1" loadPins={loadPins} onError={onError} />)
+
+  await page.getByRole('button', { name: 'PickEntityType' }).click()
+
+  await expect.element(page.getByTestId('selectedEtvId')).toHaveTextContent('etv-3')
+})
+
+// T-35.62: Add Pin button enabled immediately after entity type selection
+test('T-35.62: Add Pin button enabled immediately after entity type selection', async () => {
+  render(<TestComponent cvId="cv1" loadPins={loadPins} onError={onError} />)
+
+  await page.getByRole('button', { name: 'PickEntityType' }).click()
+
+  // selectedEtvId should be non-empty (auto-selected)
+  await expect.element(page.getByTestId('selectedEtvId')).not.toHaveTextContent('')
+})
+
+// T-35.63: User can still change to an older version after auto-selection
+test('T-35.63: User can change version after auto-selection', async () => {
+  render(<TestComponent cvId="cv1" loadPins={loadPins} onError={onError} />)
+
+  await page.getByRole('button', { name: 'PickEntityType' }).click()
+  await expect.element(page.getByTestId('selectedEtvId')).toHaveTextContent('etv-2') // auto: V2 (highest)
+
+  // Manually select V1
+  await page.getByRole('button', { name: 'ChooseETV' }).click()
+  await expect.element(page.getByTestId('selectedEtvId')).toHaveTextContent('etv-1')
+})
+
 test('handleCancelMigration clears preview without applying', async () => {
   ;(api.catalogVersions.updatePinDryRun as Mock).mockResolvedValue({
     pin: {},

@@ -50,7 +50,12 @@ export function usePinManagement({ catalogVersionId, loadPins, onError }: UsePin
     setSelectedEtvId('')
     try {
       const res = await api.versions.list(etId)
-      setEntityTypeVersions(res.items || [])
+      const versions = res.items || []
+      setEntityTypeVersions(versions)
+      if (versions.length > 0) {
+        const latest = versions.reduce((a: EntityTypeVersion, b: EntityTypeVersion) => a.version > b.version ? a : b)
+        setSelectedEtvId(latest.id)
+      }
     } catch {
       setEntityTypeVersions([])
     }

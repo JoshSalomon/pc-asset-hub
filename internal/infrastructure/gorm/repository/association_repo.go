@@ -46,7 +46,7 @@ func (r *AssociationGormRepo) GetByID(ctx context.Context, id string) (*models.A
 
 func (r *AssociationGormRepo) ListByVersion(ctx context.Context, entityTypeVersionID string) ([]*models.Association, error) {
 	var records []gormmodels.Association
-	result := r.db.WithContext(ctx).Where("entity_type_version_id = ?", entityTypeVersionID).Find(&records)
+	result := r.db.WithContext(ctx).Where("entity_type_version_id = ?", entityTypeVersionID).Order("name").Find(&records)
 	if result.Error != nil {
 		return nil, result.Error
 	}

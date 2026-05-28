@@ -11,6 +11,7 @@ import (
 
 	domainerrors "github.com/project-catalyst/pc-asset-hub/internal/domain/errors"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
+	"github.com/project-catalyst/pc-asset-hub/internal/domain/repository"
 	"github.com/project-catalyst/pc-asset-hub/internal/domain/repository/mocks"
 	"github.com/project-catalyst/pc-asset-hub/internal/service/meta"
 )
@@ -1191,3 +1192,104 @@ func TestEditAssociation_NotFoundAfterCOW(t *testing.T) {
 // These require WithCatalogRepos + ListByEntityTypeVersionIDs mock setup which is complex.
 // The paths ARE tested in entity_type_service_test.go via the full rename flow tests.
 // Per-package coverage misses them because the test setup is in a different test function group.
+
+// === Group 2: Additional uncovered error paths ===
+
+// #1: AddAttribute — assocRepo.ListByVersion error (attribute_service.go shared namespace check)
+func TestAddAttribute_AssocListByVersionError(t *testing.T) {
+	attrRepo := new(mocks.MockAttributeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	etRepo := new(mocks.MockEntityTypeRepo)
+	assocRepo := new(mocks.MockAssociationRepo)
+	tdvRepo := new(mocks.MockTypeDefinitionVersionRepo)
+	svc := meta.NewAttributeService(attrRepo, etvRepo, etRepo, assocRepo, tdvRepo)
+
+	tdvRepo.On("GetByID", mock.Anything, "tdv-string").Return(&models.TypeDefinitionVersion{ID: "tdv-string"}, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et1").Return(&models.EntityTypeVersion{ID: "v1", EntityTypeID: "et1", Version: 1}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "v1").Return([]*models.Attribute{}, nil)
+	// assocRepo.ListByVersion fails during shared namespace check
+	assocRepo.On("ListByVersion", mock.Anything, "v1").Return(([]*models.Association)(nil), fmt.Errorf("assoc list error"))
+
+	_, err := svc.AddAttribute(context.Background(), "et1", "new-attr", "", "tdv-string", false)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "assoc list error")
+}
+
+// #3: collectAffectedInstances — instance count > 10000 limit
+func TestUpdatePin_MigrationLimitExceeded(t *testing.T) {
+	cvRepo, pinRepo, etvRepo, catalogRepo, attrRepo, instRepo, _, svc := migrationTestSetup()
+	setupBasicMigrationMocks(cvRepo, pinRepo, etvRepo)
+
+	attrRepo.On("ListByVersion", mock.Anything, "etv1-v1").Return([]*models.Attribute{
+		{ID: "old-a", Name: "endpoint", Ordinal: 0, TypeDefinitionVersionID: "tdv-str"},
+	}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "etv1-v2").Return([]*models.Attribute{
+		{ID: "new-a", Name: "endpoint", Ordinal: 0, TypeDefinitionVersionID: "tdv-str"},
+	}, nil)
+	catalogRepo.On("ListByCatalogVersionID", mock.Anything, "cv1").Return([]*models.Catalog{
+		{ID: "cat1", Name: "big-catalog", CatalogVersionID: "cv1", ValidationStatus: models.ValidationStatusValid},
+	}, nil)
+	// instRepo.List returns total > 10000
+	instRepo.On("List", mock.Anything, "et1", "cat1", mock.Anything).Return(
+		[]*models.EntityInstance{}, 10001, nil)
+
+	_, err := svc.UpdatePin(context.Background(), "cv1", "pin1", "etv1-v2", meta.RoleAdmin, false)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeds migration limit")
+}
+
+// #4: GetContainmentTree — second entity type's ListByEntityType fails
+// TestGetContainmentTree_VersionListError covers the first entity type failing.
+// This covers the case where the first succeeds but the second fails.
+
+func TestGetContainmentTree_SecondEntityListVersionsError(t *testing.T) {
+	etRepo := new(mocks.MockEntityTypeRepo)
+	etvRepo := new(mocks.MockEntityTypeVersionRepo)
+	assocRepo := new(mocks.MockAssociationRepo)
+	svc := meta.NewEntityTypeService(etRepo, etvRepo, nil, assocRepo)
+
+	entities := []*models.EntityType{
+		{ID: "et-a", Name: "Server"},
+		{ID: "et-b", Name: "Tool"},
+	}
+	etRepo.On("List", mock.Anything, mock.Anything).Return(entities, 2, nil)
+	assocRepo.On("GetContainmentGraph", mock.Anything).Return([]repository.ContainmentEdge{}, nil)
+	// First entity type version list succeeds
+	etvRepo.On("ListByEntityType", mock.Anything, "et-a").Return([]*models.EntityTypeVersion{
+		{ID: "va1", EntityTypeID: "et-a", Version: 1},
+	}, nil)
+	// Second entity type version list fails
+	etvRepo.On("ListByEntityType", mock.Anything, "et-b").Return(
+		([]*models.EntityTypeVersion)(nil), fmt.Errorf("db error on second"))
+
+	_, err := svc.GetContainmentTree(context.Background())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "db error on second")
+}
+
+// #5: requiresDeepCopy with catalog repos set but ListByEntityType returns empty versions.
+// TestRenameEntityType_NoVersions uses a service without catalog repos, so pinRepo==nil
+// causes early return before ListByEntityType. This test uses catalog repos to exercise
+// the empty-versions path through ListByEntityType (lines 231-236).
+
+func TestRenameEntityType_NoVersionsWithCatalogRepos(t *testing.T) {
+	svc, etRepo, etvRepo, _, pinRepo, _ := setupETServiceWithCatalogRepos()
+
+	et := &models.EntityType{ID: "et1", Name: "OldName"}
+	etRepo.On("GetByID", mock.Anything, "et1").Return(et, nil)
+	etRepo.On("GetByName", mock.Anything, "NewName").Return(nil, domainerrors.NewNotFound("EntityType", "NewName"))
+	// ListByEntityType returns empty — no versions at all
+	etvRepo.On("ListByEntityType", mock.Anything, "et1").Return([]*models.EntityTypeVersion{}, nil)
+	etRepo.On("Update", mock.Anything, mock.MatchedBy(func(e *models.EntityType) bool {
+		return e.Name == "NewName"
+	})).Return(nil)
+	// pinRepo should NOT be called because versions is empty → early return
+	_ = pinRepo
+
+	result, err := svc.RenameEntityType(context.Background(), "et1", "NewName", false)
+	require.NoError(t, err)
+	assert.Equal(t, "NewName", result.EntityType.Name)
+	assert.False(t, result.WasDeepCopy)
+	// pinRepo should never have been called
+	pinRepo.AssertNotCalled(t, "ListByEntityTypeVersionIDs")
+}

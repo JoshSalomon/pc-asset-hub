@@ -2794,3 +2794,227 @@ func TestImport_ReuseCVWithMismatchedPins_Fails(t *testing.T) {
 	assert.Contains(t, err.Error(), "server")
 	assert.Contains(t, err.Error(), "pinned")
 }
+
+// Import — reuse CV GetByLabel error (lines 443-445)
+func TestImport_ReuseCVGetByLabelError(t *testing.T) {
+	svc, catalogRepo, cvRepo, _, _, _, _, _, tdRepo, _, _, _, _, _ := newImportService()
+
+	catalogRepo.On("GetByName", mock.Anything, "test-catalog").Return(nil, domainerrors.NewNotFound("Catalog", "test-catalog"))
+	// System TD resolution (happens before CV reuse check)
+	tdRepo.On("List", mock.Anything, mock.Anything).Return([]*models.TypeDefinition{}, 0, nil)
+	// GetByLabel fails when trying to reuse
+	cvRepo.On("GetByLabel", mock.Anything, "v1.0").Return(nil, fmt.Errorf("db connection lost"))
+
+	data := minimalExportData()
+	req := &ImportRequest{
+		Data:          data,
+		ReuseExisting: []string{"v1.0"},
+	}
+	_, err := svc.Import(context.Background(), req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reuse_existing catalog version")
+	assert.Contains(t, err.Error(), "db connection lost")
+}
+
+// Import — reuse CV ListByCatalogVersion error (lines 451-453)
+func TestImport_ReuseCVListPinsError(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, _, _, _, _, tdRepo, _, _, _, _, _ := newImportService()
+
+	catalogRepo.On("GetByName", mock.Anything, "test-catalog").Return(nil, domainerrors.NewNotFound("Catalog", "test-catalog"))
+	// System TD resolution
+	tdRepo.On("List", mock.Anything, mock.Anything).Return([]*models.TypeDefinition{}, 0, nil)
+	cvRepo.On("GetByLabel", mock.Anything, "v1.0").Return(&models.CatalogVersion{ID: "existing-cv-id"}, nil)
+	// ListByCatalogVersion fails
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "existing-cv-id").Return(nil, fmt.Errorf("pin list error"))
+
+	data := minimalExportData()
+	req := &ImportRequest{
+		Data:          data,
+		ReuseExisting: []string{"v1.0"},
+	}
+	_, err := svc.Import(context.Background(), req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to list pins for reused CV")
+	assert.Contains(t, err.Error(), "pin list error")
+}
+
+// Import — reuse entity type with associations (lines 512-514: allAssocByName merge loop)
+func TestImport_ReuseEntityTypeWithAssociations(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, tdvRepo, instRepo, _, _, typePinRepo := newImportService()
+
+	catalogRepo.On("GetByName", mock.Anything, "test-catalog").Return(nil, domainerrors.NewNotFound("Catalog", "test-catalog"))
+	cvRepo.On("GetByLabel", mock.Anything, "v1.0").Return(nil, domainerrors.NewNotFound("CatalogVersion", "v1.0"))
+
+	systemTDs := []*models.TypeDefinition{{ID: "td-str", Name: "string", BaseType: models.BaseTypeString, System: true}}
+	systemTDV := &models.TypeDefinitionVersion{ID: "tdv-str", TypeDefinitionID: "td-str", VersionNumber: 1}
+	tdRepo.On("List", mock.Anything, mock.Anything).Return(systemTDs, 1, nil)
+	tdvRepo.On("GetLatestByTypeDefinition", mock.Anything, "td-str").Return(systemTDV, nil)
+
+	// Entity type "server" exists — will be reused since it's in ReuseExisting
+	etRepo.On("GetByName", mock.Anything, "server").Return(&models.EntityType{ID: "et-server"}, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-server").Return(&models.EntityTypeVersion{ID: "etv-server", EntityTypeID: "et-server", Version: 1}, nil)
+
+	// Return associations for the reused entity type (the merge loop at lines 512-514)
+	assocRepo.On("ListByVersion", mock.Anything, "etv-server").Return([]*models.Association{
+		{ID: "assoc-1", Name: "connects-to", Type: models.AssociationTypeDirectional, TargetEntityTypeID: "et-server"},
+	}, nil)
+
+	cvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+	pinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+	typePinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionTypePin")).Return(nil)
+	attrRepo.On("ListByVersion", mock.Anything, mock.Anything).Return([]*models.Attribute{}, nil)
+	catalogRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Catalog")).Return(nil)
+	instRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
+
+	data := minimalExportData()
+	req := &ImportRequest{
+		Data:          data,
+		ReuseExisting: []string{"server"},
+	}
+	result, err := svc.Import(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, "success", result.Status)
+	assert.Equal(t, 1, result.TypesReused)
+}
+
+// Import — identical existing entity type with associations (lines 547-549: assoc merge loop)
+func TestImport_IdenticalEntityTypeWithAssociations(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, tdvRepo, instRepo, _, _, typePinRepo := newImportService()
+
+	catalogRepo.On("GetByName", mock.Anything, "test-catalog").Return(nil, domainerrors.NewNotFound("Catalog", "test-catalog"))
+	cvRepo.On("GetByLabel", mock.Anything, "v1.0").Return(nil, domainerrors.NewNotFound("CatalogVersion", "v1.0"))
+
+	systemTDs := []*models.TypeDefinition{{ID: "td-str", Name: "string", BaseType: models.BaseTypeString, System: true}}
+	systemTDV := &models.TypeDefinitionVersion{ID: "tdv-str", TypeDefinitionID: "td-str", VersionNumber: 1}
+	tdRepo.On("List", mock.Anything, mock.Anything).Return(systemTDs, 1, nil)
+	tdvRepo.On("GetLatestByTypeDefinition", mock.Anything, "td-str").Return(systemTDV, nil)
+
+	// Entity type "server" exists and is identical (not in ReuseExisting — auto-match)
+	existingET := &models.EntityType{ID: "et-server", Name: "server"}
+	existingETV := &models.EntityTypeVersion{ID: "etv-server", EntityTypeID: "et-server", Version: 1}
+	etRepo.On("GetByName", mock.Anything, "server").Return(existingET, nil)
+	etvRepo.On("GetLatestByEntityType", mock.Anything, "et-server").Return(existingETV, nil)
+
+	// Return empty attributes (matching the import's empty attributes) + association
+	attrRepo.On("ListByVersion", mock.Anything, "etv-server").Return([]*models.Attribute{}, nil)
+	// Return associations — must match what's in the import data
+	existingAssoc := &models.Association{
+		ID: "assoc-1", Name: "connects-to", Type: models.AssociationTypeDirectional,
+		TargetEntityTypeID: "et-server",
+	}
+	assocRepo.On("ListByVersion", mock.Anything, "etv-server").Return([]*models.Association{existingAssoc}, nil)
+	// For isEntityTypeIdentical: resolve target entity type name
+	etRepo.On("GetByID", mock.Anything, "et-server").Return(existingET, nil)
+
+	cvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+	pinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+	typePinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionTypePin")).Return(nil)
+	catalogRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Catalog")).Return(nil)
+	instRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
+
+	data := minimalExportData()
+	// Add an association to the import data that matches the existing one
+	data.EntityTypes[0].Associations = []ExportAssociation{
+		{Name: "connects-to", Type: "directional", Target: "server", SourceCardinality: "0..n", TargetCardinality: "0..n"},
+	}
+	req := &ImportRequest{Data: data}
+	result, err := svc.Import(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, "success", result.Status)
+	assert.Equal(t, 1, result.TypesReused)
+}
+
+// Import — number attribute with string value (lines 789-793: ParseFloat path)
+func TestImport_NumberAttributeStringValue(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, tdvRepo, instRepo, iavRepo, _, typePinRepo := newImportService()
+
+	data := minimalExportData()
+	data.EntityTypes[0].Attributes = []ExportAttribute{
+		{Name: "port", TypeDefinition: "number", Required: false, Ordinal: 0},
+	}
+	data.Instances = []ExportInstance{
+		{EntityType: "server", Name: "s1", Attributes: map[string]any{"port": "8080"}, Children: make(map[string][]*ExportInstance)},
+	}
+
+	numTD := &models.TypeDefinition{ID: "td-num", Name: "number", BaseType: models.BaseTypeNumber, System: true}
+	numTDV := &models.TypeDefinitionVersion{ID: "tdv-num", TypeDefinitionID: "td-num", VersionNumber: 1}
+
+	catalogRepo.On("GetByName", mock.Anything, "test-catalog").Return(nil, domainerrors.NewNotFound("Catalog", "test-catalog"))
+	cvRepo.On("GetByLabel", mock.Anything, "v1.0").Return(nil, domainerrors.NewNotFound("CatalogVersion", "v1.0"))
+	tdRepo.On("List", mock.Anything, mock.Anything).Return([]*models.TypeDefinition{numTD}, 1, nil)
+	tdvRepo.On("GetLatestByTypeDefinition", mock.Anything, "td-num").Return(numTDV, nil)
+	cvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+	etRepo.On("GetByName", mock.Anything, "server").Return(nil, domainerrors.NewNotFound("EntityType", "server"))
+	etRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityType")).Return(nil)
+	etvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityTypeVersion")).Return(nil)
+	attrRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Attribute")).Return(nil)
+	pinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+	typePinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionTypePin")).Return(nil)
+	assocRepo.On("ListByVersion", mock.Anything, mock.Anything).Return([]*models.Association{}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, mock.Anything).Return([]*models.Attribute{
+		{ID: "attr-port", Name: "port", TypeDefinitionVersionID: "tdv-num"},
+	}, nil)
+	tdvRepo.On("GetByID", mock.Anything, "tdv-num").Return(numTDV, nil)
+	tdRepo.On("GetByID", mock.Anything, "td-num").Return(numTD, nil)
+	catalogRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Catalog")).Return(nil)
+	instRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
+	iavRepo.On("SetValues", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		vals := args.Get(1).([]*models.InstanceAttributeValue)
+		require.Len(t, vals, 1)
+		assert.Equal(t, "8080", vals[0].ValueString)
+		require.NotNil(t, vals[0].ValueNumber)
+		assert.Equal(t, float64(8080), *vals[0].ValueNumber)
+	}).Return(nil)
+
+	result, err := svc.Import(context.Background(), &ImportRequest{Data: data})
+	require.NoError(t, err)
+	assert.Equal(t, "success", result.Status)
+	assert.Equal(t, 1, result.InstancesCreated)
+}
+
+// Import — number attribute with unexpected type (lines 794-795: default case)
+func TestImport_NumberAttributeUnexpectedType(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, tdvRepo, instRepo, iavRepo, _, typePinRepo := newImportService()
+
+	data := minimalExportData()
+	data.EntityTypes[0].Attributes = []ExportAttribute{
+		{Name: "port", TypeDefinition: "number", Required: false, Ordinal: 0},
+	}
+	// Pass a boolean value for a number attribute — triggers the default case
+	data.Instances = []ExportInstance{
+		{EntityType: "server", Name: "s1", Attributes: map[string]any{"port": true}, Children: make(map[string][]*ExportInstance)},
+	}
+
+	numTD := &models.TypeDefinition{ID: "td-num", Name: "number", BaseType: models.BaseTypeNumber, System: true}
+	numTDV := &models.TypeDefinitionVersion{ID: "tdv-num", TypeDefinitionID: "td-num", VersionNumber: 1}
+
+	catalogRepo.On("GetByName", mock.Anything, "test-catalog").Return(nil, domainerrors.NewNotFound("Catalog", "test-catalog"))
+	cvRepo.On("GetByLabel", mock.Anything, "v1.0").Return(nil, domainerrors.NewNotFound("CatalogVersion", "v1.0"))
+	tdRepo.On("List", mock.Anything, mock.Anything).Return([]*models.TypeDefinition{numTD}, 1, nil)
+	tdvRepo.On("GetLatestByTypeDefinition", mock.Anything, "td-num").Return(numTDV, nil)
+	cvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersion")).Return(nil)
+	etRepo.On("GetByName", mock.Anything, "server").Return(nil, domainerrors.NewNotFound("EntityType", "server"))
+	etRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityType")).Return(nil)
+	etvRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityTypeVersion")).Return(nil)
+	attrRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Attribute")).Return(nil)
+	pinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionPin")).Return(nil)
+	typePinRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.CatalogVersionTypePin")).Return(nil)
+	assocRepo.On("ListByVersion", mock.Anything, mock.Anything).Return([]*models.Association{}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, mock.Anything).Return([]*models.Attribute{
+		{ID: "attr-port", Name: "port", TypeDefinitionVersionID: "tdv-num"},
+	}, nil)
+	tdvRepo.On("GetByID", mock.Anything, "tdv-num").Return(numTDV, nil)
+	tdRepo.On("GetByID", mock.Anything, "td-num").Return(numTD, nil)
+	catalogRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Catalog")).Return(nil)
+	instRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.EntityInstance")).Return(nil)
+	iavRepo.On("SetValues", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		vals := args.Get(1).([]*models.InstanceAttributeValue)
+		require.Len(t, vals, 1)
+		// Boolean "true" should be formatted as string "true"
+		assert.Equal(t, "true", vals[0].ValueString)
+	}).Return(nil)
+
+	result, err := svc.Import(context.Background(), &ImportRequest{Data: data})
+	require.NoError(t, err)
+	assert.Equal(t, "success", result.Status)
+}

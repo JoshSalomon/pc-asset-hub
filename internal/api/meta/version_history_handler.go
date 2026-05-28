@@ -7,7 +7,6 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/project-catalyst/pc-asset-hub/internal/api/dto"
-	"github.com/project-catalyst/pc-asset-hub/internal/domain/models"
 	svcmeta "github.com/project-catalyst/pc-asset-hub/internal/service/meta"
 )
 
@@ -75,9 +74,4 @@ func (h *VersionHistoryHandler) Diff(c echo.Context) error {
 func RegisterVersionHistoryRoutes(g *echo.Group, h *VersionHistoryHandler) {
 	g.GET("/entity-types/:entityTypeId/versions", h.List)
 	g.GET("/entity-types/:entityTypeId/versions/diff", h.Diff)
-}
-
-// defaultListParams returns sensible defaults for list operations.
-func defaultListParams() models.ListParams {
-	return models.ListParams{Limit: 100, Offset: 0}
 }

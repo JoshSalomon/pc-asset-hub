@@ -4,7 +4,6 @@ import type { EntityInstance, SnapshotAssociation, ReferenceDetail, Role } from 
 
 export function useInstanceDetail(catalogName: string | undefined, entityTypeName: string, schemaAssocs: SnapshotAssociation[], role: Role) {
   const [selectedInstance, setSelectedInstance] = useState<EntityInstance | null>(null)
-  const [parentName, setParentName] = useState<string>('')
   const [children, setChildren] = useState<EntityInstance[]>([])
   const [childrenLoading, setChildrenLoading] = useState(false)
   const [forwardRefs, setForwardRefs] = useState<ReferenceDetail[]>([])
@@ -12,7 +11,6 @@ export function useInstanceDetail(catalogName: string | undefined, entityTypeNam
   const [refsLoading, setRefsLoading] = useState(false)
 
   const selectInstance = useCallback(async (instanceId: string | null) => {
-    setParentName('')
     if (!instanceId || !catalogName || !entityTypeName) {
       setSelectedInstance(null)
       setChildren([])
@@ -34,13 +32,6 @@ export function useInstanceDetail(catalogName: string | undefined, entityTypeNam
       return
     }
     setSelectedInstance(inst)
-    // Resolve parent name if instance is contained
-    if (inst.parent_instance_id) {
-      try {
-        const parent = await api.instances.get(catalogName, entityTypeName, inst.parent_instance_id)
-        setParentName(parent.name)
-      } catch { setParentName(inst.parent_instance_id) }
-    }
     // Load contained children — find containment associations pointing from this entity type
     setChildrenLoading(true)
     try {
@@ -85,7 +76,7 @@ export function useInstanceDetail(catalogName: string | undefined, entityTypeNam
 
   return {
     selectedInstance, selectInstance, clearSelection,
-    parentName, children, childrenLoading,
+    children, childrenLoading,
     forwardRefs, reverseRefs, refsLoading,
   }
 }

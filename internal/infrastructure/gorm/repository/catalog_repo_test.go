@@ -641,3 +641,27 @@ func TestListByCatalogVersionID(t *testing.T) {
 	assert.Len(t, cats, 0)
 }
 
+// Coverage: CatalogVersion List with offset > 0
+func TestCatalogVersion_ListWithOffset(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	cvRepo := repository.NewCatalogVersionGormRepo(db)
+	ctx := context.Background()
+
+	for _, label := range []string{"alpha", "beta", "charlie"} {
+		require.NoError(t, cvRepo.Create(ctx, &models.CatalogVersion{
+			ID: newCatalogID(), VersionLabel: label,
+			LifecycleStage: "development",
+			CreatedAt:      time.Now(), UpdatedAt: time.Now(),
+		}))
+	}
+
+	// Offset=1 should skip the first result
+	items, total, err := cvRepo.List(ctx, models.ListParams{Limit: 10, Offset: 1})
+	require.NoError(t, err)
+	assert.Equal(t, 3, total)
+	assert.Len(t, items, 2)
+	// Ordered by version_label ASC: alpha, beta, charlie → offset 1 → beta, charlie
+	assert.Equal(t, "beta", items[0].VersionLabel)
+	assert.Equal(t, "charlie", items[1].VersionLabel)
+}
+

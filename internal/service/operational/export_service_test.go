@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	domainerrors "github.com/project-catalyst/pc-asset-hub/internal/domain/errors"
@@ -1439,4 +1440,516 @@ func TestT30_33_ExportCacheLoopETError(t *testing.T) {
 
 func ctx() context.Context {
 	return context.Background()
+}
+
+// === TD-131: Export file deterministic ordering ===
+
+// T-35.45: Exported type_definitions sorted alphabetically by name
+func TestT35_45_ExportTypeDefsSorted(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, tdvRepo, instRepo, _, _ := newExportService()
+
+	catalogRepo.On("GetByName", ctx(), "test").Return(&models.Catalog{ID: "c1", Name: "test", CatalogVersionID: "cv1"}, nil)
+	cvRepo.On("GetByID", ctx(), "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1"}, nil)
+	pinRepo.On("ListByCatalogVersion", ctx(), "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	etvRepo.On("GetByID", ctx(), "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	etRepo.On("GetByID", ctx(), "et1").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+
+	// Three attributes using three different custom type defs (Zebra, Apple, Mango — not alphabetical)
+	attrRepo.On("ListByVersion", ctx(), "etv1").Return([]*models.Attribute{
+		{ID: "a1", Name: "attr-z", TypeDefinitionVersionID: "tdv-z", Required: false, Ordinal: 1},
+		{ID: "a2", Name: "attr-a", TypeDefinitionVersionID: "tdv-a", Required: false, Ordinal: 2},
+		{ID: "a3", Name: "attr-m", TypeDefinitionVersionID: "tdv-m", Required: false, Ordinal: 3},
+	}, nil)
+	tdvRepo.On("GetByID", ctx(), "tdv-z").Return(&models.TypeDefinitionVersion{ID: "tdv-z", TypeDefinitionID: "td-z"}, nil)
+	tdRepo.On("GetByID", ctx(), "td-z").Return(&models.TypeDefinition{ID: "td-z", Name: "Zebra", BaseType: "string", System: false}, nil)
+	tdvRepo.On("GetByID", ctx(), "tdv-a").Return(&models.TypeDefinitionVersion{ID: "tdv-a", TypeDefinitionID: "td-a"}, nil)
+	tdRepo.On("GetByID", ctx(), "td-a").Return(&models.TypeDefinition{ID: "td-a", Name: "Apple", BaseType: "string", System: false}, nil)
+	tdvRepo.On("GetByID", ctx(), "tdv-m").Return(&models.TypeDefinitionVersion{ID: "tdv-m", TypeDefinitionID: "td-m"}, nil)
+	tdRepo.On("GetByID", ctx(), "td-m").Return(&models.TypeDefinition{ID: "td-m", Name: "Mango", BaseType: "string", System: false}, nil)
+
+	assocRepo.On("ListByVersion", ctx(), "etv1").Return([]*models.Association{}, nil)
+	instRepo.On("ListByCatalog", ctx(), "c1").Return([]*models.EntityInstance{}, nil)
+
+	result, err := svc.ExportCatalog(context.Background(), "test", nil, "")
+	require.NoError(t, err)
+	require.Len(t, result.TypeDefinitions, 3)
+	assert.Equal(t, "Apple", result.TypeDefinitions[0].Name)
+	assert.Equal(t, "Mango", result.TypeDefinitions[1].Name)
+	assert.Equal(t, "Zebra", result.TypeDefinitions[2].Name)
+}
+
+// T-35.46: ExportInstance.MarshalJSON children keys sorted alphabetically
+func TestT35_46_MarshalJSONChildrenKeysSorted(t *testing.T) {
+	inst := ExportInstance{
+		EntityType:  "server",
+		Name:        "s1",
+		Description: "test",
+		Attributes:  map[string]any{},
+		Children: map[string][]*ExportInstance{
+			"zebra-tools": {{EntityType: "tool", Name: "t1", Attributes: map[string]any{}, Children: map[string][]*ExportInstance{}}},
+			"apple-items": {{EntityType: "item", Name: "i1", Attributes: map[string]any{}, Children: map[string][]*ExportInstance{}}},
+			"mango-refs":  {{EntityType: "ref", Name: "r1", Attributes: map[string]any{}, Children: map[string][]*ExportInstance{}}},
+		},
+	}
+
+	b, err := json.Marshal(inst)
+	require.NoError(t, err)
+
+	// The keys should appear in alphabetical order in the JSON
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(b, &raw))
+
+	// Verify all three children keys are present
+	_, hasApple := raw["apple-items"]
+	_, hasMango := raw["mango-refs"]
+	_, hasZebra := raw["zebra-tools"]
+	assert.True(t, hasApple && hasMango && hasZebra, "all children keys should be in output")
+
+	// Verify JSON key ordering by checking string positions
+	s := string(b)
+	appleIdx := indexOf(s, "apple-items")
+	mangoIdx := indexOf(s, "mango-refs")
+	zebraIdx := indexOf(s, "zebra-tools")
+	assert.True(t, appleIdx < mangoIdx && mangoIdx < zebraIdx,
+		"children keys should appear in alphabetical order: apple(%d) < mango(%d) < zebra(%d)", appleIdx, mangoIdx, zebraIdx)
+}
+
+func indexOf(s, sub string) int {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
+}
+
+// T-35.50: Two exports of the same catalog produce identical JSON (deterministic ordering)
+func TestT35_50_ExportDeterministic(t *testing.T) {
+	// Helper to create a fresh export service with identical mocks
+	makeExportService := func() *ExportService {
+		svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, tdvRepo, instRepo, iavRepo, linkRepo := newExportService()
+
+		catalogRepo.On("GetByName", ctx(), "test").Return(&models.Catalog{ID: "c1", Name: "test", CatalogVersionID: "cv1"}, nil)
+		cvRepo.On("GetByID", ctx(), "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1"}, nil)
+		pinRepo.On("ListByCatalogVersion", ctx(), "cv1").Return([]*models.CatalogVersionPin{
+			{ID: "pin1", EntityTypeVersionID: "etv1"},
+			{ID: "pin2", EntityTypeVersionID: "etv2"},
+		}, nil)
+		etvRepo.On("GetByID", ctx(), "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+		etvRepo.On("GetByID", ctx(), "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+		etRepo.On("GetByID", ctx(), "et1").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+		etRepo.On("GetByID", ctx(), "et2").Return(&models.EntityType{ID: "et2", Name: "tool"}, nil)
+
+		attrRepo.On("ListByVersion", ctx(), "etv1").Return([]*models.Attribute{
+			{ID: "a1", Name: "hostname", TypeDefinitionVersionID: "tdv-z", Ordinal: 1},
+			{ID: "a2", Name: "port", TypeDefinitionVersionID: "tdv-a", Ordinal: 2},
+		}, nil)
+		attrRepo.On("ListByVersion", ctx(), "etv2").Return([]*models.Attribute{}, nil)
+
+		tdvRepo.On("GetByID", ctx(), "tdv-z").Return(&models.TypeDefinitionVersion{ID: "tdv-z", TypeDefinitionID: "td-z"}, nil)
+		tdRepo.On("GetByID", ctx(), "td-z").Return(&models.TypeDefinition{ID: "td-z", Name: "ZebraType", BaseType: "string"}, nil)
+		tdvRepo.On("GetByID", ctx(), "tdv-a").Return(&models.TypeDefinitionVersion{ID: "tdv-a", TypeDefinitionID: "td-a"}, nil)
+		tdRepo.On("GetByID", ctx(), "td-a").Return(&models.TypeDefinition{ID: "td-a", Name: "AppleType", BaseType: "integer"}, nil)
+
+		assocRepo.On("ListByVersion", ctx(), "etv1").Return([]*models.Association{
+			{ID: "assoc1", EntityTypeVersionID: "etv1", Name: "tools", Type: "containment", TargetEntityTypeID: "et2"},
+		}, nil)
+		assocRepo.On("ListByVersion", ctx(), "etv2").Return([]*models.Association{}, nil)
+		assocRepo.On("GetByID", mock.Anything, mock.Anything).Return(nil, fmt.Errorf("not found")).Maybe()
+
+		instRepo.On("ListByCatalog", ctx(), "c1").Return([]*models.EntityInstance{
+			{ID: "i1", EntityTypeID: "et1", CatalogID: "c1", Name: "beta-server", Version: 1},
+			{ID: "i2", EntityTypeID: "et1", CatalogID: "c1", Name: "alpha-server", Version: 1},
+		}, nil)
+		iavRepo.On("GetValuesForVersion", ctx(), "i1", 1).Return([]*models.InstanceAttributeValue{
+			{ID: "v1", InstanceID: "i1", AttributeID: "a1", ValueString: "host-b"},
+		}, nil)
+		iavRepo.On("GetValuesForVersion", ctx(), "i2", 1).Return([]*models.InstanceAttributeValue{
+			{ID: "v2", InstanceID: "i2", AttributeID: "a1", ValueString: "host-a"},
+		}, nil)
+		linkRepo.On("GetForwardRefs", ctx(), mock.Anything).Return([]*models.AssociationLink{}, nil)
+
+		return svc
+	}
+
+	// Export twice with fresh services
+	svc1 := makeExportService()
+	result1, err := svc1.ExportCatalog(context.Background(), "test", nil, "test-system")
+	require.NoError(t, err)
+
+	svc2 := makeExportService()
+	result2, err := svc2.ExportCatalog(context.Background(), "test", nil, "test-system")
+	require.NoError(t, err)
+
+	// Normalize timestamps before comparison
+	result1.ExportedAt = result2.ExportedAt
+
+	b1, err := json.Marshal(result1)
+	require.NoError(t, err)
+	b2, err := json.Marshal(result2)
+	require.NoError(t, err)
+
+	assert.Equal(t, string(b1), string(b2), "two exports of the same catalog should produce identical JSON")
+}
+
+// T-35.51: Export → JSON parse → re-marshal produces identical output (ordering stability across serialization)
+func TestT35_51_ExportRoundTripStable(t *testing.T) {
+	original := &ExportData{
+		FormatVersion: "1.0",
+		ExportedAt:    time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC),
+		SourceSystem:  "test",
+		Catalog:       ExportCatalog{Name: "my-catalog", Description: "test", ValidationStatus: "valid"},
+		CatalogVersion: ExportCatalogVersion{Label: "v1.0", Description: "first"},
+		TypeDefinitions: []ExportTypeDef{
+			{Name: "ZebraType", BaseType: "string", System: false},
+			{Name: "AppleType", BaseType: "integer", System: false},
+			{Name: "MangoType", BaseType: "number", System: false},
+		},
+		EntityTypes: []ExportEntityType{
+			{
+				Name: "server",
+				Attributes: []ExportAttribute{
+					{Name: "hostname", TypeDefinition: "ZebraType", Ordinal: 1},
+					{Name: "port", TypeDefinition: "AppleType", Ordinal: 2},
+				},
+				Associations: []ExportAssociation{
+					{Name: "tools", Type: "containment", Target: "tool"},
+				},
+			},
+			{Name: "tool", Attributes: []ExportAttribute{}, Associations: []ExportAssociation{}},
+		},
+		Instances: []ExportInstance{
+			{
+				EntityType: "server", Name: "beta", Description: "second",
+				Attributes: map[string]any{"hostname": "host-b"},
+				Children: map[string][]*ExportInstance{
+					"tools": {{EntityType: "tool", Name: "t1", Attributes: map[string]any{}, Children: map[string][]*ExportInstance{}}},
+				},
+			},
+			{
+				EntityType: "server", Name: "alpha", Description: "first",
+				Attributes: map[string]any{"hostname": "host-a"},
+				Children:   map[string][]*ExportInstance{},
+			},
+		},
+	}
+
+	// Marshal → unmarshal → re-marshal
+	b1, err := json.Marshal(original)
+	require.NoError(t, err)
+
+	var parsed ExportData
+	require.NoError(t, json.Unmarshal(b1, &parsed))
+
+	b2, err := json.Marshal(&parsed)
+	require.NoError(t, err)
+
+	assert.Equal(t, string(b1), string(b2), "export JSON should be stable across parse/re-marshal cycle")
+}
+
+// TD-131 review fix: links within an instance must be sorted deterministically
+func TestExportLinksSorted(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, _, instRepo, iavRepo, linkRepo := newExportService()
+
+	catalogRepo.On("GetByName", ctx(), "test").Return(&models.Catalog{ID: "c1", Name: "test", CatalogVersionID: "cv1"}, nil)
+	cvRepo.On("GetByID", ctx(), "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1"}, nil)
+	pinRepo.On("ListByCatalogVersion", ctx(), "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	etvRepo.On("GetByID", ctx(), "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	etRepo.On("GetByID", ctx(), "et1").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	attrRepo.On("ListByVersion", ctx(), "etv1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", ctx(), "etv1").Return([]*models.Association{
+		{ID: "assoc-z", EntityTypeVersionID: "etv1", Name: "z-ref", Type: "directional", TargetEntityTypeID: "et1"},
+		{ID: "assoc-a", EntityTypeVersionID: "etv1", Name: "a-ref", Type: "directional", TargetEntityTypeID: "et1"},
+	}, nil)
+	tdRepo.On("GetByID", ctx(), mock.Anything).Return(&models.TypeDefinition{Name: "string", BaseType: "string"}, nil).Maybe()
+
+	instRepo.On("ListByCatalog", ctx(), "c1").Return([]*models.EntityInstance{
+		{ID: "i1", EntityTypeID: "et1", CatalogID: "c1", Name: "my-server", Version: 1},
+		{ID: "i2", EntityTypeID: "et1", CatalogID: "c1", Name: "target-b", Version: 1},
+		{ID: "i3", EntityTypeID: "et1", CatalogID: "c1", Name: "target-a", Version: 1},
+	}, nil)
+	iavRepo.On("GetValuesForVersion", ctx(), mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	linkRepo.On("GetForwardRefs", ctx(), "i1").Return([]*models.AssociationLink{
+		{ID: "l1", AssociationID: "assoc-z", SourceInstanceID: "i1", TargetInstanceID: "i2"},
+		{ID: "l2", AssociationID: "assoc-a", SourceInstanceID: "i1", TargetInstanceID: "i3"},
+	}, nil)
+	linkRepo.On("GetForwardRefs", ctx(), mock.Anything).Return([]*models.AssociationLink{}, nil).Maybe()
+	assocRepo.On("GetByID", ctx(), "assoc-z").Return(&models.Association{ID: "assoc-z", Name: "z-ref", Type: "directional", TargetEntityTypeID: "et1"}, nil)
+	assocRepo.On("GetByID", ctx(), "assoc-a").Return(&models.Association{ID: "assoc-a", Name: "a-ref", Type: "directional", TargetEntityTypeID: "et1"}, nil)
+
+	result, err := svc.ExportCatalog(context.Background(), "test", nil, "test")
+	require.NoError(t, err)
+
+	// Find my-server instance
+	var serverInst *ExportInstance
+	for i := range result.Instances {
+		if result.Instances[i].Name == "my-server" {
+			serverInst = &result.Instances[i]
+			break
+		}
+	}
+	require.NotNil(t, serverInst)
+	require.Len(t, serverInst.Links, 2)
+	assert.Equal(t, "a-ref", serverInst.Links[0].Association, "links should be sorted by association name")
+	assert.Equal(t, "z-ref", serverInst.Links[1].Association)
+}
+
+// TD-131 review fix: children within a containment association must be sorted by name
+func TestExportChildrenSorted(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, _, instRepo, iavRepo, linkRepo := newExportService()
+
+	catalogRepo.On("GetByName", ctx(), "test").Return(&models.Catalog{ID: "c1", Name: "test", CatalogVersionID: "cv1"}, nil)
+	cvRepo.On("GetByID", ctx(), "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1"}, nil)
+	pinRepo.On("ListByCatalogVersion", ctx(), "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", EntityTypeVersionID: "etv1"},
+		{ID: "pin2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	etvRepo.On("GetByID", ctx(), "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	etvRepo.On("GetByID", ctx(), "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	etRepo.On("GetByID", ctx(), "et1").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	etRepo.On("GetByID", ctx(), "et2").Return(&models.EntityType{ID: "et2", Name: "tool"}, nil)
+	attrRepo.On("ListByVersion", ctx(), mock.Anything).Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", ctx(), "etv1").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "etv1", Name: "tools", Type: "containment", TargetEntityTypeID: "et2"},
+	}, nil)
+	assocRepo.On("ListByVersion", ctx(), "etv2").Return([]*models.Association{}, nil)
+	tdRepo.On("GetByID", ctx(), mock.Anything).Return(&models.TypeDefinition{Name: "string", BaseType: "string"}, nil).Maybe()
+
+	instRepo.On("ListByCatalog", ctx(), "c1").Return([]*models.EntityInstance{
+		{ID: "i1", EntityTypeID: "et1", CatalogID: "c1", Name: "my-server", Version: 1},
+		{ID: "c3", EntityTypeID: "et2", CatalogID: "c1", Name: "zebra-tool", ParentInstanceID: "i1", Version: 1},
+		{ID: "c2", EntityTypeID: "et2", CatalogID: "c1", Name: "alpha-tool", ParentInstanceID: "i1", Version: 1},
+		{ID: "c1x", EntityTypeID: "et2", CatalogID: "c1", Name: "mid-tool", ParentInstanceID: "i1", Version: 1},
+	}, nil)
+	iavRepo.On("GetValuesForVersion", ctx(), mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	linkRepo.On("GetForwardRefs", ctx(), mock.Anything).Return([]*models.AssociationLink{}, nil)
+
+	result, err := svc.ExportCatalog(context.Background(), "test", nil, "test")
+	require.NoError(t, err)
+
+	require.Len(t, result.Instances, 1, "only root instances in top-level array")
+	server := result.Instances[0]
+	require.Contains(t, server.Children, "tools")
+	children := server.Children["tools"]
+	require.Len(t, children, 3)
+	assert.Equal(t, "alpha-tool", children[0].Name, "children should be sorted by name")
+	assert.Equal(t, "mid-tool", children[1].Name)
+	assert.Equal(t, "zebra-tool", children[2].Name)
+}
+
+// ExportData.UnmarshalJSON — malformed JSON (first pass error)
+func TestExportData_UnmarshalJSON_MalformedJSON(t *testing.T) {
+	var ed ExportData
+	err := json.Unmarshal([]byte(`{invalid json`), &ed)
+	assert.Error(t, err)
+}
+
+// ExportData.UnmarshalJSON — empty instances field
+func TestExportData_UnmarshalJSON_EmptyInstances(t *testing.T) {
+	var ed ExportData
+	err := json.Unmarshal([]byte(`{"format_version":"1.0","instances":[]}`), &ed)
+	// Empty instances array means len(raw.Instances) != 0 but the array unmarshal yields []
+	// Actually [] is not empty — let me use null or omit
+	assert.NoError(t, err)
+
+	// Test with null instances (len == 0)
+	var ed2 ExportData
+	err = json.Unmarshal([]byte(`{"format_version":"1.0","instances":null}`), &ed2)
+	assert.NoError(t, err)
+	assert.Nil(t, ed2.Instances)
+
+	// Test with field completely omitted
+	var ed3 ExportData
+	err = json.Unmarshal([]byte(`{"format_version":"1.0"}`), &ed3)
+	assert.NoError(t, err)
+	assert.Nil(t, ed3.Instances)
+}
+
+// ExportData.UnmarshalJSON — instances field is not an array (unmarshal error)
+func TestExportData_UnmarshalJSON_InstancesNotArray(t *testing.T) {
+	var ed ExportData
+	err := json.Unmarshal([]byte(`{"format_version":"1.0","instances":"not-an-array"}`), &ed)
+	assert.Error(t, err)
+}
+
+// ExportData.UnmarshalJSON — ParseExportInstances error (instance missing entity_type in containment)
+func TestExportData_UnmarshalJSON_ParseExportInstancesError(t *testing.T) {
+	// ParseExportInstances can fail if child array contains invalid JSON
+	data := `{
+		"format_version": "1.0",
+		"entity_types": [
+			{"name": "parent", "attributes": [], "associations": [
+				{"name": "children", "type": "containment", "target": "child"}
+			]},
+			{"name": "child", "attributes": [], "associations": []}
+		],
+		"instances": [
+			{
+				"entity_type": "parent",
+				"name": "p1",
+				"attributes": {},
+				"children": ["not-an-object"]
+			}
+		]
+	}`
+	var ed ExportData
+	err := json.Unmarshal([]byte(data), &ed)
+	// "not-an-object" can't unmarshal as map[string]json.RawMessage
+	assert.Error(t, err)
+}
+
+// Export — assocRepo.ListByVersion error in assocNameByParentChild loop (lines 353-355)
+func TestExport_AssocListByVersionError_ContainmentLoop(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, _, _, instRepo, _, _ := newExportService()
+
+	now := time.Now()
+	catalog := &models.Catalog{ID: "cat-1", Name: "test", CatalogVersionID: "cv-1", ValidationStatus: models.ValidationStatusValid, CreatedAt: now, UpdatedAt: now}
+	cv := &models.CatalogVersion{ID: "cv-1", VersionLabel: "v1"}
+	et := &models.EntityType{ID: "et-1", Name: "server"}
+	etv := &models.EntityTypeVersion{ID: "etv-1", EntityTypeID: "et-1", Version: 1}
+	pin := &models.CatalogVersionPin{ID: "pin-1", CatalogVersionID: "cv-1", EntityTypeVersionID: "etv-1"}
+
+	catalogRepo.On("GetByName", ctx(), "test").Return(catalog, nil)
+	cvRepo.On("GetByID", ctx(), "cv-1").Return(cv, nil)
+	pinRepo.On("ListByCatalogVersion", ctx(), "cv-1").Return([]*models.CatalogVersionPin{pin}, nil)
+
+	// etvRepo.GetByID is called in steps 1, 5, 6 — all succeed
+	etvRepo.On("GetByID", ctx(), "etv-1").Return(etv, nil)
+	// etRepo.GetByID is called in steps 1, 5
+	etRepo.On("GetByID", ctx(), "et-1").Return(et, nil)
+	attrRepo.On("ListByVersion", ctx(), "etv-1").Return([]*models.Attribute{}, nil)
+	instRepo.On("ListByCatalog", ctx(), "cat-1").Return([]*models.EntityInstance{}, nil)
+
+	// assocRepo: step 3 succeeds, step 6 fails
+	assocRepo.On("ListByVersion", ctx(), "etv-1").Return([]*models.Association{}, nil).Once()
+	assocRepo.On("ListByVersion", ctx(), "etv-1").Return(nil, fmt.Errorf("assoc list error"))
+
+	result, err := svc.ExportCatalog(context.Background(), "test", nil, "")
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "assoc list error")
+}
+
+// Export — etvRepo.GetByID error in assocByID loop (lines 370-372)
+func TestExport_ETVGetByIDError_AssocByIDLoop(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, _, _, instRepo, _, _ := newExportService()
+
+	now := time.Now()
+	catalog := &models.Catalog{ID: "cat-1", Name: "test", CatalogVersionID: "cv-1", ValidationStatus: models.ValidationStatusValid, CreatedAt: now, UpdatedAt: now}
+	cv := &models.CatalogVersion{ID: "cv-1", VersionLabel: "v1"}
+	et := &models.EntityType{ID: "et-1", Name: "server"}
+	etv := &models.EntityTypeVersion{ID: "etv-1", EntityTypeID: "et-1", Version: 1}
+	pin := &models.CatalogVersionPin{ID: "pin-1", CatalogVersionID: "cv-1", EntityTypeVersionID: "etv-1"}
+
+	catalogRepo.On("GetByName", ctx(), "test").Return(catalog, nil)
+	cvRepo.On("GetByID", ctx(), "cv-1").Return(cv, nil)
+	pinRepo.On("ListByCatalogVersion", ctx(), "cv-1").Return([]*models.CatalogVersionPin{pin}, nil)
+
+	etRepo.On("GetByID", ctx(), "et-1").Return(et, nil)
+	attrRepo.On("ListByVersion", ctx(), "etv-1").Return([]*models.Attribute{}, nil)
+	instRepo.On("ListByCatalog", ctx(), "cat-1").Return([]*models.EntityInstance{}, nil)
+
+	// assocRepo: steps 3, 6 succeed
+	assocRepo.On("ListByVersion", ctx(), "etv-1").Return([]*models.Association{}, nil)
+
+	// etvRepo: steps 1, 5, 6 succeed (3 calls), then step 7 fails
+	etvRepo.On("GetByID", ctx(), "etv-1").Return(etv, nil).Times(3)
+	etvRepo.On("GetByID", ctx(), "etv-1").Return(nil, fmt.Errorf("etv lookup error"))
+
+	result, err := svc.ExportCatalog(context.Background(), "test", nil, "")
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "etv lookup error")
+}
+
+// Export — assocRepo.ListByVersion error in assocByID loop (lines 374-376)
+func TestExport_AssocListByVersionError_AssocByIDLoop(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, _, _, instRepo, _, _ := newExportService()
+
+	now := time.Now()
+	catalog := &models.Catalog{ID: "cat-1", Name: "test", CatalogVersionID: "cv-1", ValidationStatus: models.ValidationStatusValid, CreatedAt: now, UpdatedAt: now}
+	cv := &models.CatalogVersion{ID: "cv-1", VersionLabel: "v1"}
+	et := &models.EntityType{ID: "et-1", Name: "server"}
+	etv := &models.EntityTypeVersion{ID: "etv-1", EntityTypeID: "et-1", Version: 1}
+	pin := &models.CatalogVersionPin{ID: "pin-1", CatalogVersionID: "cv-1", EntityTypeVersionID: "etv-1"}
+
+	catalogRepo.On("GetByName", ctx(), "test").Return(catalog, nil)
+	cvRepo.On("GetByID", ctx(), "cv-1").Return(cv, nil)
+	pinRepo.On("ListByCatalogVersion", ctx(), "cv-1").Return([]*models.CatalogVersionPin{pin}, nil)
+
+	// etvRepo: all 4 calls succeed (steps 1, 5, 6, 7)
+	etvRepo.On("GetByID", ctx(), "etv-1").Return(etv, nil)
+	etRepo.On("GetByID", ctx(), "et-1").Return(et, nil)
+	attrRepo.On("ListByVersion", ctx(), "etv-1").Return([]*models.Attribute{}, nil)
+	instRepo.On("ListByCatalog", ctx(), "cat-1").Return([]*models.EntityInstance{}, nil)
+
+	// assocRepo: steps 3, 6 succeed (2 calls), step 7 fails
+	assocRepo.On("ListByVersion", ctx(), "etv-1").Return([]*models.Association{}, nil).Times(2)
+	assocRepo.On("ListByVersion", ctx(), "etv-1").Return(nil, fmt.Errorf("assoc list error 2"))
+
+	result, err := svc.ExportCatalog(context.Background(), "test", nil, "")
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "assoc list error 2")
+}
+
+// Export — association fallback DB lookup succeeds (line 499)
+func TestExport_AssociationFallbackDBLookupSuccess(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, _, _, instRepo, iavRepo, linkRepo := newExportService()
+
+	now := time.Now()
+	catalog := &models.Catalog{ID: "cat-1", Name: "test", CatalogVersionID: "cv-1", ValidationStatus: models.ValidationStatusValid, CreatedAt: now, UpdatedAt: now}
+	cv := &models.CatalogVersion{ID: "cv-1", VersionLabel: "v1"}
+	et := &models.EntityType{ID: "et-1", Name: "server"}
+	etv := &models.EntityTypeVersion{ID: "etv-1", EntityTypeID: "et-1", Version: 1}
+	pin := &models.CatalogVersionPin{ID: "pin-1", CatalogVersionID: "cv-1", EntityTypeVersionID: "etv-1"}
+	inst1 := &models.EntityInstance{ID: "inst-1", EntityTypeID: "et-1", CatalogID: "cat-1", Name: "s1", Version: 1, CreatedAt: now, UpdatedAt: now}
+	inst2 := &models.EntityInstance{ID: "inst-2", EntityTypeID: "et-1", CatalogID: "cat-1", Name: "s2", Version: 1, CreatedAt: now, UpdatedAt: now}
+
+	catalogRepo.On("GetByName", ctx(), "test").Return(catalog, nil)
+	cvRepo.On("GetByID", ctx(), "cv-1").Return(cv, nil)
+	pinRepo.On("ListByCatalogVersion", ctx(), "cv-1").Return([]*models.CatalogVersionPin{pin}, nil)
+	etvRepo.On("GetByID", ctx(), "etv-1").Return(etv, nil)
+	etRepo.On("GetByID", ctx(), "et-1").Return(et, nil)
+	attrRepo.On("ListByVersion", ctx(), "etv-1").Return([]*models.Attribute{}, nil)
+	// No associations cached via ListByVersion — the association will NOT be in assocByID
+	assocRepo.On("ListByVersion", ctx(), "etv-1").Return([]*models.Association{}, nil)
+
+	instRepo.On("ListByCatalog", ctx(), "cat-1").Return([]*models.EntityInstance{inst1, inst2}, nil)
+	iavRepo.On("GetValuesForVersion", ctx(), "inst-1", 1).Return([]*models.InstanceAttributeValue{}, nil)
+	iavRepo.On("GetValuesForVersion", ctx(), "inst-2", 1).Return([]*models.InstanceAttributeValue{}, nil)
+
+	// inst-1 has a link whose association_id is NOT in the cache
+	linkRepo.On("GetForwardRefs", ctx(), "inst-1").Return([]*models.AssociationLink{
+		{ID: "link-1", AssociationID: "old-assoc-id", SourceInstanceID: "inst-1", TargetInstanceID: "inst-2"},
+	}, nil)
+	linkRepo.On("GetForwardRefs", ctx(), "inst-2").Return([]*models.AssociationLink{}, nil)
+
+	// Fallback DB lookup succeeds — returns a directional association
+	assocRepo.On("GetByID", ctx(), "old-assoc-id").Return(&models.Association{
+		ID:   "old-assoc-id",
+		Name: "connects-to",
+		Type: models.AssociationTypeDirectional,
+		TargetEntityTypeID: "et-1",
+	}, nil)
+
+	result, err := svc.ExportCatalog(context.Background(), "test", nil, "")
+	require.NoError(t, err)
+	require.Len(t, result.Instances, 2)
+
+	// Find the instance with the link
+	var s1 *ExportInstance
+	for i, inst := range result.Instances {
+		if inst.Name == "s1" {
+			s1 = &result.Instances[i]
+		}
+	}
+	require.NotNil(t, s1)
+	require.Len(t, s1.Links, 1)
+	assert.Equal(t, "connects-to", s1.Links[0].Association)
+	assert.Equal(t, "s2", s1.Links[0].TargetName)
 }

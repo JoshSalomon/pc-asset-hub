@@ -505,14 +505,27 @@ test('Add Pin modal opens and can submit', async () => {
   await page.getByRole('dialog').getByText('Select entity type...').click()
   await page.getByTestId('pin-et-Platform').click()
 
-  // Select version
-  await expect.element(page.getByRole('dialog').getByText('Select version...')).toBeVisible()
-  await page.getByRole('dialog').getByText('Select version...').click()
-  await page.getByTestId('pin-etv-V2').click()
-
-  // Submit
+  // TD-79: Version auto-selected to latest (V2/etv-2). Submit directly.
   await page.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
   expect(api.catalogVersions.addPin).toHaveBeenCalledWith('cv-1', 'etv-2')
+})
+
+test('Add Pin: user can change auto-selected version via dropdown', async () => {
+  ;(api.entityTypes.list as Mock).mockResolvedValue({ items: [
+    { id: 'et-1', name: 'Model', created_at: '', updated_at: '' },
+    { id: 'et-2', name: 'Tool', created_at: '', updated_at: '' },
+    { id: 'et-3', name: 'Platform', created_at: '', updated_at: '' },
+  ], total: 3 })
+  renderDetail('Admin')
+  await page.getByRole('tab', { name: 'Bill of Materials' }).click()
+  await page.getByRole('button', { name: 'Add Pin' }).click()
+  await page.getByRole('dialog').getByText('Select entity type...').click()
+  await page.getByTestId('pin-et-Platform').click()
+  // TD-79: V2 auto-selected. Open dropdown and pick V1 instead.
+  await page.getByRole('dialog').getByText('V2').click()
+  await page.getByTestId('pin-etv-V1').click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
+  expect(api.catalogVersions.addPin).toHaveBeenCalledWith('cv-1', 'etv-1')
 })
 
 test('Add Pin error shows in modal', async () => {
@@ -528,8 +541,7 @@ test('Add Pin error shows in modal', async () => {
   await page.getByRole('button', { name: 'Add Pin' }).click()
   await page.getByRole('dialog').getByText('Select entity type...').click()
   await page.getByTestId('pin-et-Platform').click()
-  await page.getByRole('dialog').getByText('Select version...').click()
-  await page.getByTestId('pin-etv-V1').click()
+  // TD-79: Version auto-selected to latest. Submit directly.
   await page.getByRole('dialog').getByRole('button', { name: 'Add' }).click()
   await expect.element(page.getByText('409: already pinned')).toBeVisible()
 })

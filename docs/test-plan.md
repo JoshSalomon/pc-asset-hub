@@ -297,6 +297,22 @@ Each feature area is tested at the appropriate layers:
 | Deterministic YAML output ordering | X | | X | | |
 | Export plugins live tests (curl) | | | X | | |
 | Export plugins system tests (Playwright) | | | | X | |
+| TD-148: Unpublish requires SuperAdmin on published | X | | X | X | |
+| TD-148: Publish/Unpublish route RequireWriteAccess | X | | X | | |
+| TD-150: Export binding parameter filtering by role | X | | X | X | |
+| TD-140: Catalog validation instance name format | X | X | X | | |
+| TD-152: MCP Gateway configurable attribute mapping | X | X | X | X | |
+| TD-151: Export binding duplicate entity type warning | | | | X | |
+| TD-131: Export file deterministic field ordering | X | X | X | | |
+| TD-142: Add Child pre-select (operational page) | | | | X | |
+| TD-144: Set Parent filter current parent | | | | X | |
+| TD-146: Orphaned containment target visual marker | | | | X | |
+| TD-79: Pin version dropdown default to latest | | | | X | |
+| TD-33: Parent instance name in API response | X | X | X | X | |
+| TD-137: Types tab name filter | | | | X | |
+| TD-87: System test shared helpers refactor | | | | X | |
+| TD-154: Preview cache TTL initialization | X | | | | |
+| TD-132: Remove unused accessChecker field | X | | | | |
 
 ### Bug Fix & UX Polish Sprint Test Strategy (Phase 1)
 
@@ -1101,3 +1117,76 @@ Extensible export system with export bindings as catalog sub-resources. Phase 1:
 - **Unit tests**: Catalog delete cascades to bindings. Delete response includes deleted_bindings_count.
 - **Browser tests**: Delete catalog with bindings shows warning listing affected bindings.
 - **Live tests (curl)**: Delete catalog, verify bindings gone, verify response includes count.
+
+### 5.52 TD Sprint — Bugs, Security, Export Polish, UX Papercuts, Code Quality
+
+15 technical debt items across 4 stages. Strict TDD for every fix — write failing test first, verify it fails, then implement the minimal fix. Design spec: `docs/plans/2026-05-25-td-sprint-design.md`.
+
+**Stage 1: Bugs & Security**
+
+- **TD-148 (Admin can unpublish published catalogs):**
+  - **Unit tests (middleware):** Verify `RequireWriteAccess` is applied to both publish and unpublish routes. Verify non-SuperAdmin on published catalog gets 403 for unpublish.
+  - **API tests:** Verify `POST /catalogs/{name}/unpublish` returns 403 for Admin on published catalog. Verify 200 for SuperAdmin. Verify `POST /catalogs/{name}/publish` returns 403 for Admin on published catalog (defense-in-depth). Verify unpublished catalogs unaffected (Admin can still publish unpublished).
+  - **Browser tests:** Verify Unpublish button hidden for Admin role on published catalogs. Verify Unpublish button visible for SuperAdmin on published catalogs. Verify Publish button visible for Admin on unpublished valid catalogs (no regression).
+  - **System tests:** Verify end-to-end: Admin cannot unpublish via UI or API on a published catalog. SuperAdmin can.
+
+- **TD-150 (Export binding parameters leak to non-Admin):**
+  - **Unit tests (handler):** Verify `bindingToDTO` with Admin role includes `Parameters` in response. Verify `bindingToDTOFiltered` (or role-conditional path) omits `Parameters` for RO and RW roles. Verify binding metadata (exporter name, status, timestamps) still present for all roles.
+  - **API tests:** Verify `GET /catalogs/{name}/export-bindings` for RO returns bindings without `parameters` field. Verify same for RW. Verify Admin/SuperAdmin see full `parameters`. Verify `GET /catalogs/{name}/export-bindings/{id}` follows same filtering.
+  - **Browser tests:** Verify Export Plugins tab for RO/RW shows bindings without parameter details. Verify Admin sees full parameter values in binding list/detail.
+
+- **TD-140 (Catalog validation missing instance name format check):**
+  - **Unit tests (service):** Verify `Validate` produces error for instance with name containing uppercase, spaces, special characters, or exceeding 63 chars. Verify valid DNS-label names pass. Verify empty name still caught by existing check (no regression). Verify error message includes "instance name contains invalid characters".
+  - **Integration tests:** Full validation against real SQLite with an instance that has an invalid name (e.g., `My Server`). Verify validation returns `invalid` status with name format error.
+  - **API tests:** Verify `POST /catalogs/{name}/validate` returns name format errors in the error list for instances with invalid names.
+
+**Stage 2: Export Polish**
+
+- **TD-152 (MCP Gateway configurable attribute mapping):**
+  - **Unit tests (exporter):** Verify `ParameterSchema()` includes `route_name_attr`, `mcp_path_attr`, `credential_secret_attr` as optional parameters with defaults. Verify `ValidateSchema()` uses mapped attribute name (from binding params) instead of hardcoded `route_name`. Verify `Export()` reads attribute values using mapped names. Verify default values work when optional params are omitted.
+  - **Integration tests (ValidateSchema):** Verify ValidateSchema with custom attribute names against real DB. Verify schema with remapped names passes. Verify schema where mapped attribute doesn't exist fails with clear error.
+  - **API tests:** Verify creating a binding with custom attribute mapping params succeeds. Verify running the export with remapped attributes produces correct YAML.
+  - **Browser tests:** Verify Add Binding modal shows optional attribute mapping fields with defaults pre-filled. Verify Edit modal preserves custom values.
+
+- **TD-151 (Export binding duplicate entity type warning):**
+  - **Browser tests:** Verify selecting same entity type for two parameters shows yellow warning alert. Verify warning disappears when entity types are changed to be distinct. Verify warning does not block form submission. Verify warning text names the conflicting parameters.
+
+- **TD-131 (Export file deterministic field ordering):**
+  - **Unit tests (service):** Verify exported `type_definitions` sorted by name (Go-level sort — assembled from map iteration). Verify `ExportInstance.MarshalJSON()` children keys sorted alphabetically (Go-level sort — map keys). Verify attributes sorted by ordinal (existing behavior, but add explicit test).
+  - **Integration tests (repository):** Verify `ListByVersion` for associations returns results ordered by name (`ORDER BY name` added to query). Verify `ListByCatalog` for instances returns results ordered by name (`ORDER BY name` added to query). Verify ordering holds with real SQLite data across multiple entity types and instances.
+  - **API tests:** Verify `GET /catalogs/{name}/export` returns JSON with deterministic ordering. Run export twice on same catalog, diff output — must be identical.
+  - **Round-trip test:** Export → import → re-export → diff. Output must be identical (modulo timestamps).
+
+**Stage 3: UX Papercuts**
+
+- **TD-142 (Add Child pre-select — operational page):**
+  - **Browser tests:** Verify Add Child modal in operational catalog page pre-selects child type when only one containment type exists. Verify schema attributes load automatically for pre-selected type. Verify dropdown still works when multiple containment types exist (no pre-selection, user must choose).
+
+- **TD-144 (Set Parent filter current parent):**
+  - **Browser tests:** Verify Set Parent dropdown does not include the current parent instance. Verify all other instances of the parent type are shown. Verify dropdown works normally when instance has no current parent (all instances shown).
+
+- **TD-146 (Orphaned containment target visual distinction):**
+  - **Browser tests:** Verify root-level entity type groups that are containment targets show a warning icon or "(orphaned)" suffix. Verify legitimate root types (not containment targets) show no warning. Verify warning disappears when orphaned instances are assigned to a parent.
+
+- **TD-79 (Pin version dropdown default to latest):**
+  - **Browser tests:** Verify Add Pin modal auto-selects the latest version after entity type selection. Verify Add Pin button is enabled immediately (no manual version selection needed). Verify user can still change to an older version.
+
+- **TD-33 (Parent instance name in API response):**
+  - **Unit tests (handler):** Verify instance DTO includes `parent_instance_name` when instance has a parent. Verify `parent_instance_name` is null/omitted when instance has no parent. Verify included in list, get, and contained-list responses.
+  - **Integration tests (repository):** Verify self-JOIN (`LEFT JOIN entity_instances parent ON parent.id = ei.parent_instance_id`) resolves parent name correctly against real SQLite. Verify root instances (no parent) return null parent name. Verify instance whose parent was soft-deleted returns null or the deleted parent's name (decide behavior). Verify `ListByCatalog`, `GetByID`, and `ListByParent` all include parent name.
+  - **API tests:** Verify `GET /catalogs/{name}/{type}/{id}` response includes `parent_instance_name`. Verify `GET /catalogs/{name}/{type}` list response includes `parent_instance_name` per instance. Verify `GET /catalogs/{name}/{type}/{id}/{child-type}` response includes `parent_instance_name`.
+  - **Browser tests:** Verify "Contained by" in instance detail shows parent name immediately without UUID flicker. Verify instances without parents show no "Contained by" line.
+
+- **TD-137 (Types tab name filter):**
+  - **Browser tests:** Verify SearchInput text field appears in Types tab toolbar. Verify typing filters type definitions by name (case-insensitive substring match). Verify clearing search shows all types. Verify name filter combines with existing base type dropdown filter.
+
+**Stage 4: Code Quality**
+
+- **TD-87 (App.system.test.ts shared helpers refactor):**
+  - **System tests:** Verify all existing App.system.test.ts tests still pass after replacing inline helpers with shared imports. This is a refactor — no new tests needed, but all existing tests must pass unchanged.
+
+- **TD-154 (Preview cache TTL initialization):**
+  - **Unit tests (service):** Verify `NewExportBindingService` reads `PUBLISH_PREVIEW_TTL` env var at construction. Verify `getPreviewTTL()` returns the cached value without calling `os.Getenv`. Verify default 5-minute TTL when env var is unset. Verify custom TTL when env var is set (e.g., `"300"` → 5 minutes).
+
+- **TD-132 (Remove unused accessChecker field):**
+  - **Unit tests (handler):** Verify `NewExportHandler` and `NewImportHandler` constructors no longer accept `accessChecker` parameter. Verify handlers still function correctly (export/import operations work). This is a dead code removal — existing tests must pass with updated constructor signatures.

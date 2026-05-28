@@ -883,67 +883,60 @@ func TestGetPreviewEntry_NilCache(t *testing.T) {
 
 // --- getPreviewTTL coverage ---
 
+// T-35.84: Default TTL is 5 minutes when env var is unset
 func TestGetPreviewTTL_Default(t *testing.T) {
-	// Without env var, returns 5 min default
 	s := setupBindingService()
-	cache := export.NewInMemoryPreviewCache()
 	svc := export.NewExportBindingService(
 		s.bindingRepo, s.catalogRepo, s.registry,
 		s.cvRepo, s.pinRepo, s.etvRepo, s.etRepo,
 		s.attrRepo, s.assocRepo,
-		export.WithPreviewCache(cache),
 	)
 
-	s.registry.Register(&stubExporter{
-		name:      "test-exp",
-		exportOut: &export.ExportOutput{Artifacts: []export.K8sArtifact{{Name: "a", YAML: "test: true"}}},
-	})
-
-	ctx := context.Background()
-	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
-		ID: "cat1", CatalogVersionID: "cv1",
-	}, nil)
-	s.bindingRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.ExportBinding{
-		{ID: "b1", CatalogID: "cat1", ExporterName: "test-exp", Parameters: map[string]string{}, Enabled: true},
-	}, nil)
-	s.bindingRepo.On("Update", ctx, mock.AnythingOfType("*models.ExportBinding")).Return(nil)
-	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{}, nil)
-
-	result, err := svc.PublishPreview(ctx, "my-catalog")
-	require.NoError(t, err)
-	// Just verify it runs — the TTL is internal
-	assert.NotEmpty(t, result.SessionToken)
+	assert.Equal(t, 5*time.Minute, svc.PreviewTTL(), "default TTL should be 5 minutes")
 }
 
+// T-35.85: Custom TTL parsed correctly
 func TestGetPreviewTTL_FromEnv(t *testing.T) {
 	t.Setenv("PUBLISH_PREVIEW_TTL", "120")
 	s := setupBindingService()
-	cache := export.NewInMemoryPreviewCache()
 	svc := export.NewExportBindingService(
 		s.bindingRepo, s.catalogRepo, s.registry,
 		s.cvRepo, s.pinRepo, s.etvRepo, s.etRepo,
 		s.attrRepo, s.assocRepo,
-		export.WithPreviewCache(cache),
 	)
 
-	s.registry.Register(&stubExporter{
-		name:      "test-exp",
-		exportOut: &export.ExportOutput{Artifacts: []export.K8sArtifact{{Name: "a", YAML: "test: true"}}},
-	})
+	assert.Equal(t, 120*time.Second, svc.PreviewTTL(), "TTL should be 120 seconds from env var")
+}
 
-	ctx := context.Background()
-	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
-		ID: "cat1", CatalogVersionID: "cv1",
-	}, nil)
-	s.bindingRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.ExportBinding{
-		{ID: "b1", CatalogID: "cat1", ExporterName: "test-exp", Parameters: map[string]string{}, Enabled: true},
-	}, nil)
-	s.bindingRepo.On("Update", ctx, mock.AnythingOfType("*models.ExportBinding")).Return(nil)
-	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+// T-35.82: NewExportBindingService reads PUBLISH_PREVIEW_TTL at construction
+func TestGetPreviewTTL_ReadAtConstruction(t *testing.T) {
+	t.Setenv("PUBLISH_PREVIEW_TTL", "300")
+	s := setupBindingService()
+	svc := export.NewExportBindingService(
+		s.bindingRepo, s.catalogRepo, s.registry,
+		s.cvRepo, s.pinRepo, s.etvRepo, s.etRepo,
+		s.attrRepo, s.assocRepo,
+	)
 
-	result, err := svc.PublishPreview(ctx, "my-catalog")
-	require.NoError(t, err)
-	assert.NotEmpty(t, result.SessionToken)
+	assert.Equal(t, 300*time.Second, svc.PreviewTTL(), "TTL should be 300s from env at construction")
+}
+
+// T-35.83: getPreviewTTL returns cached value without re-reading env var
+func TestGetPreviewTTL_CachedAfterConstruction(t *testing.T) {
+	t.Setenv("PUBLISH_PREVIEW_TTL", "60")
+	s := setupBindingService()
+	svc := export.NewExportBindingService(
+		s.bindingRepo, s.catalogRepo, s.registry,
+		s.cvRepo, s.pinRepo, s.etvRepo, s.etRepo,
+		s.attrRepo, s.assocRepo,
+	)
+
+	// Change env var AFTER construction
+	t.Setenv("PUBLISH_PREVIEW_TTL", "999")
+
+	// Should still return the cached value from construction time
+	assert.Equal(t, 60*time.Second, svc.PreviewTTL(),
+		"TTL should remain 60s (cached at construction), not 999s (current env)")
 }
 
 // --- MCPGatewayExporter.Description coverage ---
@@ -1486,4 +1479,174 @@ func TestBuildExportInput_LinksByAssocNotNil(t *testing.T) {
 
 	// The capturing exporter checked LinksByAssoc on each instance
 	assert.False(t, linksByAssocWasNil, "LinksByAssoc must be initialized to non-nil map on service-built instances")
+}
+
+// Run with VS type but empty vsInstanceName returns validation error
+func TestRun_VSTypeRequiresVSInstanceName(t *testing.T) {
+	s := setupBindingService()
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", CatalogVersionID: "cv1",
+	}, nil)
+	s.bindingRepo.On("GetByID", ctx, "b1").Return(&models.ExportBinding{
+		ID: "b1", CatalogID: "cat1", ExporterName: "mcp-gateway",
+		Parameters: map[string]string{"virtual_server_type": "virtual-server"}, Enabled: true,
+	}, nil)
+
+	s.registry.Register(&stubExporter{name: "mcp-gateway"})
+
+	// Pass empty vsInstanceName — should fail
+	_, err := s.svc.Run(ctx, "my-catalog", "b1", "")
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "virtual_server_instance is required")
+}
+
+// resolveVSInstanceTools — nil instRepo/linkRepo guard
+func TestResolveVSInstanceTools_NilRepos(t *testing.T) {
+	s := setupBindingService()
+	ctx := context.Background()
+
+	// Create service WITHOUT instance/link repos
+	svc := export.NewExportBindingService(
+		s.bindingRepo, s.catalogRepo, s.registry,
+		s.cvRepo, s.pinRepo, s.etvRepo, s.etRepo,
+		s.attrRepo, s.assocRepo,
+		// no WithInstanceRepos or WithLinkRepo
+	)
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", CatalogVersionID: "cv1",
+	}, nil)
+	s.bindingRepo.On("GetByID", ctx, "b1").Return(&models.ExportBinding{
+		ID: "b1", CatalogID: "cat1", ExporterName: "mcp-gateway",
+		Parameters: map[string]string{"virtual_server_type": "virtual-server"}, Enabled: true,
+	}, nil)
+	s.registry.Register(&stubExporter{name: "mcp-gateway"})
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+	s.bindingRepo.On("Update", ctx, mock.AnythingOfType("*models.ExportBinding")).Return(nil)
+
+	_, err := svc.Run(ctx, "my-catalog", "b1", "some-vs")
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsValidation(err))
+	assert.Contains(t, err.Error(), "instance and link repos required")
+}
+
+// resolveVSInstanceTools — etRepo.GetByName error (entity type not found)
+func TestResolveVSInstanceTools_ETNotFound(t *testing.T) {
+	s := setupBindingService()
+	ctx := context.Background()
+
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	linkRepo := new(mocks.MockAssociationLinkRepo)
+	iavRepo := new(mocks.MockInstanceAttributeValueRepo)
+
+	svc := export.NewExportBindingService(
+		s.bindingRepo, s.catalogRepo, s.registry,
+		s.cvRepo, s.pinRepo, s.etvRepo, s.etRepo,
+		s.attrRepo, s.assocRepo,
+		export.WithInstanceRepos(instRepo, iavRepo),
+		export.WithLinkRepo(linkRepo),
+	)
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", CatalogVersionID: "cv1",
+	}, nil)
+	s.bindingRepo.On("GetByID", ctx, "b1").Return(&models.ExportBinding{
+		ID: "b1", CatalogID: "cat1", ExporterName: "mcp-gateway",
+		Parameters: map[string]string{"virtual_server_type": "nonexistent-type"}, Enabled: true,
+	}, nil)
+	s.registry.Register(&stubExporter{name: "mcp-gateway"})
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+	s.bindingRepo.On("Update", ctx, mock.AnythingOfType("*models.ExportBinding")).Return(nil)
+	// buildInstancesByType needs ListByCatalog
+	instRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.EntityInstance{}, nil)
+
+	// GetByName returns error
+	s.etRepo.On("GetByName", ctx, "nonexistent-type").Return(nil, fmt.Errorf("not found"))
+
+	_, err := svc.Run(ctx, "my-catalog", "b1", "some-vs")
+	require.Error(t, err)
+	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// resolveVSInstanceTools — instRepo.ListByCatalog error
+func TestResolveVSInstanceTools_ListByCatalogError(t *testing.T) {
+	s := setupBindingService()
+	ctx := context.Background()
+
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	linkRepo := new(mocks.MockAssociationLinkRepo)
+	iavRepo := new(mocks.MockInstanceAttributeValueRepo)
+
+	svc := export.NewExportBindingService(
+		s.bindingRepo, s.catalogRepo, s.registry,
+		s.cvRepo, s.pinRepo, s.etvRepo, s.etRepo,
+		s.attrRepo, s.assocRepo,
+		export.WithInstanceRepos(instRepo, iavRepo),
+		export.WithLinkRepo(linkRepo),
+	)
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", CatalogVersionID: "cv1",
+	}, nil)
+	s.bindingRepo.On("GetByID", ctx, "b1").Return(&models.ExportBinding{
+		ID: "b1", CatalogID: "cat1", ExporterName: "mcp-gateway",
+		Parameters: map[string]string{"virtual_server_type": "virtual-server"}, Enabled: true,
+	}, nil)
+	s.registry.Register(&stubExporter{name: "mcp-gateway"})
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+	s.bindingRepo.On("Update", ctx, mock.AnythingOfType("*models.ExportBinding")).Return(nil)
+
+	s.etRepo.On("GetByName", ctx, "virtual-server").Return(&models.EntityType{ID: "et-vs", Name: "virtual-server"}, nil)
+	// First call from buildInstancesByType succeeds, second from resolveVSInstanceTools fails
+	instRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.EntityInstance{}, nil).Once()
+	instRepo.On("ListByCatalog", ctx, "cat1").Return(nil, fmt.Errorf("db error"))
+
+	_, err := svc.Run(ctx, "my-catalog", "b1", "some-vs")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "db error")
+}
+
+// resolveVSInstanceTools — linkRepo.GetForwardRefs error
+func TestResolveVSInstanceTools_GetForwardRefsError(t *testing.T) {
+	s := setupBindingService()
+	ctx := context.Background()
+
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	linkRepo := new(mocks.MockAssociationLinkRepo)
+	iavRepo := new(mocks.MockInstanceAttributeValueRepo)
+
+	svc := export.NewExportBindingService(
+		s.bindingRepo, s.catalogRepo, s.registry,
+		s.cvRepo, s.pinRepo, s.etvRepo, s.etRepo,
+		s.attrRepo, s.assocRepo,
+		export.WithInstanceRepos(instRepo, iavRepo),
+		export.WithLinkRepo(linkRepo),
+	)
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", CatalogVersionID: "cv1",
+	}, nil)
+	s.bindingRepo.On("GetByID", ctx, "b1").Return(&models.ExportBinding{
+		ID: "b1", CatalogID: "cat1", ExporterName: "mcp-gateway",
+		Parameters: map[string]string{"virtual_server_type": "virtual-server"}, Enabled: true,
+	}, nil)
+	s.registry.Register(&stubExporter{name: "mcp-gateway"})
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+	s.bindingRepo.On("Update", ctx, mock.AnythingOfType("*models.ExportBinding")).Return(nil)
+
+	s.etRepo.On("GetByName", ctx, "virtual-server").Return(&models.EntityType{ID: "et-vs", Name: "virtual-server"}, nil)
+	// First call from buildInstancesByType succeeds
+	instRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.EntityInstance{}, nil).Once()
+	// Second call from resolveVSInstanceTools returns the VS instance
+	instRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.EntityInstance{
+		{ID: "vs1", Name: "some-vs", EntityTypeID: "et-vs", CatalogID: "cat1"},
+	}, nil)
+	linkRepo.On("GetForwardRefs", ctx, "vs1").Return(nil, fmt.Errorf("link db error"))
+
+	_, err := svc.Run(ctx, "my-catalog", "b1", "some-vs")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "link db error")
 }

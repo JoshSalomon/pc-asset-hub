@@ -120,6 +120,26 @@ func TestT1_05_ListEntityTypesWithPagination(t *testing.T) {
 	assert.Equal(t, "Alpha", items[0].Name)
 }
 
+// Coverage: EntityType List with offset > 0
+func TestEntityType_ListWithOffset(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	repo := repository.NewEntityTypeGormRepo(db)
+	ctx := context.Background()
+
+	for _, name := range []string{"Alpha", "Beta", "Charlie", "Delta"} {
+		require.NoError(t, repo.Create(ctx, &models.EntityType{ID: newID(), Name: name, CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	}
+
+	// Offset=2 should skip the first two results (Alpha, Beta)
+	items, total, err := repo.List(ctx, models.ListParams{Limit: 10, Offset: 2})
+	require.NoError(t, err)
+	assert.Equal(t, 4, total)
+	assert.Len(t, items, 2)
+	// Default order is by name: Alpha, Beta, Charlie, Delta → offset 2 → Charlie, Delta
+	assert.Equal(t, "Charlie", items[0].Name)
+	assert.Equal(t, "Delta", items[1].Name)
+}
+
 func TestT1_06_GetEntityTypeByID(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	repo := repository.NewEntityTypeGormRepo(db)
@@ -1539,4 +1559,31 @@ func TestTDV_GetByVersion(t *testing.T) {
 	_, err = tdvRepo.GetByVersion(ctx, "nonexistent", 1)
 	assert.Error(t, err)
 	assert.True(t, domainerrors.IsNotFound(err))
+}
+
+// T-35.48: ListByVersion for associations returns results ORDER BY name
+func TestT35_48_ListByVersionAssocsSortedByName(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	etRepo := repository.NewEntityTypeGormRepo(db)
+	etvRepo := repository.NewEntityTypeVersionGormRepo(db)
+	assocRepo := repository.NewAssociationGormRepo(db)
+	ctx := context.Background()
+
+	et1ID, et2ID := newID(), newID()
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: et1ID, Name: "Server", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	require.NoError(t, etRepo.Create(ctx, &models.EntityType{ID: et2ID, Name: "Tool", CreatedAt: time.Now(), UpdatedAt: time.Now()}))
+	etvID := newID()
+	require.NoError(t, etvRepo.Create(ctx, &models.EntityTypeVersion{ID: etvID, EntityTypeID: et1ID, Version: 1, CreatedAt: time.Now()}))
+
+	// Create associations in non-alphabetical order
+	require.NoError(t, assocRepo.Create(ctx, &models.Association{ID: newID(), EntityTypeVersionID: etvID, TargetEntityTypeID: et2ID, Name: "z-tools", Type: models.AssociationTypeContainment, CreatedAt: time.Now()}))
+	require.NoError(t, assocRepo.Create(ctx, &models.Association{ID: newID(), EntityTypeVersionID: etvID, TargetEntityTypeID: et2ID, Name: "a-refs", Type: models.AssociationTypeDirectional, CreatedAt: time.Now()}))
+	require.NoError(t, assocRepo.Create(ctx, &models.Association{ID: newID(), EntityTypeVersionID: etvID, TargetEntityTypeID: et2ID, Name: "m-deps", Type: models.AssociationTypeDirectional, CreatedAt: time.Now()}))
+
+	assocs, err := assocRepo.ListByVersion(ctx, etvID)
+	require.NoError(t, err)
+	require.Len(t, assocs, 3)
+	assert.Equal(t, "a-refs", assocs[0].Name)
+	assert.Equal(t, "m-deps", assocs[1].Name)
+	assert.Equal(t, "z-tools", assocs[2].Name)
 }

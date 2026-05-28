@@ -226,6 +226,7 @@ test('set parent error shows error in modal', async () => {
 test('remove container calls setParent with empty parent', async () => {
   const childInstances = [{
     id: 'c1', entity_type_id: 'et1', catalog_id: 'cat1', parent_instance_id: 'p1',
+    parent_instance_name: 'my-parent',
     name: 'child-inst', description: '', version: 1,
     attributes: [{ name: 'hostname', type: 'string', value: 'h1' }],
     created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
@@ -233,7 +234,6 @@ test('remove container calls setParent with empty parent', async () => {
   ;(api.instances.list as Mock).mockResolvedValue({ items: childInstances, total: 1 })
   ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
     if (id === 'c1') return Promise.resolve(childInstances[0])
-    if (id === 'p1') return Promise.resolve({ id: 'p1', name: 'my-parent', entity_type_id: 'et1' })
     return Promise.resolve({ id, name: `inst-${id}`, entity_type_id: 'et1' })
   })
   ;(api.instances.setParent as Mock).mockResolvedValue(undefined)
@@ -274,8 +274,8 @@ test('create instance with number attribute calls parseFloat', async () => {
   }))
 })
 
-// Cat 5: Error catch block - parent name resolution failure (line 303)
-test('parent name resolution failure falls back to UUID', async () => {
+// Cat 5: Parent instance name missing — shows loading fallback (TD-33: parent name now from API)
+test('parent name missing shows loading fallback', async () => {
   const childInstances = [{
     id: 'c1', entity_type_id: 'et1', catalog_id: 'cat1', parent_instance_id: 'p-unknown',
     name: 'child-inst', description: '', version: 1,
@@ -283,16 +283,15 @@ test('parent name resolution failure falls back to UUID', async () => {
     created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
   }]
   ;(api.instances.list as Mock).mockResolvedValue({ items: childInstances, total: 1 })
-  // Re-fetch of the instance itself succeeds, but parent resolution fails
   ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
     if (id === 'c1') return Promise.resolve(childInstances[0])
-    return Promise.reject(new Error('404'))
+    return Promise.resolve({ id, name: `inst-${id}`, entity_type_id: 'et1' })
   })
   renderDetail('Admin')
   await expect.element(page.getByRole('gridcell', { name: 'child-inst' })).toBeVisible()
   await page.getByRole('button', { name: 'Details' }).first().click()
-  // Should fall back to showing the UUID when parent name resolution fails
-  await expect.element(page.getByText('Contained by: p-unknown').first()).toBeVisible()
+  // No parent_instance_name in response — shows loading fallback
+  await expect.element(page.getByText('Contained by: loading...').first()).toBeVisible()
 })
 
 // Cat 5: Error catch block - load children failure (line 319)
@@ -953,6 +952,7 @@ test('TD-68: description edit TextInput has width 100% and no max-width', async 
 test('TD-51: remove container error is shown to user', async () => {
   const childInstances = [{
     id: 'c1', entity_type_id: 'et1', catalog_id: 'cat1', parent_instance_id: 'p1',
+    parent_instance_name: 'my-parent',
     name: 'child-inst', description: '', version: 1,
     attributes: [{ name: 'hostname', type: 'string', value: 'h1' }],
     created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
@@ -960,7 +960,6 @@ test('TD-51: remove container error is shown to user', async () => {
   ;(api.instances.list as Mock).mockResolvedValue({ items: childInstances, total: 1 })
   ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
     if (id === 'c1') return Promise.resolve(childInstances[0])
-    if (id === 'p1') return Promise.resolve({ id: 'p1', name: 'my-parent', entity_type_id: 'et1' })
     return Promise.resolve({ id, name: `inst-${id}`, entity_type_id: 'et1' })
   })
   ;(api.instances.setParent as Mock).mockRejectedValue(new Error('403: forbidden'))

@@ -27,7 +27,7 @@ const mockInstance: EntityInstance = {
 }
 
 const mockInstanceWithParent: EntityInstance = {
-  ...mockInstance, id: 'i1-with-parent', parent_instance_id: 'parent1',
+  ...mockInstance, id: 'i1-with-parent', parent_instance_id: 'parent1', parent_instance_name: 'parent-inst',
 }
 
 function TestComponent({ catalogName, entityTypeName, assocs, role }: { catalogName?: string; entityTypeName: string; assocs?: SnapshotAssociation[]; role?: 'RO' | 'RW' | 'Admin' | 'SuperAdmin' }) {
@@ -35,7 +35,6 @@ function TestComponent({ catalogName, entityTypeName, assocs, role }: { catalogN
   return (
     <div>
       <span data-testid="selected">{detail.selectedInstance?.name || ''}</span>
-      <span data-testid="parent-name">{detail.parentName}</span>
       <span data-testid="children-count">{detail.children.length}</span>
       <span data-testid="children-loading">{String(detail.childrenLoading)}</span>
       <span data-testid="fwd-refs-count">{detail.forwardRefs.length}</span>
@@ -62,40 +61,14 @@ beforeEach(() => {
   ;(api.links.reverseRefs as Mock).mockResolvedValue([{ link_id: 'l2', association_name: 'dep', association_type: 'directional', instance_id: 'i3', instance_name: 'source', entity_type_name: 'server' }])
 })
 
-// T-19.20: selectInstance loads parent name, children, refs
+// T-19.20: selectInstance loads children, refs
 test('T-19.20: useInstanceDetail selectInstance loads data', async () => {
   render(<TestComponent catalogName="my-catalog" entityTypeName="model" />)
   await page.getByTestId('select-parent').click()
   await expect.element(page.getByTestId('selected')).toHaveTextContent('inst-a')
-  await expect.element(page.getByTestId('parent-name')).toHaveTextContent('parent-inst')
   await expect.element(page.getByTestId('children-count')).toHaveTextContent('1')
   await expect.element(page.getByTestId('fwd-refs-count')).toHaveTextContent('1')
   await expect.element(page.getByTestId('rev-refs-count')).toHaveTextContent('1')
-})
-
-// T-19.21: selectInstance with no parent skips parent name load
-test('T-19.21: useInstanceDetail skips parent name when no parent', async () => {
-  render(<TestComponent catalogName="my-catalog" entityTypeName="model" />)
-  await page.getByTestId('select').click()
-  await expect.element(page.getByTestId('selected')).toHaveTextContent('inst-a')
-  // Wait for children to load to be sure all async work is done
-  await expect.element(page.getByTestId('children-loading')).toHaveTextContent('false')
-  await expect.element(page.getByTestId('parent-name')).toHaveTextContent('')
-  // instances.get is called once for re-fetch, but NOT again for parent resolution
-  expect(api.instances.get).toHaveBeenCalledTimes(1)
-  expect(api.instances.get).toHaveBeenCalledWith('my-catalog', 'model', 'i1')
-})
-
-// T-19.22: selectInstance handles parent name load error (falls back to ID)
-test('T-19.22: useInstanceDetail parent name error falls back to ID', async () => {
-  // First call (re-fetch) succeeds, second call (parent resolution) fails
-  ;(api.instances.get as Mock).mockImplementation((_cat: string, _et: string, id: string) => {
-    if (id === 'i1-with-parent') return Promise.resolve(mockInstanceWithParent)
-    return Promise.reject(new Error('Not found'))
-  })
-  render(<TestComponent catalogName="my-catalog" entityTypeName="model" />)
-  await page.getByTestId('select-parent').click()
-  await expect.element(page.getByTestId('parent-name')).toHaveTextContent('parent1')
 })
 
 // T-19.23: selectInstance handles children load error

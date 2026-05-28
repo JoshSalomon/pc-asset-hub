@@ -114,6 +114,7 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
   // Add child modal state
   const [addChildOpen, setAddChildOpen] = useState(false)
   const [addChildError, setAddChildError] = useState<string | null>(null)
+  const [initialChildType, setInitialChildType] = useState('')
 
   // Mutation submitting state (prevents double-clicks)
   const [submitting, setSubmitting] = useState(false)
@@ -126,6 +127,31 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
   // Link modal state
   const [linkOpen, setLinkOpen] = useState(false)
   const [linkError, setLinkError] = useState<string | null>(null)
+
+  // TD-146: Track which entity types are containment targets
+  const [containmentTargetTypes, setContainmentTargetTypes] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (pins.length === 0) return
+    let cancelled = false
+    const loadAll = async () => {
+      const targets = new Set<string>()
+      const results = await Promise.all(
+        pins.map(pin => loadSchemaSnapshot(pins, pin.entity_type_name).catch(() => ({ assocs: [] })))
+      )
+      if (cancelled) return
+      for (const { assocs } of results) {
+        for (const a of assocs) {
+          if (a.type === 'containment' && a.direction === 'outgoing' && a.target_entity_type_name) {
+            targets.add(a.target_entity_type_name)
+          }
+        }
+      }
+      setContainmentTargetTypes(targets)
+    }
+    loadAll()
+    return () => { cancelled = true }
+  }, [pins])
 
   useEffect(() => {
     setActionError(null)
@@ -424,7 +450,10 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
           <span style={{ marginRight: '6px', userSelect: 'none', width: '16px', display: 'inline-block' }}>
             {isExpanded ? '▾' : '▸'}
           </span>
-          <span style={{ flex: 1 }}>{typeName} ({nodes.length})</span>
+          <span style={{ flex: 1 }}>
+            {containmentTargetTypes.has(typeName) && <span aria-hidden="true" title="This entity type is a containment target — instances here may need a parent container" style={{ color: '#f0ab00', marginRight: '4px' }}>⚠</span>}
+            {typeName} ({nodes.length})
+          </span>
           {canMutate && (
             <Button variant="plain" size="sm" style={{ padding: '0 4px', minWidth: 'auto' }}
               onClick={(e) => { e.stopPropagation(); openCreateModal(typeName) }}
@@ -512,7 +541,15 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
                         <Button variant="secondary" size="sm" onClick={openEditModal}>Edit</Button>
                         <Button variant="danger" size="sm" onClick={openDeleteModal}>Delete</Button>
                         {outgoingContainment.length > 0 && (
-                          <Button variant="secondary" size="sm" onClick={() => { setAddChildError(null); setAddChildOpen(true) }}>Add Child</Button>
+                          <Button variant="secondary" size="sm" onClick={() => {
+                            setAddChildError(null)
+                            if (outgoingContainment.length === 1) {
+                              setInitialChildType(outgoingContainment[0].target_entity_type_name)
+                            } else {
+                              setInitialChildType('')
+                            }
+                            setAddChildOpen(true)
+                          }}>Add Child</Button>
                         )}
                         {incomingContainment.length > 0 && (
                           <Button variant="secondary" size="sm" onClick={() => {
@@ -667,6 +704,7 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
         schemaAssocs={selectedSchemaAssocs}
         onSubmit={handleAddChild}
         error={addChildError}
+        initialChildType={initialChildType}
       />
 
       {/* Set Parent Modal */}
@@ -677,6 +715,7 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
         instanceName={ct.selectedInstance?.name}
         parentTypeName={parentTypeName}
         hasParent={!!ct.selectedInstance?.parent_instance_id}
+        currentParentInstanceId={ct.selectedInstance?.parent_instance_id}
         onSubmit={handleSetParent}
         onRemoveParent={handleRemoveFromContainer}
         error={setParentError}

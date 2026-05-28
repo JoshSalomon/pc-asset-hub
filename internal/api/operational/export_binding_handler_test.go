@@ -905,3 +905,136 @@ func TestT34_75h_RunBinding_MissingVSInstance(t *testing.T) {
 
 // T-34.75i: Run with non-existent VS instance returns NotFound (unit test in binding_service_coverage_test.go)
 // T-34.75j: Run with valid VS instance returns filtered output (unit test in mcp_gateway_exporter_test.go T-34.75d/e/f)
+
+// === TD-150: Export binding parameter filtering by role ===
+
+func makeBinding() *models.ExportBinding {
+	now := time.Now()
+	return &models.ExportBinding{
+		ID: "b1", CatalogID: "cat1", ExporterName: "mcp-gateway",
+		Parameters: map[string]string{"server_type": "mcp-server", "tool_type": "mcp-tool"},
+		Enabled: true, LastRunStatus: "never", CreatedAt: now, UpdatedAt: now,
+	}
+}
+
+// T-35.11: ListBindings response includes parameters for Admin role
+func TestT35_11_ListBindings_AdminSeesParams(t *testing.T) {
+	e, _, bindingRepo, catalogRepo, _, _, _, _, _ := setupExportBindingServer()
+
+	catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{ID: "cat1", Name: "my-catalog"}, nil)
+	bindingRepo.On("ListByCatalog", mock.Anything, "cat1").Return([]*models.ExportBinding{makeBinding()}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/data/v1/catalogs/my-catalog/export-bindings", nil)
+	req.Header.Set("X-User-Role", "Admin")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var body map[string][]map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body["items"], 1)
+	assert.NotNil(t, body["items"][0]["parameters"], "Admin should see parameters")
+	params := body["items"][0]["parameters"].(map[string]any)
+	assert.Equal(t, "mcp-server", params["server_type"])
+}
+
+// T-35.12: ListBindings response omits parameters for RO role
+func TestT35_12_ListBindings_RONoParams(t *testing.T) {
+	e, _, bindingRepo, catalogRepo, _, _, _, _, _ := setupExportBindingServer()
+
+	catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{ID: "cat1", Name: "my-catalog"}, nil)
+	bindingRepo.On("ListByCatalog", mock.Anything, "cat1").Return([]*models.ExportBinding{makeBinding()}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/data/v1/catalogs/my-catalog/export-bindings", nil)
+	req.Header.Set("X-User-Role", "RO")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var body map[string][]map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body["items"], 1)
+	_, hasParams := body["items"][0]["parameters"]
+	assert.False(t, hasParams, "RO should NOT see parameters")
+}
+
+// T-35.13: ListBindings response omits parameters for RW role
+func TestT35_13_ListBindings_RWNoParams(t *testing.T) {
+	e, _, bindingRepo, catalogRepo, _, _, _, _, _ := setupExportBindingServer()
+
+	catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{ID: "cat1", Name: "my-catalog"}, nil)
+	bindingRepo.On("ListByCatalog", mock.Anything, "cat1").Return([]*models.ExportBinding{makeBinding()}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/data/v1/catalogs/my-catalog/export-bindings", nil)
+	req.Header.Set("X-User-Role", "RW")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var body map[string][]map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body["items"], 1)
+	_, hasParams := body["items"][0]["parameters"]
+	assert.False(t, hasParams, "RW should NOT see parameters")
+}
+
+// T-35.14: GetBinding response includes parameters for Admin role
+func TestT35_14_GetBinding_AdminSeesParams(t *testing.T) {
+	e, _, bindingRepo, catalogRepo, _, _, _, _, _ := setupExportBindingServer()
+
+	catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{ID: "cat1", Name: "my-catalog"}, nil)
+	bindingRepo.On("GetByID", mock.Anything, "b1").Return(makeBinding(), nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/data/v1/catalogs/my-catalog/export-bindings/b1", nil)
+	req.Header.Set("X-User-Role", "Admin")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.NotNil(t, body["parameters"], "Admin should see parameters")
+}
+
+// T-35.15: GetBinding response omits parameters for RO role
+func TestT35_15_GetBinding_RONoParams(t *testing.T) {
+	e, _, bindingRepo, catalogRepo, _, _, _, _, _ := setupExportBindingServer()
+
+	catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{ID: "cat1", Name: "my-catalog"}, nil)
+	bindingRepo.On("GetByID", mock.Anything, "b1").Return(makeBinding(), nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/data/v1/catalogs/my-catalog/export-bindings/b1", nil)
+	req.Header.Set("X-User-Role", "RO")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	_, hasParams := body["parameters"]
+	assert.False(t, hasParams, "RO should NOT see parameters")
+}
+
+// T-35.16: Binding metadata present for all roles (non-sensitive fields)
+func TestT35_16_BindingMetadata_AllRoles(t *testing.T) {
+	e, _, bindingRepo, catalogRepo, _, _, _, _, _ := setupExportBindingServer()
+
+	catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{ID: "cat1", Name: "my-catalog"}, nil)
+	bindingRepo.On("ListByCatalog", mock.Anything, "cat1").Return([]*models.ExportBinding{makeBinding()}, nil)
+
+	for _, role := range []apimw.Role{apimw.RoleRO, apimw.RoleRW, apimw.RoleAdmin} {
+		req := httptest.NewRequest(http.MethodGet, "/api/data/v1/catalogs/my-catalog/export-bindings", nil)
+		req.Header.Set("X-User-Role", string(role))
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		var body map[string][]map[string]any
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		require.Len(t, body["items"], 1)
+		item := body["items"][0]
+		assert.Equal(t, "mcp-gateway", item["exporter_name"], "role=%s: exporter_name", role)
+		assert.Equal(t, "never", item["last_run_status"], "role=%s: last_run_status", role)
+		assert.NotNil(t, item["created_at"], "role=%s: created_at", role)
+	}
+}

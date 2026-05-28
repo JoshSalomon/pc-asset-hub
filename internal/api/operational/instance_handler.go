@@ -170,16 +170,17 @@ func instanceDetailToDTO(d *svcop.InstanceDetail) dto.InstanceResponse {
 		})
 	}
 	resp := dto.InstanceResponse{
-		ID:               d.Instance.ID,
-		EntityTypeID:     d.Instance.EntityTypeID,
-		CatalogID:        d.Instance.CatalogID,
-		ParentInstanceID: d.Instance.ParentInstanceID,
-		Name:             d.Instance.Name,
-		Description:      d.Instance.Description,
-		Version:          d.Instance.Version,
-		Attributes:       attrs,
-		CreatedAt:        d.Instance.CreatedAt,
-		UpdatedAt:        d.Instance.UpdatedAt,
+		ID:                 d.Instance.ID,
+		EntityTypeID:       d.Instance.EntityTypeID,
+		CatalogID:          d.Instance.CatalogID,
+		ParentInstanceID:   d.Instance.ParentInstanceID,
+		ParentInstanceName: d.Instance.ParentInstanceName,
+		Name:               d.Instance.Name,
+		Description:        d.Instance.Description,
+		Version:            d.Instance.Version,
+		Attributes:         attrs,
+		CreatedAt:          d.Instance.CreatedAt,
+		UpdatedAt:          d.Instance.UpdatedAt,
 	}
 
 	if len(d.ParentChain) > 0 {
