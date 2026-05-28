@@ -1215,15 +1215,6 @@ func TestAddAttribute_AssocListByVersionError(t *testing.T) {
 	assert.Contains(t, err.Error(), "assoc list error")
 }
 
-// #2: ReorderAttributes — etvRepo.GetLatestByEntityType error
-// Note: TestReorderAttributes_GetLatestError already exists in error_paths_test.go.
-// This test covers the attrRepo.Reorder error after a successful GetLatestByEntityType,
-// specifically when Reorder itself fails with a different error type.
-// Actually: the user wants GetLatestByEntityType error in ReorderAttributes.
-// TestReorderAttributes_GetLatestError already covers this. If the lines are still
-// showing as uncovered, it may be a different variant. Let's add an alternative path
-// test to make sure: ReorderAttributes with an empty orderedIDs.
-
 // #3: collectAffectedInstances — instance count > 10000 limit
 func TestUpdatePin_MigrationLimitExceeded(t *testing.T) {
 	cvRepo, pinRepo, etvRepo, catalogRepo, attrRepo, instRepo, _, svc := migrationTestSetup()
@@ -1247,30 +1238,9 @@ func TestUpdatePin_MigrationLimitExceeded(t *testing.T) {
 	assert.Contains(t, err.Error(), "exceeds migration limit")
 }
 
-// #4: GetContainmentTree — second GetByID error (for target entity type in associations)
-// The containment tree builds nodes per entity type. If ListByEntityType fails for one entity,
-// the tree build errors out. This tests the ListByEntityType error for a later entity type.
-// But per the user's description: "In the containment tree building, the second GetByID (for target entity type) fails."
-// This seems to reference GetVersionSnapshot, not GetContainmentTree. Let me cover
-// the GetVersionSnapshot path where the second GetByID for an outgoing association target fails.
-// Actually, looking at GetContainmentTree, there's no GetByID call. The user likely means
-// GetVersionSnapshot. The code at entity_type_service.go around line 215 in the snapshot
-// function. But actually, looking at entity_type_service.go:509-511:
-//   if targetET, err := s.etRepo.GetByID(ctx, da.TargetEntityTypeID); err == nil {
-// This silently ignores errors. So this path is covered by default.
-//
-// Rethinking: entity_type_service.go:215 in the actual binary might be different.
-// Let me cover the specific path: GetVersionSnapshot ListByVersion for associations fails.
-// Wait, that's already covered by TestGetVersionSnapshot_ListByVersionAssocError.
-//
-// Actually let me focus on what's described: "0 versions for entity type" — that's item 5.
-// Item 4 says "second GetByID for target entity type fails" in containment tree.
-// In GetContainmentTree, the only GetByID-like call is ListByEntityType per entity type.
-// There's no direct GetByID. The user must mean something else.
-// Let me re-read GetContainmentTree more carefully - it calls etvRepo.ListByEntityType
-// for each entity type. If the second entity type's ListByEntityType fails, that's the error.
-// But TestGetContainmentTree_VersionListError already covers this for the first entity type.
-// Let me cover the case where the first succeeds but the second fails.
+// #4: GetContainmentTree — second entity type's ListByEntityType fails
+// TestGetContainmentTree_VersionListError covers the first entity type failing.
+// This covers the case where the first succeeds but the second fails.
 
 func TestGetContainmentTree_SecondEntityListVersionsError(t *testing.T) {
 	etRepo := new(mocks.MockEntityTypeRepo)
@@ -1297,40 +1267,10 @@ func TestGetContainmentTree_SecondEntityListVersionsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "db error on second")
 }
 
-// #5: GetVersionSnapshot — ListByEntityType returns empty versions
-// This means etvRepo.ListByEntityType returns an empty slice for an entity type
-// that the code is checking. But GetVersionSnapshot doesn't call ListByEntityType
-// directly. Let me re-read the user's description: "GetVersionSnapshot when
-// ListByEntityType returns empty versions."
-// Looking at entity_type_service.go, GetVersionSnapshot calls:
-// - etRepo.GetByID
-// - etvRepo.GetByEntityTypeAndVersion
-// - attrRepo.ListByVersion
-// - assocRepo.ListByVersion
-// - assocRepo.ListByTargetEntityType
-// None of these are ListByEntityType. The user might be describing a different
-// function. Let me check requiresDeepCopy — it calls ListByEntityType and returns
-// false if len(versions) == 0. That's already covered by TestRenameEntityType_NoVersions.
-//
-// Maybe the user means a different function entirely. Let me check lines 234-236
-// of entity_type_service.go:
-// Line 234 is `etvIDs := make([]string, len(versions))`
-// Line 235 is `for i, v := range versions {`
-// Line 236 is `    etvIDs[i] = v.ID`
-// These are in requiresDeepCopy, and 0 versions would skip this block.
-// But this IS already tested by TestRenameEntityType_NoVersions (coverage_test.go line 540).
-//
-// Let me check if the issue is that requiresDeepCopy WITHOUT catalog repos returns
-// false immediately before reaching the ListByEntityType call. In TestRenameEntityType_NoVersions
-// the service has catalog repos set up (via setupETServiceWithCatalogRepos... wait no,
-// it uses NewEntityTypeService directly without WithCatalogRepos).
-//
-// Looking at TestRenameEntityType_NoVersions: it uses NewEntityTypeService without
-// calling WithCatalogRepos. So requiresDeepCopy returns (false, nil) at line 225-226
-// because pinRepo == nil. The ListByEntityType line (231) is never reached!
-//
-// So I need a test where pinRepo and cvRepo ARE set, but ListByEntityType returns empty.
-// That would exercise lines 231-236 with an empty result.
+// #5: requiresDeepCopy with catalog repos set but ListByEntityType returns empty versions.
+// TestRenameEntityType_NoVersions uses a service without catalog repos, so pinRepo==nil
+// causes early return before ListByEntityType. This test uses catalog repos to exercise
+// the empty-versions path through ListByEntityType (lines 231-236).
 
 func TestRenameEntityType_NoVersionsWithCatalogRepos(t *testing.T) {
 	svc, etRepo, etvRepo, _, pinRepo, _ := setupETServiceWithCatalogRepos()

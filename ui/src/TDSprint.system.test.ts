@@ -150,7 +150,7 @@ describe('TD-79: Add Pin version auto-select', () => {
     // Use the "test" CV which has no pins — so Add Pin modal shows all entity types
     const cvRes = await apiCall('GET', '/api/meta/v1/catalog-versions')
     const testCV = cvRes.body.items?.find((c: { version_label: string }) => c.version_label === 'test')
-    if (!testCV) { console.log('SKIP: no "test" CV available'); return }
+    if (!testCV) throw new Error('SKIP: no "test" CV with zero pins available — cannot test Add Pin')
 
     await pg.goto(`${UI_URL}/schema/catalog-versions/${testCV.id}`)
     await pg.waitForLoadState('networkidle')
