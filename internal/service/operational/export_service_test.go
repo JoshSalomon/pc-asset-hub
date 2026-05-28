@@ -1649,6 +1649,98 @@ func TestT35_51_ExportRoundTripStable(t *testing.T) {
 	assert.Equal(t, string(b1), string(b2), "export JSON should be stable across parse/re-marshal cycle")
 }
 
+// TD-131 review fix: links within an instance must be sorted deterministically
+func TestExportLinksSorted(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, _, instRepo, iavRepo, linkRepo := newExportService()
+
+	catalogRepo.On("GetByName", ctx(), "test").Return(&models.Catalog{ID: "c1", Name: "test", CatalogVersionID: "cv1"}, nil)
+	cvRepo.On("GetByID", ctx(), "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1"}, nil)
+	pinRepo.On("ListByCatalogVersion", ctx(), "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", EntityTypeVersionID: "etv1"},
+	}, nil)
+	etvRepo.On("GetByID", ctx(), "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	etRepo.On("GetByID", ctx(), "et1").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	attrRepo.On("ListByVersion", ctx(), "etv1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", ctx(), "etv1").Return([]*models.Association{
+		{ID: "assoc-z", EntityTypeVersionID: "etv1", Name: "z-ref", Type: "directional", TargetEntityTypeID: "et1"},
+		{ID: "assoc-a", EntityTypeVersionID: "etv1", Name: "a-ref", Type: "directional", TargetEntityTypeID: "et1"},
+	}, nil)
+	tdRepo.On("GetByID", ctx(), mock.Anything).Return(&models.TypeDefinition{Name: "string", BaseType: "string"}, nil).Maybe()
+
+	instRepo.On("ListByCatalog", ctx(), "c1").Return([]*models.EntityInstance{
+		{ID: "i1", EntityTypeID: "et1", CatalogID: "c1", Name: "my-server", Version: 1},
+		{ID: "i2", EntityTypeID: "et1", CatalogID: "c1", Name: "target-b", Version: 1},
+		{ID: "i3", EntityTypeID: "et1", CatalogID: "c1", Name: "target-a", Version: 1},
+	}, nil)
+	iavRepo.On("GetValuesForVersion", ctx(), mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	linkRepo.On("GetForwardRefs", ctx(), "i1").Return([]*models.AssociationLink{
+		{ID: "l1", AssociationID: "assoc-z", SourceInstanceID: "i1", TargetInstanceID: "i2"},
+		{ID: "l2", AssociationID: "assoc-a", SourceInstanceID: "i1", TargetInstanceID: "i3"},
+	}, nil)
+	linkRepo.On("GetForwardRefs", ctx(), mock.Anything).Return([]*models.AssociationLink{}, nil).Maybe()
+	assocRepo.On("GetByID", ctx(), "assoc-z").Return(&models.Association{ID: "assoc-z", Name: "z-ref", Type: "directional", TargetEntityTypeID: "et1"}, nil)
+	assocRepo.On("GetByID", ctx(), "assoc-a").Return(&models.Association{ID: "assoc-a", Name: "a-ref", Type: "directional", TargetEntityTypeID: "et1"}, nil)
+
+	result, err := svc.ExportCatalog(context.Background(), "test", nil, "test")
+	require.NoError(t, err)
+
+	// Find my-server instance
+	var serverInst *ExportInstance
+	for i := range result.Instances {
+		if result.Instances[i].Name == "my-server" {
+			serverInst = &result.Instances[i]
+			break
+		}
+	}
+	require.NotNil(t, serverInst)
+	require.Len(t, serverInst.Links, 2)
+	assert.Equal(t, "a-ref", serverInst.Links[0].Association, "links should be sorted by association name")
+	assert.Equal(t, "z-ref", serverInst.Links[1].Association)
+}
+
+// TD-131 review fix: children within a containment association must be sorted by name
+func TestExportChildrenSorted(t *testing.T) {
+	svc, catalogRepo, cvRepo, pinRepo, etRepo, etvRepo, attrRepo, assocRepo, tdRepo, _, instRepo, iavRepo, linkRepo := newExportService()
+
+	catalogRepo.On("GetByName", ctx(), "test").Return(&models.Catalog{ID: "c1", Name: "test", CatalogVersionID: "cv1"}, nil)
+	cvRepo.On("GetByID", ctx(), "cv1").Return(&models.CatalogVersion{ID: "cv1", VersionLabel: "v1"}, nil)
+	pinRepo.On("ListByCatalogVersion", ctx(), "cv1").Return([]*models.CatalogVersionPin{
+		{ID: "pin1", EntityTypeVersionID: "etv1"},
+		{ID: "pin2", EntityTypeVersionID: "etv2"},
+	}, nil)
+	etvRepo.On("GetByID", ctx(), "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1", Version: 1}, nil)
+	etvRepo.On("GetByID", ctx(), "etv2").Return(&models.EntityTypeVersion{ID: "etv2", EntityTypeID: "et2", Version: 1}, nil)
+	etRepo.On("GetByID", ctx(), "et1").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	etRepo.On("GetByID", ctx(), "et2").Return(&models.EntityType{ID: "et2", Name: "tool"}, nil)
+	attrRepo.On("ListByVersion", ctx(), mock.Anything).Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", ctx(), "etv1").Return([]*models.Association{
+		{ID: "assoc1", EntityTypeVersionID: "etv1", Name: "tools", Type: "containment", TargetEntityTypeID: "et2"},
+	}, nil)
+	assocRepo.On("ListByVersion", ctx(), "etv2").Return([]*models.Association{}, nil)
+	tdRepo.On("GetByID", ctx(), mock.Anything).Return(&models.TypeDefinition{Name: "string", BaseType: "string"}, nil).Maybe()
+
+	instRepo.On("ListByCatalog", ctx(), "c1").Return([]*models.EntityInstance{
+		{ID: "i1", EntityTypeID: "et1", CatalogID: "c1", Name: "my-server", Version: 1},
+		{ID: "c3", EntityTypeID: "et2", CatalogID: "c1", Name: "zebra-tool", ParentInstanceID: "i1", Version: 1},
+		{ID: "c2", EntityTypeID: "et2", CatalogID: "c1", Name: "alpha-tool", ParentInstanceID: "i1", Version: 1},
+		{ID: "c1x", EntityTypeID: "et2", CatalogID: "c1", Name: "mid-tool", ParentInstanceID: "i1", Version: 1},
+	}, nil)
+	iavRepo.On("GetValuesForVersion", ctx(), mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	linkRepo.On("GetForwardRefs", ctx(), mock.Anything).Return([]*models.AssociationLink{}, nil)
+
+	result, err := svc.ExportCatalog(context.Background(), "test", nil, "test")
+	require.NoError(t, err)
+
+	require.Len(t, result.Instances, 1, "only root instances in top-level array")
+	server := result.Instances[0]
+	require.Contains(t, server.Children, "tools")
+	children := server.Children["tools"]
+	require.Len(t, children, 3)
+	assert.Equal(t, "alpha-tool", children[0].Name, "children should be sorted by name")
+	assert.Equal(t, "mid-tool", children[1].Name)
+	assert.Equal(t, "zebra-tool", children[2].Name)
+}
+
 // ExportData.UnmarshalJSON — malformed JSON (first pass error)
 func TestExportData_UnmarshalJSON_MalformedJSON(t *testing.T) {
 	var ed ExportData

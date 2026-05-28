@@ -150,6 +150,7 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
       setContainmentTargetTypes(targets)
     }
     loadAll()
+    return () => { cancelled = true }
   }, [pins])
 
   useEffect(() => {

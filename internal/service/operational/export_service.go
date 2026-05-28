@@ -526,6 +526,12 @@ func (s *ExportService) buildExportInstances(
 
 			exportLinks = append(exportLinks, el)
 		}
+		sort.Slice(exportLinks, func(i, j int) bool {
+			if exportLinks[i].Association != exportLinks[j].Association {
+				return exportLinks[i].Association < exportLinks[j].Association
+			}
+			return exportLinks[i].TargetName < exportLinks[j].TargetName
+		})
 
 		ei := ExportInstance{
 			EntityType:  etNameByID[inst.EntityTypeID],
@@ -555,6 +561,11 @@ func (s *ExportService) buildExportInstances(
 				assocName = "children"
 			}
 			ei.Children[assocName] = append(ei.Children[assocName], childExport)
+		}
+		for k := range ei.Children {
+			sort.Slice(ei.Children[k], func(i, j int) bool {
+				return ei.Children[k][i].Name < ei.Children[k][j].Name
+			})
 		}
 
 		return &ei, nil
