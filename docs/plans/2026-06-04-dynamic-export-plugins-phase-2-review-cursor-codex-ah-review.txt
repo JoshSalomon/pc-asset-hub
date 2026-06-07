@@ -1,0 +1,83 @@
+================================================================
+Summary
+================================================================
+
+The `docs/test-plan.md` Phase 2 section is significantly stronger than a typical high-level plan: it is concrete, step-oriented, and includes many failure-mode assertions (timeouts, malformed JSON, orphaned bindings, race checks). It is clear this plan is trying to prevent shallow “happy path only” implementation.
+
+The highest-risk gaps are in lifecycle and security correctness, not in basic feature behavior. Specifically, the plan does not prove startup/restart discovery correctness for pre-existing `ExporterPlugin` CRs, and it does not verify the TokenReview + subject-allowlist contract end-to-end. There are also several ambiguous acceptance criteria (timeout `0`, endpoint validation behavior, non-K8s watcher contract) that allow incompatible implementations to pass “green” while behaving differently in production.
+
+================================================================
+Critical Findings
+================================================================
+
+1. **Issue:** Startup registry pre-population behavior is not tested.  
+   **Why it matters:** If the API server fails to list/sync existing `ExporterPlugin` CRs on startup, all pre-existing webhook exporters can disappear after a restart, causing binding runs to fail in production until CRs are touched again.  
+   **Location:** `docs/test-plan.md`, section `5.53`, `Step 10: API Server ExporterPlugin CR Informer Watch`; contrasted with startup-sync requirement in `docs/plans/2026-05-28-dynamic-export-plugins-design.md` (`Registry Synchronization`, startup list/pre-populate).  
+   **Suggested fix:** Add an integration/envtest case that creates CRs before watcher start, boots watcher/API startup path, waits for cache sync, and asserts registry is populated before serving requests.
+
+2. **Issue:** The auth contract is not verified end-to-end (TokenReview + subject allowlist).  
+   **Why it matters:** Merely checking that `Authorization` header exists does not prove security; a plugin could accept any token (or no token), allowing unauthorized export/health calls and data exposure.  
+   **Location:** `docs/test-plan.md`, section `5.53`, `Step 4`, `Step 8`, and live tests; contrasted with mandatory auth contract in `docs/plans/2026-05-28-dynamic-export-plugins-design.md` (`Auth Contract`).  
+   **Suggested fix:** Add explicit negative tests in the example webhook plugin and live suite: missing token, invalid token, wrong subject, and allowed subject. Assert `401/403` and correct CR status/message transitions.
+
+================================================================
+High Findings
+================================================================
+
+1. **Issue:** Stale-to-`Unknown` health transition is missing from tests.  
+   **Why it matters:** Health can remain falsely `Ready` if probes stop, misleading UI/operators and hiding degraded state.  
+   **Location:** `docs/test-plan.md`, section `5.53`, `Step 8` and `Step 11`; contrasted with stale-threshold state machine in `docs/plans/2026-05-28-dynamic-export-plugins-design.md` (`Health Status State Machine`).  
+   **Suggested fix:** Add time-controlled reconciler tests for stale threshold expiry and UI assertions that stale status renders as `Unknown` (grey).
+
+2. **Issue:** Timeout semantics are contradictory across artifacts (`minimum 3` vs `0 accepted/default 10`).  
+   **Why it matters:** Different implementers can ship incompatible behavior while claiming compliance; edge inputs become nondeterministic.  
+   **Location:** `docs/test-plan.md`, `5.53 Step 7` (timeout `0` accepted/defaulted), `docs/plans/2026-05-28-dynamic-export-plugins-design.md` (`Timeout: minimum 3`), and `docs/plans/2026-06-03-dynamic-export-plugins-impl-plan.md` (clamp/default rules).  
+   **Suggested fix:** Pick one rule and encode it everywhere (CRD schema, watcher logic, tests). Example: omit => default 10; provided value must be `>=3`; `0` rejected.
+
+3. **Issue:** CRD negative validation criteria are nondeterministic and rely on the wrong validation mode.  
+   **Why it matters:** `kubectl apply --dry-run=client` does not reliably validate CR instance schema constraints; tests can produce false confidence.  
+   **Location:** `docs/test-plan.md`, `5.53 Step 7` (`dry-run=client`, “endpoint invalid URL rejected if CRD has format validation, otherwise accepted”).  
+   **Suggested fix:** Require server-side validation (`--dry-run=server`) with CRD installed, and make endpoint validity behavior mandatory (not optional).
+
+4. **Issue:** Non-K8s watcher contract is ambiguous (“returns error or no-op watcher”).  
+   **Why it matters:** Ambiguous behavior at this seam invites divergent implementations and startup bugs that are hard to diagnose.  
+   **Location:** `docs/test-plan.md`, `5.53`, cross-step `Non-K8s mode`.  
+   **Suggested fix:** Define one explicit contract (recommended: return typed error; startup logs warning and skips watcher), then test exactly that behavior.
+
+5. **Issue:** Orphaned `RunBinding` behavior is only checked in live tests, not automated backend unit/API tests.  
+   **Why it matters:** A regression could silently change single-run orphan behavior (`failed` vs `skipped`/success), breaking operator expectations and status semantics.  
+   **Location:** `docs/test-plan.md`, `5.53 Step 9` (covers `RunAll`/`PublishPreview`) and live tests mention orphaned run error.  
+   **Suggested fix:** Add explicit unit/API tests for single binding run against orphaned exporter, including status/error expectations.
+
+6. **Issue:** Least-privilege RBAC for API server is not negatively verified.  
+   **Why it matters:** Accidental write permissions (`update/patch` status) increase blast radius and violate intended trust boundaries.  
+   **Location:** `docs/test-plan.md`, `5.53` live RBAC checks only assert positive permissions (`list`, operator `update/status`).  
+   **Suggested fix:** Add negative checks, e.g. API server SA cannot `update`/`patch` `exporterplugins/status`.
+
+================================================================
+Medium Findings
+================================================================
+
+1. **Issue:** “Protocol mismatch” test validates response-header mismatch, not request-version contract enforcement.  
+   **Why it matters:** This can pass while real protocol negotiation is broken; it tests a weaker, different behavior than the design requirement.  
+   **Location:** `docs/test-plan.md`, `5.53 Step 4` (response header `v2` accepted), contrasted with `docs/plans/2026-05-28-dynamic-export-plugins-design.md` protocol decision (“plugin should reject unknown versions with 400”).  
+   **Suggested fix:** Split tests: (a) adapter always sends `X-AssetHub-Protocol-Version: v1`; (b) example plugin rejects unknown request versions with `400`.
+
+2. **Issue:** Base URL “no path” invariant is not explicitly tested.  
+   **Why it matters:** Endpoints with path segments can produce malformed `/validate` and `/export` URLs and runtime-only failures.  
+   **Location:** Design says endpoint/base URL is pathless (`docs/plans/2026-05-28-dynamic-export-plugins-design.md`), but `docs/test-plan.md` `5.53 Step 7/10` has no negative test for path-bearing endpoint.  
+   **Suggested fix:** Add CRD/controller validation and watcher tests rejecting endpoints with non-empty path and returning clear diagnostics.
+
+3. **Issue:** Watch reconnect/resync gap is accepted as non-blocking without hard exit criteria.  
+   **Why it matters:** Watch interruptions are common in real clusters; stale registry state can persist unnoticed.  
+   **Location:** `docs/test-plan.md`, `5.53` “Documented test gaps”.  
+   **Suggested fix:** Convert to tracked debt item with owner and concrete acceptance criteria (e.g., restart/resync scenario must pass before phase closure).
+
+================================================================
+Low / Notes
+================================================================
+
+1. **Issue:** Default trusted-subject naming is inconsistent in context docs (`assethub-api` vs `assethub-api-server`), and the test plan does not pin this default behavior.  
+   **Why it matters:** Default auth behavior may differ by implementation and fail only in deployed environments.  
+   **Location:** `docs/plans/2026-05-28-dynamic-export-plugins-design.md` (`Auth Contract` default text) vs `docs/plans/2026-06-03-dynamic-export-plugins-impl-plan.md` (`Step 6 TrustedSubjects purpose`), with no explicit default-resolution test in `docs/test-plan.md` section `5.53`.  
+   **Suggested fix:** Align docs to one canonical SA name and add tests that omit `trustedSubjects` and assert the exact defaults used.

@@ -1,0 +1,293 @@
+Adversarial Review: test-plan.md — FF-15 Phase 2 Changes
+=========================================================
+Reviewed: diff of docs/test-plan.md (branch 021-dynamic-export-plugins vs main)
+Date: 2026-06-04
+
+Two changes reviewed:
+  1. Section 3 coverage matrix: 14 new FF-15 P2 rows
+  2. Section 5.53: detailed test strategy for Dynamic Export Plugins
+
+
+COVERAGE MATRIX GAPS (Section 3)
+================================
+
+The matrix marks which layers (Unit, Integration, API, UI, Operator) cover each
+feature. Several rows have gaps that don't match the detailed test descriptions
+in section 5.53, or miss testing layers that should apply.
+
+
+1. WebhookExporter adapter — missing Integration column
+   Severity: Medium
+
+   Row: "FF-15 P2: WebhookExporter adapter (HTTP forwarding, timeout, size limit)"
+   Matrix: Unit only (X in Unit column)
+
+   Step 4 in section 5.53 describes a "Round-trip/seam test" that serializes
+   ExportInput through the full HTTP stack via httptest. This is effectively an
+   integration test — it crosses the serialization/deserialization boundary. The
+   Integration column should be marked, or the seam test should be explicitly
+   classified as a unit test and the reasoning documented.
+
+
+2. Orphaned binding handling — missing UI column
+   Severity: Medium
+
+   Row: "FF-15 P2: Orphaned binding handling (skipped status in RunAll/Preview)"
+   Matrix: Unit + API only
+
+   But Step 11 (UI) includes: "Verify publish preview modal renders 'skipped'
+   status correctly for orphaned bindings (distinct from 'failed')." The UI
+   layer tests orphaned binding behavior. The matrix should mark UI.
+
+
+3. ExporterPlugin CR informer watch — missing Integration column
+   Severity: Low
+
+   Row: "FF-15 P2: API server ExporterPlugin CR informer watch"
+   Matrix: Unit only
+
+   The plan acknowledges this ("No integration tests — the informer uses
+   controller-runtime's cache which is tested upstream"). The justification is
+   reasonable but the matrix should note this as a conscious skip, not just an
+   empty cell. Other rows in the matrix don't silently skip layers.
+
+
+4. Name collision detection — may deserve its own step, not just API test
+   Severity: Low
+
+   Row: "FF-15 P2: Name collision detection (built-in name reserved, log + skip)"
+   Matrix: Unit + API
+
+   The unit tests are in Step 10 (handleAdd with collision). The API test is
+   also in Step 10. This is correct. But name collision is a safety-critical
+   property — if a webhook plugin registers as "mcp-gateway" and overwrites
+   the built-in, it could silently break all existing bindings. Consider adding
+   a live test that deploys a CR with a built-in name and verifies it's ignored.
+
+
+SECTION 5.53 GAPS — MISSING TESTS
+==================================
+
+5. No test for ExporterPlugin CR watch reconnection / restart behavior
+   Severity: High
+
+   The informer watch is a long-running background process in the API server.
+   If the K8s API server restarts or the watch connection drops, the informer
+   must reconnect and re-sync. This is a production failure mode, not an edge
+   case.
+
+   Missing tests:
+   - Watch restarts after disconnect → registry re-populated correctly
+   - API server restart → existing CRs re-loaded from K8s on startup
+   - Watch error during startup → API server still starts (degraded mode)
+
+   The justification "controller-runtime's cache is tested upstream" covers
+   the reconnection mechanism itself, but NOT the application-level behavior
+   (does the registry end up correct after a re-sync?). An integration test
+   should verify: create CR → watch registers it → simulate watch restart →
+   verify exporter still in registry.
+
+
+6. No test for concurrent CR events during registry mutation
+   Severity: Medium
+
+   Step 2 tests concurrent registry access with 50 goroutines. But Step 10
+   (informer watch) introduces a new concurrency dimension: the informer's
+   event handlers (handleAdd/handleUpdate/handleDelete) run in a separate
+   goroutine from API request handlers that call registry.Get/List.
+
+   Missing test: informer processes a delete event while an API request is
+   mid-export using that exporter. Verify the export completes (the
+   WebhookExporter reference survives deregistration) and the next Get()
+   call returns not-found.
+
+
+7. No test for webhook exporter with empty/zero parameter schema
+   Severity: Medium
+
+   Steps 3 and 4 test the happy path (params present) and error paths (timeout,
+   5xx, etc.). But no test covers a webhook exporter that declares zero
+   parameters. This is a valid use case — a plugin that exports everything with
+   no configuration.
+
+   Missing tests:
+   - ExporterPlugin CR with empty parameterSchema → registered successfully
+   - Binding creation with no parameters → succeeds
+   - Export run with no parameters → request body has empty params map
+   - UI: Add Binding modal shows no parameter fields
+
+
+8. No test for webhook exporter /validate endpoint
+   Severity: Medium
+
+   Step 4 tests ValidateSchema success (200 {"valid":true}) and error (400).
+   But the validate call also happens during binding creation
+   (validateBindingParams → exporter.ValidateSchema) and during PublishPreview
+   (schema re-validation). These call sites aren't tested with a webhook
+   exporter — only with the built-in MCPGatewayExporter.
+
+   Missing tests:
+   - Create binding with webhook exporter → /validate called before DB write
+   - PublishPreview with webhook exporter binding → /validate called before
+     /export
+   - /validate returns 400 during binding creation → binding NOT created,
+     error returned to user
+   - /validate timeout during PublishPreview → binding marked as failed
+
+
+9. No test for webhook protocol version mismatch
+   Severity: Low
+
+   Step 4 verifies X-AssetHub-Protocol-Version: v1 header is sent. But no test
+   verifies what happens if the plugin responds with an unexpected protocol
+   version or rejects v1. This is defensive — if the header is informational
+   today, the test documents that expectation.
+
+
+10. No negative test for ExporterPlugin CRD validation
+    Severity: Low
+
+    Step 6 tests DeepCopy correctness. Step 7 tests kubectl dry-run. But no
+    test verifies that the CRD rejects invalid specs:
+    - Missing required field (Endpoint)
+    - TimeoutSeconds negative
+    - TimeoutSeconds = 0 (should default to 10)
+    - Endpoint not a valid URL
+    - ParameterSchema with invalid Type value
+
+    If these are validated by the CRD schema (OpenAPI validation), the dry-run
+    test should include negative cases. If validation happens in the
+    controller, the controller tests should cover them.
+
+
+11. No test for health status transitions and their UI effect
+    Severity: Medium
+
+    Step 8 tests individual health classifications (200→Ready, 503→Unhealthy,
+    unreachable→Error). Step 11 tests the UI health dot colors. But no test
+    covers the transition flow:
+    - Plugin starts healthy (Ready) → goes down (Error) → comes back (Ready)
+    - Verify UI reflects each state change
+    - Verify bindings remain functional during Unhealthy/Error (degraded, not
+      blocked)
+
+    This is important because the design spec says "Exporter always appears
+    in list" (even when unhealthy). A binding to an unhealthy exporter should
+    still be runnable (it'll fail at the HTTP level, but the user should be
+    able to try).
+
+
+12. No test for RunBinding with unhealthy exporter
+    Severity: Medium
+
+    The orphaned binding tests (Step 9) cover the case where the exporter is
+    GONE (deregistered). But no test covers the case where the exporter is
+    PRESENT but UNHEALTHY. These are different:
+    - Deregistered → BindingStatusSkipped (can't even try)
+    - Unhealthy → should still attempt the export (it might succeed if the
+      health probe is lagging)
+
+    Missing tests:
+    - RunBinding with unhealthy webhook exporter → attempts HTTP call
+    - RunBinding with Error-status webhook exporter → attempts HTTP call
+    - Export succeeds despite unhealthy status → status updated to success
+    - Export fails (connection refused) → status updated to failed with error
+
+
+13. No test for RBAC on webhook export endpoints
+    Severity: Medium
+
+    The coverage matrix row "FF-15 P2: Webhook exporter live tests" has an X
+    in the API column but not explicitly for RBAC. The existing RBAC matrix
+    (section 5.48) covers export binding endpoints but doesn't have rows for
+    webhook-specific behavior.
+
+    Missing tests:
+    - RO user: can see webhook exporters in list (GET /exporters)
+    - RO user: cannot create binding to webhook exporter
+    - RW user: can run export on webhook binding
+    - Admin: can create/update/delete binding to webhook exporter
+
+    These should work identically to built-in exporters (the binding layer
+    doesn't distinguish), but the test plan should explicitly verify this for
+    webhook exporters as a regression safety net.
+
+
+14. No test for catalog import with webhook exporter bindings
+    Severity: Medium
+
+    The design review (finding E5) identified that importing a catalog with
+    bindings referencing a webhook exporter that doesn't exist on the target
+    system will fail in validateBindingParams. The implementation plan
+    acknowledged this gap but didn't add a test.
+
+    Missing tests:
+    - Export catalog with webhook exporter binding → import to system without
+      that webhook exporter → verify behavior (fail? skip? orphan?)
+    - Same scenario but the webhook exporter exists on target → verify binding
+      created successfully
+
+
+15. No test for multiple webhook exporters registered simultaneously
+    Severity: Low
+
+    All tests describe a single webhook exporter. No test verifies behavior
+    with 2+ webhook exporters registered at the same time:
+    - Two webhook exporters with different names → both appear in /exporters
+    - Binding to each → both work independently
+    - Delete one CR → other unaffected
+    - Two CRs created rapidly → both registered (no race)
+
+
+SECTION 5.53 — INACCURACIES
+============================
+
+16. Step 10 healthStatus test claim
+    Severity: Medium
+
+    Step 10 says: "Verify health status read from cr.Status.Phase on add/update"
+
+    This is listed as a test, but the implementation plan (Step 10) was flagged
+    in the impl plan review for NOT mentioning health status propagation. If
+    the impl plan doesn't describe the behavior, the test plan is testing
+    something that may not be implemented. Good that the test plan caught it —
+    but the impl plan should be updated to match.
+
+
+17. Step 8: 401/403 classification differs from impl plan
+    Severity: Low
+
+    Step 8 tests: "401/403 → Error with 'authentication rejected'"
+
+    But the impl plan's classifyHealthResult only has four cases: 200→Ready,
+    non-200→Unhealthy, timeout→Unhealthy, connection error→Error. A 401/403
+    would fall under "non-200→Unhealthy" per the impl plan, not "Error with
+    authentication rejected" per the test plan.
+
+    These should agree. The test plan's classification (401/403→Error) is
+    arguably better — auth rejection means misconfiguration, not a transient
+    issue — but the impl plan needs to be updated to match.
+
+
+SUMMARY TABLE
+=============
+
+ #  | Severity | Issue
+----+----------+--------------------------------------------------------------
+ 5  | High     | No test for informer watch reconnection/restart behavior
+ 6  | Medium   | No test for concurrent CR events during registry mutation
+ 7  | Medium   | No test for webhook exporter with zero parameters
+ 8  | Medium   | No test for webhook /validate during binding creation flow
+11  | Medium   | No test for health status transitions end-to-end
+12  | Medium   | No test for RunBinding with unhealthy (not deregistered) exporter
+13  | Medium   | No RBAC verification specific to webhook exporters
+14  | Medium   | No test for catalog import with webhook exporter bindings
+16  | Medium   | Step 10 health status test claims behavior not in impl plan
+ 1  | Medium   | WebhookExporter seam test not reflected in matrix
+ 2  | Medium   | Orphaned binding UI test not reflected in matrix
+ 3  | Low      | Informer watch integration skip not documented in matrix
+ 4  | Low      | Name collision deserves a live test
+ 9  | Low      | No test for protocol version mismatch
+10  | Low      | No negative CRD validation tests
+15  | Low      | No multi-exporter test
+17  | Low      | Health probe 401/403 classification inconsistent with impl plan

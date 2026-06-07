@@ -1,0 +1,164 @@
+Adversarial Review
+Target: docs/plans/2026-06-03-dynamic-export-plugins-impl-plan.md
+Date: 2026-06-03
+
+Scope
+- Review implementation plan for correctness, consistency with current codebase, and execution risk.
+- Focus on blocker/high-risk issues that can break implementation or cause behavior regressions.
+
+================================================================
+CRITICAL FINDINGS
+================================================================
+
+1) Step 10 startup wiring is not implementable as written
+
+Problem:
+- The plan says to start the watcher "after K8s client setup" in cmd/api-server/main.go.
+- At that point in current code:
+  - `exporterRegistry` is not created yet.
+  - `ctx` does not exist yet (it is created near graceful shutdown setup).
+  - `k8sClient` is block-scoped (`:=` inside the in-cluster block), so later access will fail.
+
+Impact:
+- Compile failure or incorrect initialization order.
+
+Required fix:
+- Define concrete refactor sequence:
+  1) lift `k8sClient` to outer scope,
+  2) initialize `exporterRegistry` before watcher startup,
+  3) create a startup context usable for long-running watcher lifecycle,
+  4) connect watcher shutdown to existing signal context.
+
+---
+
+2) RBAC plan is incomplete for API server watch path
+
+Problem:
+- Step 7 updates only `deploy/k8s/operator/role.yaml`.
+- Step 10 requires API server to list/watch/get `exporterplugins`.
+- Current API server RBAC only includes `catalogversions` and `catalogs`.
+
+Impact:
+- Runtime permission failures when API server tries to watch ExporterPlugin CRs.
+
+Required fix:
+- Add explicit API server RBAC changes in the plan:
+  - update `deploy/k8s/api-server/rbac.yaml` with `exporterplugins` permissions.
+- Keep operator RBAC update, but do not treat it as sufficient.
+
+================================================================
+HIGH FINDINGS
+================================================================
+
+3) Virtual-server scoped export parity risk
+
+Problem:
+- Step 3 excludes `VirtualServerInstanceName` and `AllowedToolIDs` from webhook request.
+- Current behavior uses `AllowedToolIDs` for VS-scoped filtering in MCP export flow.
+- Plan does not explicitly define where equivalent filtering is applied before webhook request is built.
+
+Impact:
+- Webhook exporters may not match built-in exporter behavior for `virtual_server_instance` runs.
+
+Required fix:
+- Add explicit requirement in Step 3/4:
+  - either pre-filter `InstancesByType/ChildrenOf` using `AllowedToolIDs` before conversion,
+  - or include a stable selector field in webhook contract and define plugin responsibilities.
+
+---
+
+4) Auth contract mismatch for /health probes
+
+Problem:
+- Step 4 states all requests include `Authorization: Bearer ...`.
+- Step 8 health reconciler flow does not mention setting auth headers for `GET /health`.
+
+Impact:
+- Plugins that enforce subject allowlist can reject health probes, causing false Unhealthy/Error.
+
+Required fix:
+- Add explicit auth behavior for health probe HTTP client in Step 8:
+  - token source, header injection, and failure classification when auth is rejected.
+
+---
+
+5) "Informer watch" step is underspecified and can miss updates
+
+Problem:
+- Step 10 describes list-then-watch behavior but does not define resourceVersion continuity, reconnect/backoff, or missed event handling.
+
+Impact:
+- Stale registry state under transient watch failures.
+
+Required fix:
+- Define watch strategy concretely:
+  - either true informer cache with resync,
+  - or list/watch loop with resourceVersion tracking and retry policy.
+
+================================================================
+MEDIUM FINDINGS
+================================================================
+
+6) Name collision handling is log-only
+
+Problem:
+- `handleAdd` collision policy says "log warning + skip".
+- No surfaced status path is defined (CR status/UI/API signal).
+
+Impact:
+- Operator/user confusion: CR exists but exporter silently absent.
+
+Required fix:
+- Define user-visible signal:
+  - set CR `status.phase=Error` and `status.message`,
+  - include collision reason in API/logs consistently.
+
+---
+
+7) Update path is non-atomic
+
+Problem:
+- Step 10 `handleUpdate(old, new)` says deregister old then register new.
+- If new registration fails, exporter disappears entirely.
+
+Impact:
+- Temporary or permanent exporter outage on bad updates.
+
+Required fix:
+- Build/validate new adapter first, then swap in one write-locked operation.
+
+---
+
+8) Skipped orphan handling may leave stale binding status semantics
+
+Problem:
+- Step 9 says orphaned bindings in `RunAll` should return skipped and not call `updateBindingStatus`.
+- Plan does not reconcile how UI should interpret old `last_run_status` values for these orphaned bindings.
+
+Impact:
+- UI may show stale "success/failed" while run result says skipped.
+
+Required fix:
+- Document intended persistence semantics:
+  - either persist `last_run_status=skipped`,
+  - or keep history untouched but surface explicit current-run skipped state in UI/API.
+
+================================================================
+BLOCKERS BEFORE IMPLEMENTATION START
+================================================================
+
+Must fix before coding begins:
+- C1 (startup wiring order/scope in Step 10)
+- C2 (API server RBAC coverage for ExporterPlugin watch)
+
+Should fix before Step 10/11:
+- H3 (VS parity), H4 (health auth), H5 (watch reliability)
+
+Quality/usability hardening:
+- M6, M7, M8
+
+================================================================
+BOTTOM LINE
+================================================================
+
+The plan structure is strong and test-oriented, but two blocker issues will stop implementation (startup wiring and RBAC scope). Resolve those first, then tighten watcher/auth/parity details to avoid regressions and hard-to-debug runtime behavior.
