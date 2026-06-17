@@ -19,7 +19,7 @@ type stubExporter struct {
 func (s *stubExporter) Name() string        { return s.name }
 func (s *stubExporter) Description() string  { return s.desc }
 func (s *stubExporter) ParameterSchema() []export.ParameterDef { return s.params }
-func (s *stubExporter) ValidateSchema(params map[string]string, schema export.SchemaInfo) error {
+func (s *stubExporter) ValidateSchema(_ context.Context, params map[string]string, schema export.SchemaInfo) error {
 	return s.validateErr
 }
 func (s *stubExporter) Export(ctx context.Context, input export.ExportInput) (*export.ExportOutput, error) {

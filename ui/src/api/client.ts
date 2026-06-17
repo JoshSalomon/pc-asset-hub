@@ -303,7 +303,7 @@ export const api = {
 
   exporters: {
     list: () =>
-      fetchJSON<ListResponse<{ name: string; description: string; parameter_schema: Array<{ name: string; type: string; description: string; required: boolean; default?: string }> }>>(
+      fetchJSON<ListResponse<{ name: string; description: string; parameter_schema: Array<{ name: string; type: string; description: string; required: boolean; default?: string }>; source: string; health: string }>>(
         `${DATA_BASE_URL}/exporters`),
   },
 

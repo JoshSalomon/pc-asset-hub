@@ -41,21 +41,30 @@ func (s *ExportBindingService) PublishPreview(ctx context.Context, catalogName s
 			continue
 		}
 
-		if exporter, ok := s.registry.Get(binding.ExporterName); ok {
-			if err := exporter.ValidateSchema(binding.Parameters, schema); err != nil {
-				results = append(results, BindingRunResult{
-					BindingID:    binding.ID,
-					ExporterName: binding.ExporterName,
-					Status:       "failed",
-					Error:        err.Error(),
-				})
-				hasFailures = true
-				continue
-			}
+		exporter, ok := s.registry.Get(binding.ExporterName)
+		if !ok {
+			results = append(results, BindingRunResult{
+				BindingID:    binding.ID,
+				ExporterName: binding.ExporterName,
+				Status:       BindingStatusSkipped,
+				Error:        "exporter not registered",
+			})
+			continue
+		}
+
+		if err := exporter.ValidateSchema(ctx, binding.Parameters, schema); err != nil {
+			results = append(results, BindingRunResult{
+				BindingID:    binding.ID,
+				ExporterName: binding.ExporterName,
+				Status:       BindingStatusFailed,
+				Error:        err.Error(),
+			})
+			hasFailures = true
+			continue
 		}
 
 		result := s.executeBinding(ctx, catalog, binding)
-		if result.Status == "failed" {
+		if result.Status == BindingStatusFailed {
 			hasFailures = true
 		} else {
 			artifactsByBinding[binding.ID] = result.Artifacts

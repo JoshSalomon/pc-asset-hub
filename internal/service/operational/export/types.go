@@ -6,21 +6,30 @@ const (
 	BindingStatusNever   = "never"
 	BindingStatusSuccess = "success"
 	BindingStatusFailed  = "failed"
+	BindingStatusSkipped = "skipped"
 )
 
 type Exporter interface {
 	Name() string
 	Description() string
 	ParameterSchema() []ParameterDef
-	ValidateSchema(params map[string]string, schema SchemaInfo) error
+	ValidateSchema(ctx context.Context, params map[string]string, schema SchemaInfo) error
 	Export(ctx context.Context, input ExportInput) (*ExportOutput, error)
 }
 
 type ParameterDef struct {
+	Name              string             `json:"name"`
+	Type              string             `json:"type"`
+	Description       string             `json:"description"`
+	Required          bool               `json:"required"`
+	Default           string             `json:"default,omitempty"`
+	AttributeMappings []AttributeMapping `json:"attribute_mappings,omitempty"`
+}
+
+type AttributeMapping struct {
 	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
-	Required    bool   `json:"required"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required,omitempty"`
 	Default     string `json:"default,omitempty"`
 }
 

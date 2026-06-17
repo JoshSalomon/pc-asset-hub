@@ -18,7 +18,7 @@ type testExporter struct {
 func (e *testExporter) Name() string                          { return e.name }
 func (e *testExporter) Description() string                   { return e.desc }
 func (e *testExporter) ParameterSchema() []export.ParameterDef { return e.params }
-func (e *testExporter) ValidateSchema(_ map[string]string, _ export.SchemaInfo) error {
+func (e *testExporter) ValidateSchema(_ context.Context, _ map[string]string, _ export.SchemaInfo) error {
 	return e.validateErr
 }
 func (e *testExporter) Export(_ context.Context, _ export.ExportInput) (*export.ExportOutput, error) {

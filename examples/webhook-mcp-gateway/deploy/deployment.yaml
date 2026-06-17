@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook-mcp-gateway
+  namespace: assethub
+  labels:
+    app: webhook-mcp-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webhook-mcp-gateway
+  template:
+    metadata:
+      labels:
+        app: webhook-mcp-gateway
+    spec:
+      containers:
+        - name: webhook-mcp-gateway
+          image: localhost/webhook-mcp-gateway:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-mcp-gateway
+  namespace: assethub
+spec:
+  selector:
+    app: webhook-mcp-gateway
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP

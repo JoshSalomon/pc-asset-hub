@@ -3,15 +3,34 @@ import {
   Button, Modal, ModalBody, ModalHeader, ModalFooter, ModalVariant,
   Alert, AlertVariant,
   FormGroup, TextInput,
-  Label,
+  Label, Tooltip, Icon,
 } from '@patternfly/react-core'
+import { ExclamationTriangleIcon } from '@patternfly/react-icons'
 import type { ExportBinding } from '../types'
 import { api } from '../api/client'
+
+interface AttributeMappingDef {
+  name: string
+  description?: string
+  required?: boolean
+  default?: string
+}
+
+interface ParameterSchemaDef {
+  name: string
+  type: string
+  description: string
+  required: boolean
+  default?: string
+  attribute_mappings?: AttributeMappingDef[]
+}
 
 interface ExporterInfo {
   name: string
   description: string
-  parameter_schema: Array<{ name: string; type: string; description: string; required: boolean; default?: string }>
+  parameter_schema: ParameterSchemaDef[]
+  source: string
+  health: string
 }
 
 interface Props {
@@ -49,7 +68,9 @@ export default function ExportBindingsPanel({ catalogName, catalogVersionId, isA
     }
   }, [catalogName])
 
-  useEffect(() => { loadBindings() }, [loadBindings])
+  useEffect(() => {
+    loadBindings()
+  }, [loadBindings])
 
   const handleExportNow = (binding: ExportBinding) => {
     if (binding.parameters?.virtual_server_type) {
@@ -120,9 +141,45 @@ export default function ExportBindingsPanel({ catalogName, catalogVersionId, isA
             </tr>
           </thead>
           <tbody>
-            {bindings.map(b => (
+            {bindings.map(b => {
+            const isOrphaned = !exporters.some(e => e.name === b.exporter_name)
+            const exporterInfo = exporters.find(e => e.name === b.exporter_name)
+            return (
               <tr key={b.id} role="row">
-                <td role="gridcell">{b.exporter_name}</td>
+                <td role="gridcell">
+                  {b.exporter_name}
+                  {isOrphaned && (
+                    <Tooltip content="Exporter not registered">
+                      <Icon status="warning" style={{ marginLeft: '0.5rem' }}>
+                        <ExclamationTriangleIcon />
+                      </Icon>
+                    </Tooltip>
+                  )}
+                  {exporterInfo && (
+                    <>
+                      <Label color={exporterInfo.source === 'built-in' ? 'blue' : 'teal'} style={{ marginLeft: '0.5rem' }}>
+                        {exporterInfo.source}
+                      </Label>
+                      {exporterInfo.source === 'webhook' && (
+                        <span
+                          title={`Health: ${exporterInfo.health}`}
+                          style={{
+                            display: 'inline-block',
+                            width: '10px',
+                            height: '10px',
+                            borderRadius: '50%',
+                            marginLeft: '0.5rem',
+                            backgroundColor:
+                              exporterInfo.health === 'Ready' ? '#3e8635' :
+                              exporterInfo.health === 'Unhealthy' ? '#f0ab00' :
+                              exporterInfo.health === 'Error' ? '#c9190b' :
+                              '#8a8d90',
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
+                </td>
                 <td role="gridcell">
                   {b.parameters ? Object.entries(b.parameters).map(([k, v]) => (
                     <Label key={k} style={{ marginRight: '0.25rem' }}>{k}={v}</Label>
@@ -138,7 +195,7 @@ export default function ExportBindingsPanel({ catalogName, catalogVersionId, isA
                   )}
                 </td>
                 <td role="gridcell">
-                  <Label color={b.last_run_status === 'success' ? 'green' : b.last_run_status === 'failed' ? 'red' : 'grey'}>
+                  <Label color={b.last_run_status === 'success' ? 'green' : b.last_run_status === 'failed' ? 'red' : b.last_run_status === 'skipped' ? 'grey' : 'grey'}>
                     {b.last_run_status}
                   </Label>
                   {b.last_run_at && <span style={{ marginLeft: '0.5rem', fontSize: '0.85em', color: '#6a6e73' }}>{new Date(b.last_run_at).toLocaleString()}</span>}
@@ -150,7 +207,7 @@ export default function ExportBindingsPanel({ catalogName, catalogVersionId, isA
                       variant="secondary"
                       size="sm"
                       isLoading={runningId === b.id}
-                      isDisabled={runningId !== null || !b.enabled}
+                      isDisabled={runningId !== null || !b.enabled || isOrphaned}
                       onClick={() => handleExportNow(b)}
                     >
                       Export Now
@@ -168,7 +225,8 @@ export default function ExportBindingsPanel({ catalogName, catalogVersionId, isA
                   )}
                 </td>
               </tr>
-            ))}
+            )
+          })}
           </tbody>
         </table>
       )}
@@ -239,30 +297,78 @@ function BindingModal({ mode, catalogName, catalogVersionId, exporters, binding,
   const [submitting, setSubmitting] = useState(false)
   const [entityTypeNames, setEntityTypeNames] = useState<string[]>([])
   const [pinLoadError, setPinLoadError] = useState<string | null>(null)
+  const [pinsByName, setPinsByName] = useState<Record<string, { entityTypeId: string }>>({})
+  const [attrCache, setAttrCache] = useState<Record<string, string[]>>({})
 
   useEffect(() => {
     if (catalogVersionId) {
       api.catalogVersions.listPins(catalogVersionId)
-        .then(res => setEntityTypeNames((res.items || []).map((p: { entity_type_name: string }) => p.entity_type_name).filter(Boolean).sort()))
+        .then(res => {
+          const pins = res.items || []
+          setEntityTypeNames(pins.map((p: { entity_type_name: string }) => p.entity_type_name).filter(Boolean).sort())
+          const byName: Record<string, { entityTypeId: string }> = {}
+          for (const p of pins) {
+            if (p.entity_type_name) byName[p.entity_type_name] = { entityTypeId: p.entity_type_id }
+          }
+          setPinsByName(byName)
+        })
         .catch(e => setPinLoadError(e instanceof Error ? e.message : 'Failed to load entity types'))
     }
   }, [catalogVersionId])
 
+  const fetchAttributes = useCallback(async (entityTypeName: string) => {
+    if (attrCache[entityTypeName]) return
+    const pin = pinsByName[entityTypeName]
+    if (!pin) return
+    try {
+      const res = await api.attributes.list(pin.entityTypeId)
+      setAttrCache(prev => ({ ...prev, [entityTypeName]: (res.items || []).map((a: { name: string }) => a.name).sort() }))
+    } catch { /* ignore — dropdown stays empty */ }
+  }, [pinsByName, attrCache])
+
   const exporter = exporters.find(e => e.name === selectedExporter)
 
   useEffect(() => {
-    if (exporter && mode === 'create') {
+    if (!exporter) return
+    if (mode === 'create') {
       const defaults: Record<string, string> = {}
       for (const p of exporter.parameter_schema) {
         if (p.default) defaults[p.name] = p.default
+        for (const am of p.attribute_mappings || []) {
+          if (am.default) defaults[am.name] = am.default
+        }
       }
       setParams(defaults)
+    } else {
+      setParams(prev => {
+        const merged = { ...prev }
+        let changed = false
+        for (const p of exporter.parameter_schema) {
+          for (const am of p.attribute_mappings || []) {
+            if (!merged[am.name] && am.default) {
+              merged[am.name] = am.default
+              changed = true
+            }
+          }
+        }
+        return changed ? merged : prev
+      })
     }
   }, [exporter, mode])
 
-  const hasEmptyRequiredParams = exporter?.parameter_schema.some(
-    p => p.required && !params[p.name]
-  ) ?? false
+  useEffect(() => {
+    if (!exporter) return
+    for (const p of exporter.parameter_schema) {
+      if (p.type === 'entity_type' && p.attribute_mappings?.length && params[p.name]) {
+        fetchAttributes(params[p.name])
+      }
+    }
+  }, [exporter, params, fetchAttributes])
+
+  const hasEmptyRequiredParams = exporter?.parameter_schema.some(p => {
+    if (p.required && !params[p.name]) return true
+    return p.attribute_mappings?.some(am => am.required && !params[am.name]) ?? false
+  }) ?? false
 
   const duplicateEntityTypeWarning = (() => {
     if (!exporter) return null
@@ -331,31 +437,66 @@ function BindingModal({ mode, catalogName, catalogVersionId, exporters, binding,
           </FormGroup>
         )}
         {exporter && exporter.parameter_schema.map(p => (
-          <FormGroup key={p.name} label={`${p.name}${p.required ? ' *' : ''}`} fieldId={`param-${p.name}`}>
-            {p.type === 'entity_type' ? (
-              <select
-                id={`param-${p.name}`}
-                data-testid={`param-${p.name}`}
-                aria-label={p.name}
-                value={params[p.name] || ''}
-                onChange={e => setParams(prev => ({ ...prev, [p.name]: e.target.value }))}
-                style={{ width: '100%', padding: '6px 12px' }}
-              >
-                <option value="">Select entity type...</option>
-                {entityTypeNames.map(name => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
-            ) : (
-              <TextInput
-                id={`param-${p.name}`}
-                aria-label={p.name}
-                value={params[p.name] || ''}
-                onChange={(_e, v) => setParams(prev => ({ ...prev, [p.name]: v }))}
-                placeholder={p.description}
-              />
-            )}
-          </FormGroup>
+          <div key={p.name}>
+            <FormGroup label={`${p.name}${p.required ? ' *' : ''}`} fieldId={`param-${p.name}`}>
+              {p.type === 'entity_type' ? (
+                <select
+                  id={`param-${p.name}`}
+                  data-testid={`param-${p.name}`}
+                  aria-label={p.name}
+                  value={params[p.name] || ''}
+                  onChange={e => {
+                    const val = e.target.value
+                    setParams(prev => ({ ...prev, [p.name]: val }))
+                    if (val && p.attribute_mappings?.length) fetchAttributes(val)
+                  }}
+                  style={{ width: '100%', padding: '6px 12px' }}
+                >
+                  <option value="">Select entity type...</option>
+                  {entityTypeNames.map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              ) : (
+                <TextInput
+                  id={`param-${p.name}`}
+                  aria-label={p.name}
+                  value={params[p.name] || ''}
+                  onChange={(_e, v) => setParams(prev => ({ ...prev, [p.name]: v }))}
+                  placeholder={p.description}
+                />
+              )}
+            </FormGroup>
+            {p.type === 'entity_type' && p.attribute_mappings?.map(am => {
+              const selectedET = params[p.name]
+              const attrs = selectedET ? attrCache[selectedET] : undefined
+              return (
+                <FormGroup
+                  key={am.name}
+                  label={`  ${am.name}${am.required ? ' *' : ''}`}
+                  fieldId={`param-${am.name}`}
+                  style={{ paddingLeft: '1.5rem' }}
+                >
+                  <select
+                    id={`param-${am.name}`}
+                    data-testid={`param-${am.name}`}
+                    aria-label={am.name}
+                    value={params[am.name] || am.default || ''}
+                    onChange={e => setParams(prev => ({ ...prev, [am.name]: e.target.value }))}
+                    disabled={!selectedET}
+                    style={{ width: '100%', padding: '6px 12px' }}
+                  >
+                    {!selectedET && <option value="">Select {p.name} first...</option>}
+                    {selectedET && !attrs && <option value="">Loading attributes...</option>}
+                    {attrs && <option value="">Select attribute...</option>}
+                    {attrs?.map(name => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </FormGroup>
+              )
+            })}
+          </div>
         ))}
       </ModalBody>
       <ModalFooter>
