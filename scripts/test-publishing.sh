@@ -36,6 +36,20 @@ get_body() { echo "$1" | sed '$d'; }
 TIMESTAMP=$(date +%s)
 CATALOG_NAME="pubtest-${TIMESTAMP}"
 
+cleanup() {
+  echo ""
+  echo "=== Cleanup (only removing test data created by this script) ==="
+  api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" SuperAdmin > /dev/null 2>&1 || true
+  api DELETE "$DATA_API/catalogs/$CATALOG_NAME" Admin > /dev/null 2>&1 || true
+  echo "  Deleted test catalog: $CATALOG_NAME"
+  api POST "$META_API/catalog-versions/${CV_ID:-}/demote" Admin > /dev/null 2>&1 || true
+  api DELETE "$META_API/catalog-versions/${CV_ID:-}" Admin > /dev/null 2>&1 || true
+  echo "  Deleted test CV: ${CV_ID:-}"
+  api DELETE "$META_API/entity-types/${SERVER_ET_ID:-}" Admin > /dev/null 2>&1 || true
+  echo "  Deleted test entity type: ${SERVER_ET_ID:-}"
+}
+trap cleanup EXIT
+
 header "Setup: Create test data"
 
 # Create entity type
@@ -516,24 +530,5 @@ if [ -n "$CR_EXISTS" ]; then
 else
   fail "CR recreation" "CR not found after re-publish"
 fi
-
-# Clean up: unpublish for cleanup section (TD-148: requires SuperAdmin)
-api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" SuperAdmin > /dev/null 2>&1
-
-header "Cleanup (only removing test data created by this script)"
-
-api DELETE "$DATA_API/catalogs/$CATALOG_NAME" Admin > /dev/null 2>&1 || true
-echo "  Deleted test catalog: $CATALOG_NAME"
-
-# Demote CV back to development (it was promoted to testing in test 14)
-api POST "$META_API/catalog-versions/$CV_ID/demote" Admin > /dev/null 2>&1 || true
-
-# Delete CV (must happen before entity type since CV pins reference ETVs)
-api DELETE "$META_API/catalog-versions/$CV_ID" Admin > /dev/null 2>&1 || true
-echo "  Deleted test CV: $CV_ID"
-
-# Delete entity type
-api DELETE "$META_API/entity-types/$SERVER_ET_ID" Admin > /dev/null 2>&1 || true
-echo "  Deleted test entity type: $SERVER_ET_ID"
 
 print_summary "test-publishing"

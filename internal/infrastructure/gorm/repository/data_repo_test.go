@@ -797,6 +797,18 @@ func TestT13_19_NumberFilter_InvalidValueReturnsError(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestNumberFilter_InvalidMaxValue_ReturnsError(t *testing.T) {
+	tc, ctx := setupTestContext(t)
+
+	attrID := id()
+	_, _, err := tc.instRepo.List(ctx, tc.etID, tc.cvID, models.ListParams{
+		Limit:   20,
+		Filters: map[string]string{attrID + ".max": "not-a-number"},
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid number")
+}
+
 func TestT13_16_NumberFilter_ExactMatch(t *testing.T) {
 	tc, ctx := setupTestContext(t)
 

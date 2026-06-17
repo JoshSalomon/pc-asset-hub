@@ -421,7 +421,7 @@ func TestMCPGateway_ValidateSchema_MissingRouteName(t *testing.T) {
 			{Name: "mcp-tool", Attributes: []string{"description"}},
 		},
 	}
-	err := e.ValidateSchema(map[string]string{"server_type": "mcp-server", "tool_type": "mcp-tool"}, schema)
+	err := e.ValidateSchema(context.Background(), map[string]string{"server_type": "mcp-server", "tool_type": "mcp-tool"}, schema)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "route_name")
 }
@@ -435,7 +435,7 @@ func TestMCPGateway_ValidateSchema_NoContainment(t *testing.T) {
 			{Name: "mcp-tool", Attributes: []string{"description"}},
 		},
 	}
-	err := e.ValidateSchema(map[string]string{"server_type": "mcp-server", "tool_type": "mcp-tool"}, schema)
+	err := e.ValidateSchema(context.Background(), map[string]string{"server_type": "mcp-server", "tool_type": "mcp-tool"}, schema)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "containment")
 }
@@ -504,7 +504,7 @@ func TestMCPGateway_ValidateSchema_Success(t *testing.T) {
 			}},
 		},
 	}
-	err := e.ValidateSchema(map[string]string{"server_type": "mcp-server", "tool_type": "mcp-tool", "virtual_server_type": "virtual-server"}, schema)
+	err := e.ValidateSchema(context.Background(), map[string]string{"server_type": "mcp-server", "tool_type": "mcp-tool", "virtual_server_type": "virtual-server"}, schema)
 	assert.NoError(t, err)
 }
 
@@ -580,18 +580,27 @@ func TestT35_30_ParameterSchemaIncludesAttrMapping(t *testing.T) {
 		paramByName[p.Name] = p
 	}
 
-	rna, ok := paramByName["route_name_attr"]
-	require.True(t, ok, "route_name_attr must be in parameter schema")
-	assert.False(t, rna.Required, "route_name_attr should be optional")
+	serverType, ok := paramByName["server_type"]
+	require.True(t, ok, "server_type must be in parameter schema")
+	require.Len(t, serverType.AttributeMappings, 3, "server_type must have 3 attribute mappings")
+
+	amByName := make(map[string]export.AttributeMapping)
+	for _, am := range serverType.AttributeMappings {
+		amByName[am.Name] = am
+	}
+
+	rna, ok := amByName["route_name_attr"]
+	require.True(t, ok, "route_name_attr must be in attribute mappings")
+	assert.True(t, rna.Required, "route_name_attr should be required")
 	assert.Equal(t, "route_name", rna.Default)
 
-	mpa, ok := paramByName["mcp_path_attr"]
-	require.True(t, ok, "mcp_path_attr must be in parameter schema")
+	mpa, ok := amByName["mcp_path_attr"]
+	require.True(t, ok, "mcp_path_attr must be in attribute mappings")
 	assert.False(t, mpa.Required)
 	assert.Equal(t, "mcp_path", mpa.Default)
 
-	csa, ok := paramByName["credential_secret_attr"]
-	require.True(t, ok, "credential_secret_attr must be in parameter schema")
+	csa, ok := amByName["credential_secret_attr"]
+	require.True(t, ok, "credential_secret_attr must be in attribute mappings")
 	assert.False(t, csa.Required)
 	assert.Equal(t, "credential_secret", csa.Default)
 }
@@ -624,7 +633,7 @@ func TestT35_31_ValidateSchemaUsesCustomAttrName(t *testing.T) {
 		},
 	}
 
-	err := e.ValidateSchema(params, schema)
+	err := e.ValidateSchema(context.Background(), params, schema)
 	assert.NoError(t, err)
 }
 
@@ -656,7 +665,7 @@ func TestT35_32_ValidateSchemaFailsOnMissingMappedAttr(t *testing.T) {
 		},
 	}
 
-	err := e.ValidateSchema(params, schema)
+	err := e.ValidateSchema(context.Background(), params, schema)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "nonexistent-attr")
 }

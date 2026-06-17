@@ -569,9 +569,11 @@ RESP=$(api DELETE "$DATA_API/catalogs/$CATALOG_NAME/${PREFIX}-server-${TIMESTAMP
 assert_status "$RESP" "204" "SuperAdmin can delete instance on published catalog (204)"
 
 header "11.4: Validate on published catalog"
+# NOTE: Validate route uses requireRW (not RequireWriteAccess). RW can validate
+# published catalogs. Behavior pending product decision (TD-158).
 
 RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/validate" RW)
-assert_status "$RESP" "403" "RW cannot validate published catalog (403)"
+assert_status "$RESP" "200" "RW can validate published catalog (200)"
 
 RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/validate" SuperAdmin)
 assert_status "$RESP" "200" "SuperAdmin can validate published catalog (200)"

@@ -92,8 +92,8 @@ func TestPublishPreview_PerBindingResults(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.Bindings, 2)
 	assert.Equal(t, "success", result.Bindings[0].Status)
-	assert.Equal(t, "failed", result.Bindings[1].Status)
-	assert.True(t, result.HasFailures)
+	assert.Equal(t, export.BindingStatusSkipped, result.Bindings[1].Status)
+	assert.False(t, result.HasFailures, "skipped binding does not count as failure")
 }
 
 // T-34.85: PreviewCache stores CatalogUpdatedAt for optimistic lock
@@ -245,4 +245,60 @@ func TestRunAll_FireAndForget(t *testing.T) {
 		assert.Equal(t, "success", r.Status)
 		assert.Equal(t, 1, r.ArtifactCount)
 	}
+}
+
+// T-36.80: PublishPreview: orphaned binding → HasFailures=false, result includes skipped
+func TestPublishPreview_OrphanedBinding_Skipped(t *testing.T) {
+	svc, bindingRepo, catalogRepo, _, _, _ := setupPublishService()
+	ctx := context.Background()
+
+	catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	bindingRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.ExportBinding{
+		{ID: "b1", CatalogID: "cat1", ExporterName: "orphaned-exp", Enabled: true, Parameters: map[string]string{}},
+	}, nil)
+
+	result, err := svc.PublishPreview(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.False(t, result.HasFailures, "skipped should not count as failure")
+	require.Len(t, result.Bindings, 1)
+	assert.Equal(t, export.BindingStatusSkipped, result.Bindings[0].Status)
+	assert.Contains(t, result.Bindings[0].Error, "not registered")
+}
+
+// T-36.81: PublishPreview: one orphaned + one failed → HasFailures=true
+func TestPublishPreview_OrphanedAndFailed_HasFailures(t *testing.T) {
+	svc, bindingRepo, catalogRepo, registry, _, _ := setupPublishService()
+	ctx := context.Background()
+
+	registry.Register(&stubExporter{
+		name:      "failing-exp",
+		exportErr: fmt.Errorf("export failed"),
+	})
+
+	catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	bindingRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.ExportBinding{
+		{ID: "b1", CatalogID: "cat1", ExporterName: "orphaned-exp", Enabled: true, Parameters: map[string]string{}},
+		{ID: "b2", CatalogID: "cat1", ExporterName: "failing-exp", Enabled: true, Parameters: map[string]string{}},
+	}, nil)
+
+	result, err := svc.PublishPreview(ctx, "my-catalog")
+	require.NoError(t, err)
+	assert.True(t, result.HasFailures, "failed binding should trigger HasFailures")
+	require.Len(t, result.Bindings, 2)
+
+	var skippedCount, failedCount int
+	for _, b := range result.Bindings {
+		if b.Status == export.BindingStatusSkipped {
+			skippedCount++
+		}
+		if b.Status == export.BindingStatusFailed {
+			failedCount++
+		}
+	}
+	assert.Equal(t, 1, skippedCount)
+	assert.Equal(t, 1, failedCount)
 }
