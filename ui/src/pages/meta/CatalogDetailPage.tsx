@@ -78,7 +78,7 @@ export default function CatalogDetailPage({ role }: { role: Role }) {
   const canWrite = role === 'RW' || role === 'Admin' || role === 'SuperAdmin'
   const isAdmin = role === 'Admin' || role === 'SuperAdmin'
   const canMutate = canWrite && (!catalog?.published || role === 'SuperAdmin')
-  const canValidate = isAdmin || (canWrite && !catalog?.published)
+  const canValidate = canMutate
 
   // Add contained instance modal state
   const [addChildOpen, setAddChildOpen] = useState(false)

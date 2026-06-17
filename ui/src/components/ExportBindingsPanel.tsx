@@ -481,7 +481,7 @@ function BindingModal({ mode, catalogName, catalogVersionId, exporters, binding,
                     id={`param-${am.name}`}
                     data-testid={`param-${am.name}`}
                     aria-label={am.name}
-                    value={params[am.name] || am.default || ''}
+                    value={params[am.name] ?? am.default ?? ''}
                     onChange={e => setParams(prev => ({ ...prev, [am.name]: e.target.value }))}
                     disabled={!selectedET}
                     style={{ width: '100%', padding: '6px 12px' }}

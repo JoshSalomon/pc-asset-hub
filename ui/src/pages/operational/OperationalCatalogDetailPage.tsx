@@ -80,7 +80,7 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
   const isAdmin = role === 'Admin' || role === 'SuperAdmin'
   const canWrite = role === 'RW' || isAdmin
   const canMutate = canWrite && (!catalog?.published || role === 'SuperAdmin')
-  const canValidate = isAdmin || (canWrite && !catalog?.published)
+  const canValidate = canMutate
 
   // Create instance modal state
   const [createOpen, setCreateOpen] = useState(false)

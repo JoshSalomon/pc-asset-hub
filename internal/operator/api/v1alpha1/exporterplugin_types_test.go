@@ -98,6 +98,25 @@ func TestExporterPlugin_DeepCopyObject(t *testing.T) {
 	assert.True(t, ok)
 }
 
+// Copilot review: Default field preserved through DeepCopy
+func TestExporterPlugin_DeepCopy_DefaultField(t *testing.T) {
+	ep := &ExporterPlugin{
+		ObjectMeta: metav1.ObjectMeta{Name: "test"},
+		Spec: ExporterPluginSpec{
+			Endpoint: "http://localhost",
+			ParameterSchema: []ExporterPluginParameterDef{
+				{Name: "ns", Type: "string", Default: "prod"},
+			},
+		},
+	}
+	cp := ep.DeepCopy()
+	require.Len(t, cp.Spec.ParameterSchema, 1)
+	assert.Equal(t, "prod", cp.Spec.ParameterSchema[0].Default)
+
+	cp.Spec.ParameterSchema[0].Default = "dev"
+	assert.Equal(t, "prod", ep.Spec.ParameterSchema[0].Default)
+}
+
 // T-36.55: ExporterPlugin nil slices handled (ParameterSchema, TrustedSubjects)
 func TestExporterPlugin_NilSlices(t *testing.T) {
 	ep := &ExporterPlugin{

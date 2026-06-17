@@ -137,6 +137,7 @@ func (w *ExporterPluginWatcher) buildWebhookExporter(cr *v1alpha1.ExporterPlugin
 			Type:        p.Type,
 			Description: p.Description,
 			Required:    p.Required,
+			Default:     p.Default,
 		}
 		if len(p.AttributeMappings) > 0 {
 			pd.AttributeMappings = make([]export.AttributeMapping, len(p.AttributeMappings))

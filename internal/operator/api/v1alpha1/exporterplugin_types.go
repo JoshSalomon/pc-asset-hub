@@ -17,6 +17,7 @@ type ExporterPluginParameterDef struct {
 	Type              string                           `json:"type"`
 	Description       string                           `json:"description,omitempty"`
 	Required          bool                             `json:"required,omitempty"`
+	Default           string                           `json:"default,omitempty"`
 	AttributeMappings []ExporterPluginAttributeMapping `json:"attributeMappings,omitempty"`
 }
 

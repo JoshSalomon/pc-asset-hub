@@ -632,9 +632,10 @@ func (s *ExportBindingService) resolveLinks(ctx context.Context, instanceID stri
 		if !ok {
 			assoc, err := s.assocRepo.GetByID(ctx, link.AssociationID)
 			if err != nil {
-				continue
+				assocName = link.AssociationID
+			} else {
+				assocName = assoc.Name
 			}
-			assocName = assoc.Name
 			assocNameCache[link.AssociationID] = assocName
 		}
 		targetName := link.TargetInstanceID
