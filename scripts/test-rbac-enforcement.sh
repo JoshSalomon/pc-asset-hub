@@ -569,6 +569,7 @@ RESP=$(api DELETE "$DATA_API/catalogs/$CATALOG_NAME/${PREFIX}-server-${TIMESTAMP
 assert_status "$RESP" "204" "SuperAdmin can delete instance on published catalog (204)"
 
 header "11.4: Validate on published catalog"
+# TD-158 resolved: validate on published requires SuperAdmin (same as other mutations).
 
 RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/validate" RW)
 assert_status "$RESP" "403" "RW cannot validate published catalog (403)"

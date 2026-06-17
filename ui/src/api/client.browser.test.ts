@@ -986,3 +986,150 @@ test('catalogs.publishWithToken sends POST with session_token', async () => {
   expect(opts.method).toBe('POST')
   expect(JSON.parse(opts.body)).toEqual({ session_token: 'session-tok' })
 })
+
+// === Coverage: DATA_BASE_URL fallback (L27) and currentRole init (L29) ===
+
+test('DATA_BASE_URL defaults to /api/data/v1 (covers L27 fallback)', async () => {
+  // The module is already imported without VITE_DATA_API_BASE_URL set,
+  // so the fallback '/api/data/v1' is used. Verify via catalogs.list URL.
+  mockFetch.mockReturnValue(jsonResponse({ items: [], total: 0 }))
+  await api.catalogs.list()
+  const url = mockFetch.mock.calls[0][0]
+  expect(url).toContain('/api/data/v1/catalogs')
+})
+
+test('currentRole initializes to null (covers L29)', async () => {
+  // After setAuthRole(null) in beforeEach, no X-User-Role header should be present.
+  mockFetch.mockReturnValue(jsonResponse({ items: [], total: 0 }))
+  await api.entityTypes.list()
+  const headers = mockFetch.mock.calls[0][1].headers
+  expect(headers['X-User-Role']).toBeUndefined()
+})
+
+// === Coverage: downloadBlob cleanup (L42-43) ===
+
+test('downloadBlob cleanup runs after timeout (covers L42-43)', async () => {
+  vi.useFakeTimers()
+  setAuthRole('RW')
+  const mockBlob = new Blob(['content'], { type: 'application/x-yaml' })
+  mockFetch.mockReturnValue(Promise.resolve({
+    ok: true,
+    status: 200,
+    blob: () => Promise.resolve(mockBlob),
+    headers: new Headers({ 'Content-Disposition': 'attachment; filename="test.yaml"' }),
+  }))
+
+  await api.exportBindings.download('my-catalog', 'tok', 'b1')
+
+  // Advance timers to trigger the setTimeout callback in downloadBlob
+  vi.advanceTimersByTime(5000)
+  vi.useRealTimers()
+
+  // The test passes if no errors are thrown during cleanup
+  expect(mockFetch).toHaveBeenCalledTimes(1)
+})
+
+// === Coverage: parseErrorBody HTML without title (L54) ===
+
+test('parseErrorBody returns "Server error (HTML response)" for HTML without title (covers L54)', async () => {
+  mockFetch.mockReturnValue(Promise.resolve({
+    ok: false,
+    status: 500,
+    text: () => Promise.resolve('<html><body><p>Something broke</p></body></html>'),
+  }))
+
+  await expect(api.entityTypes.list()).rejects.toThrow('500: Server error (HTML response)')
+})
+
+// === Coverage: entityTypes.rename (L105) ===
+
+test('entityTypes.rename sends POST with name and deep_copy_allowed', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ entity_type: { id: 'et-1', name: 'NewName' } }))
+
+  await api.entityTypes.rename('et-1', 'NewName', true)
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/entity-types/et-1/rename')
+  expect(opts.method).toBe('POST')
+  expect(JSON.parse(opts.body)).toEqual({ name: 'NewName', deep_copy_allowed: true })
+})
+
+// === Coverage: entityTypes.containmentTree (L110) ===
+
+test('entityTypes.containmentTree sends GET', async () => {
+  mockFetch.mockReturnValue(jsonResponse([{ entity_type: { id: 'et-1', name: 'Root' }, versions: [], latest_version: 1, children: [] }]))
+
+  const result = await api.entityTypes.containmentTree()
+  const url = mockFetch.mock.calls[0][0]
+  expect(url).toContain('/entity-types/containment-tree')
+  expect(result).toHaveLength(1)
+  expect(result[0].entity_type.name).toBe('Root')
+})
+
+// === Coverage: attributes.edit / deleteByName (L130) ===
+
+test('attributes.edit sends PUT with data (covers L130)', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'v2', version: 2 }))
+
+  await api.attributes.edit('et-1', 'hostname', { name: 'host', description: 'updated' })
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/entity-types/et-1/attributes/hostname')
+  expect(opts.method).toBe('PUT')
+  expect(JSON.parse(opts.body)).toEqual({ name: 'host', description: 'updated' })
+})
+
+// === Coverage: attributes.copyFrom (L135) ===
+
+test('attributes.copyFrom sends POST with source data (covers L135)', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'v3', version: 3 }))
+
+  await api.attributes.copyFrom('et-1', {
+    source_entity_type_id: 'et-2',
+    source_version: 1,
+    attribute_names: ['attr-a', 'attr-b'],
+  })
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/entity-types/et-1/attributes/copy')
+  expect(opts.method).toBe('POST')
+  expect(JSON.parse(opts.body)).toEqual({
+    source_entity_type_id: 'et-2',
+    source_version: 1,
+    attribute_names: ['attr-a', 'attr-b'],
+  })
+})
+
+// === Coverage: associations.edit / deleteByName (L149) ===
+
+test('associations.edit sends PUT with data (covers L149)', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ id: 'v2', version: 2 }))
+
+  await api.associations.edit('et-1', 'uses', { name: 'references', type: 'reference' })
+  const [url, opts] = mockFetch.mock.calls[0]
+  expect(url).toContain('/entity-types/et-1/associations/uses')
+  expect(opts.method).toBe('PUT')
+  expect(JSON.parse(opts.body)).toEqual({ name: 'references', type: 'reference' })
+})
+
+// === Coverage: catalogVersions.listPins (L194) ===
+
+test('catalogVersions.listPins calls correct URL (covers L194)', async () => {
+  mockFetch.mockReturnValue(jsonResponse({ items: [{ id: 'pin-1' }], total: 1 }))
+
+  const result = await api.catalogVersions.listPins('cv-1')
+  const url = mockFetch.mock.calls[0][0]
+  expect(url).toContain('/catalog-versions/cv-1/pins')
+  expect(result.items).toHaveLength(1)
+})
+
+// === Coverage: catalogVersions.listTransitions (L196) ===
+
+test('catalogVersions.listTransitions calls correct URL (covers L196)', async () => {
+  mockFetch.mockReturnValue(jsonResponse({
+    items: [{ id: 't1', from_stage: 'development', to_stage: 'testing' }],
+    total: 1,
+  }))
+
+  const result = await api.catalogVersions.listTransitions('cv-1')
+  const url = mockFetch.mock.calls[0][0]
+  expect(url).toContain('/catalog-versions/cv-1/transitions')
+  expect(result.items).toHaveLength(1)
+})

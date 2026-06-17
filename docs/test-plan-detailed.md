@@ -30,7 +30,7 @@ Development proceeds through three environment phases, each with increasing infr
 
 **Milestones completed**: 1–12 plus CatalogVersion Discovery CRD (all code written and tested)
 
-**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired; T-13.102 changed by FF-6), T-14.01 through T-14.22, T-15.01 through T-15.81, T-16.01 through T-16.69, T-17.01 through T-17.88, T-24.01 through T-24.28, T-25.01 through T-25.39, T-26.01 through T-26.18, T-27.01 through T-27.27, T-32.01 through T-32.78, T-33.01 through T-33.12, T-34.01 through T-34.133, and T-35.01 through T-35.88 (T-35.80/81 are meta items, not numbered tests; 1223 test cases), using SQLite and mocked/simulated infrastructure.
+**Tests that must pass**: All test cases T-1.01 through T-9.09, T-CV.01 through T-CV.31, T-E.01 through T-E.146, T-10.01 through T-10.51, T-11.01 through T-11.58, T-12.01 through T-12.63, T-13.01 through T-13.102 (T-13.78 through T-13.85 retired; T-13.102 changed by FF-6), T-14.01 through T-14.22, T-15.01 through T-15.81, T-16.01 through T-16.69, T-17.01 through T-17.88, T-24.01 through T-24.28, T-25.01 through T-25.39, T-26.01 through T-26.18, T-27.01 through T-27.27, T-32.01 through T-32.78, T-33.01 through T-33.12, T-34.01 through T-34.133, T-35.01 through T-35.88, and T-36.01 through T-36.144 (1367 test cases), using SQLite and mocked/simulated infrastructure.
 
 **Human checkpoint**: After all 802 tests pass with 100% coverage (documented exceptions). This is the first review point.
 
@@ -4881,7 +4881,243 @@ This is a test-only refactor: inline helpers in `App.system.test.ts` replaced wi
 
 ---
 
-**Phase A exit criteria test count**: Existing (1137) + T-35.01 through T-35.88 (minus 2 meta items T-35.80/81) = **1223 test cases**.
+**Phase A exit criteria test count**: Existing (1137) + T-35.01 through T-35.88 (minus 2 meta items T-35.80/81 = 86 tests) + T-36.01 through T-36.144 (144 tests) = **1367 test cases**. Note: T-36.125–T-36.144 are live/system tests requiring a deployed cluster (Phase B), but they are counted in the total for completeness.
+
+---
+
+## Milestone 36: Dynamic Export Plugins via HTTP Webhooks (FF-15 Phase 2)
+
+Design spec: `docs/plans/2026-05-28-dynamic-export-plugins-design.md`
+Implementation plan: `docs/plans/2026-06-03-dynamic-export-plugins-impl-plan.md`
+
+### Step 1: Foundation — BindingStatusSkipped + validateParamEntityTypes fix
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-36.01 | `BindingStatusSkipped` constant equals `"skipped"` | Unit | Constant value matches |
+| T-36.02 | validateParamEntityTypes: param `output_type` with type `"string"` does NOT trigger entity-type validation | Unit | No error (current code wrongly validates) |
+| T-36.03 | validateParamEntityTypes: param `server_ref` with type `"entity_type"` validates against CV pins | Unit | Error for non-pinned type |
+| T-36.04 | validateParamEntityTypes: param `server_type` with type `"entity_type"` preserved behavior | Unit | Same as before fix |
+| T-36.05 | Binding creation with param `output_type` of type `string` succeeds | API | 201 Created, no entity-type validation error |
+
+### Step 2: Thread-Safe Registry
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-36.06 | `Register` marks exporter as built-in | Unit | `IsBuiltIn` returns true |
+| T-36.07 | `RegisterWebhook` marks exporter as NOT built-in | Unit | `IsBuiltIn` returns false |
+| T-36.08 | `Deregister` succeeds for webhook exporter | Unit | Returns true, `Get` returns not-found |
+| T-36.09 | `Deregister` refused for built-in exporter | Unit | Returns false, `Get` still returns exporter |
+| T-36.10 | `Deregister` returns false for non-existent name | Unit | Returns false |
+| T-36.11 | `RegisterWebhook` twice overwrites (last wins) | Unit | `Get` returns second registration |
+| T-36.12 | Concurrent access: 50 goroutines Register/Get/List/Deregister — no race | Unit (-race) | Zero data races, no panics |
+
+### Step 3: Webhook Protocol DTOs
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-36.13 | `WebhookValidateRequest` JSON roundtrip — snake_case field names | Unit | `parameters`, `schema` in marshaled JSON |
+| T-36.14 | `WebhookExportRequest` JSON roundtrip — snake_case field names | Unit | `catalog_name`, `catalog_description`, `instances_by_type`, `children_of` |
+| T-36.15 | `WebhookArtifact` marshals to `api_version`/`kind`/`name`/`namespace`/`yaml` | Unit | Not PascalCase |
+| T-36.16 | `ExportInputToWebhookRequest` excludes dead fields | Unit | No `cv_label`, `entity_types`, `virtual_server_instance_name`, `allowed_tool_ids` |
+| T-36.17 | Mixed attribute types (string, int, bool, array) roundtrip correctly | Unit | Types preserved through marshal/unmarshal |
+| T-36.18 | `SchemaInfoToWebhook` converts associations with all fields | Unit | Name, Type, TargetEntityType present |
+| T-36.19 | `WebhookExportResponse` JSON roundtrip | Unit | `artifacts`, `warnings` in marshaled JSON |
+| T-36.20 | `WebhookExportResponseToOutput` converts artifacts correctly | Unit | K8sArtifact fields match |
+
+### Step 4: WebhookExporter Adapter
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-36.21 | Basic getters: Name, Description, ParameterSchema | Unit | Return stored metadata |
+| T-36.22 | ValidateSchema success (200 `{"valid":true}`) | Unit | nil error |
+| T-36.23 | ValidateSchema error (400 `{"valid":false,"error":"msg"}`) | Unit | `domainerrors.IsValidation`, error contains "msg" |
+| T-36.23b | ValidateSchema: captured request body contains parameters + fully-converted schema with associations | Unit | Request body has expected structure |
+| T-36.24 | Export success (200 with artifacts JSON) | Unit | ExportOutput with correct artifacts |
+| T-36.25 | Export 4xx → validation error | Unit | `domainerrors.IsValidation` |
+| T-36.26 | Export 5xx → non-validation error with "webhook plugin error" | Unit | Error contains "webhook plugin error" |
+| T-36.27 | Export timeout → error with "timed out" | Unit | Error contains "timed out" |
+| T-36.28 | Export connection refused → error with "unreachable" | Unit | Error contains "unreachable" |
+| T-36.29 | Export oversized response (>10MB) → validation error | Unit | Error contains "10 MB" |
+| T-36.30 | Export malformed JSON (200 with invalid body) → error | Unit | Error contains "not valid JSON" |
+| T-36.31 | Export empty 200 response body → clear error | Unit | Error indicates empty response, not generic parse error |
+| T-36.32 | Export HTTP 302 redirect → rejected with clear error | Unit | Error contains "redirect", adapter does not follow |
+| T-36.33 | Response Content-Type mismatch (text/html) → hints at Content-Type | Unit | Error mentions Content-Type, not just "not valid JSON" |
+| T-36.34 | `X-AssetHub-Protocol-Version: v1` header on all outgoing requests | Unit | Captured request has header |
+| T-36.35 | `Authorization: Bearer {token}` header on all outgoing requests | Unit | Captured request has header |
+| T-36.36 | `Content-Type: application/json` header on all POST requests | Unit | Captured request has header |
+| T-36.37 | Protocol version mismatch: plugin returns v2 response header → no rejection | Unit | Export succeeds |
+| T-36.38 | Timeout calculation: timeoutSeconds=15 → validate=7s, export=15s | Unit | Durations match |
+| T-36.39 | Timeout calculation: timeoutSeconds=3 → both=3s (minimum floor) | Unit | Both clamped to 3s |
+| T-36.39b | Timeout calculation: timeoutSeconds=1 → both clamped to 3s (below floor) | Unit | exportTimeout=3s, validateTimeout=3s |
+| T-36.40 | HealthStatus get/set | Unit | Default empty, set "Ready" → get returns "Ready" |
+| T-36.41 | Zero ParameterSchema — registration succeeds, Export with empty params | Unit | No error, request body has `"parameters":{}` |
+| T-36.42 | Dead fields excluded from export request body | Unit | No cv_label, entity_types, etc. in captured body |
+| T-36.43 | VS filtering parity: pre-filtered ExportInput → faithfully serialized | Unit | Filtered instances/children match |
+| T-36.44 | Base URL with path rejected at construction | Unit | Validation error returned |
+| T-36.44b | Webhook plugin returns warnings → propagated to ExportOutput.Warnings and API response | Unit | Warnings not silently dropped |
+| T-36.45 | Round-trip: ExportInput → WebhookExportRequest → httptest → WebhookExportResponse → ExportOutput | Seam | Artifacts AND warnings match across boundary |
+| T-36.46 | Protocol mismatch API: run binding, plugin returns v2 header → export succeeds | API | 200 with YAML |
+
+### Step 5: ExporterInfo with Source + Health
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-36.47 | List with built-in exporter → source="built-in", health="n/a" | Unit | Fields match |
+| T-36.48 | List with webhook exporter (health "Ready") → source="webhook", health="Ready" | Unit | Fields match |
+| T-36.49 | List with mixed built-in + webhook → correct source/health for each | Unit | Both correct |
+| T-36.50 | GET /exporters response includes `source` and `health` fields | API | JSON fields present |
+| T-36.51 | GET /exporters: existing name/description/parameter_schema still present | API | No regression |
+
+### Step 6: ExporterPlugin CRD Go Types
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-36.52 | ExporterPlugin DeepCopy independence | Unit | Modify copy → original unchanged |
+| T-36.53 | ExporterPlugin DeepCopy nil returns nil | Unit | No panic, returns nil |
+| T-36.54 | ExporterPlugin DeepCopyObject returns non-nil runtime.Object | Unit | Non-nil |
+| T-36.55 | ExporterPlugin nil slices handled (ParameterSchema, TrustedSubjects) | Unit | No panic |
+| T-36.56 | ExporterPluginList DeepCopy | Unit | Items independent |
+| T-36.57 | ExporterPluginList DeepCopyObject | Unit | Non-nil |
+| T-36.58 | AddToScheme registers ExporterPlugin kind | Unit | `scheme.New(GV.WithKind("ExporterPlugin"))` succeeds |
+
+### Step 7: CRD YAML + RBAC Manifests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-36.59 | CRD YAML dry-run=server succeeds | Operator | kubectl accepts |
+| T-36.60 | RBAC YAML dry-run succeeds (operator + API server) | Operator | kubectl accepts |
+| T-36.61 | CRD applied → `kubectl get crd exporterplugins.assethub.project-catalyst.io` succeeds | Operator | CRD registered |
+| T-36.62 | Negative: missing Endpoint field → rejected by CRD | Operator | Admission error |
+| T-36.63 | Negative: TimeoutSeconds negative → rejected by CRD | Operator | Admission error |
+| T-36.64 | Negative: TimeoutSeconds = 0 → rejected by CRD (minimum: 3); omitting field → defaults to 10 at application level | Operator | Admission error for 0; accepted when omitted |
+
+### Step 8: ExporterPluginReconciler (Health Probe Controller)
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-36.65 | classifyHealthResult: 200 → Ready | Unit | phase="Ready" |
+| T-36.66 | classifyHealthResult: 401 → Error "authentication rejected" | Unit | phase="Error" |
+| T-36.67 | classifyHealthResult: 403 → Error "authentication rejected" | Unit | phase="Error" |
+| T-36.68 | classifyHealthResult: 503 → Unhealthy | Unit | phase="Unhealthy" |
+| T-36.69 | classifyHealthResult: timeout → Unhealthy | Unit | phase="Unhealthy" |
+| T-36.70 | classifyHealthResult: connection error → Error | Unit | phase="Error" |
+| T-36.71 | Reconcile: CR not found → no error (idempotent) | Operator | No error returned |
+| T-36.72 | Reconcile: healthy plugin (httptest 200) → status.phase=Ready | Operator | CR updated |
+| T-36.73 | Reconcile: unhealthy plugin (httptest 503) → status.phase=Unhealthy | Operator | CR updated |
+| T-36.74 | Reconcile: unreachable plugin → status.phase=Error | Operator | CR updated |
+| T-36.75 | Reconcile: sends Authorization header on health probe | Operator | Captured request has header |
+| T-36.76 | Health transitions: Ready → Unhealthy (503) → Ready (200) | Operator | CR status correct at each step |
+| T-36.77 | Stale-to-Unknown: lastHealthCheck older than 3x probe interval → Unknown | Operator | phase transitions to Unknown |
+
+### Step 9: Orphaned Binding Handling
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-36.78 | RunAll: registered runs (success), orphaned returns BindingStatusSkipped | Unit | Correct statuses |
+| T-36.79 | RunAll: orphaned binding's LastRunStatus NOT updated | Unit | LastRunStatus unchanged |
+| T-36.80 | PublishPreview: orphaned binding → HasFailures=false, result includes skipped | Unit | Skipped ≠ failed |
+| T-36.81 | PublishPreview: one orphaned + one failed → HasFailures=true | Unit | Failed triggers hasFailures |
+| T-36.82 | Single RunBinding on orphaned → BindingStatusFailed "exporter not found" | Unit | Failed, NOT skipped (intentional asymmetry) |
+| T-36.83a | UpdateBinding on orphaned with enabled=false only (params=nil) → succeeds, skips validation | Unit | Binding disabled without exporter check |
+| T-36.83b | UpdateBinding on orphaned with new params → fails "exporter not found" | Unit | Cannot validate params without exporter |
+| T-36.84 | POST /publish/preview with orphaned binding → skipped in response | API | Skipped status, no publishing block |
+| T-36.85 | POST /export-bindings/{id}/run on orphaned → 404 "exporter not found" | API | HTTP 404, error body: `{"message": "exporter 'X' not found"}` |
+
+### Cross-step: Webhook /validate in binding flows
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-36.86 | CreateBinding with webhook exporter → /validate called (httptest captures) | Unit | HTTP POST to /validate made before DB write |
+| T-36.87 | CreateBinding: /validate returns 400 → binding NOT created | Unit | Error returned, no DB write |
+| T-36.88 | PublishPreview: /validate called before /export on webhook binding | Unit | /validate request precedes /export |
+| T-36.89 | PublishPreview: /validate timeout → binding marked failed | Unit | BindingStatusFailed |
+| T-36.90 | POST /export-bindings: webhook /validate rejects → 400 with plugin error | API | Plugin error surfaced |
+
+### Cross-step: RunBinding with unhealthy exporter
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-36.91 | RunBinding with healthStatus="Unhealthy" → export ATTEMPTED | Unit | HTTP call made to /export |
+| T-36.92 | RunBinding with healthStatus="Error" → export ATTEMPTED | Unit | HTTP call made to /export |
+| T-36.93 | Export succeeds despite unhealthy status → binding status=success | Unit | Status updated to success |
+| T-36.94 | Export fails (connection refused) despite registered → status=failed | Unit | Status=failed with connection error |
+
+### Cross-step: Zero parameter schema, multiple exporters, non-K8s mode
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-36.95 | Zero-param webhook: CreateBinding with no parameters → success | Unit | Binding created |
+| T-36.96 | Zero-param webhook: RunBinding → /export request has `"parameters":{}` | Unit | Empty params in body |
+| T-36.97 | Zero-param webhook: POST /export-bindings with empty params → 201 | API | Binding created |
+| T-36.98 | Zero-param webhook: GET /exporters shows empty parameter_schema | API | Empty array |
+| T-36.99 | Zero-param webhook: Add Binding modal shows no parameter fields | Browser | No param inputs rendered |
+| T-36.100 | Multiple exporters: register two webhook exporters → both in List | Unit | Both appear with correct names |
+| T-36.101 | Multiple exporters: deregister one → other unaffected | Unit | Remaining exporter still works |
+| T-36.102 | Multiple exporters: GET /exporters returns both | API | Both in response |
+| T-36.103 | Non-K8s mode: nil rest.Config → returns error | Unit | Typed error returned |
+| T-36.104 | Non-K8s mode: /exporters returns only built-in | Unit | No webhook exporters |
+| T-36.105 | Non-K8s mode: no crash, no blocked startup | Unit | API server starts normally |
+
+### Step 10: API Server ExporterPlugin CR Informer Watch
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-36.106 | handleAdd: registers webhook with correct baseURL, description, params, timeout | Unit | Registry.Get returns correct adapter |
+| T-36.107 | handleAdd: healthStatus read from cr.Status.Phase | Unit | WebhookExporter.HealthStatus matches CR |
+| T-36.108 | handleAdd: exporter Name() matches cr.ObjectMeta.Name | Unit | Names equal |
+| T-36.109 | handleDelete: deregisters from registry | Unit | Registry.Get returns not-found |
+| T-36.109b | handleDelete: DeletedFinalStateUnknown tombstone → extracts object, deregisters | Unit | Tombstone unwrapped, exporter removed |
+| T-36.110 | handleAdd: built-in name collision → not registered, built-in preserved | Unit | IsBuiltIn still true, webhook absent |
+| T-36.111 | handleUpdate: atomic swap (old gone, new present) | Unit | Registry has new description/endpoint |
+| T-36.112 | handleUpdate: invalid spec → old registration preserved | Unit | Old adapter still works |
+| T-36.113 | Default timeout: omitted spec.TimeoutSeconds → 10s | Unit | exportTimeout=10s |
+| T-36.114 | Custom timeout: spec.TimeoutSeconds=20 → export=20s, validate=10s | Unit | Durations correct |
+| T-36.115 | Base URL path rejection: endpoint with path → handleAdd rejects | Unit | Not registered, warning logged |
+| T-36.116 | Startup pre-population: 2 CRs exist before Start → both in registry | Unit | Both exporters registered |
+| T-36.117 | Name collision API: GET /exporters returns only built-in | API | source="built-in", no webhook |
+
+### Step 11: UI Updates
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-36.118 | Built-in exporter shows "built-in" badge | Browser | Label rendered |
+| T-36.119 | Webhook exporter shows "webhook" badge + health dot | Browser | Badge + colored dot |
+| T-36.120 | Orphaned binding shows warning icon with tooltip | Browser | Icon + "Exporter not registered" |
+| T-36.121 | Export Now disabled for orphaned binding | Browser | Button disabled |
+| T-36.122 | Publish preview modal renders "skipped" status for orphaned (distinct from failed) | Browser | Grey label, not red |
+| T-36.123 | Zero-param exporter: Add Binding modal shows no parameter fields | Browser | No param inputs |
+| T-36.124 | Existing binding CRUD works with webhook exporter (no regression) | Browser | Create/edit/delete/run all work |
+
+### Live + System Tests
+
+| ID | Test Case | Layer | Expected |
+|----|-----------|-------|----------|
+| T-36.125 | Deploy webhook plugin, create CR, GET /exporters shows it | Live | source="webhook", health="Ready" |
+| T-36.126 | Create binding to webhook exporter, run export, verify YAML | Live | Valid YAML downloaded |
+| T-36.127 | Delete CR → exporter disappears, binding orphaned | Live | Not in /exporters, run returns error |
+| T-36.128 | Name collision: CR with built-in name → only built-in in /exporters | Live | Webhook version absent |
+| T-36.129 | RBAC positive: API server SA can list exporterplugins | Live | kubectl auth can-i → yes |
+| T-36.130 | RBAC positive: operator SA can update exporterplugins/status | Live | kubectl auth can-i → yes |
+| T-36.131 | RBAC negative: API server SA cannot update exporterplugins/status | Live | kubectl auth can-i → no |
+| T-36.132 | RBAC: RO cannot create binding to webhook exporter (403) | Live | 403 Forbidden |
+| T-36.133 | RBAC: RW can run export on webhook binding | Live | 200 with YAML |
+| T-36.134 | RBAC: Admin can create/update/delete binding to webhook exporter | Live | All succeed |
+| T-36.135 | Example plugin auth: missing token → 401 | Live | 401 from plugin |
+| T-36.136 | Example plugin auth: wrong SA subject → 403 | Live | 403 from plugin |
+| T-36.137 | Example plugin auth: API server SA → 200 | Live | Export succeeds |
+| T-36.138 | Example plugin protocol: request with v99 → 400 "unsupported" | Live | 400 from plugin |
+| T-36.139 | System: health indicator visible in UI for webhook exporter | System | Green/yellow/red dot |
+| T-36.140 | System: source badge visible (built-in vs webhook) | System | Correct labels |
+| T-36.141 | System: create binding via UI, run export, download file | System | File downloaded |
+| T-36.142 | System: delete CR → orphaned warning in UI | System | Warning icon appears |
+| T-36.143 | System: health transitions (stop pod → red, restart → green) | System | Dot color changes |
+| T-36.144 | System: binding to unhealthy exporter is still runnable | System | Export Now not disabled |
+
+**Justification for skipped categories:**
+- **Integration tests (DB):** No new database tables. ExporterPlugin CRs are K8s-side. Bindings use the existing `export_bindings` table with no schema changes.
+- **Watch reconnection integration test:** Deferred to TD-161 — requires envtest infrastructure in the API server which doesn't exist today. Startup pre-population is tested at the unit level (T-36.116).
+- **TrustedSubjects functional test:** TrustedSubjects is consumed by the plugin service, not the Asset Hub. The Asset Hub does not read TrustedSubjects — it is metadata for plugin operators to configure their TokenReview policy. Functional auth tests are in the example plugin's live test suite (T-36.135–T-36.137).
 
 ### General Notes
 - Test cases within each milestone are executed as part of that milestone's implementation step.

@@ -581,6 +581,20 @@
       "phase": 0,
       "difficulty": 0.9,
       "created_at": "2026-05-27T11:36:17.754171+00:00"
+    },
+    "mem_b5b51710": {
+      "topic": "FF-15 Phase 2: Deploy script and operational URL lessons",
+      "tags": [
+        "deploy",
+        "kind",
+        "podman",
+        "crd",
+        "url",
+        "gotcha"
+      ],
+      "phase": 0,
+      "difficulty": 0.6,
+      "created_at": "2026-06-10T16:43:33.174075+00:00"
     }
   }
 }

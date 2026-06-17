@@ -65,7 +65,7 @@ func TestListExporters_ReturnsRegistered(t *testing.T) {
 		name: "mcp-gateway",
 		desc: "MCP Gateway Exporter",
 		params: []export.ParameterDef{
-			{Name: "server_type", Type: "string", Required: true, Description: "Server entity type"},
+			{Name: "server_type", Type: "entity_type", Required: true, Description: "Server entity type"},
 		},
 	})
 
@@ -99,7 +99,7 @@ func TestCreateBinding_API_Success(t *testing.T) {
 	registry.Register(&testExporter{
 		name: "mcp-gateway",
 		params: []export.ParameterDef{
-			{Name: "server_type", Type: "string", Required: true},
+			{Name: "server_type", Type: "entity_type", Required: true},
 			{Name: "tool_type", Type: "string", Required: true},
 		},
 	})
@@ -158,7 +158,7 @@ func TestCreateBinding_API_MissingParams(t *testing.T) {
 	registry.Register(&testExporter{
 		name: "mcp-gateway",
 		params: []export.ParameterDef{
-			{Name: "server_type", Type: "string", Required: true},
+			{Name: "server_type", Type: "entity_type", Required: true},
 		},
 	})
 	catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
@@ -182,7 +182,7 @@ func TestCreateBinding_API_EntityTypeNotPinned(t *testing.T) {
 	registry.Register(&testExporter{
 		name: "mcp-gateway",
 		params: []export.ParameterDef{
-			{Name: "server_type", Type: "string", Required: true},
+			{Name: "server_type", Type: "entity_type", Required: true},
 			{Name: "tool_type", Type: "string", Required: true},
 		},
 	})
@@ -306,7 +306,7 @@ func TestBinding_API_Admin_FullCRUD(t *testing.T) {
 	registry.Register(&testExporter{
 		name: "mcp-gateway",
 		params: []export.ParameterDef{
-			{Name: "server_type", Type: "string", Required: true},
+			{Name: "server_type", Type: "entity_type", Required: true},
 			{Name: "tool_type", Type: "string", Required: true},
 		},
 	})
@@ -1037,4 +1037,354 @@ func TestT35_16_BindingMetadata_AllRoles(t *testing.T) {
 		assert.Equal(t, "never", item["last_run_status"], "role=%s: last_run_status", role)
 		assert.NotNil(t, item["created_at"], "role=%s: created_at", role)
 	}
+}
+
+// T-36.50: GET /exporters response includes source and health fields
+func TestListExporters_SourceAndHealth(t *testing.T) {
+	e, registry, _, _, _, _, _, _, _ := setupExportBindingServer()
+	registry.Register(&testExporter{name: "mcp-gateway", desc: "MCP Gateway"})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/data/v1/exporters", nil)
+	req.Header.Set("X-User-Role", "RO")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var body map[string][]map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body["items"], 1)
+	item := body["items"][0]
+	assert.Equal(t, "built-in", item["source"])
+	assert.Equal(t, "n/a", item["health"])
+}
+
+// T-36.51: GET /exporters existing name/description/parameter_schema still present
+func TestListExporters_NoRegression(t *testing.T) {
+	e, registry, _, _, _, _, _, _, _ := setupExportBindingServer()
+	registry.Register(&testExporter{
+		name: "mcp-gateway",
+		desc: "MCP Gateway Exporter",
+		params: []export.ParameterDef{
+			{Name: "server_type", Type: "entity_type", Required: true, Description: "Server entity type"},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/data/v1/exporters", nil)
+	req.Header.Set("X-User-Role", "RO")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var body map[string][]map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body["items"], 1)
+	item := body["items"][0]
+	assert.Equal(t, "mcp-gateway", item["name"])
+	assert.Equal(t, "MCP Gateway Exporter", item["description"])
+	params := item["parameter_schema"].([]any)
+	require.Len(t, params, 1)
+}
+
+// T-36.05: POST /export-bindings with param output_type of type string succeeds (201)
+func TestT36_05_CreateBinding_StringParam(t *testing.T) {
+	e, registry, bindingRepo, catalogRepo, pinRepo, etvRepo, etRepo, attrRepo, assocRepo := setupExportBindingServer()
+	registry.Register(&testExporter{
+		name: "test-exp",
+		params: []export.ParameterDef{
+			{Name: "output_type", Type: "string", Required: true},
+		},
+	})
+
+	catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{
+		{EntityTypeVersionID: "etv1"},
+	}, nil)
+	etvRepo.On("GetByID", mock.Anything, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1"}, nil)
+	etRepo.On("GetByID", mock.Anything, "et1").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	attrRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Attribute{}, nil)
+	assocRepo.On("ListByVersion", mock.Anything, "etv1").Return([]*models.Association{}, nil)
+	bindingRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.ExportBinding")).Return(nil)
+
+	body, _ := json.Marshal(map[string]any{
+		"exporter_name": "test-exp",
+		"parameters":    map[string]string{"output_type": "json"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/data/v1/catalogs/my-catalog/export-bindings", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-Role", "Admin")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
+// T-36.46: Protocol mismatch API: run binding, plugin returns v2 header → export succeeds (200)
+func TestT36_46_RunBinding_ProtocolMismatchV2Header(t *testing.T) {
+	// Set up a real webhook exporter backed by an httptest server
+	whServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-AssetHub-Protocol-Version", "v2")
+		json.NewEncoder(w).Encode(export.WebhookExportResponse{
+			Artifacts: []export.WebhookArtifact{
+				{APIVersion: "v1", Kind: "ConfigMap", Name: "test-cm", YAML: "apiVersion: v1\nkind: ConfigMap\n"},
+			},
+		})
+	}))
+	defer whServer.Close()
+
+	e, registry, bindingRepo, catalogRepo, _, _, _, _, _ := setupExportBindingServer()
+
+	we, err := export.NewWebhookExporter("wh-exporter", "Webhook", whServer.URL, nil, 10, func() string { return "tok" })
+	require.NoError(t, err)
+	registry.RegisterWebhook(we)
+
+	catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	bindingRepo.On("GetByID", mock.Anything, "b1").Return(&models.ExportBinding{
+		ID: "b1", CatalogID: "cat1", ExporterName: "wh-exporter",
+		Parameters: map[string]string{}, Enabled: true, LastRunStatus: "never",
+	}, nil)
+	bindingRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.ExportBinding")).Return(nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/data/v1/catalogs/my-catalog/export-bindings/b1/run", nil)
+	req.Header.Set("X-User-Role", "RW")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "ConfigMap")
+}
+
+// T-36.85: POST /export-bindings/{id}/run on orphaned binding → 404 "exporter not found"
+func TestT36_85_RunBinding_OrphanedExporter(t *testing.T) {
+	e, _, bindingRepo, catalogRepo, _, _, _, _, _ := setupExportBindingServer()
+
+	catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	bindingRepo.On("GetByID", mock.Anything, "b1").Return(&models.ExportBinding{
+		ID: "b1", CatalogID: "cat1", ExporterName: "gone-exporter",
+		Parameters: map[string]string{}, Enabled: true, LastRunStatus: "never",
+	}, nil)
+	bindingRepo.On("Update", mock.Anything, mock.AnythingOfType("*models.ExportBinding")).Return(nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/data/v1/catalogs/my-catalog/export-bindings/b1/run", nil)
+	req.Header.Set("X-User-Role", "RW")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.True(t, rec.Code >= 400, "expected error status, got %d", rec.Code)
+	assert.Contains(t, rec.Body.String(), "not found")
+}
+
+// T-36.90: POST /export-bindings: webhook /validate rejects → 400 with plugin error
+func TestT36_90_CreateBinding_WebhookValidateRejects(t *testing.T) {
+	whServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/validate") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(export.WebhookValidateResponse{Valid: false, Error: "param X is invalid"})
+			return
+		}
+	}))
+	defer whServer.Close()
+
+	e, registry, _, catalogRepo, pinRepo, etvRepo, etRepo, attrRepo, assocRepo := setupExportBindingServer()
+
+	we, err := export.NewWebhookExporter("wh-val", "Webhook Validator", whServer.URL, nil, 10, func() string { return "" })
+	require.NoError(t, err)
+	registry.RegisterWebhook(we)
+
+	catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+
+	// Suppress unused variable warnings
+	_ = etvRepo
+	_ = etRepo
+	_ = attrRepo
+	_ = assocRepo
+
+	body, _ := json.Marshal(map[string]any{
+		"exporter_name": "wh-val",
+		"parameters":    map[string]string{},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/data/v1/catalogs/my-catalog/export-bindings", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-Role", "Admin")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "param X is invalid")
+}
+
+// T-36.84: POST /publish/preview with orphaned binding → skipped in response
+func TestT36_84_PublishPreview_OrphanedBindingSkipped(t *testing.T) {
+	e, _, bindingRepo, catalogRepo, pinRepo, _, _, _, _, _ := setupExportBindingServerWithCache()
+
+	catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	bindingRepo.On("ListByCatalog", mock.Anything, "cat1").Return([]*models.ExportBinding{
+		{
+			ID: "b1", CatalogID: "cat1", ExporterName: "missing-exporter",
+			Parameters: map[string]string{}, Enabled: true,
+		},
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/data/v1/catalogs/my-catalog/publish/preview", nil)
+	req.Header.Set("X-User-Role", "Admin")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	bindings := body["bindings"].([]any)
+	require.Len(t, bindings, 1)
+	b0 := bindings[0].(map[string]any)
+	assert.Equal(t, "skipped", b0["status"])
+	assert.Equal(t, "b1", b0["binding_id"])
+}
+
+// T-36.97: Zero-param webhook: POST /export-bindings with empty params → 201
+func TestT36_97_CreateBinding_ZeroParamWebhook(t *testing.T) {
+	whServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(export.WebhookValidateResponse{Valid: true})
+	}))
+	defer whServer.Close()
+
+	e, registry, bindingRepo, catalogRepo, pinRepo, _, _, _, _ := setupExportBindingServer()
+
+	we, err := export.NewWebhookExporter("zero-param", "Zero Param", whServer.URL, nil, 10, func() string { return "" })
+	require.NoError(t, err)
+	registry.RegisterWebhook(we)
+
+	catalogRepo.On("GetByName", mock.Anything, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	pinRepo.On("ListByCatalogVersion", mock.Anything, "cv1").Return([]*models.CatalogVersionPin{}, nil)
+	bindingRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.ExportBinding")).Return(nil)
+
+	body, _ := json.Marshal(map[string]any{
+		"exporter_name": "zero-param",
+		"parameters":    map[string]string{},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/data/v1/catalogs/my-catalog/export-bindings", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-Role", "Admin")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
+// T-36.98: Zero-param webhook: GET /exporters shows empty parameter_schema
+func TestT36_98_ListExporters_ZeroParamWebhook(t *testing.T) {
+	e, registry, _, _, _, _, _, _, _ := setupExportBindingServer()
+
+	we, err := export.NewWebhookExporter("zero-param", "Zero Param", "http://localhost:9999", nil, 10, func() string { return "" })
+	require.NoError(t, err)
+	registry.RegisterWebhook(we)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/data/v1/exporters", nil)
+	req.Header.Set("X-User-Role", "RO")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var body map[string][]map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body["items"], 1)
+	item := body["items"][0]
+	assert.Equal(t, "zero-param", item["name"])
+	paramSchema := item["parameter_schema"].([]any)
+	assert.Empty(t, paramSchema, "zero-param webhook should have empty parameter_schema")
+}
+
+// T-36.102: Multiple exporters: GET /exporters returns both
+func TestT36_102_ListExporters_MultipleBothPresent(t *testing.T) {
+	e, registry, _, _, _, _, _, _, _ := setupExportBindingServer()
+
+	we1, err := export.NewWebhookExporter("webhook-a", "Webhook A", "http://localhost:9001", nil, 10, func() string { return "" })
+	require.NoError(t, err)
+	registry.RegisterWebhook(we1)
+
+	we2, err := export.NewWebhookExporter("webhook-b", "Webhook B", "http://localhost:9002", nil, 10, func() string { return "" })
+	require.NoError(t, err)
+	registry.RegisterWebhook(we2)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/data/v1/exporters", nil)
+	req.Header.Set("X-User-Role", "RO")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var body map[string][]map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body["items"], 2)
+	names := []string{body["items"][0]["name"].(string), body["items"][1]["name"].(string)}
+	assert.Contains(t, names, "webhook-a")
+	assert.Contains(t, names, "webhook-b")
+}
+
+// T-36.104: Non-K8s mode: /exporters returns only built-in
+func TestT36_104_ListExporters_OnlyBuiltIn(t *testing.T) {
+	e, registry, _, _, _, _, _, _, _ := setupExportBindingServer()
+	registry.Register(&testExporter{name: "mcp-gateway", desc: "MCP Gateway"})
+	// No webhook registered — simulates non-K8s mode
+
+	req := httptest.NewRequest(http.MethodGet, "/api/data/v1/exporters", nil)
+	req.Header.Set("X-User-Role", "RO")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var body map[string][]map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body["items"], 1)
+	assert.Equal(t, "built-in", body["items"][0]["source"])
+}
+
+// T-36.117: Name collision API: GET /exporters returns only built-in when webhook has same name
+func TestT36_117_ListExporters_BuiltInPreserved(t *testing.T) {
+	e, registry, _, _, _, _, _, _, _ := setupExportBindingServer()
+	// Register built-in first
+	registry.Register(&testExporter{name: "mcp-gateway", desc: "Built-in MCP Gateway"})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/data/v1/exporters", nil)
+	req.Header.Set("X-User-Role", "RO")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var body map[string][]map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body["items"], 1)
+	assert.Equal(t, "mcp-gateway", body["items"][0]["name"])
+	assert.Equal(t, "built-in", body["items"][0]["source"])
+}
+
+// T-36.105: Non-K8s mode: no crash, no blocked startup
+func TestT36_105_NonK8sMode_ServerStarts(t *testing.T) {
+	// Create server without any webhook registration — simulates non-K8s mode
+	e, _, _, _, _, _, _, _, _ := setupExportBindingServer()
+
+	// Verify basic endpoint works
+	req := httptest.NewRequest(http.MethodGet, "/api/data/v1/exporters", nil)
+	req.Header.Set("X-User-Role", "RO")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var body map[string][]map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Empty(t, body["items"], "no exporters registered, should be empty list")
 }

@@ -264,8 +264,8 @@ func TestRunAll_ExecuteBinding_ExporterNotFound(t *testing.T) {
 	results, err := s.svc.RunAll(ctx, "my-catalog")
 	require.NoError(t, err)
 	require.Len(t, results, 1)
-	assert.Equal(t, "failed", results[0].Status)
-	assert.Contains(t, results[0].Error, "missing-exporter")
+	assert.Equal(t, export.BindingStatusSkipped, results[0].Status)
+	assert.Contains(t, results[0].Error, "not registered")
 }
 
 func TestRunAll_ExecuteBinding_BuildInputError(t *testing.T) {
@@ -345,7 +345,7 @@ func TestCreate_RepoCreateError(t *testing.T) {
 	s.registry.Register(&stubExporter{
 		name: "mcp-gateway",
 		params: []export.ParameterDef{
-			{Name: "server_type", Type: "string", Required: true},
+			{Name: "server_type", Type: "entity_type", Required: true},
 		},
 	})
 
@@ -957,7 +957,7 @@ func TestMCPGateway_ValidateSchema_ServerTypeNotFound(t *testing.T) {
 			{Name: "other-type", Attributes: []string{"route_name"}},
 		},
 	}
-	err := e.ValidateSchema(map[string]string{"server_type": "mcp-server", "tool_type": "mcp-tool"}, schema)
+	err := e.ValidateSchema(context.Background(), map[string]string{"server_type": "mcp-server", "tool_type": "mcp-tool"}, schema)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "mcp-server")
 	assert.Contains(t, err.Error(), "not found")
@@ -980,7 +980,7 @@ func TestMCPGateway_ValidateSchema_ResolveTargetNameFallback(t *testing.T) {
 			{Name: "mcp-tool"},
 		},
 	}
-	err := e.ValidateSchema(map[string]string{
+	err := e.ValidateSchema(context.Background(), map[string]string{
 		"server_type": "mcp-server",
 		"tool_type":   "mcp-tool",
 	}, schema)
@@ -1123,22 +1123,12 @@ func TestExecuteBinding_ExporterNotFound_UsesDomainError(t *testing.T) {
 		{ID: "b1", CatalogID: "cat1", ExporterName: "nonexistent", Parameters: map[string]string{}, Enabled: true},
 	}, nil)
 
-	// Capture the binding passed to Update so we can inspect the error stored on it
-	var capturedBinding *models.ExportBinding
-	s.bindingRepo.On("Update", ctx, mock.AnythingOfType("*models.ExportBinding")).Run(func(args mock.Arguments) {
-		capturedBinding = args.Get(1).(*models.ExportBinding)
-	}).Return(nil)
-
 	results, err := s.svc.RunAll(ctx, "my-catalog")
 	require.NoError(t, err)
 	require.Len(t, results, 1)
-	assert.Equal(t, "failed", results[0].Status)
-	assert.Contains(t, results[0].Error, "nonexistent")
-
-	// The error stored on the binding should be a VALIDATION prefix, not a raw fmt.Errorf
-	require.NotNil(t, capturedBinding)
-	assert.Equal(t, "failed", capturedBinding.LastRunStatus)
-	assert.Contains(t, capturedBinding.LastRunError, "VALIDATION")
+	// Orphaned bindings are now skipped in RunAll (not failed)
+	assert.Equal(t, export.BindingStatusSkipped, results[0].Status)
+	assert.Contains(t, results[0].Error, "not registered")
 }
 
 // C4: Concurrent Retrieve on expired entry should not race
@@ -1209,7 +1199,7 @@ func TestMCPGateway_ValidateSchema_ReturnsValidationError(t *testing.T) {
 	schema := export.SchemaInfo{
 		EntityTypes: []export.SchemaEntityType{{Name: "server"}},
 	}
-	err := e.ValidateSchema(map[string]string{"server_type": "nonexistent", "tool_type": "tool"}, schema)
+	err := e.ValidateSchema(context.Background(), map[string]string{"server_type": "nonexistent", "tool_type": "tool"}, schema)
 	require.Error(t, err)
 	assert.True(t, domainerrors.IsValidation(err), "ValidateSchema error should be a domain validation error, got: %T", err)
 }
@@ -1261,7 +1251,7 @@ func TestMCPGateway_ValidateSchema_VSTypeNotInCV(t *testing.T) {
 			// virtual-server NOT in schema
 		},
 	}
-	err := e.ValidateSchema(map[string]string{
+	err := e.ValidateSchema(context.Background(), map[string]string{
 		"server_type":         "mcp-server",
 		"tool_type":           "mcp-tool",
 		"virtual_server_type": "virtual-server",
@@ -1288,7 +1278,7 @@ func TestMCPGateway_ValidateSchema_VSTypeNoAssocToTool(t *testing.T) {
 			{Name: "virtual-server"}, // no association to mcp-tool
 		},
 	}
-	err := e.ValidateSchema(map[string]string{
+	err := e.ValidateSchema(context.Background(), map[string]string{
 		"server_type":         "mcp-server",
 		"tool_type":           "mcp-tool",
 		"virtual_server_type": "virtual-server",
@@ -1319,7 +1309,7 @@ func TestMCPGateway_ValidateSchema_VSTypeWithAssocToTool(t *testing.T) {
 			},
 		},
 	}
-	err := e.ValidateSchema(map[string]string{
+	err := e.ValidateSchema(context.Background(), map[string]string{
 		"server_type":         "mcp-server",
 		"tool_type":           "mcp-tool",
 		"virtual_server_type": "virtual-server",
@@ -1400,10 +1390,12 @@ func TestRun_VSInstancePicksCorrectEntityType(t *testing.T) {
 
 	// Links from the correct VS instance (et-vs), not from the server
 	linkRepo.On("GetForwardRefs", ctx, "inst-vs").Return([]*models.AssociationLink{
-		{ID: "link1", TargetInstanceID: "tool1"},
+		{ID: "link1", AssociationID: "assoc1", TargetInstanceID: "tool1"},
 	}, nil)
 	// If the bug exists, the code calls GetForwardRefs with "inst-server" instead
 	linkRepo.On("GetForwardRefs", ctx, "inst-server").Return([]*models.AssociationLink{}, nil)
+	// buildInstancesByType now resolves links for all instances
+	s.assocRepo.On("GetByID", ctx, "assoc1").Return(&models.Association{ID: "assoc1", Name: "allowed-tools"}, nil).Maybe()
 
 	// buildExportInput needs iavRepo for attribute resolution
 	iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
@@ -1412,9 +1404,8 @@ func TestRun_VSInstancePicksCorrectEntityType(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, out)
 
-	// Verify the link repo was called with the VS instance ID, not the server instance ID
+	// Verify the link repo was called with the VS instance ID for resolveVSInstanceTools
 	linkRepo.AssertCalled(t, "GetForwardRefs", ctx, "inst-vs")
-	linkRepo.AssertNotCalled(t, "GetForwardRefs", ctx, "inst-server")
 }
 
 func TestBuildExportInput_LinksByAssocNotNil(t *testing.T) {
@@ -1649,4 +1640,241 @@ func TestResolveVSInstanceTools_GetForwardRefsError(t *testing.T) {
 	_, err := svc.Run(ctx, "my-catalog", "b1", "some-vs")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "link db error")
+}
+
+// --- Coverage: resolveLinks error propagated from buildInstancesByType (L563-564, L616-618) ---
+
+func TestRun_BuildInstancesByType_ResolveLinksFwdRefsError(t *testing.T) {
+	// When linkRepo is set and GetForwardRefs fails, buildInstancesByType should
+	// propagate the error (L563-564 in buildInstancesByType, L616-618 in resolveLinks).
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	iavRepo := new(mocks.MockInstanceAttributeValueRepo)
+	linkRepo := new(mocks.MockAssociationLinkRepo)
+
+	s := setupBindingService()
+	svc := export.NewExportBindingService(
+		s.bindingRepo, s.catalogRepo, s.registry,
+		s.cvRepo, s.pinRepo, s.etvRepo, s.etRepo,
+		s.attrRepo, s.assocRepo,
+		export.WithInstanceRepos(instRepo, iavRepo),
+		export.WithLinkRepo(linkRepo),
+	)
+	ctx := context.Background()
+
+	s.registry.Register(&stubExporter{name: "test-exp", exportOut: &export.ExportOutput{}})
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.bindingRepo.On("GetByID", ctx, "b1").Return(&models.ExportBinding{
+		ID: "b1", CatalogID: "cat1", ExporterName: "test-exp",
+		Parameters: map[string]string{}, Enabled: true,
+	}, nil)
+	s.bindingRepo.On("Update", ctx, mock.AnythingOfType("*models.ExportBinding")).Return(nil)
+
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1"}, nil)
+	s.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+
+	instRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.EntityInstance{
+		{ID: "i1", EntityTypeID: "et1", Name: "server1", Version: 1},
+	}, nil)
+	iavRepo.On("GetValuesForVersion", ctx, "i1", 1).Return([]*models.InstanceAttributeValue{}, nil)
+	linkRepo.On("GetForwardRefs", ctx, "i1").Return(nil, fmt.Errorf("link fwd error"))
+
+	_, err := svc.Run(ctx, "my-catalog", "b1", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "link fwd error")
+}
+
+// --- Coverage: resolveLinks assocRepo.GetByID error -> continue (L623-624) ---
+
+func TestRun_BuildInstancesByType_ResolveLinksAssocLookupError(t *testing.T) {
+	// When assocRepo.GetByID fails for a link's association, the link should be
+	// skipped (continue at L623-624) and the export should still succeed.
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	iavRepo := new(mocks.MockInstanceAttributeValueRepo)
+	linkRepo := new(mocks.MockAssociationLinkRepo)
+
+	s := setupBindingService()
+	svc := export.NewExportBindingService(
+		s.bindingRepo, s.catalogRepo, s.registry,
+		s.cvRepo, s.pinRepo, s.etvRepo, s.etRepo,
+		s.attrRepo, s.assocRepo,
+		export.WithInstanceRepos(instRepo, iavRepo),
+		export.WithLinkRepo(linkRepo),
+	)
+	ctx := context.Background()
+
+	s.registry.Register(&stubExporter{
+		name:      "test-exp",
+		exportOut: &export.ExportOutput{Artifacts: []export.K8sArtifact{{Name: "a", YAML: "test: true"}}},
+	})
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.bindingRepo.On("GetByID", ctx, "b1").Return(&models.ExportBinding{
+		ID: "b1", CatalogID: "cat1", ExporterName: "test-exp",
+		Parameters: map[string]string{}, Enabled: true,
+	}, nil)
+	s.bindingRepo.On("Update", ctx, mock.AnythingOfType("*models.ExportBinding")).Return(nil)
+
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1"}, nil)
+	s.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+
+	instRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.EntityInstance{
+		{ID: "i1", EntityTypeID: "et1", Name: "server1", Version: 1},
+	}, nil)
+	iavRepo.On("GetValuesForVersion", ctx, "i1", 1).Return([]*models.InstanceAttributeValue{}, nil)
+	linkRepo.On("GetForwardRefs", ctx, "i1").Return([]*models.AssociationLink{
+		{ID: "link1", AssociationID: "assoc-bad", TargetInstanceID: "i2"},
+	}, nil)
+	// assocRepo.GetByID fails for this association
+	s.assocRepo.On("GetByID", ctx, "assoc-bad").Return(nil, fmt.Errorf("assoc lookup error"))
+
+	out, err := svc.Run(ctx, "my-catalog", "b1", "")
+	require.NoError(t, err) // should succeed — link was skipped
+	require.NotNil(t, out)
+}
+
+// --- Coverage: resolveLinks target found in instanceByID (L631-634) ---
+
+func TestRun_BuildInstancesByType_ResolveLinksTargetResolved(t *testing.T) {
+	// When a link's target instance exists in the same catalog, resolveLinks
+	// should resolve the target name and entity type (L631-634).
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	iavRepo := new(mocks.MockInstanceAttributeValueRepo)
+	linkRepo := new(mocks.MockAssociationLinkRepo)
+
+	var capturedInput export.ExportInput
+	capturingExporter := &stubExporter{
+		name: "capturer",
+		exportFn: func(_ context.Context, input export.ExportInput) (*export.ExportOutput, error) {
+			capturedInput = input
+			return &export.ExportOutput{Artifacts: []export.K8sArtifact{{Name: "a", YAML: "test: true"}}}, nil
+		},
+	}
+
+	s := setupBindingService()
+	s.registry.Register(capturingExporter)
+
+	svc := export.NewExportBindingService(
+		s.bindingRepo, s.catalogRepo, s.registry,
+		s.cvRepo, s.pinRepo, s.etvRepo, s.etRepo,
+		s.attrRepo, s.assocRepo,
+		export.WithInstanceRepos(instRepo, iavRepo),
+		export.WithLinkRepo(linkRepo),
+	)
+	ctx := context.Background()
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.bindingRepo.On("GetByID", ctx, "b1").Return(&models.ExportBinding{
+		ID: "b1", CatalogID: "cat1", ExporterName: "capturer",
+		Parameters: map[string]string{}, Enabled: true,
+	}, nil)
+	s.bindingRepo.On("Update", ctx, mock.AnythingOfType("*models.ExportBinding")).Return(nil)
+
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1"}, nil)
+	s.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{}, nil)
+
+	// Two instances in the catalog — one links to the other
+	instRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.EntityInstance{
+		{ID: "i1", EntityTypeID: "et1", Name: "server1", Version: 1},
+		{ID: "i2", EntityTypeID: "et1", Name: "server2", Version: 1},
+	}, nil)
+	iavRepo.On("GetValuesForVersion", ctx, mock.Anything, mock.Anything).Return([]*models.InstanceAttributeValue{}, nil)
+	// i1 has a link to i2
+	linkRepo.On("GetForwardRefs", ctx, "i1").Return([]*models.AssociationLink{
+		{ID: "link1", AssociationID: "assoc1", TargetInstanceID: "i2"},
+	}, nil)
+	linkRepo.On("GetForwardRefs", ctx, "i2").Return([]*models.AssociationLink{}, nil)
+	s.assocRepo.On("GetByID", ctx, "assoc1").Return(&models.Association{ID: "assoc1", Name: "depends-on"}, nil)
+
+	out, err := svc.Run(ctx, "my-catalog", "b1", "")
+	require.NoError(t, err)
+	require.NotNil(t, out)
+
+	// Verify the link was resolved with the target's name and entity type
+	serverInstances := capturedInput.InstancesByType["server"]
+	require.NotEmpty(t, serverInstances)
+	// Find the instance with the link
+	for _, inst := range serverInstances {
+		if inst.ID == "i1" {
+			links := inst.LinksByAssoc["depends-on"]
+			require.Len(t, links, 1)
+			assert.Equal(t, "i2", links[0].TargetInstanceID)
+			assert.Equal(t, "server2", links[0].TargetInstanceName, "target name should be resolved")
+			assert.Equal(t, "server", links[0].TargetEntityType, "target ET should be resolved")
+			return
+		}
+	}
+	t.Fatal("instance i1 not found in captured input")
+}
+
+// --- Coverage: resolveAttributes with nil iavRepo (L588-590) ---
+
+func TestRun_BuildInstancesByType_ResolveAttrsNilIAVRepo(t *testing.T) {
+	// When iavRepo is nil but linkRepo is set, resolveAttributes should return
+	// empty map (L588-590) and the export should still succeed.
+	instRepo := new(mocks.MockEntityInstanceRepo)
+	linkRepo := new(mocks.MockAssociationLinkRepo)
+
+	s := setupBindingService()
+	// Use WithInstanceRepos with nil iavRepo — but we need to pass instRepo without iavRepo.
+	// WithInstanceRepos sets both. Let's check if we can pass nil for iavRepo.
+	svc := export.NewExportBindingService(
+		s.bindingRepo, s.catalogRepo, s.registry,
+		s.cvRepo, s.pinRepo, s.etvRepo, s.etRepo,
+		s.attrRepo, s.assocRepo,
+		export.WithInstanceRepos(instRepo, nil),
+		export.WithLinkRepo(linkRepo),
+	)
+	ctx := context.Background()
+
+	s.registry.Register(&stubExporter{
+		name:      "test-exp",
+		exportOut: &export.ExportOutput{Artifacts: []export.K8sArtifact{{Name: "a", YAML: "test: true"}}},
+	})
+
+	s.catalogRepo.On("GetByName", ctx, "my-catalog").Return(&models.Catalog{
+		ID: "cat1", Name: "my-catalog", CatalogVersionID: "cv1",
+	}, nil)
+	s.bindingRepo.On("GetByID", ctx, "b1").Return(&models.ExportBinding{
+		ID: "b1", CatalogID: "cat1", ExporterName: "test-exp",
+		Parameters: map[string]string{}, Enabled: true,
+	}, nil)
+	s.bindingRepo.On("Update", ctx, mock.AnythingOfType("*models.ExportBinding")).Return(nil)
+
+	s.pinRepo.On("ListByCatalogVersion", ctx, "cv1").Return([]*models.CatalogVersionPin{
+		{EntityTypeVersionID: "etv1"},
+	}, nil)
+	s.etvRepo.On("GetByID", ctx, "etv1").Return(&models.EntityTypeVersion{ID: "etv1", EntityTypeID: "et1"}, nil)
+	s.etRepo.On("GetByID", ctx, "et1").Return(&models.EntityType{ID: "et1", Name: "server"}, nil)
+	s.attrRepo.On("ListByVersion", ctx, "etv1").Return([]*models.Attribute{
+		{ID: "a1", Name: "hostname"},
+	}, nil)
+
+	instRepo.On("ListByCatalog", ctx, "cat1").Return([]*models.EntityInstance{
+		{ID: "i1", EntityTypeID: "et1", Name: "server1", Version: 1},
+	}, nil)
+	// iavRepo is nil — resolveAttributes should return empty map at L588-590
+	linkRepo.On("GetForwardRefs", ctx, "i1").Return([]*models.AssociationLink{}, nil)
+
+	out, err := svc.Run(ctx, "my-catalog", "b1", "")
+	require.NoError(t, err)
+	require.NotNil(t, out)
 }

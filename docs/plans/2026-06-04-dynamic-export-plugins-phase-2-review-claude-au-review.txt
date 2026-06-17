@@ -1,0 +1,168 @@
+Now I have the complete picture. The test plan has been substantially expanded — ~100 lines of new content with cross-step tests, negative CRD validation, non-K8s mode, live RBAC verification, and documented gaps. Let me do the full adversarial review.
+
+================================================================
+Summary
+================================================================
+
+The test plan for FF-15 Phase 2 has been significantly improved from an earlier iteration. It now covers cross-cutting concerns (validate flow, unhealthy vs deregistered, zero-param exporters, multiple exporters, non-K8s mode), has explicit negative CRD tests, live RBAC SA verification, and a transparent "documented test gaps" section. The coverage matrix has 25 rows covering the feature across all five layers.
+
+The plan is strong overall. The remaining issues fall into two categories: (1) contradictions between the test plan and its context documents (design spec + impl plan) that would confuse the implementer, and (2) a handful of missing tests for failure modes that are unique to the webhook pattern and don't have analogs in the built-in exporter path.
+
+================================================================
+Critical Findings
+================================================================
+
+1. **classifyHealthResult 401/403 classification contradicts implementation plan**
+
+   The test plan (Step 8) specifies: `401/403 → Error with "authentication rejected"`.
+   The implementation plan's `classifyHealthResult` has four cases: `200→Ready`, `non-200→Unhealthy`, `timeout→Unhealthy`, `connection error→Error`. Under the impl plan, a 401 would be classified as `Unhealthy` (it's a non-200 HTTP response), not `Error`.
+
+   This matters because the test will be written before the implementation (TDD). If the developer follows the impl plan, the test fails. If they follow the test plan, the impl plan is wrong. One must be updated to match the other.
+
+   The test plan's classification is arguably better (401/403 = misconfiguration, not transient), but it must be reconciled with the impl plan before implementation starts.
+
+   **Location:** Section 5.53, Step 8, line 1281
+   **Fix:** Update the implementation plan's `classifyHealthResult` to include an explicit 401/403 case, or change the test plan to match the impl plan's `non-200→Unhealthy`.
+
+2. **UpdateBinding for an orphaned exporter — untested silent failure path**
+
+   Step 9 tests RunAll, PublishPreview, and RunBinding with orphaned exporters. But `UpdateBinding` calls `validateBindingParams` (binding_service.go:186), which calls `registry.Get()` (line 118-119). If the exporter is deregistered, `Get()` returns not-found, and `validateBindingParams` returns `"exporter not found"` error.
+
+   This means a user cannot update parameters on a binding whose webhook exporter has been temporarily removed (e.g., during a redeployment). They can't even disable/enable it, because `UpdateBinding` validates before applying any change. The only option is to delete the orphaned binding and recreate it after the exporter returns.
+
+   This is a real user-facing behavior gap that affects operations — and there's no test for it.
+
+   **Location:** Section 5.53, Step 9 — no mention of UpdateBinding
+   **Fix:** Add test: `UpdateBinding` on orphaned binding with `params=nil, enabled=&false` (disable only) → currently fails with "exporter not found". Decide if this is intended behavior (document it) or a bug (fix it: skip validation when only changing enabled flag).
+
+================================================================
+High Findings
+================================================================
+
+3. **No test for Content-Type header on webhook requests**
+
+   The WebhookExporter adapter sends HTTP POST requests to `/validate` and `/export`. The test plan verifies the `X-AssetHub-Protocol-Version` and `Authorization` headers are present. But it doesn't verify `Content-Type: application/json` is set on outgoing requests.
+
+   If the adapter forgets to set Content-Type, many web frameworks (including Go's net/http default) will send `application/octet-stream` or omit it entirely. A plugin written in Python/Flask or Node/Express might reject the request or fail to parse the JSON body.
+
+   **Location:** Section 5.53, Step 4, line 1237
+   **Fix:** Add test: verify outgoing POST requests include `Content-Type: application/json` header.
+
+4. **No test for response Content-Type validation**
+
+   The adapter reads the response body and tries to JSON-unmarshal it. But no test verifies behavior when the plugin returns a non-JSON Content-Type (e.g., `text/html` from a misconfigured reverse proxy, or `text/plain` from an error page).
+
+   In practice, when a K8s Service routes to the wrong pod or the plugin crashes, the response is often an HTML error page that will fail JSON parsing. The current test "malformed JSON" covers the parsing failure, but the error message ("not valid JSON") won't help the user diagnose that they got an HTML page.
+
+   **Location:** Section 5.53, Step 4, line 1237
+   **Fix:** Add test: plugin returns `Content-Type: text/html` with HTML body → error message should hint at the Content-Type mismatch, not just "not valid JSON".
+
+5. **No test for empty 200 response body from /export**
+
+   Step 4 tests oversized responses and malformed JSON, but not an empty 200 body (zero bytes). This is a real failure mode — some HTTP frameworks return 200 with an empty body on unhandled routes. `json.Unmarshal([]byte(""), &resp)` returns `unexpected end of JSON input`, which would surface as the generic "not valid JSON" error.
+
+   **Location:** Section 5.53, Step 4, line 1237
+   **Fix:** Add test: plugin returns 200 with empty body → error message clearly indicates empty response.
+
+6. **Catalog import with webhook exporter bindings — not tested, not acknowledged**
+
+   The design spec (Cross-Feature Interactions table) says: "On import to a system without the webhook exporter, bindings are orphaned (warning)." The design review (finding E5) proved this claim is wrong — `validateBindingParams` fails on missing exporters, so import fails entirely.
+
+   The test plan covers the import/export feature extensively in section 5.51 (US-55/56) but adds no new tests for webhook-exporter bindings in section 5.53. Neither the "documented test gaps" section nor any cross-step test addresses this.
+
+   **Location:** Section 5.53, missing entirely
+   **Fix:** Add cross-step test: export a catalog with a webhook exporter binding → import into a system where that exporter doesn't exist → verify behavior (fail? skip? create orphaned?). If the behavior is "fail", document it and update the design spec. If "create orphaned", the import service needs a code change.
+
+================================================================
+Medium Findings
+================================================================
+
+7. **TrustedSubjects tested for DeepCopy but never functionally tested**
+
+   Step 6 tests `nil slices handled (ParameterSchema, TrustedSubjects)`. But no test anywhere in the plan tests what TrustedSubjects *does*. The implementation plan doesn't explain it either. Either:
+   - TrustedSubjects is dead weight on the CRD (remove it), or
+   - It has a purpose that should be tested
+
+   Testing DeepCopy of a field with no functional tests creates the illusion of coverage without actually verifying behavior.
+
+   **Location:** Section 5.53, Step 6, line 1247
+   **Fix:** Either remove TrustedSubjects from the CRD spec and tests, or add functional tests that verify its purpose.
+
+8. **VS filtering parity test is in the wrong location**
+
+   The coverage matrix has a row "FF-15 P2: VS filtering parity" marked as Unit only. The test is described in Step 4 (WebhookExporter adapter) as: "Verify VS filtering parity: given an ExportInput with AllowedToolIDs set, ExportInputToWebhookRequest produces InstancesByType/ChildrenOf that match the pre-filtered built-in path."
+
+   But VS filtering happens in `buildExportInput` / `resolveVSInstanceTools` (binding_service.go:255-292), which runs *before* the exporter is called. The ExportInput passed to both built-in and webhook exporters should already be identical. The conversion function `ExportInputToWebhookRequest` just serializes whatever it receives — it doesn't filter.
+
+   The test as described tests serialization, not filtering. The real parity question is: does `buildExportInput` produce the same ExportInput regardless of whether the exporter is built-in or webhook? The answer is yes (the service layer doesn't know the exporter type), but the test description implies the conversion function does the filtering.
+
+   **Location:** Section 5.53, Step 4, line 1237
+   **Fix:** Clarify: the test should verify that `ExportInputToWebhookRequest` faithfully serializes the pre-filtered ExportInput (including AllowedToolIDs-filtered instances), not that it performs the filtering itself.
+
+9. **No test for webhook exporter name derivation**
+
+   Step 10 tests `handleAdd` registering a webhook with correct properties. But the test doesn't specify where the exporter *name* comes from. Is it `cr.ObjectMeta.Name`? A field in `cr.Spec`? The design spec says the CRD has `metadata.name: my-custom-exporter`, implying the K8s resource name IS the exporter name. But this is never made explicit or tested.
+
+   If the name comes from `metadata.name`, it's DNS-subdomain format (lowercase, hyphens, max 253 chars). If it comes from a spec field, it could be anything. This affects binding references — `ExportBinding.ExporterName` stores the name permanently.
+
+   **Location:** Section 5.53, Step 10, line 1290
+   **Fix:** Add test: verify the registered exporter's `Name()` matches `cr.ObjectMeta.Name` (or whichever field is the source). Document this decision.
+
+10. **Orphaned binding handling: no test for single RunBinding**
+
+    Step 9 tests RunAll and PublishPreview with orphaned bindings. But `RunBinding` (single binding execution, binding_service.go:210-253) already handles missing exporters at line 224-229, producing a "failed" status with the "exporter not found" error. This existing behavior is *different* from the new "skipped" behavior in RunAll.
+
+    The test plan should verify this asymmetry is intentional: RunBinding = failed (user explicitly tried to run it), RunAll = skipped (batch operation, don't penalize the user for a missing exporter). Without a test, a developer might "fix" RunBinding to also return "skipped", breaking the UX.
+
+    **Location:** Section 5.53, Step 9
+    **Fix:** Add test: `RunBinding` on orphaned binding → `BindingStatusFailed` with "exporter not found" (NOT skipped). Document the intentional asymmetry between single-run and batch-run.
+
+11. **No test for HTTP redirect responses from webhook plugins**
+
+    The adapter uses `http.Client` which follows redirects by default (up to 10). A misconfigured plugin behind an auth proxy could return a 302 redirect to a login page. The adapter would follow the redirect, get an HTML login page, and fail with "not valid JSON".
+
+    This is a confusing failure mode. The test plan should either:
+    - Test that redirects are followed and the final response is processed
+    - Test that redirects are not followed (set `CheckRedirect` to reject them) and return a clear error
+
+    **Location:** Section 5.53, Step 4
+    **Fix:** Add test: plugin returns 302 → verify behavior (follow or reject, and what error the user sees).
+
+================================================================
+Low / Notes
+================================================================
+
+12. **Coverage matrix: WebhookExporter adapter should have API column marked**
+
+    Row "FF-15 P2: WebhookExporter adapter" has Unit only. But the cross-step "Webhook /validate in binding creation" (line 1249-1252) includes API tests that exercise the adapter through the binding creation and publish preview flows. These are API-level tests that hit the adapter indirectly.
+
+    **Location:** Section 3, coverage matrix, line 319
+    **Fix:** Consider marking the API column, or accept that the cross-step rows cover this.
+
+13. **Step 4 is overloaded — wall of text**
+
+    Step 4 (line 1237) is a single paragraph containing ~25 distinct test cases. This makes it hard to verify completeness or reference specific tests. Every other step has a readable structure. Step 4 reads like a test dump.
+
+    **Location:** Section 5.53, Step 4, line 1237
+    **Fix:** Consider breaking into sub-bullets: error handling tests, header tests, timeout tests, edge case tests.
+
+14. **"Documented test gaps" section is good practice — extend it**
+
+    The watch reconnection gap is honestly documented with justification. This pattern should also cover the import/export interaction (finding #6 above) and the UpdateBinding orphan behavior (finding #2 above).
+
+    **Location:** Section 5.53, line 1303-1305
+    **Fix:** Add entries for any findings you decide to defer rather than test now.
+
+15. **Verification gate missing -race flag for operator tests**
+
+    The verification gate runs `go test -race` for the export package but not for `internal/operator/...`. The ExporterPluginReconciler (Step 8) uses an HTTP client and writes to CR status — worth running with race detection.
+
+    **Location:** Section 5.53, verification gate, line 1309
+    **Fix:** Add `go test -race ./internal/operator/... -count=1` to the verification gate.
+
+16. **Live RBAC verification uses hardcoded service account names**
+
+    The live tests (line 1300) use `system:serviceaccount:assethub:assethub-api-server` and `system:serviceaccount:assethub:assethub-operator`. If these SA names change in the Makefile or operator deployment, the tests will silently pass with the old names (kubectl auth can-i with a non-existent SA returns "no" but doesn't error).
+
+    **Location:** Section 5.53, Live System Tests, line 1300
+    **Fix:** Note that SA names must match the serviceaccount.yaml manifest. Consider deriving them from the manifest rather than hardcoding.

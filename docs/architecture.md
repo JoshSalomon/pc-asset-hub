@@ -108,6 +108,7 @@ pc-asset-hub/
     service/                 # Service layer (depends on domain only)
       meta/                  # Meta business logic (entity types, attrs, assocs, type defs, catalog)
       operational/           # Operational business logic (instances, queries, refs)
+        export/              # Export plugin framework (registry, binding service, webhook adapter)
       versioning/            # Version management (auto-increment, copy-on-write)
       validation/            # Cycle detection, uniqueness, constraint enforcement
     infrastructure/          # Infrastructure layer (implements domain interfaces)
@@ -123,7 +124,7 @@ pc-asset-hub/
       middleware/            # Auth, RBAC, logging, error handling
       dto/                   # Request/response DTOs
     operator/                # Operator logic
-      api/v1alpha1/          # CRD types: AssetHub and CatalogVersion
+      api/v1alpha1/          # CRD types: AssetHub, CatalogVersion, Catalog, ExporterPlugin
       controllers/           # Reconciler implementations
       crdgen/                # CRD/CR generation from entity types (future scope)
   pkg/
@@ -171,6 +172,7 @@ Manages catalogs and entity instances. Used by all roles. Scoped to a specific c
 - Filtering, sorting, pagination
 - Catalog export/import (JSON file, Admin+)
 - Export plugin bindings: attach exporters to catalogs, run manually or on publish (FF-15)
+- Export plugin framework: built-in Go exporters (Phase 1) + dynamic HTTP webhook exporters registered via ExporterPlugin CRs (Phase 2)
 
 ### URL Structure
 
@@ -219,7 +221,7 @@ Operational API (catalog-name is DNS-label: [a-z0-9-], max 63 chars):
   /api/data/v1/catalogs/{catalog-name}/export-bindings
   /api/data/v1/catalogs/{catalog-name}/export-bindings/{binding-id}
   /api/data/v1/catalogs/{catalog-name}/export-bindings/{binding-id}/run
-  /api/data/v1/catalogs/{catalog-name}/export-bindings/download?token={token}
+  /api/data/v1/catalogs/{catalog-name}/export-bindings/download?token={token}&binding={binding-id}
 ```
 
 ### Catalog Scoping
@@ -633,7 +635,8 @@ This is a security invariant: Admin can publish a catalog (promoting it to a pro
 ### Export Binding Access Model
 
 Export bindings are scoped to catalogs and follow a split access model:
-- **Mutations** (create, update, delete, run): Admin+ only (`requireAdmin` middleware)
+- **Management** (create, update, delete): Admin+ only (`requireAdmin` middleware)
+- **Execution** (run, download): RW+ (`requireRW` middleware)
 - **Read** (list, get): Any user with catalog access, but **binding parameters are filtered** for non-Admin users. RO/RW users see binding metadata (exporter name, status, timestamps) but not parameter values (which may contain infrastructure details like target namespaces and credential secret names).
 
 ### Implementation
@@ -647,7 +650,7 @@ Export bindings are scoped to catalogs and follow a split access model:
 
 ## 11. Operator Architecture
 
-Built with **operator-sdk**. Manages two concerns:
+Built with **operator-sdk**. Manages three concerns:
 
 ### Hub Installation (AssetHub CRD)
 
@@ -669,6 +672,47 @@ When a catalog version is promoted to Testing or Production, a lightweight `Cata
 5. On demotion from Production to Testing, the API server updates the CR with the new lifecycle stage.
 
 The database remains the source of truth. `CatalogVersion` CRs are discovery artifacts — lightweight projections enabling applications to find available catalog versions via the K8s API.
+
+### Export Plugin Discovery (ExporterPlugin CRs) — FF-15 Phase 2
+
+Dynamic export plugins register themselves via `ExporterPlugin` custom resources. This enables zero-recompilation extensibility — deploying a new exporter requires only a Deployment+Service and a CR, no Asset Hub code changes.
+
+```yaml
+apiVersion: assethub.project-catalyst.io/v1alpha1
+kind: ExporterPlugin
+metadata:
+  name: my-exporter
+  namespace: assethub
+spec:
+  description: "Custom exporter"
+  endpoint: https://my-exporter.my-namespace.svc.cluster.local
+  timeoutSeconds: 10
+  parameterSchema: [...]
+  trustedSubjects:
+    - system:serviceaccount:assethub:assethub-api-server
+    - system:serviceaccount:assethub:assethub-operator
+status:
+  phase: Ready    # Ready, Unhealthy, Error, Unknown
+```
+
+**Dual-controller architecture:**
+
+1. **API server** watches ExporterPlugin CRs via a K8s informer. On create/update, it registers a `WebhookExporter` adapter in the in-memory exporter registry. On delete, it deregisters. The `WebhookExporter` implements the same `Exporter` interface as built-in exporters — the rest of the system (bindings, configuration, trigger, delivery, UI) doesn't distinguish between them.
+
+2. **Operator** runs a separate `ExporterPluginReconciler` (independent controller, no AssetHub owner references). It periodically probes `GET {endpoint}/health` and writes `status.phase` to the CR. The API server reads health status via its informer.
+
+This separation ensures the operator can be down without affecting export functionality. Built-in exporters (compiled Go) and webhook exporters coexist in the same registry.
+
+**Webhook protocol:** The plugin service exposes three endpoints: `POST /validate` (schema validation at binding creation), `POST /export` (export execution), `GET /health` (health probe). All requests include `X-AssetHub-Protocol-Version: v1` and a Bearer token (API server or operator SA). Plugin validates tokens via TokenReview against a subject allowlist.
+
+**Health status phases:** `Unknown` (initial, no probe yet), `Ready` (200 OK), `Unhealthy` (non-200 or timeout), `Error` (connection refused, DNS/TLS failure). If no probe result is recorded for 3x the probe interval (default 90s), status reverts to `Unknown` (stale).
+
+**RBAC requirements:**
+- API server SA needs: `get, list, watch` on `exporterplugins` (for informer), `update` on `exporterplugins/status` (for name collision error reporting)
+- Operator SA needs: `get, list, watch` on `exporterplugins` (for health probe scheduling), `update` on `exporterplugins/status` (for health status writes)
+- Plugin service SA needs: `create` on `tokenreviews.authentication.k8s.io` (for validating incoming Bearer tokens from Asset Hub)
+
+**Non-K8s mode:** When running outside a cluster (local dev), ExporterPlugin discovery is disabled. Only built-in exporters are available.
 
 ### Entity Type CRDs (Future Scope)
 

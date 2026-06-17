@@ -22,6 +22,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&CatalogVersionList{},
 		&Catalog{},
 		&CatalogList{},
+		&ExporterPlugin{},
+		&ExporterPluginList{},
 	)
 	metav1.AddToGroupVersion(scheme, GroupVersion)
 	return nil

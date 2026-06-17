@@ -36,6 +36,20 @@ get_body() { echo "$1" | sed '$d'; }
 TIMESTAMP=$(date +%s)
 CATALOG_NAME="pubtest-${TIMESTAMP}"
 
+cleanup() {
+  echo ""
+  echo "=== Cleanup (only removing test data created by this script) ==="
+  api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" SuperAdmin > /dev/null 2>&1 || true
+  api DELETE "$DATA_API/catalogs/$CATALOG_NAME" Admin > /dev/null 2>&1 || true
+  echo "  Deleted test catalog: $CATALOG_NAME"
+  [ -n "${CV_ID:-}" ] && api POST "$META_API/catalog-versions/$CV_ID/demote" Admin > /dev/null 2>&1 || true
+  [ -n "${CV_ID:-}" ] && api DELETE "$META_API/catalog-versions/$CV_ID" Admin > /dev/null 2>&1 || true
+  echo "  Deleted test CV: ${CV_ID:-}"
+  [ -n "${SERVER_ET_ID:-}" ] && api DELETE "$META_API/entity-types/$SERVER_ET_ID" Admin > /dev/null 2>&1 || true
+  echo "  Deleted test entity type: ${SERVER_ET_ID:-}"
+}
+trap cleanup EXIT
+
 header "Setup: Create test data"
 
 # Create entity type
@@ -379,10 +393,8 @@ fi
 # Clean up sync test catalog
 api DELETE "$DATA_API/catalogs/$SYNC_CATALOG" Admin > /dev/null 2>&1 || true
 
-header "Test T-30.22: Validate on published catalog allowed for RW (200)"
-# NOTE: This behavior is pending a product decision (TD-158).
-# Currently RW+ can validate published catalogs. If the decision is to
-# restrict to SuperAdmin, revert to expecting 403 here.
+header "Test T-30.22: Validate on published catalog blocked for RW (403)"
+# TD-158 resolved: validate on published requires SuperAdmin (same as other mutations).
 
 # Re-validate and re-publish for this test
 api POST "$DATA_API/catalogs/$CATALOG_NAME/validate" SuperAdmin > /dev/null 2>&1
@@ -390,10 +402,10 @@ api POST "$DATA_API/catalogs/$CATALOG_NAME/publish" SuperAdmin > /dev/null 2>&1
 
 RESP=$(api POST "$DATA_API/catalogs/$CATALOG_NAME/validate" RW)
 STATUS=$(get_status "$RESP")
-if [ "$STATUS" = "200" ]; then
-  pass "T-30.22: Validate on published catalog allowed for RW (200)"
+if [ "$STATUS" = "403" ]; then
+  pass "T-30.22: Validate on published catalog blocked for RW (403)"
 else
-  fail "T-30.22: Validate on published catalog" "expected=200 got=$STATUS"
+  fail "T-30.22: Validate on published catalog" "expected=403 got=$STATUS"
 fi
 
 # Clean up: unpublish again
@@ -516,24 +528,5 @@ if [ -n "$CR_EXISTS" ]; then
 else
   fail "CR recreation" "CR not found after re-publish"
 fi
-
-# Clean up: unpublish for cleanup section (TD-148: requires SuperAdmin)
-api POST "$DATA_API/catalogs/$CATALOG_NAME/unpublish" SuperAdmin > /dev/null 2>&1
-
-header "Cleanup (only removing test data created by this script)"
-
-api DELETE "$DATA_API/catalogs/$CATALOG_NAME" Admin > /dev/null 2>&1 || true
-echo "  Deleted test catalog: $CATALOG_NAME"
-
-# Demote CV back to development (it was promoted to testing in test 14)
-api POST "$META_API/catalog-versions/$CV_ID/demote" Admin > /dev/null 2>&1 || true
-
-# Delete CV (must happen before entity type since CV pins reference ETVs)
-api DELETE "$META_API/catalog-versions/$CV_ID" Admin > /dev/null 2>&1 || true
-echo "  Deleted test CV: $CV_ID"
-
-# Delete entity type
-api DELETE "$META_API/entity-types/$SERVER_ET_ID" Admin > /dev/null 2>&1 || true
-echo "  Deleted test entity type: $SERVER_ET_ID"
 
 print_summary "test-publishing"

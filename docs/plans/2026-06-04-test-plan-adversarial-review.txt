@@ -1,0 +1,187 @@
+Adversarial Review Report
+Target: docs/test-plan.md (changed sections)
+Date: 2026-06-04
+Reviewer focus: QA-first, maximize early bug detection, no under-testing
+
+================================================================
+Summary
+================================================================
+
+The new FF-15 Phase 2 test section is significantly stronger than average and
+shows good intent for TDD and layered verification. However, a few critical and
+high-risk gaps remain that can allow regressions in runtime behavior despite
+green test runs.
+
+================================================================
+Critical Findings
+================================================================
+
+1) Status update contract contradiction (Step 9)
+
+Issue:
+- The updated test plan expects orphaned bindings in RunAll to be skipped
+  without updating LastRunStatus.
+- PRD states each binding's last run timestamp/status/error should be updated
+  after execution.
+
+Risk:
+- Contradictory acceptance criteria between plan and PRD.
+- Implementation can pass one source of truth while violating the other.
+
+Action:
+- Resolve and document a single contract:
+  - either skipped runs persist status/timestamp/error,
+  - or skipped runs are explicitly excluded from "after execution" semantics.
+
+================================================================
+High Findings
+================================================================
+
+2) Informer/watch behavior is under-tested for production failure modes
+
+Issue:
+- Step 10 relies mostly on unit handler tests and justifies skipping integration
+  tests because controller-runtime is tested upstream.
+- Missing project-specific watch-path scenarios:
+  - list/watch boundary race at startup,
+  - reconnect/resync after watch drop,
+  - event reordering/duplication,
+  - stale registry after temporary API errors.
+
+Risk:
+- Silent registry drift in long-running clusters.
+
+Action:
+- Add integration-level tests for watch lifecycle and eventual consistency.
+
+---
+
+3) RBAC verification lacks explicit service-account-level assertions
+
+Issue:
+- Step 7 says operator and API server RBAC are updated.
+- Tests do not explicitly verify both service accounts can perform required
+  verbs for exporterplugins and status updates.
+
+Risk:
+- Deployment-time auth failures despite manifest dry-run success.
+
+Action:
+- Add live RBAC verification checks for:
+  - API server SA: get/list/watch exporterplugins
+  - operator SA: get/list/watch/update/patch exporterplugins/status
+
+---
+
+4) Virtual-server filtering parity is not explicitly protected
+
+Issue:
+- Step 3/4 validates exclusion of virtual_server_instance_name and
+  allowed_tool_ids from webhook payload.
+- No explicit tests guarantee equivalent filtering behavior remains correct for
+  webhook path before request generation.
+
+Risk:
+- Built-in and webhook exporters diverge on scoped exports.
+
+Action:
+- Add parity tests for virtual_server_instance exports across built-in and
+  webhook execution paths.
+
+---
+
+5) Non-K8s mode fallback is not explicitly tested
+
+Issue:
+- Feature description says discovery is disabled outside cluster, built-ins only.
+- No explicit tests in changed plan validate startup behavior and exporter list
+  semantics in non-K8s mode.
+
+Risk:
+- Local/dev startup regressions or misleading exporter list behavior.
+
+Action:
+- Add tests for "no in-cluster config" mode:
+  - watcher disabled warning,
+  - built-ins still available,
+  - no crash/no blocked startup.
+
+---
+
+6) Race detection is not in final quality gate
+
+Issue:
+- Step 2 includes race checks for registry.
+- End-to-end verification block does not require race execution.
+
+Risk:
+- Concurrency regressions can slip through final validation.
+
+Action:
+- Add race run as mandatory final gate for affected backend packages.
+
+================================================================
+Medium Findings
+================================================================
+
+7) Matrix/detail traceability mismatch
+
+Issue:
+- Feature matrix entries for FF-15 P2 are close but not perfectly aligned with
+  detailed section assertions (especially API/system aspects in Step 10).
+
+Risk:
+- Coverage reporting ambiguity.
+
+Action:
+- Normalize matrix rows to exactly mirror detailed test commitments.
+
+---
+
+8) Auth-path error contract should be more explicit
+
+Issue:
+- Adapter tests cover broad 4xx behavior.
+- Explicit 401/403 contract tests for validate/export would harden diagnostics.
+
+Action:
+- Add direct tests for auth rejection messaging and classification.
+
+---
+
+9) UI health tests are static-state heavy
+
+Issue:
+- Step 11 verifies indicator rendering.
+- Missing transition tests (Ready -> Unhealthy -> Ready) across refresh cycles.
+
+Action:
+- Add UI tests for state transitions and stale-display prevention.
+
+================================================================
+Recommended Must-Add Tests (Priority Order)
+================================================================
+
+P0 (before implementation merge):
+- Resolve Step 9 vs PRD status-update contract and add matching tests.
+- Add explicit SA RBAC live checks for operator + API server.
+- Add watch lifecycle integration tests (startup race + reconnect consistency).
+
+P1:
+- Add webhook vs built-in parity tests for virtual_server_instance filtering.
+- Add non-K8s mode startup/discovery tests.
+- Add mandatory race run to final gate.
+
+P2:
+- Add health-state transition UI tests.
+- Improve matrix/detail traceability and explicit 401/403 contract tests.
+
+================================================================
+Bottom Line
+================================================================
+
+The changed test-plan content is directionally strong and substantially improves
+coverage planning for FF-15 Phase 2. The key remaining issue is not quantity,
+but alignment and realism: resolve the status contract conflict, harden watch +
+RBAC + parity test coverage, and elevate race/non-K8s behavior into mandatory
+final verification.

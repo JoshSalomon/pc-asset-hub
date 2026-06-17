@@ -77,8 +77,10 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
 
   useEffect(() => { loadCatalog() }, [loadCatalog])
 
-  const canWrite = role === 'RW' || role === 'Admin' || role === 'SuperAdmin'
+  const isAdmin = role === 'Admin' || role === 'SuperAdmin'
+  const canWrite = role === 'RW' || isAdmin
   const canMutate = canWrite && (!catalog?.published || role === 'SuperAdmin')
+  const canValidate = canMutate
 
   // Create instance modal state
   const [createOpen, setCreateOpen] = useState(false)
@@ -493,7 +495,7 @@ export default function OperationalCatalogDetailPage({ role }: { role: Role }) {
         {catalog.description && ` — ${catalog.description}`}
       </p>
 
-      {canWrite && (
+      {canValidate && (
         <div style={{ marginBottom: '1rem' }}>
           <Button variant="secondary" onClick={validation.validate} isLoading={validation.validating} isDisabled={validation.validating}>
             Validate

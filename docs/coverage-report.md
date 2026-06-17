@@ -1,6 +1,6 @@
 # AI Asset Hub — Test Coverage Report
 
-Last updated: 2026-05-26 (Session 030: TD Sprint)
+Last updated: 2026-06-09 (Session 032: FF-15 Phase 2 Coverage)
 
 ---
 
@@ -8,12 +8,12 @@ Last updated: 2026-05-26 (Session 030: TD Sprint)
 
 | Layer | Tests | Pass Rate | Statements | Lines |
 |-------|-------|-----------|------------|-------|
-| Backend (Go) | 2051 | 100% | 99.1% (5992/6046) | — |
+| Backend (Go) | ~2200 | 100% | 99.1% (6363/6419) | — |
 | UI — Unit tests (node) | 41 | 100% | — | — |
-| UI — Browser tests (Playwright) | 1303 | 100% | 95.37% (3528/3699) | 97.63% (3178/3255) |
+| UI — Browser tests (Playwright) | 1326 | 100% | 95.78% (3543/3699) | 98.06% (3190/3253) |
 | UI — System tests (Playwright + live server) | 202 | 100% | — | — |
-| Live system (bash scripts) | 510 | 100% | — | — |
-| **Total** | **4104** | **100%** | — | — |
+| Live system (bash scripts) | 533 | 100% | — | — |
+| **Total** | **~4302** | **100%** | — | — |
 
 ---
 
@@ -22,21 +22,21 @@ Last updated: 2026-05-26 (Session 030: TD Sprint)
 | Package | Coverage | Notes |
 |---------|----------|-------|
 | `internal/api/health` | 100.0% (10/10) | |
-| `internal/api/meta` | 100.0% (502/502) | Session 030: deleted unused `defaultListParams` |
+| `internal/api/meta` | 100.0% (502/502) | |
 | `internal/api/middleware` | 100.0% (69/69) | |
 | `internal/api/operational` | 99.4% (471/474) | 3 uncov: handler c.Bind error branches (CreateCatalog, UpdateCatalog, PublishCatalog session token) |
 | `internal/domain/errors` | 100.0% (32/32) | |
 | `internal/domain/models` | 100.0% (8/8) | |
 | `internal/infrastructure/config` | 100.0% (21/21) | |
 | `internal/infrastructure/gorm/models` | 100.0% (49/49) | |
-| `internal/infrastructure/gorm/repository` | 97.0% (813/838) | 25 uncov: GORM Find-after-Count, RowsAffected==0, non-NotFound error paths |
-| `internal/infrastructure/k8s` | 100.0% (54/54) | |
-| `internal/operator/api/v1alpha1` | 100.0% (87/87) | Session 030: added DeepCopyObject tests for List types |
-| `internal/operator/controllers` | 94.3% (198/210) | 12 uncov: SetupWithManager (envtest Phase B), SetOwnerReference/Status().Update error paths |
+| `internal/infrastructure/gorm/repository` | 97.1% (831/856) | 25 uncov: GORM Find-after-Count, RowsAffected==0, non-NotFound error paths |
+| `internal/infrastructure/k8s` | 98.4% (121/123) | 2 uncov: AddToScheme defensive guard (never returns error), ServiceAccountTokenGetter success path (Phase B) |
+| `internal/operator/api/v1alpha1` | 100.0% (117/117) | ExporterPlugin CRD types + DeepCopy, all covered |
+| `internal/operator/controllers` | 95.4% (249/261) | 12 uncov: SetupWithManager (envtest Phase B), SetOwnerReference/Status().Update error paths |
 | `internal/operator/crdgen` | 94.3% (33/35) | 2 uncov: json.Marshal on well-formed CRD structs |
 | `internal/service/meta` | 99.7% (1137/1140) | 3 uncov: ReorderAttributes error, migration limit, containment tree error |
-| `internal/service/operational` | 99.6% (1988/1995) | 7 uncov: json.Unmarshal/Marshal guards, export cache loop errors, import guard |
-| `internal/service/operational/export` | 99.6% (475/477) | 2 uncov: yaml.Marshal on well-formed structs |
+| `internal/service/operational` | 99.7% (1995/2002) | 7 uncov: json.Unmarshal/Marshal guards, export cache loop errors, import guard |
+| `internal/service/operational/export` | 99.7% (673/675) | 2 uncov: yaml.Marshal on well-formed structs (mcp_gateway_exporter.go) |
 | `internal/service/validation` | 100.0% (45/45) | |
 
 ### Excluded from Coverage
@@ -63,6 +63,8 @@ These packages are not counted toward coverage because they contain no business 
 | `cmd/operator/main.go` | `main` | Operator bootstrap, leader election |
 | `infrastructure/gorm/database/database_sqlite.go` | `NewDB` | DB driver initialization |
 | `operator/controllers/controller.go` | `SetupWithManager` | Requires real controller-runtime manager |
+| `infrastructure/k8s/exporterplugin_watcher.go` | `NewExporterPluginWatcher` L33 | `v1alpha1.AddToScheme` defensive guard — function never returns error (hardcoded `return nil`) |
+| `infrastructure/k8s/exporterplugin_watcher.go` | `ServiceAccountTokenGetter` L202 | Success path: reads SA token file from `/var/run/secrets/...` — only exists inside K8s pod |
 
 ### Deferred to Phase C (OpenShift environment)
 
@@ -131,7 +133,7 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 
 | Line | Code | Why unreachable |
 |------|------|-----------------|
-| L66 | `if (!deleteTarget) return` | Delete button only exists when `deleteTarget` is set; handler can never fire with `deleteTarget === null` |
+| L81 | `if (!deleteTarget) return` | Delete modal only renders when `deleteTarget` is set; handler can never fire with `deleteTarget === null` |
 
 **PublishPreviewModal.tsx** (1 statement — defensive guard):
 
@@ -180,7 +182,7 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | Test File | Tests | Status |
 |-----------|-------|--------|
 | `App.browser.test.tsx` | 53 | Pass |
-| `client.browser.test.ts` | 81 | Pass |
+| `client.browser.test.ts` | 96 | Pass |
 | `AddAssociationModal.browser.test.tsx` | 7 | Pass |
 | `AddAttributeModal.browser.test.tsx` | 16 | Pass |
 | `AddChildModal.browser.test.tsx` | 10 | Pass |
@@ -222,11 +224,13 @@ These are `if (!x) return` early returns in event handlers and callbacks. They a
 | `EntityTypeListPage.browser.test.tsx` | 12 | Pass |
 | `TypeDefinitionDetailPage.browser.test.tsx` | 47 | Pass |
 | `TypeDefinitionListPage.browser.test.tsx` | 66 | Pass |
-| `OperationalCatalogDetailPage.browser.test.tsx` | 143 | Pass |
+| `ExportBindingsPanel.browser.test.tsx` | 11 | Pass |
+| `OperationalCatalogDetailPage.browser.test.tsx` | 160 | Pass |
+| `OperationalCatalogDetailPage-coverage.browser.test.tsx` | 2 | Pass |
 | `buildTypedAttrs.browser.test.ts` | 4 | Pass |
 | `formatAttributeValue.browser.test.tsx` | 18 | Pass |
 | `validateAttributeValue.browser.test.ts` | 3 | Pass |
-| **Total** | **1261** | **100% pass** |
+| **Total** | **1326** | **100% pass** |
 
 ### System Tests (Playwright + live server)
 
@@ -254,11 +258,11 @@ Coverage is measured using V8 provider via `@vitest/coverage-v8`. Rebased from I
 | File | Stmts (covered/total) | Stmts % | Lines (covered/total) | Lines % |
 |------|-----------------------|---------|-----------------------|---------|
 | `App.tsx` | 275/309 | 89.0% | 250/269 | 92.9% |
-| `api/client.ts` | 141/149 | 94.6% | 97/103 | 94.2% |
+| `api/client.ts` | 157/159 | 98.7% | 109/111 | 98.2% |
 | `components/AddAssociationModal.tsx` | 87/87 | 100.0% | 79/79 | 100% |
 | `components/AddAttributeModal.tsx` | 29/29 | 100.0% | 25/25 | 100% |
 | `components/AddChildModal.tsx` | 78/79 | 98.7% | 67/67 | 100% |
-| `components/AttributeFormFields.tsx` | 43/43 | 100.0% | 37/37 | 100% |
+| `components/AttributeFormFields.tsx` | 41/41 | 100.0% | 35/35 | 100% |
 | `components/CopyAttributesModal.tsx` | 49/49 | 100.0% | 39/39 | 100% |
 | `components/CopyCatalogModal.tsx` | 12/12 | 100.0% | 12/12 | 100% |
 | `components/CreateInstanceModal.tsx` | 18/18 | 100.0% | 17/17 | 100% |
@@ -267,7 +271,7 @@ Coverage is measured using V8 provider via `@vitest/coverage-v8`. Rebased from I
 | `components/EditAttributeModal.tsx` | 22/22 | 100.0% | 20/20 | 100% |
 | `components/EditInstanceModal.tsx` | 19/19 | 100.0% | 17/17 | 100% |
 | `components/EntityTypeDiagram.tsx` | 95/103 | 92.2% | 90/98 | 91.8% |
-| `components/ExportBindingsPanel.tsx` | 93/94 | 98.9% | 83/85 | 97.6% |
+| `components/ExportBindingsPanel.tsx` | 148/149 | 99.3% | 132/133 | 99.2% |
 | `components/ImportCatalogModal.tsx` | 180/199 | 90.5% | 164/178 | 92.1% |
 | `components/InstanceDetailPanel.tsx` | 9/9 | 100.0% | 9/9 | 100% |
 | `components/LinkModal.tsx` | 51/52 | 98.1% | 44/44 | 100% |
@@ -281,14 +285,14 @@ Coverage is measured using V8 provider via `@vitest/coverage-v8`. Rebased from I
 | `context/AuthContext.tsx` | 8/9 | 88.9% | 7/7 | 100% |
 | `hooks/useAssociationManagement.ts` | 49/52 | 94.2% | 48/48 | 100% |
 | `hooks/useAttributeManagement.ts` | 85/91 | 93.4% | 78/79 | 98.7% |
-| `hooks/useCatalogData.ts` | 48/48 | 100.0% | 41/41 | 100% |
+| `hooks/useCatalogData.ts` | 69/70 | 98.6% | 60/60 | 100% |
 | `hooks/useCatalogDiagram.ts` | 25/25 | 100.0% | 24/24 | 100% |
 | `hooks/useContainmentTree.ts` | 93/94 | 98.9% | 84/84 | 100% |
 | `hooks/useEntityTypeData.ts` | 63/65 | 96.9% | 58/58 | 100% |
 | `hooks/useInlineEdit.ts` | 32/32 | 100.0% | 30/30 | 100% |
-| `hooks/useInstanceDetail.ts` | 56/57 | 98.2% | 55/56 | 98.2% |
+| `hooks/useInstanceDetail.ts` | 49/50 | 98.0% | 49/50 | 98.0% |
 | `hooks/useInstances.ts` | 66/69 | 95.7% | 65/65 | 100% |
-| `hooks/usePinManagement.ts` | 94/95 | 98.9% | 88/88 | 100% |
+| `hooks/usePinManagement.ts` | 99/100 | 99.0% | 93/93 | 100% |
 | `hooks/useValidation.ts` | 44/44 | 100.0% | 39/39 | 100% |
 | `pages/LandingPage.tsx` | 21/21 | 100.0% | 20/20 | 100% |
 | `pages/meta/CatalogDetailPage.tsx` | 220/232 | 94.8% | 191/192 | 99.5% |
@@ -297,8 +301,8 @@ Coverage is measured using V8 provider via `@vitest/coverage-v8`. Rebased from I
 | `pages/meta/EntityTypeDetailPage.tsx` | 156/161 | 96.9% | 134/134 | 100% |
 | `pages/meta/EntityTypeListPage.tsx` | 11/12 | 91.7% | 11/12 | 91.7% |
 | `pages/meta/TypeDefinitionDetailPage.tsx` | 86/90 | 95.6% | 76/76 | 100% |
-| `pages/meta/TypeDefinitionListPage.tsx` | 154/157 | 98.1% | 142/143 | 99.3% |
-| `pages/operational/OperationalCatalogDetailPage.tsx` | 273/287 | 95.1% | 248/248 | 100% |
+| `pages/meta/TypeDefinitionListPage.tsx` | 162/165 | 98.2% | 149/150 | 99.3% |
+| `pages/operational/OperationalCatalogDetailPage.tsx` | 296/311 | 95.2% | 268/269 | 99.6% |
 | `utils/buildTypedAttrs.ts` | 17/17 | 100.0% | 15/15 | 100% |
 | `utils/dnsLabel.ts` | 3/3 | 100.0% | 2/2 | 100% |
 | `utils/errorMessage.ts` | 1/1 | 100.0% | 1/1 | 100% |
@@ -307,7 +311,7 @@ Coverage is measured using V8 provider via `@vitest/coverage-v8`. Rebased from I
 | `utils/statusColor.ts` | 6/6 | 100.0% | 6/6 | 100% |
 | `utils/typeLabel.ts` | 1/1 | 100.0% | 1/1 | 100% |
 | `utils/validateAttributeValue.ts` | 97/98 | 99.0% | 86/86 | 100% |
-| **All files (54)** | **3420/3580** | **95.53%** | **3085/3154** | **97.81%** |
+| **All files (54)** | **3543/3699** | **95.78%** | **3190/3253** | **98.06%** |
 
 **Unit tests** (supplemental — covers components that work in jsdom without browser):
 
@@ -1505,8 +1509,60 @@ The 54 remaining uncovered are documented in `tmp/uncovered-lines-analysis.md` �
 | File:Line | Code | Why uncovered |
 |-----------|------|---------------|
 | `useCatalogData.ts:77` | `if (cancelled) return` | React async cleanup guard — `cancelled` flag set on component unmount before `Promise.all` resolves. Requires component to unmount mid-async-operation; deterministic triggering not possible in browser tests. |
-| `OperationalCatalogDetailPage.tsx:140` | `.catch(() => ({ assocs: [] }))` | `loadSchemaSnapshot` rejection fallback in containmentTargetTypes effect. Test passes individually but fails in full suite — vitest-browser-react's async component cleanup between tests causes mock state contamination. |
-| `OperationalCatalogDetailPage.tsx:142` | `if (cancelled) return` | Same async cleanup guard pattern as useCatalogData:77. |
+| `OperationalCatalogDetailPage.tsx:142` | `if (cancelled) return` | Async cleanup guard in containmentTargetTypes effect. Test exists (`OperationalCatalogDetailPage-coverage.browser.test.tsx`) that exercises the code path, but V8 loses coverage context after component unmount. |
+
+Note: `OperationalCatalogDetailPage.tsx:140` (`.catch(() => ({ assocs: [] }))`) was previously uncovered but is now covered by `OperationalCatalogDetailPage-coverage.browser.test.tsx` (isolated test file to avoid vitest-browser-react async cleanup contamination).
+
+### New Code Coverage (Session 031 — FF-15 Phase 2: Dynamic Export Plugins)
+
+**Feature:** Webhook-based export plugins with CRD registration, health probes, orphaned binding handling, and UI updates.
+
+**New Go files:**
+
+| File | Coverage |
+|------|----------|
+| `webhook_exporter.go` | 100.0% — all error paths covered (json.Marshal via internal test, io.ReadAll via httptest hijack, http.NewRequest via null byte URL) |
+| `webhook_protocol.go` | 100.0% — roundtrip tests for all DTO types |
+| `exporterplugin_types.go` | 100.0% — DeepCopy, nil, scheme registration |
+| `exporterplugin_controller.go` | 95.4% — Get/Update error paths via InterceptorFuncs, SetupWithManager via httptest fake API server |
+| `exporterplugin_watcher.go` | 97.1% (67/69) — 2 uncov: AddToScheme defensive guard (function never returns error), ServiceAccountTokenGetter success path (reads SA token file only inside K8s pod) |
+| `webhook_exporter_internal_test.go` | N/A (test file) — tests `doPost` private method with unmarshalable types |
+
+**Modified Go files:**
+
+| File | Before | After | Delta uncov |
+|------|--------|-------|-------------|
+| `export/types.go` | 475/477 (2 uncov) | 631/633 (2 uncov) | 0 (same yaml.Marshal lines) |
+| `export/registry.go` | included above | included above | 0 |
+| `export/binding_service.go` | included above | included above | 0 (dead code removed) |
+| `export/publish_service.go` | included above | included above | 0 |
+| `operator/api/v1alpha1/assethub_types.go` | 87/87 | 117/117 | 0 |
+| `operator/controllers/` | 198/210 (12 uncov) | 247/259 (12 uncov) | 0 |
+| `infrastructure/k8s/` | 54/54 (0 uncov) | 121/123 (2 uncov) | +2 (AddToScheme guard, ServiceAccountTokenGetter success path) |
+
+**New UI files:**
+
+| File | Coverage |
+|------|----------|
+| `ExportBindingsPanel.tsx` | 99.3% (148/149) — 1 uncov: dead-code `deleteTarget` guard |
+| `ExportBindingsPanel.browser.test.tsx` | 11 tests |
+| `OperationalCatalogDetailPage-coverage.browser.test.tsx` | 2 tests (isolated for L140/L142 coverage) |
+
+**Modified UI files:**
+
+| File | Before | After | Delta uncov |
+|------|--------|-------|-------------|
+| `client.ts` | 148/159 (11 uncov) | 157/159 (2 uncov) | **-9** |
+| `ExportBindingsPanel.tsx` | 139/145 (6 uncov) | 148/149 (1 uncov) | **-5** |
+| `CatalogDetailPage.tsx` | 220/232 (12 uncov) | 220/232 (12 uncov) | 0 |
+| `OperationalCatalogDetailPage.tsx` | 293/309 (16 uncov) | 296/311 (15 uncov) | **-1** |
+
+**Backend test count:** ~2200 (including subtests). Browser test count: 1326. CRD tests: 6. Live tests: 533.
+
+**Overall:**
+- Backend: 99.1% (6363/6419), 56 uncov — baseline was 54, +2 (AddToScheme guard, ServiceAccountTokenGetter success path)
+- UI: 95.78% (3543/3699), 156 uncov — baseline was 171, **-15 (improved)**
+- Net: **-13 uncovered lines (improved)**
 
 ### Linting
 

@@ -1,0 +1,162 @@
+Now I have all the data. Here's the adversarial review:
+
+================================================================
+Summary
+================================================================
+
+Milestone 36 contains 144 test cases (T-36.01 through T-36.144) covering the dynamic export plugins feature across all five layers: unit, API, browser, operator, and live/system. The plan is well-structured — it follows the implementation plan's step ordering, includes cross-step tests for integration seams, and has explicit tests for edge cases (zero params, unhealthy exporters, non-K8s mode, name collisions).
+
+The main concern is an arithmetic error in the exit criteria that would cause confusion during phase gate review, and a handful of missing tests for webhook-specific failure modes that have no analogs in the built-in exporter path. The test plan also has a few places where the expected behavior is underspecified — a developer could implement two different things and both would pass the test as written.
+
+================================================================
+Critical Findings
+================================================================
+
+1. **Exit criteria count says T-36.125 but the actual test range is T-36.144 — arithmetic is wrong**
+
+   Line 4884 says: "T-36.01 through T-36.125 = **1348 test cases**". But the actual test cases go through T-36.144. Meanwhile, line 33 says "T-36.01 through T-36.144 (1348 test cases)." These two lines contradict each other.
+
+   If the range is T-36.144, then the count should be: 1137 + 86 (T-35, minus 2 meta) + 144 (T-36) = **1367**, not 1348. If the count 1348 is correct, then only 125 tests are counted, but 19 tests (T-36.126 through T-36.144) exist and would be silently excluded from the phase gate.
+
+   This matters because the phase gate checks "all N test cases pass." If N is wrong, either tests are missing from the gate or the gate claims a wrong count and loses credibility as a quality checkpoint.
+
+   **Location:** Line 4884 vs line 33
+   **Fix:** Update line 4884 to say "T-36.01 through T-36.144" and recalculate the total. If T-36.126–T-36.144 are live/system tests that run outside Phase A (they require a live cluster), explicitly state that Phase A covers T-36.01–T-36.124 (unit/API/browser/operator) and T-36.125–T-36.144 are Phase B (live deployment). The current text makes it look like an error.
+
+2. **T-36.83: UpdateBinding on orphaned exporter — "behavior documented" is not a test**
+
+   T-36.83 says: "UpdateBinding on orphaned with enabled=false → behavior documented." The expected column says "Either succeeds (skip validation) or fails (document as intended)."
+
+   This is not a test — it's a design question deferred to implementation time. TDD requires knowing the expected behavior *before* writing the test. A developer seeing this will ask: "Do I write a test that expects success, or one that expects failure?" If they guess wrong, they waste a RED-GREEN cycle.
+
+   This matters because UpdateBinding is a real user operation. When a webhook exporter is being redeployed (CR deleted temporarily), admins may want to disable bindings to prevent failed exports during the maintenance window. If UpdateBinding fails on orphaned bindings, they can't do this.
+
+   **Location:** T-36.83, line 5019
+   **Fix:** Pick one behavior and make the test concrete. Recommendation: UpdateBinding with `params=nil, enabled=&false` should succeed (skip validation when only changing the enabled flag). UpdateBinding with `params={...}` on an orphaned binding should fail (can't validate params without the exporter).
+
+================================================================
+High Findings
+================================================================
+
+3. **T-36.64: TimeoutSeconds = 0 rejected by CRD contradicts implementation plan**
+
+   T-36.64 says "TimeoutSeconds = 0 → rejected by CRD (minimum: 3)." But the implementation plan (Step 10) says: "if `spec.TimeoutSeconds < 3`, clamp to 3. If 0, default to 10."
+
+   These are incompatible. If the CRD rejects 0, the application-level default-to-10 code can never execute. If the CRD accepts 0, T-36.64 fails.
+
+   The design spec says `timeoutSeconds` is "optional, default 10." An optional field with a CRD minimum of 3 means you can omit the field (defaults to 10) but you can't explicitly set 0. Setting 0 to mean "use default" is a common K8s pattern (see `spec.replicas` on Deployments).
+
+   **Location:** T-36.64, line 4990
+   **Fix:** Decide: either the CRD has `minimum: 3` (rejects 0, impl plan's "if 0, default to 10" is dead code) or the CRD allows 0 (application-level handles it). Update the test to match.
+
+4. **T-36.44: "Base URL with path rejected at construction" — contradicts CRD endpoint field**
+
+   T-36.44 says the WebhookExporter constructor rejects a base URL that includes a path. T-36.115 says `handleAdd` rejects an endpoint with a path and logs a warning. But the CRD spec field (design spec) is called `endpoint` and the example shows `https://my-exporter.my-namespace.svc.cluster.local/export` (with a path).
+
+   If the CRD allows a path in the endpoint field but the constructor rejects it, the operator will create CRs that the API server can't use. The CRD validation (Step 7) doesn't include a "no path" check.
+
+   **Location:** T-36.44 (line 4955), T-36.115 (line 5071)
+   **Fix:** Add a CRD validation test: endpoint with a path → rejected by CRD validation (if using a regex pattern on the field). Or: accept paths at the CRD level and strip them in the adapter (updating T-36.44 to test stripping, not rejection). The design spec example must be updated either way.
+
+5. **No test for webhook exporter warnings propagation**
+
+   The `ExportOutput` struct has a `Warnings []string` field. The `WebhookExportResponse` presumably also has warnings. But no T-36 test verifies that warnings from the webhook response are propagated through to the ExportOutput and ultimately to the UI/API response.
+
+   Warnings are user-visible feedback (e.g., "Server 'test-server' has no tools"). If they're silently dropped by the conversion function `WebhookExportResponseToOutput`, users lose visibility into plugin-reported issues.
+
+   **Location:** Missing from Step 3 (T-36.20 tests conversion but doesn't mention warnings) and Step 4
+   **Fix:** Add test: webhook plugin returns `{"artifacts": [...], "warnings": ["Server X has no tools"]}` → verify warnings appear in ExportOutput.Warnings, in the RunBinding API response, and in the publish preview results.
+
+6. **No test for ValidateSchema on the webhook adapter's request body content**
+
+   T-36.22 and T-36.23 test ValidateSchema success/error responses. But neither test verifies what's *sent* to the plugin's `/validate` endpoint. The request body should contain `{"parameters": {...}, "schema": {...}}` with the full SchemaInfo conversion.
+
+   If the conversion is wrong (e.g., missing TargetEntityType in associations), the plugin gets garbage input and either rejects everything or validates incorrectly. T-36.18 tests `SchemaInfoToWebhook` in isolation, but no test verifies the assembled request body sent by `ValidateSchema`.
+
+   **Location:** T-36.22–T-36.23, Step 4
+   **Fix:** Add test: capture the request body sent to `/validate` by httptest, verify it contains the expected parameters and fully-converted schema with association details.
+
+================================================================
+Medium Findings
+================================================================
+
+7. **T-36.77: "Stale-to-Unknown" — new behavior not in design spec or impl plan**
+
+   T-36.77 introduces a new health state transition: "lastHealthCheck older than 3x probe interval → Unknown." This behavior appears in neither the design spec nor the implementation plan. The design spec's health states are Ready/Unhealthy/Error. The impl plan's `classifyHealthResult` returns Ready/Unhealthy/Error only.
+
+   If a developer implements only what's in the impl plan, this test will fail. If they implement this test, they're adding undocumented behavior.
+
+   **Location:** T-36.77, line 5008
+   **Fix:** Either add this behavior to the implementation plan (new code path in the reconciler: check lastHealthCheck age before probing) or remove T-36.77. If kept, define "3x probe interval" — what's the probe interval default?
+
+8. **T-36.131: "API server SA cannot update exporterplugins/status" — may be wrong**
+
+   T-36.131 expects the API server SA cannot update status. But if the API server's informer watch uses a controller-runtime cache with list/watch, the API server needs at least `get`, `list`, `watch` permissions on `exporterplugins`. The test verifies the *status* subresource specifically, which is correct — only the operator should update status.
+
+   However: the RBAC manifest step (T-36.60) says "Both operator and API server RBAC updated." If the API server's role includes `exporterplugins/status` with `update` verb (because someone copy-pasted the operator's rule), this test would fail, catching a real bug. Good.
+
+   But: the RBAC role manifest (Step 7) only describes the operator role. There's no test case that verifies the API server's RBAC role has `get`, `list`, `watch` but NOT `update`, `patch` on `exporterplugins`. T-36.129 tests the positive case (can list) but T-36.131 only tests the status subresource.
+
+   **Location:** T-36.131, line 5097
+   **Fix:** Add test: API server SA cannot `update` or `patch` the base `exporterplugins` resource (only list/get/watch). This catches the case where someone gives the API server full write access.
+
+9. **T-36.138: "request with v99 → 400 unsupported" — tests the example plugin, not the Asset Hub**
+
+   T-36.138 tests that the example plugin rejects an unsupported protocol version. But the Asset Hub always sends `v1`. This test would never catch a regression in the Asset Hub — it only verifies the example plugin's behavior.
+
+   If the goal is to test the Asset Hub's handling of a plugin that rejects a protocol version, the test should be: Asset Hub sends v1, plugin returns 400 "unsupported protocol version" → verify the error is surfaced clearly (not a generic "validation error").
+
+   **Location:** T-36.138, line 5104
+   **Fix:** Clarify: is this testing the plugin or the Asset Hub? If the plugin, it belongs in the plugin's own test suite, not Milestone 36. If the Asset Hub, reframe: "plugin rejects v1 with 400 → Asset Hub surfaces clear error to user."
+
+10. **No test for concurrent CreateBinding + Deregister race**
+
+    T-36.12 tests concurrent registry access. But no test covers the specific race: a user creates a binding (which calls `registry.Get` to find the exporter, then calls `ValidateSchema`) while the informer simultaneously deregisters that exporter (CR deleted).
+
+    The expected behavior is: if `Get` succeeds, the returned exporter reference remains valid even after deregistration (Go pointer survives map delete). But if `Get` happens *after* deregistration, CreateBinding fails with "exporter not found." No test verifies this.
+
+    **Location:** Missing from Step 2 or Step 9
+    **Fix:** Add test: goroutine A starts CreateBinding (paused after registry.Get), goroutine B calls Deregister, goroutine A resumes → ValidateSchema succeeds on the stale reference. This proves the pointer-survives-delete property.
+
+11. **No test for the `Minimum timeout (spec.TimeoutSeconds=1) → clamped to 3` case in the detailed plan**
+
+    The implementation plan specifies "Minimum timeout (spec.TimeoutSeconds=1) → clamped to 3" and the high-level test plan mentions it. But no T-36 test case covers this. T-36.39 tests `timeoutSeconds=3 → both=3s` (the floor value itself) and T-36.113/T-36.114 test default and custom timeouts, but none tests a value *below* the floor (e.g., 1 or 2).
+
+    **Location:** Missing from Steps 4 and 10
+    **Fix:** Add test: `spec.TimeoutSeconds=1` → `exportTimeout=3s`, `validateTimeout=3s` (clamped up from 1).
+
+================================================================
+Low / Notes
+================================================================
+
+12. **Test count 1348 in both line 33 and line 4884 — but line 4884 says "through T-36.125"**
+
+    Line 33 correctly says "T-36.01 through T-36.144 (1348 test cases)" but the arithmetic still doesn't add up: 1137 + 86 + 144 = 1367. Either the existing baseline is lower than 1137, or some T-35/T-36 tests replace (not add to) existing ones. The document should show the full arithmetic.
+
+    **Location:** Lines 33 and 4884
+    **Fix:** Show the addition explicitly: `existing (X) + T-35 (Y) + T-36 (Z) = total`.
+
+13. **T-36.116: "Startup pre-population" is a unit test — should be integration**
+
+    T-36.116 tests that the watcher's `Start` method reads 2 existing CRs and populates the registry. As a unit test, this mocks the K8s client. The real risk is that the watcher's list query doesn't match the CRD (wrong API group, wrong namespace). This can only be caught with a real K8s API (envtest or live).
+
+    **Location:** T-36.116, line 5072
+    **Fix:** Note as a known limitation. The unit test catches logic errors but not K8s API mismatches. The live tests (T-36.125) cover the real scenario.
+
+14. **TrustedSubjects justification is reasonable but should be more specific**
+
+    Line 5115 says "TrustedSubjects is consumed by the plugin service, not the Asset Hub." This is a good clarification. But it should also note: the Asset Hub *sends* its SA token to the plugin; `TrustedSubjects` on the CRD tells the plugin which tokens to accept. The Asset Hub reads `TrustedSubjects` only to potentially include it in the token — or it doesn't read it at all. This should be explicit.
+
+    **Location:** Line 5115
+    **Fix:** Add: "The Asset Hub does not read TrustedSubjects — it is metadata for plugin operators to configure their TokenReview policy."
+
+15. **Step 4 has 26 test cases (T-36.21 through T-36.46) — dense but well-structured**
+
+    Unlike the high-level test plan's Step 4 wall-of-text, the detailed plan breaks each case into a separate row. This is good. No action needed — noting for contrast with the high-level plan.
+
+16. **T-36.32: "adapter does not follow redirects" — design decision made in test plan, not in design/impl docs**
+
+    T-36.32 specifies redirect rejection. This is the right behavior for a webhook adapter, but it's a design decision that appeared first in the test plan, not in the design spec or implementation plan. The implementation plan doesn't mention redirects at all.
+
+    **Location:** T-36.32, line 4943
+    **Fix:** Add a note to the implementation plan about setting `http.Client.CheckRedirect` to reject redirects, so the developer knows this is intentional, not a test-plan-only requirement.

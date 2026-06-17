@@ -1,0 +1,236 @@
+Adversarial Review: FF-15 Phase 2 Implementation Plan
+=====================================================
+Reviewed file: docs/plans/2026-06-03-dynamic-export-plugins-impl-plan.md
+Date: 2026-06-03
+
+
+GOOD DECISIONS
+--------------
+
+- Renaming CatalogExporter to ExporterPlugin fixes the naming confusion
+  (design review N1). "CatalogExporter" implies catalog-scoped; ExporterPlugin
+  is accurate.
+
+- Independent controller for health probes (Step 8) correctly addresses
+  design review A2. Plugin-deployed CRs have no relationship to the AssetHub
+  CR, so extending AssetHubReconciler would have been wrong.
+
+- API server watches CRs directly via informer (Step 10) correctly resolves
+  design review A1's central question: operator and API server can't share
+  in-memory state.
+
+- Separate webhook DTOs with explicit json tags (Step 3) correctly addresses
+  design review C2/C3. The wire contract is now independent of Go struct naming.
+
+- Bottom-up dependency ordering: Steps 1-3+6 are leaf nodes with zero
+  dependencies. Every foundation is proven before anything builds on it.
+
+- BindingStatusSkipped for orphaned bindings is a clean design that doesn't
+  conflate "exporter missing" with "export failed."
+
+
+ISSUES
+------
+
+1. Step 1b: validateParamEntityTypes needs a signature change the plan doesn't mention
+   Severity: Medium
+
+   The current signature is:
+
+     func (s *ExportBindingService) validateParamEntityTypes(
+         params map[string]string, schema SchemaInfo) error
+
+   It has no access to the exporter's ParameterSchema(). The plan says
+   "iterate exporter.ParameterSchema(), build a set of param names where
+   param.Type == entity_type" -- but the function doesn't receive the exporter
+   or its parameter definitions.
+
+   The caller validateBindingParams (line 117) has the exporter, but only
+   passes params and schema to validateParamEntityTypes (line 132).
+
+   The plan should specify: either change the signature to accept
+   []ParameterDef, or move the logic into validateBindingParams.
+
+
+2. Step 3: Excluding EntityTypes from the webhook export request may limit plugins
+   Severity: Low
+
+   The plan marks EntityTypes as a "dead field" and excludes it from
+   WebhookExportRequest. It IS dead today -- buildExportInput never populates
+   it. But this field carries entity type definitions (attribute names,
+   associations) that a generic plugin might need to interpret instance data.
+
+   The built-in MCPGatewayExporter doesn't need it because it knows its schema
+   at ValidateSchema time. But a webhook plugin receives instances-by-type with
+   raw attribute maps -- without knowing which attributes are strings vs enums,
+   or what associations exist, the data is harder to use.
+
+   Decision needed: populate EntityTypes in buildExportInput and include it in
+   the webhook request? Or accept the limitation and document it?
+
+
+3. Step 6: TrustedSubjects field appears without explanation
+   Severity: Medium
+
+   The CRD spec includes TrustedSubjects on ExporterPluginSpec, but the plan
+   never explains what it's for, who sets it, or where it's consumed. The
+   design spec mentions SA token auth (the Asset Hub sends its token, the
+   plugin validates via TokenReview), but TrustedSubjects would be the
+   plugin's concern, not something the Asset Hub CRD needs to carry.
+
+   If it's meant to tell the API server which service accounts to accept FROM
+   the plugin, that's a different auth direction than the design spec describes.
+   Drop it, or explain it.
+
+
+4. Step 8: Health probe interval unspecified
+   Severity: Low
+
+   ExporterPluginReconciler has a ProbeInterval time.Duration field but the
+   plan never says what the default is. 10s? 30s? 60s? This affects cluster
+   load (N exporters * probe frequency) and staleness of health data in the UI.
+
+
+5. Step 8: Health probe auth not addressed
+   Severity: Low
+
+   Does the operator's health probe send an Authorization header? The design
+   spec says "Asset Hub sends its SA token" for all webhook calls, but Step 8's
+   classifyHealthResult(statusCode, err) suggests a simple HTTP GET without auth
+   handling. If the plugin requires auth on /health (which it should, per the
+   design spec), the probe will get 401 and classify the plugin as Unhealthy.
+
+
+6. Step 9: PublishPreview modification target is imprecise
+   Severity: Medium
+
+   The plan says: "Before the existing exporter check (line 44), if
+   !registry.Get(binding.ExporterName): append result with Status:
+   BindingStatusSkipped, skip to next binding."
+
+   Looking at publish_service.go line 44:
+
+     if exporter, ok := s.registry.Get(binding.ExporterName); ok {
+
+   This block only does pre-validation (ValidateSchema). If the exporter is NOT
+   found (!ok), execution falls through to executeBinding (line 57), which
+   itself calls registry.Get internally and produces a BindingStatusFailed
+   result. So the current behavior for a missing exporter is: skip validation,
+   then fail in executeBinding.
+
+   The orphaned-skip must replace this entire flow -- the plan should say:
+   "add an early continue before line 44 that catches missing exporters and
+   produces a Skipped result, preventing both the validation block AND
+   executeBinding from running."
+
+
+7. Step 10: Watch mechanism hand-waved -- client.Client can't watch
+   Severity: High
+
+   The plan says ExporterPluginWatcher uses client.Client and has a Start(ctx)
+   method that "list existing CRs, register all, then start watch." But
+   client.Client from controller-runtime is a request-response client -- it
+   doesn't have a watch API. To actually watch, you need one of:
+
+   - A controller-runtime cache with an informer (requires running a manager)
+   - A raw K8s watch.Interface from client-go
+   - An informer from cache.NewInformerWithOptions
+   - A shared informer factory
+
+   The plan should specify which mechanism and how it handles reconnection,
+   because each has different lifecycle and error behavior. This is the most
+   complex infrastructure piece in the entire feature and it gets one paragraph.
+
+
+8. Step 10: Health status not propagated from CR to WebhookExporter
+   Severity: Medium
+
+   The operator (Step 8) updates cr.Status.Phase on the CRD. The API server
+   informer (Step 10) gets an Update event when this happens. The plan's
+   handleUpdate does "deregister old, register new" -- creating a new
+   WebhookExporter. But it doesn't mention reading cr.Status.Phase to set
+   WebhookExporter.healthStatus.
+
+   Without this, ExporterInfo.Health (Step 5) would always return the default
+   empty string, not the actual health. The handleAdd and handleUpdate
+   functions must read cr.Status.Phase and pass it to the WebhookExporter
+   constructor.
+
+
+9. Missing: race between CR deletion and in-flight export (design review E2)
+   Severity: Low
+
+   Step 10 does registry.Deregister(cr.Name) on CR delete. If an export is
+   in-flight using that WebhookExporter, the behavior depends on whether Go's
+   map delete invalidates existing references (it doesn't -- the pointer
+   survives). The plan should explicitly state this is safe and why: once a
+   caller has a reference from registry.Get(), the WebhookExporter remains
+   usable even after deregistration. Only future Get() calls return not-found.
+
+
+10. Missing: import path for orphaned bindings (design review E5)
+    Severity: Medium
+
+    No step addresses what happens when a catalog is imported with bindings
+    referencing a webhook exporter that doesn't exist on the target system.
+    Currently validateBindingParams calls registry.Get() and returns "exporter
+    not found", which means import fails entirely -- not the "orphaned with
+    warning" behavior the design spec claims.
+
+    Either:
+    - Add a step to make the import service skip binding validation for missing
+      exporters (creating them as orphaned)
+    - Or acknowledge that import fails for bindings referencing missing webhook
+      exporters and update the design spec
+
+
+11. Missing: no retry policy for transient failures (design review D4)
+    Severity: Low
+
+    The WebhookExporter (Step 4) has no retry logic. A transient 503 or
+    connection reset fails the entire export. For single RunBinding this is
+    acceptable (user can retry). For PublishPreview, a transient failure marks
+    the binding as failed, which could block publishing. Worth at least a
+    single retry with short backoff for 5xx responses.
+
+
+12. Dependency graph visual is slightly misleading
+    Severity: Low
+
+    The graph shows Step 9 connecting to the bottom of the chain, suggesting
+    it feeds into Step 11. The actual dependency is: Step 11 depends on
+    Steps 5 AND 9. The arrow from Step 9 should go directly to Step 11,
+    not float at the bottom of the main chain.
+
+
+13. End-to-end verification: CRD must exist before operator starts
+    Severity: Low
+
+    Verification step 4 says "kubectl apply CRD" AFTER "make deploy" (step 3).
+    But make deploy deploys the operator, which tries to watch ExporterPlugin
+    CRs. If the CRD isn't registered yet, the operator's controller setup will
+    fail or the watch will error.
+
+    The CRD must be applied before the operator starts, or the operator must
+    handle missing CRDs gracefully (delayed startup). The Makefile deploy
+    target should include the CRD apply.
+
+
+SUMMARY TABLE
+-------------
+
+ #  | Severity | Issue
+----+----------+--------------------------------------------------------------
+ 7  | High     | Watch mechanism unspecified -- client.Client can't watch
+ 1  | Medium   | Step 1b needs signature change not mentioned
+ 3  | Medium   | TrustedSubjects unexplained
+ 6  | Medium   | Step 9 PublishPreview modification imprecise
+ 8  | Medium   | Health status not propagated from CR to WebhookExporter
+10  | Medium   | Import path not addressed (design review E5)
+ 2  | Low      | EntityTypes exclusion may limit plugin capabilities
+ 4  | Low      | Health probe interval unspecified
+ 5  | Low      | Health probe auth not addressed
+ 9  | Low      | CR deletion race should be explicitly noted as safe
+11  | Low      | No retry for transient failures
+12  | Low      | Dependency graph visual slightly misleading
+13  | Low      | CRD must exist before operator starts

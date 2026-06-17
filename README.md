@@ -15,12 +15,17 @@ The system manages assets such as models, MCP servers, tools, guardrails, evalua
  │  ┌───────────┐     ┌──────────────┐     ┌──────────────┐ │
  │  │    UI     │────▶│  API Server  │────▶│  PostgreSQL  │ │
  │  │ React +   │     │   Go/Echo    │     │  (or SQLite) │ │
- │  │PatternFly │     │              │     │              │ │
- │  └───────────┘     └──────┬───────┘     └──────────────┘ │
- │   :30000                  │ :30080                       │
- │                           ▼                              │
- │                  CatalogVersion CRs ◀── Operator         │
- │                  Catalog CRs            (operator-sdk)   │
+ │  │PatternFly │     │   │      │   │     │              │ │
+ │  └───────────┘     └───┼──────┼───┘     └──────────────┘ │
+ │   :30000               │      │                          │
+ │                        │      │ webhook calls            │
+ │              watch CRs │      ▼                          │
+ │                        │  ┌──────────────┐               │
+ │                        │  │Export Plugins │               │
+ │                        ▼  │ (webhooks)   │               │
+ │       CatalogVersion CRs  └──────┬───────┘               │
+ │       Catalog CRs                │                       │
+ │       ExporterPlugin CRs ◀── Operator (health probes)    │
  │                                                          │
  └──────────────────────────────────────────────────────────┘
 ```
@@ -30,7 +35,8 @@ The system manages assets such as models, MCP servers, tools, guardrails, evalua
 | API Server | Go, Echo, GORM | REST API with two API sets: Meta (schema management) and Operational (data management). RBAC via OpenShift SubjectAccessReview. |
 | UI | React, TypeScript, PatternFly | Two UIs served from a single build — Meta UI for schema administration, Operational UI for data browsing and editing. |
 | Database | PostgreSQL / SQLite | Source of truth. PostgreSQL for production, SQLite for development. |
-| Operator | Go, operator-sdk | Manages hub installation. Reconciles AssetHub, CatalogVersion, and Catalog CRs. |
+| Operator | Go, operator-sdk | Manages hub installation. Reconciles AssetHub, CatalogVersion, Catalog, and ExporterPlugin CRs. Probes webhook plugin health. |
+| Export Plugins | Go (webhook HTTP) | External services that transform catalog data into K8s artifacts. Discovered via ExporterPlugin CRDs. |
 
 ## Key Concepts
 
@@ -42,7 +48,7 @@ The system manages assets such as models, MCP servers, tools, guardrails, evalua
 - **Validation** — on-demand schema validation checks required attributes, enum values, mandatory associations, and containment consistency
 - **Publishing** — valid catalogs are published as K8s Custom Resources for external discovery, with write protection on published data
 - **Copy & Replace** — staging workflow for updating published catalogs without downtime: copy, edit, validate, swap atomically
-- **Export Plugins** — extensible system for producing consumer-specific output (K8s CRs, ConfigMaps, YAML) from catalog data via registered exporter plugins
+- **Export Plugins** — extensible system for producing consumer-specific output (K8s CRs, ConfigMaps, YAML) from catalog data via built-in or webhook-based exporter plugins, discovered dynamically through ExporterPlugin CRDs
 
 ## Features
 
@@ -69,6 +75,7 @@ The system manages assets such as models, MCP servers, tools, guardrails, evalua
 - Export/Import catalogs to portable JSON format (schema + data round-trip)
 - Export plugins: attach exporter bindings to catalogs, run on demand or automatically on publish
 - Built-in MCP Gateway CR exporter (MCPServerRegistration + MCPVirtualServer)
+- Webhook export plugins: deploy external exporters as K8s services with ExporterPlugin CRDs, with health monitoring, orphaned binding detection, and protocol versioning
 - Per-catalog RBAC via K8s SubjectAccessReview
 
 ### UIs
@@ -201,8 +208,10 @@ pc-asset-hub/
 │   │   └── repository/      # Repository interfaces
 │   ├── infrastructure/
 │   │   ├── gorm/            # GORM repository implementations
-│   │   └── k8s/             # K8s CR managers
-│   ├── operator/            # Operator controllers and CRD types
+│   │   └── k8s/             # K8s CR managers + ExporterPlugin watcher
+│   ├── operator/
+│   │   ├── api/v1alpha1/    # CRD types (AssetHub, CatalogVersion, Catalog, ExporterPlugin)
+│   │   └── controllers/     # Reconcilers (hub install, ExporterPlugin health probes)
 │   └── service/
 │       ├── meta/            # Meta service layer
 │       ├── operational/     # Operational service layer
@@ -216,7 +225,9 @@ pc-asset-hub/
 │       └── pages/
 │           ├── meta/        # Meta UI pages
 │           └── operational/ # Operational UI pages
-├── deploy/                  # K8s manifests
+├── examples/
+│   └── webhook-mcp-gateway/ # Reference webhook export plugin implementation
+├── deploy/                  # K8s manifests (API, operator, CRDs)
 ├── scripts/                 # Build, deploy, and test scripts
 ├── docs/                    # Architecture, test plans, coverage, design specs
 ├── PRD.md                   # Product requirements
@@ -227,11 +238,11 @@ pc-asset-hub/
 
 | Layer | Tests | Coverage |
 |-------|-------|----------|
-| Backend (Go) | ~2100 | 97%+ |
-| UI Browser (Playwright) | ~1274 | 95%+ |
-| Live System (bash scripts) | ~539 | — |
-| System (Playwright + live) | ~202 | — |
-| **Total** | **~4100** | |
+| Backend (Go) | ~2200 | 99%+ |
+| UI Browser (Playwright) | ~1326 | 95%+ |
+| Live System (bash scripts) | ~572 | — |
+| System (Playwright + live) | ~208 | — |
+| **Total** | **~4300** | |
 
 ## Documentation
 
@@ -241,6 +252,7 @@ pc-asset-hub/
 | [docs/td-log.md](docs/td-log.md) | Technical debt log (critical, normal, resolved) |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Deployment guide for kind and OpenShift clusters |
 | [docs/architecture.md](docs/architecture.md) | System architecture, data model, layered design, technology stack |
+| [docs/export-plugin-architecture.md](docs/export-plugin-architecture.md) | Export plugin system: webhook protocol, CRD registration, health probes, writing plugins |
 | [docs/test-plan.md](docs/test-plan.md) | Testing strategy, coverage matrix, cross-cutting test approaches |
 | [docs/test-plan-detailed.md](docs/test-plan-detailed.md) | Detailed test cases with IDs, layers, and expected outcomes |
 | [docs/coverage-report.md](docs/coverage-report.md) | Per-package coverage numbers, uncovered lines, test counts |

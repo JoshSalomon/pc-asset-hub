@@ -109,6 +109,27 @@ func main() {
 	// Export plugins
 	exporterRegistry := export.NewExporterRegistry()
 	exporterRegistry.Register(export.NewMCPGatewayExporter())
+
+	// ExporterPlugin CR watcher (dynamic webhook exporters)
+	var stopWatcher func()
+	if k8sRestConfig != nil {
+		watcher, watchErr := k8sinfra.NewExporterPluginWatcher(k8sRestConfig, exporterRegistry, watchNamespace, k8sinfra.ServiceAccountTokenGetter())
+		if watchErr != nil {
+			log.Printf("warning: ExporterPlugin watcher setup failed: %v", watchErr)
+		} else {
+			watchCtx, watchCancel := context.WithCancel(context.Background())
+			stopWatcher = watchCancel
+			go func() {
+				if err := watcher.Start(watchCtx); err != nil {
+					log.Printf("warning: ExporterPlugin watcher stopped: %v", err)
+				}
+			}()
+			log.Println("ExporterPlugin CR watch enabled")
+		}
+	} else {
+		log.Println("ExporterPlugin CR watch disabled: no K8s client. Only built-in exporters available.")
+	}
+
 	bindingRepo := gormrepo.NewExportBindingGormRepo(db)
 
 	previewCache := export.NewInMemoryPreviewCache()
@@ -193,6 +214,9 @@ func main() {
 
 	<-ctx.Done()
 	log.Println("shutting down gracefully...")
+	if stopWatcher != nil {
+		stopWatcher()
+	}
 	previewCache.Stop()
 	if err := e.Shutdown(context.Background()); err != nil {
 		log.Fatalf("shutdown error: %v", err)

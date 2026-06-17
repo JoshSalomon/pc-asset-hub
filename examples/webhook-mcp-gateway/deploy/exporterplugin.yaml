@@ -1,0 +1,39 @@
+apiVersion: assethub.project-catalyst.io/v1alpha1
+kind: ExporterPlugin
+metadata:
+  name: webhook-mcp-gateway
+  namespace: assethub
+spec:
+  description: "Webhook clone of MCP Gateway — exports MCP server/tool instances as MCP Gateway CRs via HTTP webhook"
+  endpoint: http://webhook-mcp-gateway.assethub.svc
+  timeoutSeconds: 15
+  parameterSchema:
+    - name: server_type
+      type: entity_type
+      description: "Entity type name for MCP servers"
+      required: true
+      attributeMappings:
+        - name: route_name_attr
+          description: "Server attribute for HTTPRoute name"
+          required: true
+          default: route_name
+        - name: mcp_path_attr
+          description: "Server attribute for MCP endpoint path"
+          default: mcp_path
+        - name: credential_secret_attr
+          description: "Server attribute for K8s secret ref"
+          default: credential_secret
+    - name: tool_type
+      type: entity_type
+      description: "Entity type name for MCP tools"
+      required: true
+    - name: virtual_server_type
+      type: entity_type
+      description: "Entity type name for MCP virtual servers"
+      required: true
+    - name: target_namespace
+      type: string
+      description: "K8s namespace for output CRs"
+  trustedSubjects:
+    - system:serviceaccount:assethub:assethub-api-server
+    - system:serviceaccount:assethub:assethub-operator

@@ -22,13 +22,18 @@ func (e *MCPGatewayExporter) Description() string { return "Exports MCP server/t
 
 func (e *MCPGatewayExporter) ParameterSchema() []ParameterDef {
 	return []ParameterDef{
-		{Name: "server_type", Type: "entity_type", Required: true, Description: "Entity type name for MCP servers"},
+		{
+			Name: "server_type", Type: "entity_type", Required: true,
+			Description: "Entity type name for MCP servers",
+			AttributeMappings: []AttributeMapping{
+				{Name: "route_name_attr", Description: "Server attribute for HTTPRoute name", Required: true, Default: "route_name"},
+				{Name: "mcp_path_attr", Description: "Server attribute for MCP endpoint path", Default: "mcp_path"},
+				{Name: "credential_secret_attr", Description: "Server attribute for K8s secret ref", Default: "credential_secret"},
+			},
+		},
 		{Name: "tool_type", Type: "entity_type", Required: true, Description: "Entity type name for MCP tools"},
 		{Name: "virtual_server_type", Type: "entity_type", Required: true, Description: "Entity type name for MCP virtual servers"},
 		{Name: "target_namespace", Type: "string", Description: "K8s namespace for output CRs", Default: "default"},
-		{Name: "route_name_attr", Type: "string", Description: "Server attribute for HTTPRoute name", Default: "route_name"},
-		{Name: "mcp_path_attr", Type: "string", Description: "Server attribute for MCP endpoint path", Default: "mcp_path"},
-		{Name: "credential_secret_attr", Type: "string", Description: "Server attribute for K8s secret ref", Default: "credential_secret"},
 	}
 }
 
@@ -39,7 +44,7 @@ func (e *MCPGatewayExporter) resolveAttrName(params map[string]string, paramKey,
 	return defaultName
 }
 
-func (e *MCPGatewayExporter) ValidateSchema(params map[string]string, schema SchemaInfo) error {
+func (e *MCPGatewayExporter) ValidateSchema(_ context.Context, params map[string]string, schema SchemaInfo) error {
 	serverType := params["server_type"]
 	toolType := params["tool_type"]
 

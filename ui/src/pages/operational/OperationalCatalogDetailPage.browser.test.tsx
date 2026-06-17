@@ -402,6 +402,21 @@ test('T-15.47: Validate button visible on operational catalog detail for RW', as
   await expect.element(page.getByRole('button', { name: 'Validate' })).toBeVisible()
 })
 
+// Validate button hidden for RW on published catalog
+test('Validate button hidden for RW on published catalog', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, published: true })
+  renderDetail('RW')
+  await expect.element(page.getByText('test-catalog', { exact: true })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: 'Validate' })).not.toBeInTheDocument()
+})
+
+// Validate button visible for Admin on published catalog
+test('Validate button visible for Admin on published catalog', async () => {
+  ;(api.catalogs.get as Mock).mockResolvedValue({ ...mockCatalog, published: true })
+  renderDetail('Admin')
+  await expect.element(page.getByRole('button', { name: 'Validate' })).toBeVisible()
+})
+
 // L2 fix: Validate button hidden for RO in operational UI
 test('Validate button hidden for RO in operational UI', async () => {
   renderDetail('RO')
@@ -1771,7 +1786,7 @@ test('Export Plugins tab shows bindings list', async () => {
       { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: { server_type: 'mcp-server', tool_type: 'mcp-tool' }, enabled: true, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
     ],
   })
-  ;(api.exporters.list as Mock).mockResolvedValue({ items: [{ name: 'mcp-gateway', description: 'MCP', parameter_schema: [] }] })
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [{ name: 'mcp-gateway', description: 'MCP', parameter_schema: [], source: 'built-in', health: 'n/a' }] })
   renderDetail('Admin')
   await page.getByText('Export Plugins').click()
   await expect.element(page.getByText('mcp-gateway')).toBeVisible()
@@ -1806,6 +1821,7 @@ test('Export Plugins tab: RW sees Export Now but not Add/Edit/Delete', async () 
 
 test('Export Plugins tab: Export Now calls run API', async () => {
   ;(api.exportBindings.run as Mock).mockResolvedValue(undefined)
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [{ name: 'mcp-gateway', description: 'MCP', parameter_schema: [], source: 'built-in', health: 'n/a' }] })
   ;(api.exportBindings.list as Mock).mockResolvedValue({
     items: [
       { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
@@ -1897,7 +1913,7 @@ test('Export Plugins tab: entity type dropdowns are sorted alphabetically', asyn
   ;(api.exporters.list as Mock).mockResolvedValue({ items: [
     { name: 'mcp-gateway', description: 'MCP Gateway', parameter_schema: [
       { name: 'server_type', type: 'entity_type', required: true, description: 'Server' },
-    ] },
+    ], source: 'built-in', health: 'n/a' },
   ] })
   renderDetail('Admin')
   await page.getByText('Export Plugins').click()
@@ -1921,7 +1937,7 @@ test('Export Plugins tab: Add binding modal shows error when pins fail to load',
   ;(api.exporters.list as Mock).mockResolvedValue({ items: [
     { name: 'mcp-gateway', description: 'MCP Gateway', parameter_schema: [
       { name: 'server_type', type: 'entity_type', required: true, description: 'Server' },
-    ] },
+    ], source: 'built-in', health: 'n/a' },
   ] })
   renderDetail('Admin')
   await page.getByText('Export Plugins').click()
@@ -1937,9 +1953,9 @@ test('Export Plugins tab: Add binding modal shows error when pins fail to load',
 test('Export Plugins tab: Add binding modal opens with exporter select', async () => {
   ;(api.exporters.list as Mock).mockResolvedValue({ items: [
     { name: 'mcp-gateway', description: 'MCP Gateway', parameter_schema: [
-      { name: 'server_type', type: 'string', required: true, description: 'Server entity type' },
-      { name: 'tool_type', type: 'string', required: true, description: 'Tool entity type' },
-    ] },
+      { name: 'server_type', type: 'entity_type', required: true, description: 'Server entity type' },
+      { name: 'tool_type', type: 'entity_type', required: true, description: 'Tool entity type' },
+    ], source: 'built-in', health: 'n/a' },
   ] })
   renderDetail('Admin')
   await page.getByText('Export Plugins').click()
@@ -1990,6 +2006,7 @@ test('Export Plugins tab: binding with error shows failed status', async () => {
 
 test('Export Plugins tab: run error shows alert', async () => {
   ;(api.exportBindings.run as Mock).mockRejectedValue(new Error('Export run failed'))
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [{ name: 'mcp-gateway', description: 'MCP', parameter_schema: [], source: 'built-in', health: 'n/a' }] })
   ;(api.exportBindings.list as Mock).mockResolvedValue({
     items: [
       { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: {}, enabled: true, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
@@ -2009,6 +2026,7 @@ test('Export Plugins tab: Export Now opens VS instance picker for VS binding', a
       { id: 'vs2', name: 'staging-vs' },
     ],
   })
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [{ name: 'mcp-gateway', description: 'MCP', parameter_schema: [], source: 'built-in', health: 'n/a' }] })
   ;(api.exportBindings.list as Mock).mockResolvedValue({
     items: [
       { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: { virtual_server_type: 'virtual-server' }, enabled: true, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
@@ -2029,6 +2047,7 @@ test('Export Plugins tab: VS picker shows correct instances', async () => {
       { id: 'vs2', name: 'staging-vs' },
     ],
   })
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [{ name: 'mcp-gateway', description: 'MCP', parameter_schema: [], source: 'built-in', health: 'n/a' }] })
   ;(api.exportBindings.list as Mock).mockResolvedValue({
     items: [
       { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: { virtual_server_type: 'virtual-server' }, enabled: true, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
@@ -2049,6 +2068,7 @@ test('Export Plugins tab: VS picker shows correct instances', async () => {
 
 test('Export Plugins tab: VS picker shows error when API fails', async () => {
   ;(api.instances.list as Mock).mockRejectedValue(new Error('502: Bad Gateway'))
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [{ name: 'mcp-gateway', description: 'MCP', parameter_schema: [], source: 'built-in', health: 'n/a' }] })
   ;(api.exportBindings.list as Mock).mockResolvedValue({
     items: [
       { id: 'b1', catalog_id: 'cat1', exporter_name: 'mcp-gateway', parameters: { virtual_server_type: 'virtual-server' }, enabled: true, last_run_at: null, last_run_status: 'never', last_run_error: '', created_at: '2026-01-01', updated_at: '2026-01-01' },
@@ -2192,6 +2212,10 @@ test('T-35.60: no warning when containment target has no orphans at root', async
 
 // Coverage: containmentTargetTypes cleanup cancellation
 test('containmentTargetTypes effect cleanup sets cancelled flag', async () => {
+  // Suppress unhandled rejections from vitest-browser-react during post-unmount renders
+  const handler = (e: PromiseRejectionEvent) => e.preventDefault()
+  window.addEventListener('unhandledrejection', handler)
+
   // Import cleanup to unmount all rendered components
   const { cleanup } = await import('vitest-browser-react')
   // Make snapshot return a delayed promise so the effect is still pending when we unmount
@@ -2204,12 +2228,11 @@ test('containmentTargetTypes effect cleanup sets cancelled flag', async () => {
   await cleanup()
   // Wait for the delayed promise to resolve after unmount
   await new Promise(r => setTimeout(r, 600))
+
+  window.removeEventListener('unhandledrejection', handler)
 })
 
-// Coverage: OperationalCatalogDetailPage.tsx:140 — loadSchemaSnapshot .catch fallback
-// This .catch arrow function handles snapshot load failures in the containmentTargetTypes
-// effect. It passes individually but fails in the full suite (30s timeout) because
-// vitest-browser-react's component cleanup between tests is asynchronous — effects from
-// the previous test's unmount fire after vi.clearAllMocks(), consuming mock overrides
-// intended for this test. The catch IS reachable and correct; it just can't be reliably
-// exercised in browser test isolation. Accepted as 1 uncovered line.
+// Coverage: L140 and L142 moved to separate test file
+// (OperationalCatalogDetailPage-coverage.browser.test.tsx) for test isolation.
+// vitest-browser-react's async component cleanup between tests causes mock
+// state contamination that makes these tests unreliable in the full suite.

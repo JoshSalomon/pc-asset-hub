@@ -2,6 +2,7 @@ package export
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -129,11 +130,11 @@ func (s *ExportBindingService) validateBindingParams(ctx context.Context, export
 		return err
 	}
 
-	if err := s.validateParamEntityTypes(params, schema); err != nil {
+	if err := s.validateParamEntityTypes(params, schema, exporter.ParameterSchema()); err != nil {
 		return err
 	}
 
-	return exporter.ValidateSchema(params, schema)
+	return exporter.ValidateSchema(ctx, params, schema)
 }
 
 func (s *ExportBindingService) Create(ctx context.Context, catalogName, exporterName string, params map[string]string) (*models.ExportBinding, error) {
@@ -306,6 +307,15 @@ func (s *ExportBindingService) RunAll(ctx context.Context, catalogName string) (
 		if !binding.Enabled {
 			continue
 		}
+		if _, ok := s.registry.Get(binding.ExporterName); !ok {
+			results = append(results, BindingRunResult{
+				BindingID:    binding.ID,
+				ExporterName: binding.ExporterName,
+				Status:       BindingStatusSkipped,
+				Error:        "exporter not registered",
+			})
+			continue
+		}
 		results = append(results, s.executeBinding(ctx, catalog, binding))
 	}
 	return results, nil
@@ -320,8 +330,7 @@ func (s *ExportBindingService) executeBinding(ctx context.Context, catalog *mode
 	exporter, ok := s.registry.Get(binding.ExporterName)
 	if !ok {
 		result.Status = BindingStatusFailed
-		result.Error = fmt.Sprintf("exporter %q not found", binding.ExporterName)
-		s.updateBindingStatus(ctx, binding, domainerrors.NewValidation(result.Error))
+		result.Error = fmt.Sprintf("exporter %q not registered", binding.ExporterName)
 		return result
 	}
 
@@ -390,13 +399,20 @@ func (s *ExportBindingService) validateRequiredParams(exporter Exporter, params 
 	return nil
 }
 
-func (s *ExportBindingService) validateParamEntityTypes(params map[string]string, schema SchemaInfo) error {
+func (s *ExportBindingService) validateParamEntityTypes(params map[string]string, schema SchemaInfo, paramDefs []ParameterDef) error {
+	entityTypeParams := map[string]bool{}
+	for _, p := range paramDefs {
+		if p.Type == "entity_type" {
+			entityTypeParams[p.Name] = true
+		}
+	}
+
 	typeNames := map[string]bool{}
 	for _, et := range schema.EntityTypes {
 		typeNames[et.Name] = true
 	}
 	for key, val := range params {
-		if strings.HasSuffix(key, "_type") && val != "" {
+		if entityTypeParams[key] && val != "" {
 			if !typeNames[val] {
 				return domainerrors.NewValidation(fmt.Sprintf("entity type %q (parameter %q) is not pinned in the catalog version", val, key))
 			}
@@ -529,6 +545,12 @@ func (s *ExportBindingService) buildInstancesByType(ctx context.Context, catalog
 		attrsByETV[etvID] = attrs
 	}
 
+	instanceByID := make(map[string]*models.EntityInstance, len(instances))
+	for i := range instances {
+		instanceByID[instances[i].ID] = instances[i]
+	}
+	assocNameCache := map[string]string{}
+
 	data := &instanceData{
 		byType:     make(map[string][]*ExportInstance),
 		childrenOf: make(map[string][]*ExportInstance),
@@ -537,26 +559,15 @@ func (s *ExportBindingService) buildInstancesByType(ctx context.Context, catalog
 	for _, inst := range instances {
 		etName := etIDToName[inst.EntityTypeID]
 		etvID := etvIDForET[inst.EntityTypeID]
-		attrs := attrsByETV[etvID]
 
-		attrValues := map[string]any{}
-		if s.iavRepo != nil {
-			vals, err := s.iavRepo.GetValuesForVersion(ctx, inst.ID, inst.Version)
-			if err != nil {
-				return nil, err
-			}
-			for _, v := range vals {
-				for _, a := range attrs {
-					if a.ID == v.AttributeID {
-						if v.ValueString != "" {
-							attrValues[a.Name] = v.ValueString
-						} else if v.ValueJSON != "" {
-							attrValues[a.Name] = v.ValueJSON
-						}
-						break
-					}
-				}
-			}
+		attrValues, err := s.resolveAttributes(ctx, inst, attrsByETV[etvID])
+		if err != nil {
+			return nil, err
+		}
+
+		linksByAssoc, err := s.resolveLinks(ctx, inst.ID, instanceByID, etIDToName, assocNameCache)
+		if err != nil {
+			return nil, err
 		}
 
 		ei := &ExportInstance{
@@ -566,7 +577,7 @@ func (s *ExportBindingService) buildInstancesByType(ctx context.Context, catalog
 			Description:  inst.Description,
 			ParentID:     inst.ParentInstanceID,
 			Attributes:   attrValues,
-			LinksByAssoc: make(map[string][]ExportLink),
+			LinksByAssoc: linksByAssoc,
 		}
 
 		data.byType[etName] = append(data.byType[etName], ei)
@@ -576,4 +587,68 @@ func (s *ExportBindingService) buildInstancesByType(ctx context.Context, catalog
 	}
 
 	return data, nil
+}
+
+func (s *ExportBindingService) resolveAttributes(ctx context.Context, inst *models.EntityInstance, attrs []*models.Attribute) (map[string]any, error) {
+	attrValues := map[string]any{}
+	if s.iavRepo == nil {
+		return attrValues, nil
+	}
+	vals, err := s.iavRepo.GetValuesForVersion(ctx, inst.ID, inst.Version)
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range vals {
+		for _, a := range attrs {
+			if a.ID == v.AttributeID {
+				if v.ValueString != "" {
+					attrValues[a.Name] = v.ValueString
+				} else if v.ValueJSON != "" {
+					var parsed any
+					if json.Unmarshal([]byte(v.ValueJSON), &parsed) == nil {
+						attrValues[a.Name] = parsed
+					} else {
+						attrValues[a.Name] = v.ValueJSON
+					}
+				}
+				break
+			}
+		}
+	}
+	return attrValues, nil
+}
+
+func (s *ExportBindingService) resolveLinks(ctx context.Context, instanceID string, instanceByID map[string]*models.EntityInstance, etIDToName map[string]string, assocNameCache map[string]string) (map[string][]ExportLink, error) {
+	linksByAssoc := make(map[string][]ExportLink)
+	if s.linkRepo == nil {
+		return linksByAssoc, nil
+	}
+	fwdLinks, err := s.linkRepo.GetForwardRefs(ctx, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	for _, link := range fwdLinks {
+		assocName, ok := assocNameCache[link.AssociationID]
+		if !ok {
+			assoc, err := s.assocRepo.GetByID(ctx, link.AssociationID)
+			if err != nil {
+				assocName = link.AssociationID
+			} else {
+				assocName = assoc.Name
+			}
+			assocNameCache[link.AssociationID] = assocName
+		}
+		targetName := link.TargetInstanceID
+		targetET := ""
+		if target, found := instanceByID[link.TargetInstanceID]; found {
+			targetName = target.Name
+			targetET = etIDToName[target.EntityTypeID]
+		}
+		linksByAssoc[assocName] = append(linksByAssoc[assocName], ExportLink{
+			TargetInstanceID:   link.TargetInstanceID,
+			TargetInstanceName: targetName,
+			TargetEntityType:   targetET,
+		})
+	}
+	return linksByAssoc, nil
 }

@@ -41,6 +41,19 @@ get_body() {
 
 TIMESTAMP=$(date +%s)
 
+cleanup() {
+  echo ""
+  echo "=== Cleanup ==="
+  [ -n "${CATALOG_NAME:-}" ] && api DELETE "$DATA_API/catalogs/$CATALOG_NAME" Admin > /dev/null 2>&1 || true
+  [ -n "${CV_ID:-}" ] && api DELETE "$META_API/catalog-versions/$CV_ID" Admin > /dev/null 2>&1 || true
+  [ -n "${ET_ID:-}" ] && api DELETE "$META_API/entity-types/$ET_ID" Admin > /dev/null 2>&1 || true
+  [ -n "${SHORT_STR_TD_ID:-}" ] && api DELETE "$META_API/type-definitions/$SHORT_STR_TD_ID" Admin > /dev/null 2>&1 || true
+  [ -n "${LOWER_TD_ID:-}" ] && api DELETE "$META_API/type-definitions/$LOWER_TD_ID" Admin > /dev/null 2>&1 || true
+  [ -n "${PERCENT_TD_ID:-}" ] && api DELETE "$META_API/type-definitions/$PERCENT_TD_ID" Admin > /dev/null 2>&1 || true
+  echo "  Done"
+}
+trap cleanup EXIT
+
 # ===================================================================
 # Setup: Create type definitions with constraints
 # ===================================================================
@@ -310,25 +323,6 @@ else
 fi
 
 # ===================================================================
-# Cleanup
-# ===================================================================
-
-header "Cleanup"
-
-api DELETE "$DATA_API/catalogs/$CATALOG_NAME" Admin > /dev/null 2>&1 || true
-echo "  Deleted catalog: $CATALOG_NAME"
-
-api DELETE "$META_API/catalog-versions/$CV_ID" Admin > /dev/null 2>&1 || true
-echo "  Deleted CV: $CV_ID"
-
-api DELETE "$META_API/entity-types/$ET_ID" Admin > /dev/null 2>&1 || true
-echo "  Deleted entity type: $ET_ID"
-
-api DELETE "$META_API/type-definitions/$SHORT_STR_TD_ID" Admin > /dev/null 2>&1 || true
-api DELETE "$META_API/type-definitions/$LOWER_TD_ID" Admin > /dev/null 2>&1 || true
-api DELETE "$META_API/type-definitions/$PERCENT_TD_ID" Admin > /dev/null 2>&1 || true
-echo "  Deleted custom type definitions"
-
 # ===================================================================
 
 print_summary "test-type-constraints"

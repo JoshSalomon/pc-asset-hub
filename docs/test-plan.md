@@ -313,6 +313,39 @@ Each feature area is tested at the appropriate layers:
 | TD-87: System test shared helpers refactor | | | | X | |
 | TD-154: Preview cache TTL initialization | X | | | | |
 | TD-132: Remove unused accessChecker field | X | | | | |
+| FF-15 P2: Thread-safe ExporterRegistry (mutex, Deregister, IsBuiltIn) | X | | | | |
+| FF-15 P2: validateParamEntityTypes fix (declared type, not suffix) | X | | X | | |
+| FF-15 P2: Webhook protocol DTOs (request/response serialization) | X | | | | |
+| FF-15 P2: WebhookExporter adapter (HTTP forwarding, timeout, size limit) | X | | | | |
+| FF-15 P2: ExporterInfo with source + health fields | X | | X | X | |
+| FF-15 P2: ExporterPlugin CRD types + DeepCopy | X | | | | X |
+| FF-15 P2: ExporterPlugin CRD YAML + RBAC manifests | | | | | X |
+| FF-15 P2: ExporterPluginReconciler (health probes + status) | X | | | | X |
+| FF-15 P2: Orphaned binding handling (skipped status in RunAll/Preview) | X | | X | X | |
+| FF-15 P2: API server ExporterPlugin CR informer watch | X | | | | |
+| FF-15 P2: Name collision detection (built-in name reserved, log + skip) | X | | X | | |
+| FF-15 P2: UI health indicator, source badge, orphaned warning | | | | X | |
+| FF-15 P2: WebhookExporter with zero parameter schema | X | | X | X | |
+| FF-15 P2: Webhook /validate in binding creation + publish preview flow | X | | X | | |
+| FF-15 P2: RunBinding with unhealthy (not deregistered) exporter | X | | X | | |
+| FF-15 P2: VS filtering parity (built-in vs webhook same pre-filtered data) | X | | | | |
+| FF-15 P2: Non-K8s mode (no cluster, built-ins only, no crash) | X | | | | |
+| FF-15 P2: Multiple webhook exporters registered simultaneously | X | | X | | |
+| FF-15 P2: Protocol version mismatch handling | X | | X | | |
+| FF-15 P2: Base URL path invariant (reject path in endpoint) | X | | | | |
+| FF-15 P2: Startup pre-population (existing CRs loaded on boot) | X | | | | |
+| FF-15 P2: UpdateBinding on orphaned exporter behavior | X | | X | | |
+| FF-15 P2: HTTP redirect rejection from webhook plugin | X | | | | |
+| FF-15 P2: Content-Type and response Content-Type validation | X | | | | |
+| FF-15 P2: Empty 200 response body handling | X | | | | |
+| FF-15 P2: Stale-to-Unknown health transition | X | | | | X |
+| FF-15 P2: Example plugin auth e2e (TokenReview + subject) | | | X | | |
+| FF-15 P2: Example plugin protocol version rejection | | | X | | |
+| FF-15 P2: ExporterPlugin CRD negative validation (invalid specs) | | | | | X |
+| FF-15 P2: Health status transitions end-to-end (Ready→Error→Ready) | | | | X | X |
+| FF-15 P2: RBAC SA-level verification for ExporterPlugin access | | | X | | |
+| FF-15 P2: Webhook exporter live tests (deploy + curl) | | | X | | |
+| FF-15 P2: Webhook exporter system tests (Playwright) | | | | X | |
 
 ### Bug Fix & UX Polish Sprint Test Strategy (Phase 1)
 
@@ -1190,3 +1223,111 @@ Extensible export system with export bindings as catalog sub-resources. Phase 1:
 
 - **TD-132 (Remove unused accessChecker field):**
   - **Unit tests (handler):** Verify `NewExportHandler` and `NewImportHandler` constructors no longer accept `accessChecker` parameter. Verify handlers still function correctly (export/import operations work). This is a dead code removal — existing tests must pass with updated constructor signatures.
+
+### 5.53 Dynamic Export Plugins via HTTP Webhooks (FF-15 Phase 2)
+
+Zero-recompilation extensibility for export plugins. Plugin authors deploy a Deployment+Service and create an ExporterPlugin CR. The Asset Hub discovers it via K8s informer and makes it available through the existing binding flow. Design spec: `docs/plans/2026-05-28-dynamic-export-plugins-design.md`. Implementation plan: `docs/plans/2026-06-03-dynamic-export-plugins-impl-plan.md`.
+
+**Step 1: Foundation (BindingStatusSkipped + validateParamEntityTypes fix)**
+
+- **Unit tests (export):** Verify `BindingStatusSkipped` constant equals `"skipped"`. Verify `validateParamEntityTypes` uses declared `ParameterDef.Type == "entity_type"` instead of `strings.HasSuffix(key, "_type")`: param `output_type` with type `"string"` must NOT trigger entity-type validation; param `server_ref` with type `"entity_type"` MUST validate against CV pins; existing `server_type` with type `"entity_type"` behavior preserved.
+- **API tests (handler):** Verify binding creation with a param named `output_type` of type `string` succeeds without entity-type validation (regression test).
+
+**Step 2: Thread-Safe Registry**
+
+- **Unit tests (export):** Verify `Register` marks built-in; `RegisterWebhook` marks non-built-in. Verify `Deregister` succeeds for webhook, refused for built-in, returns false for not-found. Verify `RegisterWebhook` twice overwrites (last wins). Verify `IsBuiltIn` returns correct values. **Concurrent access test (critical):** 50 goroutines doing Register/Get/List/Deregister in parallel — must pass `go test -race` with zero data races.
+
+**Step 3: Webhook Protocol DTOs**
+
+- **Unit tests (export):** JSON roundtrip for each webhook DTO type — verify snake_case field names in marshaled output. Verify `WebhookArtifact` marshals to `api_version`/`kind`/`name`/`namespace`/`yaml` (not PascalCase). Verify `ExportInputToWebhookRequest` excludes dead fields (`cv_label`, `entity_types`, `virtual_server_instance_name`, `allowed_tool_ids`). Verify mixed attribute types (string, int, bool, array) roundtrip correctly. Verify `SchemaInfoToWebhook` converts associations with all fields (Name, Type, TargetEntityType).
+
+**Step 4: WebhookExporter Adapter**
+
+- **Unit tests (export, using httptest):**
+  - *Happy path:* Verify `ValidateSchema` success (200 `{"valid":true}`). Verify `Export` success (200 with artifacts JSON).
+  - *Error handling:* Verify `ValidateSchema` error (400 `{"valid":false,"error":"msg"}`) returns `domainerrors.IsValidation`. Verify `Export` 4xx → validation error. Verify `Export` 5xx → non-validation error with "webhook plugin error". Verify `Export` timeout → error with "timed out". Verify `Export` connection refused → error with "unreachable". Verify `Export` oversized response (>10MB) → validation error with "10 MB". Verify `Export` malformed JSON (200 with invalid body) → error includes "not valid JSON". Verify `Export` empty 200 response body (zero bytes) → error clearly indicates empty response, not generic JSON parse error. Verify `Export` HTTP 302 redirect → adapter rejects redirects with clear error ("unexpected redirect") — redirects from a plugin endpoint are always misconfiguration (set `http.Client.CheckRedirect` to reject). Verify response Content-Type mismatch: plugin returns `Content-Type: text/html` with HTML body → error hints at Content-Type mismatch (e.g., "expected JSON, got text/html"), not just "not valid JSON".
+  - *Headers:* Verify `X-AssetHub-Protocol-Version: v1` header on all outgoing requests. Verify `Authorization: Bearer {token}` header present. Verify `Content-Type: application/json` header on all POST requests.
+  - *Protocol version:* Verify plugin returns `X-AssetHub-Protocol-Version: v2` response header → adapter does not reject (informational in v1).
+  - *Timeout & config:* Verify timeout calculation: `timeoutSeconds=15` → validate=7s, export=15s; `timeoutSeconds=3` → both=3s (minimum floor). Verify `HealthStatus` get/set.
+  - *Edge cases:* Verify zero ParameterSchema — registration succeeds, Export called with empty params map. Verify dead fields excluded from request body. Verify VS filtering parity: `ExportInput` passed to webhook exporter is already pre-filtered by `resolveVSInstanceTools` in the binding service. Test that `ExportInputToWebhookRequest` faithfully serializes the pre-filtered data — it does NOT re-filter.
+  - *Base URL invariant:* Verify `NewWebhookExporter` with a baseURL containing a path (e.g., `https://host/export`) → rejects at construction with validation error. Adapter must only append `/validate` and `/export` to a pathless base URL.
+- **API tests:** Run binding to webhook exporter returning `X-AssetHub-Protocol-Version: v2` header → export succeeds (200 with YAML), no error surfaced to user.
+- **Round-trip/seam test:** Verify `ExportInput` → `WebhookExportRequest` (serialization) → httptest server → `WebhookExportResponse` → `ExportOutput` (deserialization) produces correct artifacts with matching fields.
+
+**Step 5: ExporterInfo with Source + Health**
+
+- **Unit tests (export):** Verify `List()` with built-in exporter returns `source="built-in"`, `health="n/a"`. Verify `List()` with webhook exporter (health "Ready") returns `source="webhook"`, `health="Ready"`. Verify mixed built-in + webhook returns correct source/health for each.
+- **API tests (handler):** Verify `GET /exporters` response includes `source` and `health` fields in JSON. Verify existing exporter list behavior unchanged (name, description, parameter_schema still present).
+
+**Step 6: ExporterPlugin CRD Go Types**
+
+- **Unit tests (operator):** Verify `DeepCopy` independence (modify copy, original unchanged). Verify `DeepCopy` nil returns nil. Verify `DeepCopyObject` returns non-nil `runtime.Object`. Verify nil slices handled (ParameterSchema, TrustedSubjects). Verify `ExporterPluginList` DeepCopy. Verify `AddToScheme` registers ExporterPlugin kind in scheme.
+
+**Cross-step: Webhook /validate in binding creation and publish preview flows**
+
+- **Unit tests (export):** Register a WebhookExporter (httptest) in the registry. Call `CreateBinding` → verify the binding service calls `exporter.ValidateSchema()` which makes an HTTP POST to `/validate` on the mock server. Verify that if `/validate` returns 400 with error, the binding is NOT created and the error is returned to the caller. Register a WebhookExporter binding, call `PublishPreview` → verify `/validate` is called before `/export`. Verify that if `/validate` times out during PublishPreview, the binding is marked as failed in the preview results.
+- **API tests (handler):** Verify `POST /export-bindings` with a webhook exporter returns 400 when the plugin's `/validate` rejects the schema. Verify the error message from the plugin is surfaced in the API response.
+
+**Cross-step: RunBinding with unhealthy (not deregistered) exporter**
+
+- **Unit tests (export):** Register a WebhookExporter with `healthStatus="Unhealthy"`. Call `RunBinding` → verify the export is ATTEMPTED (HTTP call made to `/export`). Health status is informational, not a gate. Verify export succeeds despite unhealthy status → binding status updated to success. Register a WebhookExporter with `healthStatus="Error"`. Call `RunBinding` → verify HTTP call is still attempted. If the call fails (connection refused), binding status is "failed" with the connection error, not "unhealthy exporter."
+
+**Cross-step: Zero parameter schema exporter**
+
+- **Unit tests (export):** Register a WebhookExporter with empty `ParameterSchema` (no params). Call `CreateBinding` with no parameters → binding created successfully. Call `RunBinding` → verify the `/export` request body has `"parameters": {}`. Verify the export succeeds.
+- **API tests (handler):** Verify `POST /export-bindings` with a zero-param webhook exporter and empty parameters → 201 Created. Verify `GET /exporters` shows the exporter with empty `parameter_schema` array.
+- **Browser tests:** Verify Add Binding modal with a zero-param exporter shows no parameter fields. Verify submit succeeds.
+
+**Cross-step: Multiple webhook exporters**
+
+- **Unit tests (export):** Register two webhook exporters ("exporter-a", "exporter-b") with different endpoints. Verify both appear in `List()`. Create binding to each. Run both — verify each calls its own endpoint. Deregister "exporter-a" → "exporter-b" still works, still appears in List().
+- **API tests (handler):** Register two webhook exporters. `GET /exporters` returns both with correct source/health. Create bindings to each. Run each — verify both produce output.
+
+**Cross-step: Non-K8s mode (local dev without cluster)**
+
+- **Unit tests (infrastructure/k8s):** Verify that `NewExporterPluginWatcher` with nil config returns error or no-op watcher. Verify the API server startup path logs warning and skips informer when `rest.InClusterConfig()` fails. Verify `/exporters` returns only built-in exporters (no webhook exporters) when watcher is disabled. Verify no crash or blocked startup.
+
+**Step 7: CRD YAML + RBAC Manifests**
+
+- **Manifest tests:** `kubectl apply --dry-run=client` succeeds for CRD and RBAC files. CRD applied to Kind cluster → `kubectl get crd exporterplugins.assethub.project-catalyst.io` succeeds. Both operator and API server RBAC updated.
+- **Negative CRD validation tests (use `--dry-run=server` after CRD is installed — `--dry-run=client` does not validate against CRD schema):** Missing required field (Endpoint) → rejected. TimeoutSeconds negative → rejected. TimeoutSeconds = 0 → rejected (CRD schema enforces minimum: 3). Endpoint with path component → accepted by CRD (path validation done in watcher, not CRD schema). Timeout semantics: omitted → default 10 at application level; provided value must be ≥3 (CRD `minimum: 3` enforces).
+- **Justification for skipped categories:** No unit/API/browser tests — this step is pure YAML manifests. Verified via kubectl dry-run=server and live deployment.
+
+**Step 8: ExporterPluginReconciler (Health Probe Controller)**
+
+- **Unit tests (operator, using fake client + httptest):** Verify `classifyHealthResult` pure function: 200 → Ready; 401/403 → Error with "authentication rejected"; non-200 → Unhealthy; timeout → Unhealthy; connection error → Error. Verify reconcile with CR not found → no error (idempotent). Verify reconcile with healthy plugin (httptest 200) → `status.phase=Ready`. Verify reconcile with unhealthy plugin (httptest 503) → `status.phase=Unhealthy`. Verify reconcile with unreachable plugin → `status.phase=Error`. Verify reconcile sends `Authorization` header on health probe. Verify health status transitions: Ready → Unhealthy (503) → Ready (200 again) — CR status updated at each step. Verify stale-to-Unknown transition: CR has `status.phase=Ready` with `lastHealthCheck` older than 3x probe interval → reconciler sets `status.phase=Unknown` (if implemented as time-check in reconciler, test with controlled timestamps).
+
+**Step 9: Orphaned Binding Handling**
+
+- **Unit tests (export):** Verify `RunAll` with one registered and one orphaned exporter → registered runs (success), orphaned returns `BindingStatusSkipped` with error "exporter not registered". Verify orphaned binding's `LastRunStatus` is NOT updated by RunAll (skipped is NOT "execution" — the exporter was never called, so no status update). Verify `PublishPreview` with orphaned binding → `HasFailures` is false, result includes skipped entry. Verify `PublishPreview` with one orphaned + one failed → `HasFailures` is true (from failed, not skipped). Verify single `RunBinding` on orphaned binding → `BindingStatusFailed` with "exporter not found" (NOT skipped — explicit user action gets a failure, not a silent skip). This asymmetry is intentional: RunBinding = user explicitly tried to run → fail loudly; RunAll = batch operation → skip gracefully. Verify `UpdateBinding` on orphaned binding with `enabled=false` only → decide behavior: either (a) skip validation when only changing enabled flag (better UX during temporary exporter removal) or (b) fail with "exporter not found" (current behavior, document as intended). Test whichever is chosen.
+- **API tests (handler):** Verify `POST /publish/preview` with orphaned binding returns skipped status in response, does not block publishing. Verify `POST /export-bindings/{id}/run` on orphaned binding returns error with "exporter not found".
+
+**Step 10: API Server ExporterPlugin CR Informer Watch**
+
+- **Unit tests (infrastructure/k8s):** Verify `handleAdd` registers webhook with correct baseURL, description, paramSchema, timeout, healthStatus from CR. Verify `handleDelete` deregisters. Verify `handleAdd` with built-in name collision → not registered, built-in preserved. Verify `handleUpdate` replaces registration atomically (old gone, new present). Verify `handleUpdate` with invalid spec → old registration preserved. Verify default timeout (no spec.TimeoutSeconds) → 10s. Verify custom timeout (spec.TimeoutSeconds=20) → export=20s, validate=10s. Verify minimum timeout (spec.TimeoutSeconds=1) → clamped to 3. Verify health status read from `cr.Status.Phase` on add/update. Verify exporter `Name()` matches `cr.ObjectMeta.Name` — the K8s resource name IS the exporter name, stored in `ExportBinding.ExporterName`. Verify base URL path rejection: CR with `spec.endpoint: "https://host/some/path"` → handleAdd rejects or strips path with warning. Verify startup pre-population: create 2 ExporterPlugin CRs before watcher starts → after `Start()` completes and cache syncs, both exporters are in the registry. Verify watcher does not serve requests until initial list/sync is complete.
+- **Non-K8s mode contract (explicit):** `NewExporterPluginWatcher` with nil `rest.Config` → returns a typed error (not nil watcher). The caller in `main.go` catches the error, logs `"ExporterPlugin CR watch disabled: no K8s client"`, and continues startup. `/exporters` returns only built-in exporters. No crash, no blocked startup.
+- **API tests (handler — name collision):** Register a built-in exporter "mcp-gateway" in the registry. Simulate a webhook registration with the same name "mcp-gateway" (collision — registry.IsBuiltIn returns true, RegisterWebhook not called). `GET /exporters` must return only the built-in version with `source="built-in"`. Webhook version must NOT appear in the list.
+
+**Step 11: UI Updates**
+
+- **Browser tests:** Verify exporter list with built-in shows "built-in" badge. Verify exporter list with webhook shows "webhook" badge + health dot (green/yellow/red/grey). Verify orphaned binding shows warning icon with tooltip. Verify "Export Now" button disabled for orphaned binding. Verify publish preview modal renders "skipped" status correctly for orphaned bindings (distinct from "failed" — e.g., grey label, not red). Verify existing binding CRUD flow works with webhook exporter (no regression).
+
+**Live System Tests (after all steps)**
+
+- **Live tests (curl):** Deploy example webhook plugin to Kind cluster. Create ExporterPlugin CR. Verify API server discovers it (`GET /exporters` includes it with source=webhook). Create binding to webhook exporter. Run export via API, verify YAML output. Delete CR, verify exporter disappears from list. Verify orphaned binding returns error on run. Deploy CR with built-in name "mcp-gateway" → verify collision: `GET /exporters` returns only the built-in version. RBAC SA positive verification: `kubectl auth can-i list exporterplugins --as=system:serviceaccount:assethub:assethub-api-server -n assethub` → yes. `kubectl auth can-i list exporterplugins --as=system:serviceaccount:assethub:assethub-operator -n assethub` → yes. `kubectl auth can-i update exporterplugins/status --as=system:serviceaccount:assethub:assethub-operator -n assethub` → yes. RBAC SA negative verification (least privilege): `kubectl auth can-i update exporterplugins/status --as=system:serviceaccount:assethub:assethub-api-server -n assethub` → **no** (API server has read-only access). RBAC for webhook bindings: RO user can see webhook exporter in list but cannot create binding (403). RW user can run export on webhook binding. Admin can create/update/delete binding to webhook exporter. All identical to built-in exporter behavior. Example plugin auth e2e: call plugin /export without Authorization header → 401. Call with invalid token → 401. Call with valid token from wrong SA → 403. Call with API server SA token → 200. Example plugin protocol version: call plugin /export with `X-AssetHub-Protocol-Version: v99` → plugin rejects with 400 "unsupported protocol version" (verifies the plugin side of version enforcement).
+- **System tests (Playwright):** Navigate to catalog with webhook binding. Verify health indicator visible. Verify source badge visible. Create binding to webhook exporter via UI. Run export, verify download. Delete webhook exporter CR, verify orphaned warning appears. Verify health status transitions visible in UI: deploy plugin (Ready → green dot), stop plugin pod (Unhealthy/Error → yellow/red dot), restart pod (Ready → green dot again). Verify binding to unhealthy exporter is still runnable (Export Now not disabled — health is informational).
+
+**Documented test gaps (tracked as TD, not blocking merge):**
+
+- **Watch reconnection/restart integration test (TD-161):** The informer uses controller-runtime's `cache.Cache` which handles reconnect/resync automatically. The application behavior after resync (registry re-populated correctly) relies on `handleAdd` being idempotent (`RegisterWebhook` overwrites). This is tested at the unit level (startup pre-population test in Step 10) but not with a live watch disconnect/reconnect cycle. Requires envtest infrastructure in the API server test suite which doesn't exist today. Acceptance criteria: create CR → watch registers it → simulate watch disconnect → reconnect → verify exporter still in registry with correct state.
+- **UpdateBinding on orphaned exporter (decision pending):** When a webhook exporter is temporarily removed (CR deleted during redeployment), `UpdateBinding` fails with "exporter not found" because `validateBindingParams` calls `registry.Get()`. The user can't even disable a binding. Decision needed: either skip validation when only changing `enabled` flag (better UX) or document as intended behavior. Whichever is chosen, the test in Step 9 covers it.
+- **TrustedSubjects functional test:** TrustedSubjects is consumed by the plugin service, not the Asset Hub. The functional auth test (accept listed subjects, reject others) belongs in the example webhook plugin's test suite, not the core. The core CRD only needs DeepCopy tests. The example plugin's live tests include auth e2e verification.
+
+**Verification gate (mandatory):**
+
+- `go test -race ./internal/service/operational/export/... -count=1` — race detection for export package (registry concurrency, adapter concurrency)
+- `go test -race ./internal/operator/... -count=1` — race detection for operator (reconciler HTTP client, status writes)
+- `go test ./internal/... -count=1` — all backend tests
+- `cd ui && npx vitest run --config vitest.browser.config.ts` — all browser tests
+- `make test-live` — all live API tests
+- `cd ui && npx vitest run --config vitest.system.config.ts` — all system tests

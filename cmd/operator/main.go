@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -11,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	k8sinfra "github.com/project-catalyst/pc-asset-hub/internal/infrastructure/k8s"
 	v1alpha1 "github.com/project-catalyst/pc-asset-hub/internal/operator/api/v1alpha1"
 	"github.com/project-catalyst/pc-asset-hub/internal/operator/controllers"
 )
@@ -52,6 +55,19 @@ func main() {
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		log.Error(err, "unable to setup controller")
 		fmt.Fprintf(os.Stderr, "unable to setup controller: %v\n", err)
+		os.Exit(1)
+	}
+
+	epReconciler := &controllers.ExporterPluginReconciler{
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		HTTPClient:    &http.Client{Timeout: 10 * time.Second},
+		ProbeInterval: 30 * time.Second,
+		TokenGetter: k8sinfra.ServiceAccountTokenGetter(),
+	}
+	if err := epReconciler.SetupWithManager(mgr); err != nil {
+		log.Error(err, "unable to setup ExporterPlugin controller")
+		fmt.Fprintf(os.Stderr, "unable to setup ExporterPlugin controller: %v\n", err)
 		os.Exit(1)
 	}
 

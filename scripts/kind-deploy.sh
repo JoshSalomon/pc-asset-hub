@@ -174,6 +174,7 @@ deploy_resources() {
     $KUBE_CMD apply -f "$PROJECT_ROOT/deploy/k8s/operator/crd.yaml"
     $KUBE_CMD apply -f "$PROJECT_ROOT/deploy/k8s/operator/catalogversion-crd.yaml"
     $KUBE_CMD apply -f "$PROJECT_ROOT/deploy/k8s/operator/catalog-crd.yaml"
+    $KUBE_CMD apply -f "$PROJECT_ROOT/deploy/k8s/operator/exporterplugin-crd.yaml"
     $KUBE_CMD apply -f "$PROJECT_ROOT/deploy/k8s/operator/"
 
     log "Deploying API server RBAC..."
@@ -197,6 +198,8 @@ deploy_resources() {
     done
     $KUBE_CMD -n assethub rollout status deployment/assethub-api --timeout=120s
     $KUBE_CMD -n assethub rollout status deployment/assethub-ui --timeout=120s
+
+    rebuild_plugin
 }
 
 # ──────────────────────────────────────────────
@@ -257,6 +260,31 @@ teardown() {
 # ──────────────────────────────────────────────
 # Rebuild (keep cluster, rebuild images + redeploy)
 # ──────────────────────────────────────────────
+rebuild_plugin() {
+    if [ -f "$PROJECT_ROOT/examples/webhook-mcp-gateway/Dockerfile" ]; then
+        log "Building and redeploying example webhook-mcp-gateway plugin..."
+        $ENGINE build -t webhook-mcp-gateway:latest "$PROJECT_ROOT/examples/webhook-mcp-gateway"
+
+        if [ "$ENGINE" = "podman" ]; then
+            local archive
+            archive="$(mktemp)"
+            podman tag "localhost/webhook-mcp-gateway:latest" "docker.io/webhook-mcp-gateway:latest" 2>/dev/null || true
+            podman save "docker.io/webhook-mcp-gateway:latest" -o "$archive"
+            kind load image-archive "$archive" --name "$CLUSTER_NAME"
+            rm -f "$archive"
+        else
+            kind load docker-image webhook-mcp-gateway:latest --name "$CLUSTER_NAME"
+        fi
+
+        $KUBE_CMD apply -f "$PROJECT_ROOT/examples/webhook-mcp-gateway/deploy/deployment.yaml"
+        $KUBE_CMD apply -f "$PROJECT_ROOT/examples/webhook-mcp-gateway/deploy/exporterplugin.yaml"
+        if echo "$KUBE_CMD" | grep -q "kind"; then
+            $KUBE_CMD -n assethub delete pods -l app=webhook-mcp-gateway --wait=false 2>/dev/null || true
+        fi
+        $KUBE_CMD -n assethub rollout status deployment/webhook-mcp-gateway --timeout=60s || log "Warning: webhook-mcp-gateway not ready"
+    fi
+}
+
 rebuild() {
     build_images
     load_images
@@ -280,6 +308,8 @@ rebuild() {
     $KUBE_CMD -n assethub rollout status deployment/assethub-operator --timeout=120s
     $KUBE_CMD -n assethub rollout status deployment/assethub-api --timeout=120s
     $KUBE_CMD -n assethub rollout status deployment/assethub-ui --timeout=120s
+
+    rebuild_plugin
 
     verify
 }

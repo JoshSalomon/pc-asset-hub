@@ -12,6 +12,8 @@ vi.mock('../../api/client', () => ({
     versions: { snapshot: vi.fn() },
     instances: { list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), createContained: vi.fn(), listContained: vi.fn(), setParent: vi.fn() },
     links: { create: vi.fn(), delete: vi.fn(), forwardRefs: vi.fn(), reverseRefs: vi.fn() },
+    exporters: { list: vi.fn() },
+    exportBindings: { list: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), run: vi.fn() },
   },
   setAuthRole: vi.fn(),
 }))
@@ -112,6 +114,8 @@ beforeEach(() => {
   ;(api.catalogs.export as Mock).mockResolvedValue({ catalog: { name: 'my-catalog' }, entity_types: [] })
   ;(api.catalogs.list as Mock).mockResolvedValue({ items: [{ name: 'other-cat' }, { name: 'prod-cat' }], total: 2 })
   ;(api.catalogs.update as Mock).mockResolvedValue({ ...mockCatalog, description: 'updated desc' })
+  ;(api.exporters.list as Mock).mockResolvedValue({ items: [], total: 0 })
+  ;(api.exportBindings.list as Mock).mockResolvedValue({ items: [], total: 0 })
   ;(api.catalogVersions.list as Mock).mockResolvedValue({ items: [
     { id: 'cv1', version_label: 'v1.0', lifecycle_stage: 'development' },
     { id: 'cv2', version_label: 'v2.0', lifecycle_stage: 'testing' },
@@ -274,8 +278,8 @@ test('create instance with number attribute calls parseFloat', async () => {
   }))
 })
 
-// Cat 5: Parent instance name missing — shows loading fallback (TD-33: parent name now from API)
-test('parent name missing shows loading fallback', async () => {
+// Cat 5: Parent instance name missing — falls back to parent_instance_id (TD-33: parent name from API)
+test('parent name missing shows parent_instance_id fallback', async () => {
   const childInstances = [{
     id: 'c1', entity_type_id: 'et1', catalog_id: 'cat1', parent_instance_id: 'p-unknown',
     name: 'child-inst', description: '', version: 1,
@@ -290,8 +294,8 @@ test('parent name missing shows loading fallback', async () => {
   renderDetail('Admin')
   await expect.element(page.getByRole('gridcell', { name: 'child-inst' })).toBeVisible()
   await page.getByRole('button', { name: 'Details' }).first().click()
-  // No parent_instance_name in response — shows loading fallback
-  await expect.element(page.getByText('Contained by: loading...').first()).toBeVisible()
+  // No parent_instance_name in response — falls back to displaying parent_instance_id
+  await expect.element(page.getByText('Contained by: p-unknown').first()).toBeVisible()
 })
 
 // Cat 5: Error catch block - load children failure (line 319)
