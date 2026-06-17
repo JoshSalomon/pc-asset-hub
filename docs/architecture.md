@@ -124,7 +124,7 @@ pc-asset-hub/
       middleware/            # Auth, RBAC, logging, error handling
       dto/                   # Request/response DTOs
     operator/                # Operator logic
-      api/v1alpha1/          # CRD types: AssetHub, CatalogVersion, Catalog, ExporterPlugin (planned)
+      api/v1alpha1/          # CRD types: AssetHub, CatalogVersion, Catalog, ExporterPlugin
       controllers/           # Reconciler implementations
       crdgen/                # CRD/CR generation from entity types (future scope)
   pkg/
@@ -650,7 +650,7 @@ Export bindings are scoped to catalogs and follow a split access model:
 
 ## 11. Operator Architecture
 
-Built with **operator-sdk**. Currently manages two concerns (Hub Installation and Catalog Version Discovery). A third (Export Plugin Discovery) is planned for FF-15 Phase 2.
+Built with **operator-sdk**. Manages three concerns:
 
 ### Hub Installation (AssetHub CRD)
 
@@ -673,9 +673,7 @@ When a catalog version is promoted to Testing or Production, a lightweight `Cata
 
 The database remains the source of truth. `CatalogVersion` CRs are discovery artifacts — lightweight projections enabling applications to find available catalog versions via the K8s API.
 
-### Export Plugin Discovery (ExporterPlugin CRs) — FF-15 Phase 2 (PLANNED)
-
-> **Note:** This section describes the target-state architecture for FF-15 Phase 2. It is not yet implemented. See `docs/plans/2026-05-28-dynamic-export-plugins-design.md` for the full design spec.
+### Export Plugin Discovery (ExporterPlugin CRs) — FF-15 Phase 2
 
 Dynamic export plugins register themselves via `ExporterPlugin` custom resources. This enables zero-recompilation extensibility — deploying a new exporter requires only a Deployment+Service and a CR, no Asset Hub code changes.
 

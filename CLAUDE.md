@@ -50,6 +50,15 @@ If unsure which phase you're in, ask before proceeding.
 - "It's just a refactor, no test needed" — run existing tests BEFORE the refactor to establish baseline, then verify they still pass AFTER.
 - "I'll fix the code first, then write the test" — if you're editing a non-test file without a RED test in the same turn, STOP.
 
+### Test Plan Rationalizations (when a detailed test plan with IDs exists)
+
+- "I already tested RunAll, no need to test Run separately" — if the plan has separate IDs, they test different behaviors. Write both.
+- "The test covers the behavior" — does it cover every noun in the Expected column? Re-read the plan row. "Shows warning icon with tooltip" means assert the icon AND the tooltip, not just that the row renders.
+- "I'll write the cross-cutting tests after finishing all steps" — no. Reconcile each step's IDs before moving to the next step.
+- "This is basically the same test as T-XX.YY" — if the plan has a separate ID, it tests a separate concern. Write it.
+- "The behavior is implicitly tested through another test" — implicit coverage is not coverage. If the plan says verify X, assert X explicitly.
+- "I'll combine these into one test" — one test per ID. The plan author separated them for a reason.
+
 ## Process & Methodology Compliance
 
 - Always follow the prescribed skill or process workflow (feat-plan, bug-solver, coverage-report) in order. Do not skip steps.
